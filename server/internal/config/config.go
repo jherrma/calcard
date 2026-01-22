@@ -15,6 +15,8 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	DataDir  string         `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
 	LogLevel string         `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
+	BaseURL  string         `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	SMTP     SMTPConfig     `yaml:"smtp"`
 }
 
 // ServerConfig contains server-specific settings
@@ -33,6 +35,15 @@ type DatabaseConfig struct {
 	Name        string `yaml:"name" env:"CALDAV_DB_NAME"`
 	SSLMode     string `yaml:"ssl_mode" env:"CALDAV_DB_SSLMODE"`
 	AutoMigrate bool   `yaml:"auto_migrate" env:"CALDAV_DB_AUTO_MIGRATE"`
+}
+
+// SMTPConfig contains SMTP settings for email verification
+type SMTPConfig struct {
+	Host     string `yaml:"host" env:"CALDAV_SMTP_HOST"`
+	Port     string `yaml:"port" env:"CALDAV_SMTP_PORT"`
+	User     string `yaml:"user" env:"CALDAV_SMTP_USER"`
+	Password string `yaml:"password" env:"CALDAV_SMTP_PASSWORD"`
+	From     string `yaml:"from" env:"CALDAV_SMTP_FROM"`
 }
 
 // DSN returns the database connection string based on the driver
@@ -71,6 +82,10 @@ func Load(configPath string) (*Config, error) {
 		},
 		DataDir:  "./data",
 		LogLevel: "info",
+		BaseURL:  "http://localhost:8080",
+		SMTP: SMTPConfig{
+			Port: "587",
+		},
 	}
 
 	// 1. Load from YAML file if it exists

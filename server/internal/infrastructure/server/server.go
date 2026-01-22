@@ -30,7 +30,7 @@ func New(cfg *config.Config, db database.Database) *Server {
 	})
 
 	SetupMiddleware(app)
-	SetupRoutes(app, db)
+	SetupRoutes(app, db, cfg)
 
 	return &Server{
 		app: app,

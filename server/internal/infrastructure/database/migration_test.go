@@ -39,5 +39,4 @@ func TestMigrations(t *testing.T) {
 	// Verify columns
 	assert.True(t, gormDB.Migrator().HasColumn(&user.User{}, "uuid"))
 	assert.True(t, gormDB.Migrator().HasColumn(&user.User{}, "email"))
-	assert.True(t, gormDB.Migrator().HasColumn(&user.User{}, "username"))
 }

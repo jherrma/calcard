@@ -8,5 +8,6 @@ import (
 func Models() []interface{} {
 	return []interface{}{
 		&user.User{},
+		&user.EmailVerification{},
 	}
 }
