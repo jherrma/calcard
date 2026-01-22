@@ -13,25 +13,25 @@ import (
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
-	DataDir  string         `yaml:"data_dir" env:"CALDAV_DATA_DIR" envDefault:"./data"`
-	LogLevel string         `yaml:"log_level" env:"CALDAV_LOG_LEVEL" envDefault:"info"`
+	DataDir  string         `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
+	LogLevel string         `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
 }
 
 // ServerConfig contains server-specific settings
 type ServerConfig struct {
-	Host string `yaml:"host" env:"CALDAV_SERVER_HOST" envDefault:"0.0.0.0"`
-	Port string `yaml:"port" env:"CALDAV_SERVER_PORT" envDefault:"8080"`
+	Host string `yaml:"host" env:"CALDAV_SERVER_HOST"`
+	Port string `yaml:"port" env:"CALDAV_SERVER_PORT"`
 }
 
 // DatabaseConfig contains database connection settings
 type DatabaseConfig struct {
-	Driver   string `yaml:"driver" env:"CALDAV_DB_DRIVER" envDefault:"sqlite"`
+	Driver   string `yaml:"driver" env:"CALDAV_DB_DRIVER"`
 	Host     string `yaml:"host" env:"CALDAV_DB_HOST"`
-	Port     string `yaml:"port" env:"CALDAV_DB_PORT" envDefault:"5432"`
+	Port     string `yaml:"port" env:"CALDAV_DB_PORT"`
 	User     string `yaml:"user" env:"CALDAV_DB_USER"`
 	Password string `yaml:"password" env:"CALDAV_DB_PASSWORD"`
-	Name     string `yaml:"name" env:"CALDAV_DB_NAME" envDefault:"caldav"`
-	SSLMode  string `yaml:"ssl_mode" env:"CALDAV_DB_SSLMODE" envDefault:"disable"`
+	Name     string `yaml:"name" env:"CALDAV_DB_NAME"`
+	SSLMode  string `yaml:"ssl_mode" env:"CALDAV_DB_SSLMODE"`
 }
 
 // DSN returns the database connection string based on the driver
@@ -55,14 +55,23 @@ func (c *DatabaseConfig) IsPostgres() bool {
 
 // Load initialization the configuration from environment variables and an optional YAML file
 func Load(configPath string) (*Config, error) {
-	cfg := &Config{}
-
-	// 1. Set defaults through env tags by parsing once with empty environment
-	if err := env.Parse(cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse default config: %w", err)
+	// Set hardcoded defaults
+	cfg := &Config{
+		Server: ServerConfig{
+			Host: "0.0.0.0",
+			Port: "8080",
+		},
+		Database: DatabaseConfig{
+			Driver:  "sqlite",
+			Port:    "5432",
+			Name:    "caldav",
+			SSLMode: "disable",
+		},
+		DataDir:  "./data",
+		LogLevel: "info",
 	}
 
-	// 2. Load from YAML file if it exists
+	// 1. Load from YAML file if it exists
 	if configPath != "" {
 		if _, err := os.Stat(configPath); err == nil {
 			file, err := os.Open(configPath)
@@ -78,7 +87,9 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	// 3. Override with environment variables
+	// 2. Override with environment variables
+	// Note: We use env.Parse(cfg) which will only override if the env var is PRESENT
+	// since we've removed envDefault from the struct tags.
 	if err := env.Parse(cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse environment variables: %w", err)
 	}
