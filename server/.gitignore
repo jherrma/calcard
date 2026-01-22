@@ -28,3 +28,7 @@ dist/
 # Configuration
 configs/config.yaml
 !configs/config.yaml.example
+
+# Database files
+data/
+caldav.db
