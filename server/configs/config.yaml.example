@@ -1,0 +1,21 @@
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: "8080"
+
+# Database Configuration
+database:
+  # Driver: "sqlite" or "postgres"
+  driver: "sqlite"
+  
+  # For PostgreSQL:
+  # host: "localhost"
+  # port: "5432"
+  # user: "postgres"
+  # password: "password"
+  # name: "caldav"
+  # ssl_mode: "disable"
+
+# Application Settings
+data_dir: "./data"
+log_level: "info"
