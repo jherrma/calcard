@@ -1,31 +1,64 @@
 package server
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	"github.com/gofiber/fiber/v3"
+	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/http"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
-	"github.com/jherrma/caldav-server/internal/usecase/auth"
+	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 )
 
 // SetupRoutes registers all application routes
 func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
+	// Repositories
+	userRepo := repository.NewUserRepository(db.DB())
+	tokenRepo := repository.NewRefreshTokenRepository(db.DB())
+	systemRepo := repository.NewSystemSettingRepository(db.DB())
+
+	// Services
+	emailService := email.NewEmailService(cfg.SMTP)
+	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
+
+	// Ensure JWT Secret
+	if err := jwtManager.EnsureSecret(context.Background(), systemRepo); err != nil {
+		fmt.Printf("failed to ensure JWT secret: %v\n", err)
+	}
+
+	// Use Cases
+	registerUC := authusecase.NewRegisterUseCase(userRepo, emailService, cfg)
+	verifyUC := authusecase.NewVerifyUseCase(userRepo)
+	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg)
+	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager)
+	logoutUC := authusecase.NewLogoutUseCase(tokenRepo, jwtManager)
+
+	// Handlers
+	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC)
 	healthHandler := http.NewHealthHandler(db)
 
-	health := app.Group("/health")
-	health.Get("/", healthHandler.Liveness)
-	health.Get("/ready", healthHandler.Readiness)
+	// Public Routes
+	app.Get("/health", healthHandler.Liveness)
+	app.Get("/ready", healthHandler.Readiness)
 
-	// User Auth
-	userRepo := repository.NewUserRepository(db.DB())
-	emailService := email.NewEmailService(cfg.SMTP)
-	registerUC := auth.NewRegisterUseCase(userRepo, emailService, cfg)
-	verifyUC := auth.NewVerifyUseCase(userRepo)
-	authHandler := http.NewAuthHandler(registerUC, verifyUC)
+	// API Group
+	v1 := app.Group("/api/v1")
 
-	api := app.Group("/api/v1")
-	api.Post("/auth/register", authHandler.Register)
-	api.Get("/auth/verify", authHandler.Verify)
+	// Auth Routes
+	authGroup := v1.Group("/auth")
+	authGroup.Post("/register", authHandler.Register)
+	authGroup.Get("/verify", authHandler.Verify)
+
+	// Login with rate limiting
+	loginIPLimiter := http.NewIPRateLimiter(5, time.Minute)
+	loginEmailLimiter := http.NewEmailRateLimiter(10, time.Minute)
+	authGroup.Post("/login", http.ExtractEmailMiddleware(), loginIPLimiter, loginEmailLimiter, authHandler.Login)
+
+	authGroup.Post("/refresh", authHandler.Refresh)
+	authGroup.Post("/logout", authHandler.Logout)
 }

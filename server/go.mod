@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/caarlos0/env/v10 v10.0.0
 	github.com/gofiber/fiber/v3 v3.0.0-rc.3
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.47.0

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"github.com/jherrma/caldav-server/internal/domain"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 )
 
@@ -9,5 +10,7 @@ func Models() []interface{} {
 	return []interface{}{
 		&user.User{},
 		&user.EmailVerification{},
+		&user.RefreshToken{},
+		&domain.SystemSetting{},
 	}
 }

@@ -5,18 +5,22 @@ import (
 	"os"
 	"path/filepath"
 
+	"time"
+
 	"github.com/caarlos0/env/v10"
 	"gopkg.in/yaml.v3"
 )
 
 // Config represents the application configuration
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	DataDir  string         `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
-	LogLevel string         `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
-	BaseURL  string         `yaml:"base_url" env:"CALDAV_BASE_URL"`
-	SMTP     SMTPConfig     `yaml:"smtp"`
+	Server    ServerConfig    `yaml:"server"`
+	Database  DatabaseConfig  `yaml:"database"`
+	DataDir   string          `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
+	LogLevel  string          `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
+	BaseURL   string          `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	SMTP      SMTPConfig      `yaml:"smtp"`
+	JWT       JWTConfig       `yaml:"jwt"`
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
 }
 
 // ServerConfig contains server-specific settings
@@ -44,6 +48,18 @@ type SMTPConfig struct {
 	User     string `yaml:"user" env:"CALDAV_SMTP_USER"`
 	Password string `yaml:"password" env:"CALDAV_SMTP_PASSWORD"`
 	From     string `yaml:"from" env:"CALDAV_SMTP_FROM"`
+}
+
+// JWTConfig contains JWT settings
+type JWTConfig struct {
+	Secret        string        `yaml:"secret" env:"CALDAV_JWT_SECRET"`
+	AccessExpiry  time.Duration `yaml:"access_expiry" env:"CALDAV_JWT_ACCESS_EXPIRY"`
+	RefreshExpiry time.Duration `yaml:"refresh_expiry" env:"CALDAV_JWT_REFRESH_EXPIRY"`
+}
+
+// RateLimitConfig contains rate limiting settings
+type RateLimitConfig struct {
+	Enabled bool `yaml:"enabled" env:"CALDAV_RATE_LIMIT_ENABLED"`
 }
 
 // DSN returns the database connection string based on the driver
@@ -85,6 +101,13 @@ func Load(configPath string) (*Config, error) {
 		BaseURL:  "http://localhost:8080",
 		SMTP: SMTPConfig{
 			Port: "587",
+		},
+		JWT: JWTConfig{
+			AccessExpiry:  10 * time.Minute,
+			RefreshExpiry: 7 * 24 * time.Hour,
+		},
+		RateLimit: RateLimitConfig{
+			Enabled: true,
 		},
 	}
 
