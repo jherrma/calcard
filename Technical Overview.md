@@ -1,5 +1,7 @@
 # Technical Overview
 
+Note: this is AI generated.
+
 This document provides a comprehensive technical specification for implementing a self-hostable CalDAV/CardDAV server in Go with a Vue.js web frontend.
 
 ---
@@ -24,53 +26,53 @@ This document provides a comprehensive technical specification for implementing 
 
 ### 1.1 Backend
 
-| Component | Technology | Version | Purpose |
-|-----------|------------|---------|---------|
-| Language | Go | 1.22+ | Core server implementation |
-| HTTP Framework | Gin | v1.9.x | REST API routing and middleware |
-| WebDAV Library | emersion/go-webdav | v0.7.0 | CalDAV/CardDAV protocol handling |
-| iCalendar Parser | emersion/go-ical | latest | iCalendar data parsing/generation |
-| vCard Parser | emersion/go-vcard | latest | vCard data parsing/generation |
-| ORM | GORM | v1.25.x | Database abstraction |
-| JWT Library | golang-jwt/jwt | v5.x | JWT token handling |
-| OAuth2/OIDC | coreos/go-oidc | v3.x | OpenID Connect client |
-| SAML | crewjam/saml | v0.4.x | SAML Service Provider |
-| Password Hashing | golang.org/x/crypto/bcrypt | latest | Secure password storage |
-| Configuration | spf13/viper | v1.18.x | Configuration management |
-| Logging | uber-go/zap | v1.27.x | Structured logging |
-| UUID | google/uuid | v1.6.x | UUID generation |
-| Validation | go-playground/validator | v10.x | Request validation |
+| Component        | Technology                 | Version | Purpose                           |
+| ---------------- | -------------------------- | ------- | --------------------------------- |
+| Language         | Go                         | 1.22+   | Core server implementation        |
+| HTTP Framework   | Fiber                      | v1.9.x  | REST API routing and middleware   |
+| WebDAV Library   | emersion/go-webdav         | v0.7.0  | CalDAV/CardDAV protocol handling  |
+| iCalendar Parser | emersion/go-ical           | latest  | iCalendar data parsing/generation |
+| vCard Parser     | emersion/go-vcard          | latest  | vCard data parsing/generation     |
+| ORM              | GORM                       | v1.25.x | Database abstraction              |
+| JWT Library      | golang-jwt/jwt             | v5.x    | JWT token handling                |
+| OAuth2/OIDC      | coreos/go-oidc             | v3.x    | OpenID Connect client             |
+| SAML             | crewjam/saml               | v0.4.x  | SAML Service Provider             |
+| Password Hashing | golang.org/x/crypto/bcrypt | latest  | Secure password storage           |
+| Configuration    | spf13/viper                | v1.18.x | Configuration management          |
+| Logging          | uber-go/zap                | v1.27.x | Structured logging                |
+| UUID             | google/uuid                | v1.6.x  | UUID generation                   |
+| Validation       | go-playground/validator    | v10.x   | Request validation                |
 
 ### 1.2 Frontend
 
-| Component | Technology | Version | Purpose |
-|-----------|------------|---------|---------|
-| Framework | Vue.js | 3.4.x | UI framework |
-| Meta-Framework | Nuxt | 3.10.x | SSR, routing, conventions |
-| State Management | Pinia | 2.x | Centralized state |
-| Calendar UI | FullCalendar | 6.x | Calendar visualization |
-| UI Components | PrimeVue | 3.x | UI component library |
-| HTTP Client | ofetch | latest | API requests (Nuxt default) |
-| Composables | VueUse | 10.x | Utility composables |
-| Schema Validation | Zod | 3.x | Runtime type validation |
-| CSS | Tailwind CSS | 3.x | Utility-first styling |
+| Component         | Technology   | Version | Purpose                     |
+| ----------------- | ------------ | ------- | --------------------------- |
+| Framework         | Vue.js       | 3.4.x   | UI framework                |
+| Meta-Framework    | Nuxt         | 3.10.x  | SSR, routing, conventions   |
+| State Management  | Pinia        | 2.x     | Centralized state           |
+| Calendar UI       | FullCalendar | 6.x     | Calendar visualization      |
+| UI Components     | PrimeVue     | 3.x     | UI component library        |
+| HTTP Client       | ofetch       | latest  | API requests (Nuxt default) |
+| Composables       | VueUse       | 10.x    | Utility composables         |
+| Schema Validation | Zod          | 3.x     | Runtime type validation     |
+| CSS               | Tailwind CSS | 3.x     | Utility-first styling       |
 
 ### 1.3 Database
 
-| Database | Use Case | Notes |
-|----------|----------|-------|
-| PostgreSQL 16 | Production | Recommended for multi-user deployments |
-| SQLite 3 | Development/Single-user | Embedded, zero-config |
-| MySQL 8 | Alternative | Supported via GORM |
+| Database      | Use Case                | Notes                                  |
+| ------------- | ----------------------- | -------------------------------------- |
+| PostgreSQL 16 | Production              | Recommended for multi-user deployments |
+| SQLite 3      | Development/Single-user | Embedded, zero-config                  |
+| MySQL 8       | Alternative             | Supported via GORM                     |
 
 ### 1.4 Infrastructure
 
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Container | Docker | Containerization |
-| Orchestration | Docker Compose | Multi-container deployment |
-| Reverse Proxy | Nginx/Caddy | TLS termination, load balancing |
-| CI/CD | GitHub Actions | Build, test, release |
+| Component     | Technology     | Purpose                         |
+| ------------- | -------------- | ------------------------------- |
+| Container     | Docker         | Containerization                |
+| Orchestration | Docker Compose | Multi-container deployment      |
+| Reverse Proxy | Nginx/Caddy    | TLS termination, load balancing |
+| CI/CD         | GitHub Actions | Build, test, release            |
 
 ---
 
@@ -78,17 +80,17 @@ This document provides a comprehensive technical specification for implementing 
 
 ### 2.1 Required RFCs
 
-| RFC | Name | Purpose |
-|-----|------|---------|
-| RFC 4918 | HTTP Extensions for WebDAV | Base WebDAV protocol |
-| RFC 4791 | CalDAV | Calendar access extensions |
-| RFC 6352 | CardDAV | Contact/address book extensions |
-| RFC 6578 | WebDAV Sync | Efficient collection synchronization |
-| RFC 6764 | CalDAV/CardDAV Discovery | Service discovery (.well-known) |
-| RFC 3744 | WebDAV ACL | Access control (basic implementation) |
-| RFC 5545 | iCalendar | Calendar data format |
-| RFC 6350 | vCard 4.0 | Contact data format |
-| RFC 2426 | vCard 3.0 | Legacy contact format (compatibility) |
+| RFC      | Name                       | Purpose                               |
+| -------- | -------------------------- | ------------------------------------- |
+| RFC 4918 | HTTP Extensions for WebDAV | Base WebDAV protocol                  |
+| RFC 4791 | CalDAV                     | Calendar access extensions            |
+| RFC 6352 | CardDAV                    | Contact/address book extensions       |
+| RFC 6578 | WebDAV Sync                | Efficient collection synchronization  |
+| RFC 6764 | CalDAV/CardDAV Discovery   | Service discovery (.well-known)       |
+| RFC 3744 | WebDAV ACL                 | Access control (basic implementation) |
+| RFC 5545 | iCalendar                  | Calendar data format                  |
+| RFC 6350 | vCard 4.0                  | Contact data format                   |
+| RFC 2426 | vCard 3.0                  | Legacy contact format (compatibility) |
 
 ### 2.2 HTTP Methods Required
 
@@ -1315,14 +1317,14 @@ type ContactResponse struct {
 
 **Vue 3 + Nuxt 3** was selected over Angular and Flutter Web for:
 
-| Factor | Vue 3/Nuxt | Angular | Flutter Web |
-|--------|------------|---------|-------------|
-| Bundle Size | ~30KB (Vue core) | ~130KB+ | 1MB+ |
-| Learning Curve | Gentle | Steep | Moderate (Dart) |
-| Calendar Libraries | Excellent (FullCalendar) | Good | Limited |
-| SSR Support | Native (Nuxt) | Requires setup | Poor |
-| Development Speed | Fast | Moderate | Moderate |
-| Self-hosting Fit | Excellent | Good | Poor (large assets) |
+| Factor             | Vue 3/Nuxt               | Angular        | Flutter Web         |
+| ------------------ | ------------------------ | -------------- | ------------------- |
+| Bundle Size        | ~30KB (Vue core)         | ~130KB+        | 1MB+                |
+| Learning Curve     | Gentle                   | Steep          | Moderate (Dart)     |
+| Calendar Libraries | Excellent (FullCalendar) | Good           | Limited             |
+| SSR Support        | Native (Nuxt)            | Requires setup | Poor                |
+| Development Speed  | Fast                     | Moderate       | Moderate            |
+| Self-hosting Fit   | Excellent                | Good           | Poor (large assets) |
 
 ### 9.2 Frontend Structure
 
@@ -1525,7 +1527,7 @@ server:
       - "OPTIONS"
 
 database:
-  driver: postgres  # postgres, mysql, sqlite
+  driver: postgres # postgres, mysql, sqlite
   url: "${DATABASE_URL}"
   max_open_conns: 25
   max_idle_conns: 5
@@ -1536,7 +1538,7 @@ auth:
     secret: "${JWT_SECRET}"
     refresh_secret: "${JWT_REFRESH_SECRET}"
     access_token_ttl: 15m
-    refresh_token_ttl: 168h  # 7 days
+    refresh_token_ttl: 168h # 7 days
 
   password:
     bcrypt_cost: 12
@@ -1566,8 +1568,8 @@ rate_limiting:
   auth_requests_per_minute: 10
 
 logging:
-  level: info  # debug, info, warn, error
-  format: json  # json, text
+  level: info # debug, info, warn, error
+  format: json # json, text
 ```
 
 ---
@@ -1576,13 +1578,13 @@ logging:
 
 ### 11.1 Authentication Security
 
-| Aspect | Implementation |
-|--------|----------------|
-| Password Hashing | bcrypt with cost factor 12+ |
-| JWT Signing | HS256 with 256-bit secret |
-| App Passwords | 32-character cryptographically random |
-| Session Tokens | Refresh token rotation on use |
-| Rate Limiting | 10 auth requests/minute per IP |
+| Aspect           | Implementation                        |
+| ---------------- | ------------------------------------- |
+| Password Hashing | bcrypt with cost factor 12+           |
+| JWT Signing      | HS256 with 256-bit secret             |
+| App Passwords    | 32-character cryptographically random |
+| Session Tokens   | Refresh token rotation on use         |
+| Rate Limiting    | 10 auth requests/minute per IP        |
 
 ### 11.2 Input Validation
 
@@ -1629,15 +1631,15 @@ func validateICalendar(data string) error {
 
 ## Appendix: Key Library Documentation
 
-| Library | Documentation |
-|---------|---------------|
+| Library            | Documentation                                    |
+| ------------------ | ------------------------------------------------ |
 | emersion/go-webdav | https://pkg.go.dev/github.com/emersion/go-webdav |
-| GORM | https://gorm.io/docs/ |
-| coreos/go-oidc | https://pkg.go.dev/github.com/coreos/go-oidc/v3 |
-| crewjam/saml | https://pkg.go.dev/github.com/crewjam/saml |
-| golang-jwt/jwt | https://pkg.go.dev/github.com/golang-jwt/jwt/v5 |
-| Gin | https://gin-gonic.com/docs/ |
-| FullCalendar | https://fullcalendar.io/docs |
-| Vue 3 | https://vuejs.org/guide/ |
-| Nuxt 3 | https://nuxt.com/docs |
-| PrimeVue | https://primevue.org/introduction/ |
+| GORM               | https://gorm.io/docs/                            |
+| coreos/go-oidc     | https://pkg.go.dev/github.com/coreos/go-oidc/v3  |
+| crewjam/saml       | https://pkg.go.dev/github.com/crewjam/saml       |
+| golang-jwt/jwt     | https://pkg.go.dev/github.com/golang-jwt/jwt/v5  |
+| Gin                | https://gin-gonic.com/docs/                      |
+| FullCalendar       | https://fullcalendar.io/docs                     |
+| Vue 3              | https://vuejs.org/guide/                         |
+| Nuxt 3             | https://nuxt.com/docs                            |
+| PrimeVue           | https://primevue.org/introduction/               |

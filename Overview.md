@@ -1,5 +1,7 @@
 # CalDAV/CardDAV Server Project Overview
 
+Note: this is AI generated.
+
 ## Executive Summary
 
 This document outlines the design and rationale for building a modern, self-hostable CalDAV/CardDAV server in Go with a web-based user interface. The project addresses a significant gap in the current open-source ecosystem: the lack of a lightweight, modern calendar and contacts server with proper user management and contemporary authentication methods.
@@ -27,15 +29,15 @@ Both protocols are built on WebDAV (Web Distributed Authoring and Versioning), w
 
 ### Current Solutions and Their Limitations
 
-| Solution | Language | Limitations |
-|----------|----------|-------------|
-| **Radicale** | Python | No web UI, no user self-registration, minimal user management, configuration-file based authentication only |
-| **Baikal** | PHP | Dated user interface (2010s design), no OAuth/SAML support, requires PHP hosting, limited to SQLite/MySQL |
-| **Nextcloud** | PHP | Overkill - full collaboration suite when only calendar/contacts needed, resource-heavy, complex deployment |
-| **SOGo** | Objective-C | Complex installation, enterprise-focused, steep learning curve, requires multiple dependencies |
-| **DAViCal** | PHP | Primarily CalDAV only, complex setup, dated codebase, limited CardDAV support |
-| **Cyrus IMAP** | C | Part of full mail server, extremely complex, enterprise-only use case |
-| **ownCloud** | PHP | Similar to Nextcloud, full suite when simpler solution needed |
+| Solution       | Language    | Limitations                                                                                                 |
+| -------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| **Radicale**   | Python      | No web UI, no user self-registration, minimal user management, configuration-file based authentication only |
+| **Baikal**     | PHP         | Dated user interface (2010s design), no OAuth/SAML support, requires PHP hosting, limited to SQLite/MySQL   |
+| **Nextcloud**  | PHP         | Overkill - full collaboration suite when only calendar/contacts needed, resource-heavy, complex deployment  |
+| **SOGo**       | Objective-C | Complex installation, enterprise-focused, steep learning curve, requires multiple dependencies              |
+| **DAViCal**    | PHP         | Primarily CalDAV only, complex setup, dated codebase, limited CardDAV support                               |
+| **Cyrus IMAP** | C           | Part of full mail server, extremely complex, enterprise-only use case                                       |
+| **ownCloud**   | PHP         | Similar to Nextcloud, full suite when simpler solution needed                                               |
 
 ### The Gap This Project Fills
 
@@ -130,6 +132,7 @@ User Experience:
 ### 3. Web UI for Non-Technical Users
 
 Most CalDAV servers assume users will only interact through native apps. This project provides a full web interface for:
+
 - Viewing and managing calendars
 - Creating and editing events
 - Browsing and editing contacts
@@ -154,21 +157,21 @@ docker run -p 8080:8080 -v ./config.yaml:/app/config.yaml caldav-server
 
 ## Feature Comparison Matrix
 
-| Feature | Radicale | Baikal | Nextcloud | **This Project** |
-|---------|----------|--------|-----------|------------------|
-| CalDAV | Yes | Yes | Yes | Yes |
-| CardDAV | Yes | Yes | Yes | Yes |
-| Web Calendar UI | No | Limited | Yes | Yes |
-| Web Contact UI | No | Limited | Yes | Yes |
-| User Registration | No | Admin only | Yes | Yes |
-| OAuth2/OIDC | No | No | Yes | Yes |
-| SAML | No | No | Plugin | Yes |
-| App Passwords | No | No | Yes | Yes |
-| Calendar Sharing | Limited | Limited | Yes | Yes |
-| Single Binary | No (Python) | No (PHP) | No (PHP) | Yes |
-| Docker-Native | Community | Community | Official | Official |
-| Lightweight | Yes | Yes | No | Yes |
-| Active Development | Moderate | Low | High | - |
+| Feature            | Radicale    | Baikal     | Nextcloud | **This Project** |
+| ------------------ | ----------- | ---------- | --------- | ---------------- |
+| CalDAV             | Yes         | Yes        | Yes       | Yes              |
+| CardDAV            | Yes         | Yes        | Yes       | Yes              |
+| Web Calendar UI    | No          | Limited    | Yes       | Yes              |
+| Web Contact UI     | No          | Limited    | Yes       | Yes              |
+| User Registration  | No          | Admin only | Yes       | Yes              |
+| OAuth2/OIDC        | No          | No         | Yes       | Yes              |
+| SAML               | No          | No         | Plugin    | Yes              |
+| App Passwords      | No          | No         | Yes       | Yes              |
+| Calendar Sharing   | Limited     | Limited    | Yes       | Yes              |
+| Single Binary      | No (Python) | No (PHP)   | No (PHP)  | Yes              |
+| Docker-Native      | Community   | Community  | Official  | Official         |
+| Lightweight        | Yes         | Yes        | No        | Yes              |
+| Active Development | Moderate    | Low        | High      | -                |
 
 ---
 
