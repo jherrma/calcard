@@ -25,6 +25,10 @@ bin/
 dist/
 .env
 
+# Binaries
+server
+main
+
 # Configuration
 configs/config.yaml
 !configs/config.yaml.example

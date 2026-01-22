@@ -24,7 +24,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 3. Initialize and run server
+	// 3. Handle CLI commands
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "migrate":
+			fmt.Println("Running migrations...")
+			if err := db.Migrate(database.Models()...); err != nil {
+				fmt.Printf("Migration failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Migrations completed successfully")
+			return
+		}
+	}
+
+	// 4. Auto-migration
+	if cfg.Database.AutoMigrate {
+		fmt.Println("Auto-migrating database...")
+		if err := db.Migrate(database.Models()...); err != nil {
+			fmt.Printf("Auto-migration failed: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// 5. Initialize and run server
 	srv := server.New(cfg, db)
 	if err := srv.Run(); err != nil {
 		fmt.Printf("Server error: %v\n", err)

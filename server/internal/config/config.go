@@ -25,13 +25,14 @@ type ServerConfig struct {
 
 // DatabaseConfig contains database connection settings
 type DatabaseConfig struct {
-	Driver   string `yaml:"driver" env:"CALDAV_DB_DRIVER"`
-	Host     string `yaml:"host" env:"CALDAV_DB_HOST"`
-	Port     string `yaml:"port" env:"CALDAV_DB_PORT"`
-	User     string `yaml:"user" env:"CALDAV_DB_USER"`
-	Password string `yaml:"password" env:"CALDAV_DB_PASSWORD"`
-	Name     string `yaml:"name" env:"CALDAV_DB_NAME"`
-	SSLMode  string `yaml:"ssl_mode" env:"CALDAV_DB_SSLMODE"`
+	Driver      string `yaml:"driver" env:"CALDAV_DB_DRIVER"`
+	Host        string `yaml:"host" env:"CALDAV_DB_HOST"`
+	Port        string `yaml:"port" env:"CALDAV_DB_PORT"`
+	User        string `yaml:"user" env:"CALDAV_DB_USER"`
+	Password    string `yaml:"password" env:"CALDAV_DB_PASSWORD"`
+	Name        string `yaml:"name" env:"CALDAV_DB_NAME"`
+	SSLMode     string `yaml:"ssl_mode" env:"CALDAV_DB_SSLMODE"`
+	AutoMigrate bool   `yaml:"auto_migrate" env:"CALDAV_DB_AUTO_MIGRATE"`
 }
 
 // DSN returns the database connection string based on the driver
@@ -62,10 +63,11 @@ func Load(configPath string) (*Config, error) {
 			Port: "8080",
 		},
 		Database: DatabaseConfig{
-			Driver:  "sqlite",
-			Port:    "5432",
-			Name:    "caldav",
-			SSLMode: "disable",
+			Driver:      "sqlite",
+			Port:        "5432",
+			Name:        "caldav",
+			SSLMode:     "disable",
+			AutoMigrate: true,
 		},
 		DataDir:  "./data",
 		LogLevel: "info",
