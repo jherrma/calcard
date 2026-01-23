@@ -1,19 +1,24 @@
 # Story 009: User Profile Management
 
 ## Title
+
 Implement User Profile View and Update
 
 ## Description
+
 As a user, I want to view and update my profile information and delete my account if needed.
 
 ## Related Acceptance Criteria
 
-| ID | Criterion |
-|----|-----------|
-| UM-1.3.1 | Users can update their display name |
-| UM-1.3.2 | Users can view their account creation date |
-| UM-1.3.3 | Users can delete their account |
-| UM-1.3.4 | Account deletion requires password confirmation |
+| ID       | Criterion                                                                                                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UM-1.3.1 | Users can update their display name                                                                                                                                             |
+| UM-1.3.2 | Users can view their account creation date                                                                                                                                      |
+| UM-1.3.3 | Users can delete their account                                                                                                                                                  |
+| UM-1.3.4 | Account deletion requires password confirmation                                                                                                                                 |
+| UM-1.3.5 | the first user to register is an admin account and can view other account information like username and reset their passwords and make them admin                               |
+| UM-1.3.6 | the system settings endpoint provides information if an admis is already configured or not to be able to display an initial admin account creation screen                       |
+| UM-1.3.7 | the server makes sure, that an admin account can only be created once without authentication for initial setup. further promotion to admins are only allowed by existing admins |
 
 ## Acceptance Criteria
 
@@ -91,6 +96,7 @@ As a user, I want to view and update my profile information and delete my accoun
 ## Technical Notes
 
 ### Soft Delete Implementation
+
 ```go
 // User model already has DeletedAt from GORM
 // Queries automatically filter soft-deleted records
@@ -112,6 +118,7 @@ func (r *UserRepository) Delete(ctx context.Context, userID uint) error {
 ```
 
 ### Code Structure
+
 ```
 internal/usecase/user/
 ├── get_profile.go      # Get profile use case
@@ -125,6 +132,7 @@ internal/adapter/http/
 ## API Response Examples
 
 ### Get Profile (200 OK)
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -145,6 +153,7 @@ internal/adapter/http/
 ```
 
 ### Update Profile Success (200 OK)
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -159,6 +168,7 @@ internal/adapter/http/
 ```
 
 ### Update Profile - Username Conflict (409)
+
 ```json
 {
   "error": "conflict",
@@ -167,6 +177,7 @@ internal/adapter/http/
 ```
 
 ### Delete Account - Missing Confirmation (400)
+
 ```json
 {
   "error": "validation_error",
@@ -175,6 +186,7 @@ internal/adapter/http/
 ```
 
 ### Delete Account - Wrong Password (401)
+
 ```json
 {
   "error": "authentication_failed",
@@ -183,11 +195,13 @@ internal/adapter/http/
 ```
 
 ### Delete Account Success (204 No Content)
+
 No response body.
 
 ## Username Change Warning
 
 When a user changes their username, a warning should be displayed:
+
 > Changing your username will update your CalDAV/CardDAV URLs. You will need to reconfigure any connected calendar or contact applications with the new URL.
 
 This is informational only - the system does not prevent the change.

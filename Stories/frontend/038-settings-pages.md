@@ -1,25 +1,29 @@
 # Story 038: Settings Pages
 
 ## Title
+
 Implement User Settings, Profile, and Credentials Management
 
 ## Description
+
 As a user, I want to manage my profile, passwords, and access credentials through the settings pages.
 
 ## Related Acceptance Criteria
 
-| ID | Criterion |
-|----|-----------|
-| UM-1.3.1 | Users can update their display name |
-| UM-1.3.2 | Users can view their account creation date |
-| UM-1.3.3 | Users can delete their account |
-| UM-1.2.1 | Users can change their password |
-| AU-2.4.1 | Users can create app-specific passwords |
-| AU-2.4.3 | Users can name app passwords |
-| AU-2.4.4 | Users can view list of app passwords |
-| AU-2.4.6 | Users can revoke individual app passwords |
-| AU-2.5.1 | Users can create CalDAV access credentials |
-| AU-2.6.1 | Users can create CardDAV access credentials |
+| ID       | Criterion                                             |
+| -------- | ----------------------------------------------------- |
+| UM-1.3.1 | Users can update their display name                   |
+| UM-1.3.2 | Users can view their account creation date            |
+| UM-1.3.3 | Users can delete their account                        |
+| UM-1.2.1 | Users can change their password                       |
+| AU-2.4.1 | Users can create app-specific passwords               |
+| AU-2.4.3 | Users can name app passwords                          |
+| AU-2.4.4 | Users can view list of app passwords                  |
+| AU-2.4.6 | Users can revoke individual app passwords             |
+| AU-2.5.1 | Users can create CalDAV access credentials            |
+| AU-2.6.1 | Users can create CardDAV access credentials           |
+| UM-1.3.5 | Admin accounts can view user list and reset passwords |
+| UM-1.3.7 | Admin promotion is restricted to existing admins      |
 
 ## Acceptance Criteria
 
@@ -34,6 +38,7 @@ As a user, I want to manage my profile, passwords, and access credentials throug
   - [ ] CalDAV Credentials
   - [ ] CardDAV Credentials
   - [ ] Connected Accounts (OAuth)
+  - [ ] Admin Console (visible only if `user.is_admin` is `true`)
   - [ ] Danger Zone (delete account)
 
 ### Profile Settings
@@ -114,6 +119,19 @@ As a user, I want to manage my profile, passwords, and access credentials throug
 - [ ] "Link Account" buttons for available providers
 - [ ] Warning when unlinking last auth method
 
+### Admin Management
+
+- [ ] Route: `/settings/admin`
+- [ ] List of all registered users:
+  - [ ] User details (Email, Username, Display Name)
+  - [ ] Role indicator (Admin/User)
+  - [ ] Activation status
+- [ ] Administrative actions:
+  - [ ] **Reset User Password**: Trigger server-side password reset/override.
+  - [ ] **Promote/Demote**: Toggle Admin role for other users.
+  - [ ] **Account Control**: Deactivate or re-activate user accounts.
+- [ ] Visibility: This page is only accessible and visible to users with `is_admin: true`.
+
 ### Delete Account
 
 - [ ] Route: `/settings/danger`
@@ -128,6 +146,7 @@ As a user, I want to manage my profile, passwords, and access credentials throug
 ## Technical Notes
 
 ### Settings Layout
+
 ```vue
 <!-- layouts/settings.vue -->
 <template>
@@ -136,17 +155,19 @@ As a user, I want to manage my profile, passwords, and access credentials throug
 
     <div class="flex">
       <!-- Settings sidebar -->
-      <aside class="w-64 bg-white border-r min-h-[calc(100vh-4rem)] hidden lg:block">
+      <aside
+        class="w-64 bg-white border-r min-h-[calc(100vh-4rem)] hidden lg:block"
+      >
         <nav class="p-4 space-y-1">
           <NuxtLink
-            v-for="item in settingsNav"
+            v-for="item in filteredNav"
             :key="item.to"
             :to="item.to"
             :class="[
               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm',
               isActive(item.to)
                 ? 'bg-primary-50 text-primary-700 font-medium'
-                : 'text-gray-700 hover:bg-gray-50'
+                : 'text-gray-700 hover:bg-gray-50',
             ]"
           >
             <i :class="item.icon" />
@@ -170,20 +191,47 @@ const route = useRoute();
 const sidebarOpen = ref(false);
 
 const settingsNav = [
-  { to: '/settings/profile', label: 'Profile', icon: 'pi pi-user' },
-  { to: '/settings/password', label: 'Password', icon: 'pi pi-lock' },
-  { to: '/settings/app-passwords', label: 'App Passwords', icon: 'pi pi-key' },
-  { to: '/settings/caldav-credentials', label: 'CalDAV Credentials', icon: 'pi pi-calendar' },
-  { to: '/settings/carddav-credentials', label: 'CardDAV Credentials', icon: 'pi pi-users' },
-  { to: '/settings/connections', label: 'Connected Accounts', icon: 'pi pi-link' },
-  { to: '/settings/danger', label: 'Danger Zone', icon: 'pi pi-exclamation-triangle' },
+  { to: "/settings/profile", label: "Profile", icon: "pi pi-user" },
+  { to: "/settings/password", label: "Password", icon: "pi pi-lock" },
+  { to: "/settings/app-passwords", label: "App Passwords", icon: "pi pi-key" },
+  {
+    to: "/settings/caldav-credentials",
+    label: "CalDAV Credentials",
+    icon: "pi pi-calendar",
+  },
+  {
+    to: "/settings/carddav-credentials",
+    label: "CardDAV Credentials",
+    icon: "pi pi-users",
+  },
+  {
+    to: "/settings/connections",
+    label: "Connected Accounts",
+    icon: "pi pi-link",
+  },
+  {
+    to: "/settings/admin",
+    label: "Admin Console",
+    icon: "pi pi-shield",
+    adminOnly: true,
+  },
+  {
+    to: "/settings/danger",
+    label: "Danger Zone",
+    icon: "pi pi-exclamation-triangle",
+  },
 ];
+
+const filteredNav = computed(() =>
+  settingsNav.filter((item) => !item.adminOnly || authStore.isAdmin),
+);
 
 const isActive = (path: string) => route.path === path;
 </script>
 ```
 
 ### Profile Page
+
 ```vue
 <!-- pages/settings/profile.vue -->
 <template>
@@ -196,15 +244,21 @@ const isActive = (path: string) => route.path === path;
         <h2 class="text-lg font-medium mb-4">Account Overview</h2>
         <div class="grid grid-cols-3 gap-4">
           <div class="text-center p-4 bg-gray-50 rounded-lg">
-            <div class="text-2xl font-bold text-primary-600">{{ stats.calendar_count }}</div>
+            <div class="text-2xl font-bold text-primary-600">
+              {{ stats.calendar_count }}
+            </div>
             <div class="text-sm text-gray-500">Calendars</div>
           </div>
           <div class="text-center p-4 bg-gray-50 rounded-lg">
-            <div class="text-2xl font-bold text-primary-600">{{ stats.contact_count }}</div>
+            <div class="text-2xl font-bold text-primary-600">
+              {{ stats.contact_count }}
+            </div>
             <div class="text-sm text-gray-500">Contacts</div>
           </div>
           <div class="text-center p-4 bg-gray-50 rounded-lg">
-            <div class="text-2xl font-bold text-primary-600">{{ stats.app_password_count }}</div>
+            <div class="text-2xl font-bold text-primary-600">
+              {{ stats.app_password_count }}
+            </div>
             <div class="text-sm text-gray-500">App Passwords</div>
           </div>
         </div>
@@ -213,36 +267,58 @@ const isActive = (path: string) => route.path === path;
       <!-- Profile form -->
       <form @submit.prevent="updateProfile" class="p-6 space-y-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Email</label
+          >
           <InputText :value="user?.email" disabled class="w-full bg-gray-50" />
           <small class="text-gray-500">Email cannot be changed</small>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Username</label
+          >
           <InputText v-model="form.username" class="w-full" />
-          <Message v-if="form.username !== user?.username" severity="warn" class="mt-2">
-            Changing your username will change your CalDAV/CardDAV URLs.
-            You will need to reconfigure your sync clients.
+          <Message
+            v-if="form.username !== user?.username"
+            severity="warn"
+            class="mt-2"
+          >
+            Changing your username will change your CalDAV/CardDAV URLs. You
+            will need to reconfigure your sync clients.
           </Message>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Display Name</label
+          >
           <InputText v-model="form.display_name" class="w-full" />
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Member Since</label>
-          <InputText :value="formatDate(user?.created_at)" disabled class="w-full bg-gray-50" />
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Role</label
+          >
+          <Tag
+            :value="user?.is_admin ? 'Administrator' : 'User'"
+            :severity="user?.is_admin ? 'danger' : 'info'"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Member Since</label
+          >
+          <InputText
+            :value="formatDate(user?.created_at)"
+            disabled
+            class="w-full bg-gray-50"
+          />
         </div>
 
         <div class="pt-4">
-          <Button
-            label="Save Changes"
-            :loading="isSaving"
-            type="submit"
-          />
+          <Button label="Save Changes" :loading="isSaving" type="submit" />
         </div>
       </form>
     </div>
@@ -251,8 +327,8 @@ const isActive = (path: string) => route.path === path;
 
 <script setup lang="ts">
 definePageMeta({
-  layout: 'settings',
-  middleware: 'auth',
+  layout: "settings",
+  middleware: "auth",
 });
 
 const authStore = useAuthStore();
@@ -263,8 +339,8 @@ const user = computed(() => authStore.user);
 const isSaving = ref(false);
 
 const form = reactive({
-  username: user.value?.username || '',
-  display_name: user.value?.display_name || '',
+  username: user.value?.username || "",
+  display_name: user.value?.display_name || "",
 });
 
 const stats = ref({
@@ -274,35 +350,36 @@ const stats = ref({
 });
 
 onMounted(async () => {
-  const profile = await api.get<any>('/api/v1/users/me');
+  const profile = await api.get<any>("/api/v1/users/me");
   stats.value = profile.stats;
 });
 
 const updateProfile = async () => {
   isSaving.value = true;
   try {
-    await api.patch('/api/v1/users/me', form);
+    await api.patch("/api/v1/users/me", form);
     await authStore.fetchUser();
-    toast.success('Profile updated');
+    toast.success("Profile updated");
   } catch (e: any) {
-    toast.error(e.message || 'Failed to update profile');
+    toast.error(e.message || "Failed to update profile");
   } finally {
     isSaving.value = false;
   }
 };
 
 const formatDate = (dateStr?: string) => {
-  if (!dateStr) return '';
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  if (!dateStr) return "";
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 };
 </script>
 ```
 
 ### App Passwords Page
+
 ```vue
 <!-- pages/settings/app-passwords.vue -->
 <template>
@@ -319,8 +396,9 @@ const formatDate = (dateStr?: string) => {
     <div class="bg-white rounded-lg shadow">
       <div class="p-4 border-b">
         <p class="text-sm text-gray-600">
-          App passwords let you sign in to CalDAV/CardDAV clients without using your main password.
-          Each app password can be limited to specific services.
+          App passwords let you sign in to CalDAV/CardDAV clients without using
+          your main password. Each app password can be limited to specific
+          services.
         </p>
       </div>
 
@@ -375,7 +453,9 @@ const formatDate = (dateStr?: string) => {
     >
       <div v-if="!createdPassword" class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Name</label
+          >
           <InputText
             v-model="newPassword.name"
             class="w-full"
@@ -384,14 +464,24 @@ const formatDate = (dateStr?: string) => {
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Access</label>
+          <label class="block text-sm font-medium text-gray-700 mb-2"
+            >Access</label
+          >
           <div class="space-y-2">
             <div class="flex items-center gap-2">
-              <Checkbox v-model="newPassword.scopes" value="caldav" input-id="scope-caldav" />
+              <Checkbox
+                v-model="newPassword.scopes"
+                value="caldav"
+                input-id="scope-caldav"
+              />
               <label for="scope-caldav">CalDAV (Calendars)</label>
             </div>
             <div class="flex items-center gap-2">
-              <Checkbox v-model="newPassword.scopes" value="carddav" input-id="scope-carddav" />
+              <Checkbox
+                v-model="newPassword.scopes"
+                value="carddav"
+                input-id="scope-carddav"
+              />
               <label for="scope-carddav">CardDAV (Contacts)</label>
             </div>
           </div>
@@ -401,11 +491,14 @@ const formatDate = (dateStr?: string) => {
       <!-- Created password display -->
       <div v-else class="space-y-4">
         <Message severity="warn" :closable="false">
-          Make sure to copy this password now. You won't be able to see it again!
+          Make sure to copy this password now. You won't be able to see it
+          again!
         </Message>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Password</label
+          >
           <div class="flex gap-2">
             <InputText
               :value="createdPassword"
@@ -423,15 +516,27 @@ const formatDate = (dateStr?: string) => {
         <div class="text-sm text-gray-600">
           <p class="font-medium">To use this password:</p>
           <ul class="list-disc list-inside mt-2 space-y-1">
-            <li>Username: <code class="bg-gray-100 px-1">{{ authStore.user?.username }}</code></li>
-            <li>Password: <code class="bg-gray-100 px-1">(the password above)</code></li>
+            <li>
+              Username:
+              <code class="bg-gray-100 px-1">{{
+                authStore.user?.username
+              }}</code>
+            </li>
+            <li>
+              Password:
+              <code class="bg-gray-100 px-1">(the password above)</code>
+            </li>
           </ul>
         </div>
       </div>
 
       <template #footer>
         <div v-if="!createdPassword">
-          <Button label="Cancel" severity="secondary" @click="showCreateDialog = false" />
+          <Button
+            label="Cancel"
+            severity="secondary"
+            @click="showCreateDialog = false"
+          />
           <Button
             label="Create"
             :loading="isCreating"
@@ -450,11 +555,11 @@ const formatDate = (dateStr?: string) => {
 </template>
 
 <script setup lang="ts">
-import type { AppPassword } from '~/types';
+import type { AppPassword } from "~/types";
 
 definePageMeta({
-  layout: 'settings',
-  middleware: 'auth',
+  layout: "settings",
+  middleware: "auth",
 });
 
 const authStore = useAuthStore();
@@ -468,8 +573,8 @@ const isCreating = ref(false);
 const createdPassword = ref<string | null>(null);
 
 const newPassword = reactive({
-  name: '',
-  scopes: ['caldav', 'carddav'],
+  name: "",
+  scopes: ["caldav", "carddav"],
 });
 
 onMounted(async () => {
@@ -477,18 +582,23 @@ onMounted(async () => {
 });
 
 const fetchPasswords = async () => {
-  const response = await api.get<{ app_passwords: AppPassword[] }>('/api/v1/app-passwords');
+  const response = await api.get<{ app_passwords: AppPassword[] }>(
+    "/api/v1/app-passwords",
+  );
   passwords.value = response.app_passwords;
 };
 
 const createPassword = async () => {
   isCreating.value = true;
   try {
-    const response = await api.post<{ password: string }>('/api/v1/app-passwords', newPassword);
+    const response = await api.post<{ password: string }>(
+      "/api/v1/app-passwords",
+      newPassword,
+    );
     createdPassword.value = response.password;
     await fetchPasswords();
   } catch (e: any) {
-    toast.error(e.message || 'Failed to create password');
+    toast.error(e.message || "Failed to create password");
   } finally {
     isCreating.value = false;
   }
@@ -497,23 +607,23 @@ const createPassword = async () => {
 const closeCreateDialog = () => {
   showCreateDialog.value = false;
   createdPassword.value = null;
-  newPassword.name = '';
-  newPassword.scopes = ['caldav', 'carddav'];
+  newPassword.name = "";
+  newPassword.scopes = ["caldav", "carddav"];
 };
 
 const copyPassword = async () => {
   if (createdPassword.value) {
     await navigator.clipboard.writeText(createdPassword.value);
-    toast.success('Password copied');
+    toast.success("Password copied");
   }
 };
 
 const confirmRevoke = (pwd: AppPassword) => {
   confirm.require({
     message: `Revoke "${pwd.name}"? Any apps using this password will stop working.`,
-    header: 'Revoke App Password',
-    icon: 'pi pi-exclamation-triangle',
-    acceptClass: 'p-button-danger',
+    header: "Revoke App Password",
+    icon: "pi pi-exclamation-triangle",
+    acceptClass: "p-button-danger",
     accept: () => revokePassword(pwd),
   });
 };
@@ -521,10 +631,10 @@ const confirmRevoke = (pwd: AppPassword) => {
 const revokePassword = async (pwd: AppPassword) => {
   try {
     await api.delete(`/api/v1/app-passwords/${pwd.id}`);
-    toast.success('Password revoked');
+    toast.success("Password revoked");
     await fetchPasswords();
   } catch {
-    toast.error('Failed to revoke password');
+    toast.error("Failed to revoke password");
   }
 };
 
@@ -538,8 +648,8 @@ const formatRelative = (dateStr: string) => {
   const diff = now.getTime() - date.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
   if (days < 7) return `${days} days ago`;
   return date.toLocaleDateString();
 };
@@ -547,6 +657,7 @@ const formatRelative = (dateStr: string) => {
 ```
 
 ### Delete Account Page
+
 ```vue
 <!-- pages/settings/danger.vue -->
 <template>
@@ -558,11 +669,14 @@ const formatRelative = (dateStr: string) => {
         <h2 class="text-lg font-medium text-red-600 mb-4">Delete Account</h2>
 
         <p class="text-gray-600 mb-4">
-          Once you delete your account, there is no going back. Please be certain.
+          Once you delete your account, there is no going back. Please be
+          certain.
         </p>
 
         <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-          <p class="font-medium text-red-800 mb-2">This will permanently delete:</p>
+          <p class="font-medium text-red-800 mb-2">
+            This will permanently delete:
+          </p>
           <ul class="list-disc list-inside text-sm text-red-700 space-y-1">
             <li>All your calendars and events</li>
             <li>All your address books and contacts</li>
@@ -611,8 +725,8 @@ const formatRelative = (dateStr: string) => {
 
 <script setup lang="ts">
 definePageMeta({
-  layout: 'settings',
-  middleware: 'auth',
+  layout: "settings",
+  middleware: "auth",
 });
 
 const authStore = useAuthStore();
@@ -622,23 +736,23 @@ const api = useApi();
 const isDeleting = ref(false);
 
 const form = reactive({
-  password: '',
-  confirmation: '',
+  password: "",
+  confirmation: "",
 });
 
 const deleteAccount = async () => {
   isDeleting.value = true;
   try {
-    await api.delete('/api/v1/users/me', {
+    await api.delete("/api/v1/users/me", {
       body: JSON.stringify({
         password: form.password,
         confirmation: form.confirmation,
       }),
     });
     authStore.clearAuth();
-    navigateTo('/auth/login');
+    navigateTo("/auth/login");
   } catch (e: any) {
-    toast.error(e.message || 'Failed to delete account');
+    toast.error(e.message || "Failed to delete account");
   } finally {
     isDeleting.value = false;
   }
@@ -661,5 +775,7 @@ const deleteAccount = async () => {
 - [ ] Connected accounts (OAuth) management
 - [ ] Delete account requires password + "DELETE"
 - [ ] Delete account lists what will be deleted
+- [ ] Admin console lists all users and allows management
+- [ ] Reset password functionality for admins
 - [ ] Success/error toasts displayed
 - [ ] Responsive design

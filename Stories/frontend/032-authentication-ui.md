@@ -1,22 +1,33 @@
 # Story 032: Authentication UI
 
 ## Title
+
 Implement Login, Registration, and Authentication Flow
 
 ## Description
+
 As a user, I want to login, register, and manage my authentication so that I can access my calendars and contacts.
 
 ## Related Acceptance Criteria
 
-| ID | Criterion |
-|----|-----------|
-| UM-1.1.1 | Users can create an account with email and password |
-| AU-2.1.1 | Users can login with email and password |
-| AU-2.1.5 | Users can manually logout |
-| AU-2.2.1 | Users can login via Google OAuth |
-| AU-2.2.2 | Users can login via Microsoft/Azure AD |
+| ID       | Criterion                                                                           |
+| -------- | ----------------------------------------------------------------------------------- |
+| UM-1.1.1 | Users can create an account with email and password                                 |
+| AU-2.1.1 | Users can login with email and password                                             |
+| AU-2.1.5 | Users can manually logout                                                           |
+| AU-2.2.1 | Users can login via OAuth/SAML                                                      |
+| UM-1.3.6 | The system settings endpoint provides information if an admin is already configured |
+| UM-1.3.7 | Initial setup allows creating the first admin account without authentication        |
 
 ## Acceptance Criteria
+
+### Initial System Setup
+
+- [ ] Route: `/auth/setup`
+- [ ] Only accessible if `admin_configured` is `false` in system settings
+- [ ] Same fields as registration: Email, Username, Password, Display Name
+- [ ] Submitting creates the first user and grants them the `admin` role
+- [ ] After success, redirects to login (or auto-logins)
 
 ### Login Page
 
@@ -26,7 +37,7 @@ As a user, I want to login, register, and manage my authentication so that I can
 - [ ] "Remember me" checkbox (optional)
 - [ ] Submit button with loading state
 - [ ] Link to registration page
-- [ ] Link to forgot password page
+- [ ] Link to forgot password page (hidden if `smtp_enabled` is `false` in system settings)
 - [ ] Error messages for invalid credentials
 - [ ] Redirect to calendar after successful login
 
@@ -86,40 +97,47 @@ As a user, I want to login, register, and manage my authentication so that I can
 ## Technical Notes
 
 ### Auth Store
+
 ```typescript
 // stores/auth.ts
-import { defineStore } from 'pinia';
-import type { User, LoginRequest, RegisterRequest } from '~/types';
+import { defineStore } from "pinia";
+import type { User, LoginRequest, RegisterRequest } from "~/types";
 
 interface AuthState {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
 }
 
-export const useAuthStore = defineStore('auth', {
+export const useAuthStore = defineStore("auth", {
   state: (): AuthState => ({
     user: null,
     accessToken: null,
     isAuthenticated: false,
+    isAdmin: false,
     isLoading: true,
   }),
 
   actions: {
     async login(credentials: LoginRequest) {
       const api = useApi();
-      const response = await api.post<LoginResponse>('/api/v1/auth/login', credentials);
+      const response = await api.post<LoginResponse>(
+        "/api/v1/auth/login",
+        credentials,
+      );
 
       this.accessToken = response.access_token;
       this.user = response.user;
       this.isAuthenticated = true;
+      this.isAdmin = response.user.is_admin || false;
 
       // Store refresh token in cookie
-      const refreshCookie = useCookie('refresh_token', {
+      const refreshCookie = useCookie("refresh_token", {
         httpOnly: false, // Client needs to send it
         secure: true,
-        sameSite: 'strict',
+        sameSite: "strict",
         maxAge: 60 * 60 * 24 * 7, // 7 days
       });
       refreshCookie.value = response.refresh_token;
@@ -130,29 +148,34 @@ export const useAuthStore = defineStore('auth', {
 
     async register(data: RegisterRequest) {
       const api = useApi();
-      await api.post('/api/v1/auth/register', data);
+      await api.post("/api/v1/auth/register", data);
+    },
+
+    async setupAdmin(data: RegisterRequest) {
+      const api = useApi();
+      await api.post("/api/v1/auth/setup", data);
     },
 
     async logout() {
       const api = useApi();
       try {
-        await api.post('/api/v1/auth/logout', {});
+        await api.post("/api/v1/auth/logout", {});
       } finally {
         this.clearAuth();
-        navigateTo('/auth/login');
+        navigateTo("/auth/login");
       }
     },
 
     async refreshToken() {
-      const refreshCookie = useCookie('refresh_token');
+      const refreshCookie = useCookie("refresh_token");
       if (!refreshCookie.value) {
         this.clearAuth();
         return;
       }
 
       try {
-        const response = await $fetch<RefreshResponse>('/api/v1/auth/refresh', {
-          method: 'POST',
+        const response = await $fetch<RefreshResponse>("/api/v1/auth/refresh", {
+          method: "POST",
           body: { refresh_token: refreshCookie.value },
         });
 
@@ -173,7 +196,8 @@ export const useAuthStore = defineStore('auth', {
       this.user = null;
       this.accessToken = null;
       this.isAuthenticated = false;
-      const refreshCookie = useCookie('refresh_token');
+      this.isAdmin = false;
+      const refreshCookie = useCookie("refresh_token");
       refreshCookie.value = null;
     },
 
@@ -188,18 +212,22 @@ export const useAuthStore = defineStore('auth', {
 
     async fetchUser() {
       const api = useApi();
-      this.user = await api.get<User>('/api/v1/users/me');
+      this.user = await api.get<User>("/api/v1/users/me");
       this.isAuthenticated = true;
+      this.isAdmin = this.user.is_admin || false;
     },
   },
 });
 ```
 
 ### Login Page Component
+
 ```vue
 <!-- pages/auth/login.vue -->
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
+  <div
+    class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4"
+  >
     <div class="max-w-md w-full space-y-8">
       <div>
         <h2 class="mt-6 text-center text-3xl font-bold text-gray-900">
@@ -221,11 +249,16 @@ export const useAuthStore = defineStore('auth', {
               class="w-full"
               :class="{ 'p-invalid': errors.email }"
             />
-            <small v-if="errors.email" class="p-error">{{ errors.email }}</small>
+            <small v-if="errors.email" class="p-error">{{
+              errors.email
+            }}</small>
           </div>
 
           <div>
-            <label for="password" class="block text-sm font-medium text-gray-700">
+            <label
+              for="password"
+              class="block text-sm font-medium text-gray-700"
+            >
               Password
             </label>
             <Password
@@ -293,7 +326,10 @@ export const useAuthStore = defineStore('auth', {
 
       <p class="mt-2 text-center text-sm text-gray-600">
         Don't have an account?
-        <NuxtLink to="/auth/register" class="text-primary-600 hover:text-primary-500">
+        <NuxtLink
+          to="/auth/register"
+          class="text-primary-600 hover:text-primary-500"
+        >
           Sign up
         </NuxtLink>
       </p>
@@ -303,34 +339,34 @@ export const useAuthStore = defineStore('auth', {
 
 <script setup lang="ts">
 definePageMeta({
-  layout: 'auth',
-  middleware: 'guest',
+  layout: "auth",
+  middleware: "guest",
 });
 
 const authStore = useAuthStore();
 const router = useRouter();
 
 const form = reactive({
-  email: '',
-  password: '',
+  email: "",
+  password: "",
 });
 
 const errors = reactive({
-  email: '',
+  email: "",
 });
 
 const isLoading = ref(false);
-const error = ref('');
+const error = ref("");
 
 const handleLogin = async () => {
-  error.value = '';
+  error.value = "";
   isLoading.value = true;
 
   try {
     await authStore.login(form);
-    router.push('/calendar');
+    router.push("/calendar");
   } catch (e: any) {
-    error.value = e.data?.message || 'Invalid email or password';
+    error.value = e.data?.message || "Invalid email or password";
   } finally {
     isLoading.value = false;
   }
@@ -340,10 +376,25 @@ const loginWithOAuth = (provider: string) => {
   const config = useRuntimeConfig();
   window.location.href = `${config.public.apiBaseUrl}/api/v1/auth/oauth/${provider}`;
 };
+
+// Check system settings for SMTP and Admin configuration
+const systemSettings = ref({ smtp_enabled: true, admin_configured: true });
+onMounted(async () => {
+  try {
+    const api = useApi();
+    systemSettings.value = await api.get("/api/v1/system/settings");
+    if (!systemSettings.value.admin_configured) {
+      router.push("/auth/setup");
+    }
+  } catch (e) {
+    // Fallback or handle error
+  }
+});
 </script>
 ```
 
 ### Auth Middleware
+
 ```typescript
 // middleware/auth.ts
 export default defineNuxtRouteMiddleware(async (to) => {
@@ -355,25 +406,27 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   // Protected routes
-  if (!authStore.isAuthenticated && !to.path.startsWith('/auth')) {
-    return navigateTo('/auth/login');
+  if (!authStore.isAuthenticated && !to.path.startsWith("/auth")) {
+    return navigateTo("/auth/login");
   }
 });
 ```
 
 ### Guest Middleware (for auth pages)
+
 ```typescript
 // middleware/guest.ts
 export default defineNuxtRouteMiddleware(() => {
   const authStore = useAuthStore();
 
   if (authStore.isAuthenticated) {
-    return navigateTo('/calendar');
+    return navigateTo("/calendar");
   }
 });
 ```
 
 ### Password Strength Indicator
+
 ```vue
 <!-- components/auth/PasswordStrength.vue -->
 <template>
@@ -397,9 +450,21 @@ const props = defineProps<{
   password: string;
 }>();
 
-const strengthLabels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-const strengthColors = ['', 'bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
-const strengthTextColors = ['', 'text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500'];
+const strengthLabels = ["", "Weak", "Fair", "Good", "Strong"];
+const strengthColors = [
+  "",
+  "bg-red-500",
+  "bg-orange-500",
+  "bg-yellow-500",
+  "bg-green-500",
+];
+const strengthTextColors = [
+  "",
+  "text-red-500",
+  "text-orange-500",
+  "text-yellow-500",
+  "text-green-500",
+];
 
 const strength = computed(() => {
   const password = props.password;
@@ -417,6 +482,7 @@ const strength = computed(() => {
 ```
 
 ### Auth Layout
+
 ```vue
 <!-- layouts/auth.vue -->
 <template>
@@ -448,12 +514,12 @@ const strength = computed(() => {
 
 <script setup lang="ts">
 definePageMeta({
-  layout: 'auth',
+  layout: "auth",
 });
 
 const route = useRoute();
 const authStore = useAuthStore();
-const error = ref('');
+const error = ref("");
 
 onMounted(async () => {
   const { access_token, refresh_token, error: oauthError } = route.query;
@@ -465,13 +531,13 @@ onMounted(async () => {
 
   if (access_token && refresh_token) {
     authStore.accessToken = access_token as string;
-    const refreshCookie = useCookie('refresh_token');
+    const refreshCookie = useCookie("refresh_token");
     refreshCookie.value = refresh_token as string;
 
     await authStore.fetchUser();
-    navigateTo('/calendar');
+    navigateTo("/calendar");
   } else {
-    error.value = 'Invalid authentication response';
+    error.value = "Invalid authentication response";
   }
 });
 </script>
@@ -479,6 +545,7 @@ onMounted(async () => {
 
 ## Definition of Done
 
+- [ ] Initial setup page for first admin creation
 - [ ] Login page with email/password form
 - [ ] Login form validation and error display
 - [ ] OAuth login buttons (Google, Microsoft)

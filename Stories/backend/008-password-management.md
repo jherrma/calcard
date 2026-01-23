@@ -1,21 +1,24 @@
 # Story 008: Password Management
 
 ## Title
+
 Implement Password Change and Reset Functionality
 
 ## Description
+
 As a user, I want to change my password and recover access if I forget it, so that I can maintain secure access to my account.
 
 ## Related Acceptance Criteria
 
-| ID | Criterion |
-|----|-----------|
-| UM-1.2.1 | Users can change their password when logged in |
-| UM-1.2.2 | Password change requires current password confirmation |
-| UM-1.2.3 | Users can request password reset via email |
-| UM-1.2.4 | Password reset links expire after configured time (e.g., 1 hour) |
-| UM-1.2.5 | Password reset invalidates previous reset links |
-| UM-1.2.6 | All sessions are invalidated after password change |
+| ID       | Criterion                                                                                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| UM-1.2.1 | Users can change their password when logged in                                                                                                                     |
+| UM-1.2.2 | Password change requires current password confirmation                                                                                                             |
+| UM-1.2.3 | Users can request password reset via email if the server has smtp configured                                                                                       |
+| UM-1.2.4 | Password reset links expire after configured time (e.g., 1 hour)                                                                                                   |
+| UM-1.2.5 | Password reset invalidates previous reset links                                                                                                                    |
+| UM-1.2.6 | All sessions are invalidated after password change                                                                                                                 |
+| UM-1.2.7 | The server provides an endpoint for system settings like if smtp is configured in order for the frontend application to determine if it can offer a password reset |
 
 ## Acceptance Criteria
 
@@ -71,11 +74,13 @@ As a user, I want to change my password and recover access if I forget it, so th
 ## Technical Notes
 
 ### New Configuration
+
 ```
 CALDAV_PASSWORD_RESET_EXPIRY   (default: "1h")
 ```
 
 ### New Database Table
+
 ```go
 type PasswordReset struct {
     ID        uint      `gorm:"primaryKey"`
@@ -89,6 +94,7 @@ type PasswordReset struct {
 ```
 
 ### Code Structure
+
 ```
 internal/usecase/auth/
 ├── change_password.go    # Password change use case
@@ -107,6 +113,7 @@ internal/infrastructure/email/
 ## API Response Examples
 
 ### Password Change Success (200 OK)
+
 ```json
 {
   "message": "Password changed successfully",
@@ -115,6 +122,7 @@ internal/infrastructure/email/
 ```
 
 ### Password Change - Wrong Current Password (401)
+
 ```json
 {
   "error": "authentication_failed",
@@ -123,6 +131,7 @@ internal/infrastructure/email/
 ```
 
 ### Forgot Password (200 OK - Always)
+
 ```json
 {
   "message": "If an account with that email exists, a password reset link has been sent."
@@ -130,6 +139,7 @@ internal/infrastructure/email/
 ```
 
 ### Reset Password Success (200 OK)
+
 ```json
 {
   "message": "Password has been reset successfully. Please login with your new password."
@@ -137,6 +147,7 @@ internal/infrastructure/email/
 ```
 
 ### Reset Password - Invalid Token (400)
+
 ```json
 {
   "error": "invalid_token",
@@ -147,6 +158,7 @@ internal/infrastructure/email/
 ## Email Templates
 
 ### Password Reset Email
+
 ```
 Subject: Reset your CalDAV Server password
 
