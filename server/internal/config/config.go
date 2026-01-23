@@ -55,6 +55,7 @@ type JWTConfig struct {
 	Secret        string        `yaml:"secret" env:"CALDAV_JWT_SECRET"`
 	AccessExpiry  time.Duration `yaml:"access_expiry" env:"CALDAV_JWT_ACCESS_EXPIRY"`
 	RefreshExpiry time.Duration `yaml:"refresh_expiry" env:"CALDAV_JWT_REFRESH_EXPIRY"`
+	ResetExpiry   time.Duration `yaml:"reset_expiry" env:"CALDAV_PASSWORD_RESET_EXPIRY"`
 }
 
 // RateLimitConfig contains rate limiting settings
@@ -105,6 +106,7 @@ func Load(configPath string) (*Config, error) {
 		JWT: JWTConfig{
 			AccessExpiry:  10 * time.Minute,
 			RefreshExpiry: 7 * 24 * time.Hour,
+			ResetExpiry:   time.Hour,
 		},
 		RateLimit: RateLimitConfig{
 			Enabled: true,

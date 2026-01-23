@@ -21,6 +21,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	userRepo := repository.NewUserRepository(db.DB())
 	tokenRepo := repository.NewRefreshTokenRepository(db.DB())
 	systemRepo := repository.NewSystemSettingRepository(db.DB())
+	resetRepo := repository.NewGORMPasswordResetRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -37,9 +38,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg)
 	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager)
 	logoutUC := authusecase.NewLogoutUseCase(tokenRepo, jwtManager)
+	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager)
+	forgotPasswordUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, emailService, cfg.JWT.ResetExpiry)
+	resetPasswordUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo, tokenRepo)
 
 	// Handlers
-	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC)
+	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
+	userHandler := http.NewUserHandler(changePasswordUC)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Routes
@@ -61,4 +66,10 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	authGroup.Post("/refresh", authHandler.Refresh)
 	authGroup.Post("/logout", authHandler.Logout)
+	authGroup.Post("/forgot-password", authHandler.ForgotPassword)
+	authGroup.Post("/reset-password", authHandler.ResetPassword)
+
+	// User Routes (Protected)
+	userGroup := v1.Group("/users", http.Authenticate(jwtManager))
+	userGroup.Put("/me/password", userHandler.ChangePassword)
 }

@@ -37,3 +37,21 @@ func (s *smtpEmailService) SendActivationEmail(ctx context.Context, to, link str
 
 	return smtp.SendMail(addr, auth, s.cfg.From, []string{to}, []byte(msg))
 }
+
+func (s *smtpEmailService) SendEmail(ctx context.Context, to, subject, body string) error {
+	if s.cfg.Host == "" {
+		fmt.Printf("SMTP not configured, would send email to %s: %s - %s\n", to, subject, body)
+		return nil
+	}
+
+	msg := fmt.Sprintf("From: %s\r\n"+
+		"To: %s\r\n"+
+		"Subject: %s\r\n"+
+		"\r\n"+
+		"%s\r\n", s.cfg.From, to, subject, body)
+
+	authData := smtp.PlainAuth("", s.cfg.User, s.cfg.Password, s.cfg.Host)
+	addr := fmt.Sprintf("%s:%s", s.cfg.Host, s.cfg.Port)
+
+	return smtp.SendMail(addr, authData, s.cfg.From, []string{to}, []byte(msg))
+}

@@ -35,6 +35,14 @@ func (m *mockUserRepo) GetByUUID(ctx context.Context, uuid string) (*user.User, 
 	return args.Get(0).(*user.User), args.Error(1)
 }
 
+func (m *mockUserRepo) GetByID(ctx context.Context, id uint) (*user.User, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*user.User), args.Error(1)
+}
+
 func (m *mockUserRepo) Update(ctx context.Context, u *user.User) error {
 	args := m.Called(ctx, u)
 	return args.Error(0)
@@ -64,6 +72,11 @@ type mockEmailService struct {
 
 func (m *mockEmailService) SendActivationEmail(ctx context.Context, to, link string) error {
 	args := m.Called(ctx, to, link)
+	return args.Error(0)
+}
+
+func (m *mockEmailService) SendEmail(ctx context.Context, to, subject, body string) error {
+	args := m.Called(ctx, to, subject, body)
 	return args.Error(0)
 }
 

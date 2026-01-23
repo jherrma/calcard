@@ -11,6 +11,7 @@ func Models() []interface{} {
 		&user.User{},
 		&user.EmailVerification{},
 		&user.RefreshToken{},
+		&user.PasswordReset{},
 		&domain.SystemSetting{},
 	}
 }

@@ -1,8 +1,12 @@
 package http
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
+	"github.com/jherrma/caldav-server/internal/config"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 )
 
@@ -12,6 +16,9 @@ type AuthHandler struct {
 	loginUC    *authusecase.LoginUseCase
 	refreshUC  *authusecase.RefreshUseCase
 	logoutUC   *authusecase.LogoutUseCase
+	forgotUC   *authusecase.ForgotPasswordUseCase
+	resetUC    *authusecase.ResetPasswordUseCase
+	config     *config.Config
 }
 
 func NewAuthHandler(
@@ -20,6 +27,9 @@ func NewAuthHandler(
 	loginUC *authusecase.LoginUseCase,
 	refreshUC *authusecase.RefreshUseCase,
 	logoutUC *authusecase.LogoutUseCase,
+	forgotUC *authusecase.ForgotPasswordUseCase,
+	resetUC *authusecase.ResetPasswordUseCase,
+	cfg *config.Config,
 ) *AuthHandler {
 	return &AuthHandler{
 		registerUC: registerUC,
@@ -27,6 +37,9 @@ func NewAuthHandler(
 		loginUC:    loginUC,
 		refreshUC:  refreshUC,
 		logoutUC:   logoutUC,
+		forgotUC:   forgotUC,
+		resetUC:    resetUC,
+		config:     cfg,
 	}
 }
 
@@ -134,4 +147,51 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	}
 
 	return SuccessResponse(c, "Logged out successfully")
+}
+
+// ForgotPassword (POST /api/v1/auth/forgot-password)
+func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequestResponse(c, "Invalid request body")
+	}
+
+	usecaseReq := authusecase.ForgotPasswordRequest{
+		Email:   req.Email,
+		BaseURL: h.config.BaseURL,
+	}
+
+	if err := h.forgotUC.Execute(c.Context(), usecaseReq); err != nil {
+		// Log error but return success to prevent enumeration
+		fmt.Printf("Forgot password failed: %v\n", err)
+	}
+
+	return SuccessResponse(c, "If an account with that email exists, a password reset link has been sent.")
+}
+
+// ResetPassword (POST /api/v1/auth/reset-password)
+func (h *AuthHandler) ResetPassword(c fiber.Ctx) error {
+	var req struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequestResponse(c, "Invalid request body")
+	}
+
+	usecaseReq := authusecase.ResetPasswordRequest{
+		Token:       req.Token,
+		NewPassword: req.NewPassword,
+	}
+
+	if err := h.resetUC.Execute(c.Context(), usecaseReq); err != nil {
+		if errors.Is(err, authusecase.ErrInvalidToken) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
+		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to reset password")
+	}
+
+	return SuccessResponse(c, "Password has been reset successfully. Please login with your new password.")
 }

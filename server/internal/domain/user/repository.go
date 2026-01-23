@@ -10,6 +10,7 @@ type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByUUID(ctx context.Context, uuid string) (*User, error)
+	GetByID(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, user *User) error
 
 	CreateVerification(ctx context.Context, v *EmailVerification) error
@@ -22,6 +23,13 @@ type RefreshTokenRepository interface {
 	Create(ctx context.Context, token *RefreshToken) error
 	GetByHash(ctx context.Context, hash string) (*RefreshToken, error)
 	DeleteByHash(ctx context.Context, hash string) error
+	DeleteByUserID(ctx context.Context, userID uint) error
+}
+
+// PasswordResetRepository defines the interface for password reset persistence
+type PasswordResetRepository interface {
+	Create(ctx context.Context, reset *PasswordReset) error
+	GetByHash(ctx context.Context, hash string) (*PasswordReset, error)
 	DeleteByUserID(ctx context.Context, userID uint) error
 }
 

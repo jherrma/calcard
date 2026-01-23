@@ -46,6 +46,17 @@ func (r *gormUserRepo) GetByUUID(ctx context.Context, uuid string) (*user.User, 
 	return &u, nil
 }
 
+func (r *gormUserRepo) GetByID(ctx context.Context, id uint) (*user.User, error) {
+	var u user.User
+	if err := r.db.WithContext(ctx).First(&u, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
 func (r *gormUserRepo) Update(ctx context.Context, u *user.User) error {
 	return r.db.WithContext(ctx).Save(u).Error
 }
