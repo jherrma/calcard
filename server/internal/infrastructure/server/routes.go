@@ -13,6 +13,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
+	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
 
 // SetupRoutes registers all application routes
@@ -42,9 +43,14 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	forgotPasswordUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, emailService, cfg.JWT.ResetExpiry)
 	resetPasswordUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo, tokenRepo)
 
+	// User Use Cases
+	getProfileUC := userusecase.NewGetProfileUseCase(userRepo)
+	updateProfileUC := userusecase.NewUpdateProfileUseCase(userRepo)
+	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
+
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
-	userHandler := http.NewUserHandler(changePasswordUC)
+	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Routes
@@ -71,5 +77,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	// User Routes (Protected)
 	userGroup := v1.Group("/users", http.Authenticate(jwtManager))
+	userGroup.Get("/me", userHandler.GetProfile)
+	userGroup.Patch("/me", userHandler.UpdateProfile)
+	userGroup.Delete("/me", userHandler.DeleteAccount)
 	userGroup.Put("/me/password", userHandler.ChangePassword)
 }

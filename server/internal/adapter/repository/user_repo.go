@@ -61,6 +61,24 @@ func (r *gormUserRepo) Update(ctx context.Context, u *user.User) error {
 	return r.db.WithContext(ctx).Save(u).Error
 }
 
+func (r *gormUserRepo) Delete(ctx context.Context, userID uint) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Hard delete related data
+		if err := tx.Where("user_id = ?", userID).Delete(&user.RefreshToken{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&user.PasswordReset{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&user.EmailVerification{}).Error; err != nil {
+			return err
+		}
+
+		// Soft delete user
+		return tx.Delete(&user.User{}, userID).Error
+	})
+}
+
 func (r *gormUserRepo) CreateVerification(ctx context.Context, v *user.EmailVerification) error {
 	return r.db.WithContext(ctx).Create(v).Error
 }
