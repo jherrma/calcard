@@ -9,6 +9,7 @@ import (
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByUUID(ctx context.Context, uuid string) (*User, error)
 	GetByID(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, user *User) error
@@ -25,6 +26,15 @@ type RefreshTokenRepository interface {
 	GetByHash(ctx context.Context, hash string) (*RefreshToken, error)
 	DeleteByHash(ctx context.Context, hash string) error
 	DeleteByUserID(ctx context.Context, userID uint) error
+}
+
+// AppPasswordRepository defines the interface for app password persistence
+type AppPasswordRepository interface {
+	Create(ctx context.Context, ap *AppPassword) error
+	GetByUUID(ctx context.Context, uuid string) (*AppPassword, error)
+	ListByUserID(ctx context.Context, userID uint) ([]AppPassword, error)
+	Update(ctx context.Context, ap *AppPassword) error
+	FindValidForUser(ctx context.Context, userID uint, password string) (*AppPassword, error)
 }
 
 // PasswordResetRepository defines the interface for password reset persistence

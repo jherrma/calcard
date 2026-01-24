@@ -36,23 +36,23 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
 
 ### Principal Discovery
 
-- [ ] `PROPFIND /dav/principals/{<url-encoded-email>}/` returns:
-  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{<url-encoded-email>}/`
+- [ ] `PROPFIND /dav/principals/{username}/` returns:
+  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{username}/`
   - [ ] (Already implemented in Story 014 for CalDAV)
 
 ### Address Book Home
 
-- [ ] `PROPFIND /dav/addressbooks/{<url-encoded-email>}/` (Depth: 0) returns:
+- [ ] `PROPFIND /dav/addressbooks/{username}/` (Depth: 0) returns:
   - [ ] `resourcetype` (collection)
   - [ ] `displayname`
   - [ ] `current-user-privilege-set`
-- [ ] `PROPFIND /dav/addressbooks/{<url-encoded-email>}/` (Depth: 1) returns:
+- [ ] `PROPFIND /dav/addressbooks/{username}/` (Depth: 1) returns:
   - [ ] List of all address books
   - [ ] Each address book's properties
 
 ### Address Book Collection Properties
 
-- [ ] `PROPFIND /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/` returns:
+- [ ] `PROPFIND /dav/addressbooks/{username}/{addressbook-id}/` returns:
   - [ ] `resourcetype` (collection, addressbook)
   - [ ] `displayname`
   - [ ] `addressbook-description`
@@ -63,31 +63,31 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
 
 ### Address Book Operations
 
-- [ ] `MKCOL /dav/addressbooks/{<url-encoded-email>}/{new-addressbook}/`
+- [ ] `MKCOL /dav/addressbooks/{username}/{new-addressbook}/`
   - [ ] Creates new address book
   - [ ] Request body can include properties (displayname)
   - [ ] Returns 201 Created
-- [ ] `DELETE /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/`
+- [ ] `DELETE /dav/addressbooks/{username}/{addressbook-id}/`
   - [ ] Deletes address book and all contacts
   - [ ] Returns 204 No Content
-- [ ] `PROPPATCH /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/`
+- [ ] `PROPPATCH /dav/addressbooks/{username}/{addressbook-id}/`
   - [ ] Updates address book properties
   - [ ] Returns 207 Multi-Status
 
 ### Contact Operations
 
-- [ ] `PUT /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/{contact-uid}.vcf`
+- [ ] `PUT /dav/addressbooks/{username}/{addressbook-id}/{contact-uid}.vcf`
   - [ ] Creates new contact if not exists
   - [ ] Updates existing contact with `If-Match: {etag}` header
   - [ ] Accepts both vCard 3.0 and 4.0 formats
   - [ ] Returns 201 Created (new) or 204 No Content (update)
   - [ ] Returns `ETag` header
   - [ ] Updates address book CTag and sync-token
-- [ ] `GET /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/{contact-uid}.vcf`
+- [ ] `GET /dav/addressbooks/{username}/{addressbook-id}/{contact-uid}.vcf`
   - [ ] Returns vCard data
   - [ ] Returns `ETag` header
   - [ ] Content-Type: `text/vcard; charset=utf-8`
-- [ ] `DELETE /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/{contact-uid}.vcf`
+- [ ] `DELETE /dav/addressbooks/{username}/{addressbook-id}/{contact-uid}.vcf`
   - [ ] Deletes contact
   - [ ] Updates address book CTag and sync-token
   - [ ] Returns 204 No Content
@@ -100,6 +100,7 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
 ### REPORT Queries
 
 - [ ] `REPORT addressbook-query`:
+
   ```xml
   <addressbook-query xmlns="urn:ietf:params:xml:ns:carddav">
     <prop>
@@ -120,7 +121,9 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
   - [ ] Supports prop-filter on any vCard property
   - [ ] Supports text-match with collation and match-type
   - [ ] Match types: equals, contains, starts-with, ends-with
+
 - [ ] `REPORT addressbook-multiget`:
+
   ```xml
   <addressbook-multiget xmlns="urn:ietf:params:xml:ns:carddav">
     <prop>
@@ -176,10 +179,10 @@ func (b *CardDAVBackend) DeleteAddressObject(ctx context.Context, path string) e
 
 ```
 /dav/                                         # DAV root
-/dav/principals/{<url-encoded-email>}/                   # User principal
-/dav/addressbooks/{<url-encoded-email>}/                 # Address book home
-/dav/addressbooks/{<url-encoded-email>}/{ab-uuid}/       # Address book collection
-/dav/addressbooks/{<url-encoded-email>}/{ab-uuid}/{contact-uid}.vcf  # Contact resource
+/dav/principals/{username}/                   # User principal
+/dav/addressbooks/{username}/                 # Address book home
+/dav/addressbooks/{username}/{ab-uuid}/       # Address book collection
+/dav/addressbooks/{username}/{ab-uuid}/{contact-uid}.vcf  # Contact resource
 ```
 
 ### vCard Validation

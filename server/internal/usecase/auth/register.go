@@ -28,8 +28,9 @@ func NewRegisterUseCase(repo user.UserRepository, emailService EmailService, cfg
 	return &RegisterUseCase{repo: repo, emailService: emailService, cfg: cfg}
 }
 
-func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, displayName string) (*user.User, string, error) {
+func (uc *RegisterUseCase) Execute(ctx context.Context, email, username, password, displayName string) (*user.User, string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
+	username = strings.ToLower(strings.TrimSpace(username))
 	// 1. Validate domain rules
 	if err := user.ValidateEmail(email); err != nil {
 		return nil, "", err
@@ -47,6 +48,15 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		return nil, "", ErrUserAlreadyExists
 	}
 
+	// 2b. Check for duplicate username
+	existingUserByUsername, err := uc.repo.GetByUsername(ctx, username)
+	if err != nil {
+		return nil, "", err
+	}
+	if existingUserByUsername != nil {
+		return nil, "", errors.New("username already taken")
+	}
+
 	// 3. Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
@@ -57,6 +67,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 	u := &user.User{
 		UUID:         uuid.New().String(),
 		Email:        email,
+		Username:     username,
 		PasswordHash: string(hash),
 		DisplayName:  displayName,
 	}

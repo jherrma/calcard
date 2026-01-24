@@ -38,25 +38,25 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
 
 ### Principal Discovery
 
-- [ ] `PROPFIND /dav/principals/{<url-encoded-email>}/` returns:
+- [ ] `PROPFIND /dav/principals/{username}/` returns:
   - [ ] `current-user-principal`
-  - [ ] `calendar-home-set` -> `/dav/calendars/{<url-encoded-email>}/`
-  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{<url-encoded-email>}/`
+  - [ ] `calendar-home-set` -> `/dav/calendars/{username}/`
+  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{username}/`
   - [ ] `displayname`
 
 ### Calendar Home
 
-- [ ] `PROPFIND /dav/calendars/{<url-encoded-email>}/` (Depth: 0) returns:
+- [ ] `PROPFIND /dav/calendars/{username}/` (Depth: 0) returns:
   - [ ] `resourcetype` (collection)
   - [ ] `displayname`
   - [ ] `current-user-privilege-set`
-- [ ] `PROPFIND /dav/calendars/{<url-encoded-email>}/` (Depth: 1) returns:
+- [ ] `PROPFIND /dav/calendars/{username}/` (Depth: 1) returns:
   - [ ] List of all calendars
   - [ ] Each calendar's properties
 
 ### Calendar Collection Properties
 
-- [ ] `PROPFIND /dav/calendars/{<url-encoded-email>}/{calendar-id}/` returns:
+- [ ] `PROPFIND /dav/calendars/{username}/{calendar-id}/` returns:
   - [ ] `resourcetype` (collection, calendar)
   - [ ] `displayname`
   - [ ] `calendar-description`
@@ -68,30 +68,30 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
 
 ### Calendar Operations
 
-- [ ] `MKCALENDAR /dav/calendars/{<url-encoded-email>}/{new-calendar}/`
+- [ ] `MKCALENDAR /dav/calendars/{username}/{new-calendar}/`
   - [ ] Creates new calendar
   - [ ] Request body can include properties (displayname, color)
   - [ ] Returns 201 Created
-- [ ] `DELETE /dav/calendars/{<url-encoded-email>}/{calendar-id}/`
+- [ ] `DELETE /dav/calendars/{username}/{calendar-id}/`
   - [ ] Deletes calendar and all events
   - [ ] Returns 204 No Content
-- [ ] `PROPPATCH /dav/calendars/{<url-encoded-email>}/{calendar-id}/`
+- [ ] `PROPPATCH /dav/calendars/{username}/{calendar-id}/`
   - [ ] Updates calendar properties
   - [ ] Returns 207 Multi-Status
 
 ### Event Operations
 
-- [ ] `PUT /dav/calendars/{<url-encoded-email>}/{calendar-id}/{event-uid}.ics`
+- [ ] `PUT /dav/calendars/{username}/{calendar-id}/{event-uid}.ics`
   - [ ] Creates new event if not exists
   - [ ] Updates existing event with `If-Match: {etag}` header
   - [ ] Returns 201 Created (new) or 204 No Content (update)
   - [ ] Returns `ETag` header
   - [ ] Updates calendar CTag and sync-token
-- [ ] `GET /dav/calendars/{<url-encoded-email>}/{calendar-id}/{event-uid}.ics`
+- [ ] `GET /dav/calendars/{username}/{calendar-id}/{event-uid}.ics`
   - [ ] Returns iCalendar data
   - [ ] Returns `ETag` header
   - [ ] Content-Type: `text/calendar; charset=utf-8`
-- [ ] `DELETE /dav/calendars/{<url-encoded-email>}/{calendar-id}/{event-uid}.ics`
+- [ ] `DELETE /dav/calendars/{username}/{calendar-id}/{event-uid}.ics`
   - [ ] Deletes event
   - [ ] Updates calendar CTag and sync-token
   - [ ] Returns 204 No Content
@@ -104,6 +104,7 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
 ### REPORT Queries
 
 - [ ] `REPORT calendar-query`:
+
   ```xml
   <calendar-query xmlns="urn:ietf:params:xml:ns:caldav">
     <prop>
@@ -123,7 +124,9 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
   - [ ] Returns events matching filter
   - [ ] Supports time-range filtering
   - [ ] Supports component type filtering
+
 - [ ] `REPORT calendar-multiget`:
+
   ```xml
   <calendar-multiget xmlns="urn:ietf:params:xml:ns:caldav">
     <prop>
@@ -171,10 +174,10 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, path string) e
 
 ```
 /dav/                                    # DAV root
-/dav/principals/{<url-encoded-email>}/              # User principal
-/dav/calendars/{<url-encoded-email>}/               # Calendar home
-/dav/calendars/{<url-encoded-email>}/{cal-uuid}/    # Calendar collection
-/dav/calendars/{<url-encoded-email>}/{cal-uuid}/{event-uid}.ics  # Event resource
+/dav/principals/{username}/              # User principal
+/dav/calendars/{username}/               # Calendar home
+/dav/calendars/{username}/{cal-uuid}/    # Calendar collection
+/dav/calendars/{username}/{cal-uuid}/{event-uid}.ics  # Event resource
 ```
 
 ### Code Structure

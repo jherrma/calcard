@@ -12,6 +12,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
+	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
@@ -23,6 +24,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	tokenRepo := repository.NewRefreshTokenRepository(db.DB())
 	systemRepo := repository.NewSystemSettingRepository(db.DB())
 	resetRepo := repository.NewGORMPasswordResetRepository(db.DB())
+	appPwdRepo := repository.NewAppPasswordRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -48,9 +50,15 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	updateProfileUC := userusecase.NewUpdateProfileUseCase(userRepo)
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
 
+	// App Password Use Cases
+	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo)
+	listAppPwdUC := apppassword.NewListUseCase(appPwdRepo)
+	revokeAppPwdUC := apppassword.NewRevokeUseCase(appPwdRepo)
+
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
+	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Routes
@@ -81,4 +89,10 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	userGroup.Patch("/me", userHandler.UpdateProfile)
 	userGroup.Delete("/me", userHandler.DeleteAccount)
 	userGroup.Put("/me/password", userHandler.ChangePassword)
+
+	// App Password Routes (Protected)
+	appPwdGroup := v1.Group("/app-passwords", http.Authenticate(jwtManager))
+	appPwdGroup.Post("/", appPwdHandler.Create)
+	appPwdGroup.Get("/", appPwdHandler.List)
+	appPwdGroup.Delete("/:id", appPwdHandler.Revoke)
 }

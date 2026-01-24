@@ -32,3 +32,41 @@ type DeleteAccountRequest struct {
 	Password     string `json:"password"`
 	Confirmation string `json:"confirmation"`
 }
+
+// CreateAppPasswordRequest represents the request to create an app password
+type CreateAppPasswordRequest struct {
+	Name   string   `json:"name"`
+	Scopes []string `json:"scopes"`
+}
+
+// CreateAppPasswordResponse represents the response after creating an app password
+type CreateAppPasswordResponse struct {
+	ID          string                         `json:"id"`
+	Name        string                         `json:"name"`
+	Scopes      []string                       `json:"scopes"`
+	CreatedAt   string                         `json:"created_at"`
+	Password    string                         `json:"password"`
+	Credentials AppPasswordCredentialsResponse `json:"credentials"`
+}
+
+// AppPasswordCredentialsResponse contains formatted credentials for the user
+type AppPasswordCredentialsResponse struct {
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	ServerURL string `json:"server_url"`
+}
+
+// AppPasswordResponse represents an app password in a list
+type AppPasswordResponse struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Scopes     []string `json:"scopes"`
+	CreatedAt  string   `json:"created_at"`
+	LastUsedAt *string  `json:"last_used_at"`
+	LastUsedIP *string  `json:"last_used_ip"`
+}
+
+// ListAppPasswordsResponse represents the list response
+type ListAppPasswordsResponse struct {
+	AppPasswords []AppPasswordResponse `json:"app_passwords"`
+}

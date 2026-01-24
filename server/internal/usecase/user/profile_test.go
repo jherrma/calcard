@@ -66,6 +66,14 @@ func (m *mockUserRepo) GetVerificationByToken(ctx context.Context, token string)
 	return args.Get(0).(*user.EmailVerification), args.Error(1)
 }
 
+func (m *mockUserRepo) GetByUsername(ctx context.Context, username string) (*user.User, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*user.User), args.Error(1)
+}
+
 func (m *mockUserRepo) DeleteVerification(ctx context.Context, token string) error {
 	args := m.Called(ctx, token)
 	return args.Error(0)

@@ -35,6 +35,18 @@ func (r *gormUserRepo) GetByEmail(ctx context.Context, email string) (*user.User
 	return &u, nil
 }
 
+func (r *gormUserRepo) GetByUsername(ctx context.Context, username string) (*user.User, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	var u user.User
+	if err := r.db.WithContext(ctx).Where("username = ?", username).First(&u).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
 func (r *gormUserRepo) GetByUUID(ctx context.Context, uuid string) (*user.User, error) {
 	var u user.User
 	if err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&u).Error; err != nil {
