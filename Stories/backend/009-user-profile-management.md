@@ -16,7 +16,7 @@ As a user, I want to view and update my profile information and delete my accoun
 | UM-1.3.2 | Users can view their account creation date                                                                                                                                      |
 | UM-1.3.3 | Users can delete their account                                                                                                                                                  |
 | UM-1.3.4 | Account deletion requires password confirmation                                                                                                                                 |
-| UM-1.3.5 | the first user to register is an admin account and can view other account information like username and reset their passwords and make them admin                               |
+| UM-1.3.5 | the first user to register is an admin account and can view other account information like display name and reset their passwords and make them admin                           |
 | UM-1.3.6 | the system settings endpoint provides information if an admis is already configured or not to be able to display an initial admin account creation screen                       |
 | UM-1.3.7 | the server makes sure, that an admin account can only be created once without authentication for initial setup. further promotion to admins are only allowed by existing admins |
 
@@ -30,7 +30,6 @@ As a user, I want to view and update my profile information and delete my accoun
   {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "email": "user@example.com",
-    "username": "johndoe",
     "display_name": "John Doe",
     "is_active": true,
     "email_verified": true,
@@ -54,18 +53,13 @@ As a user, I want to view and update my profile information and delete my accoun
   ```json
   {
     "display_name": "Jonathan Doe",
-    "username": "jonathandoe"
+    "email": "jonathan@doe.com"
   }
   ```
 - [ ] Display name:
   - [ ] Can be updated freely
   - [ ] Max 255 characters
   - [ ] Can be empty/null
-- [ ] Username:
-  - [ ] Same validation rules as registration
-  - [ ] Uniqueness enforced
-  - [ ] Change affects DAV paths (requires re-sync of clients)
-- [ ] Email cannot be changed via this endpoint (separate flow if needed)
 - [ ] Returns updated profile on success
 
 ### Delete Account
@@ -137,7 +131,6 @@ internal/adapter/http/
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "email": "user@example.com",
-  "username": "johndoe",
   "display_name": "John Doe",
   "is_active": true,
   "email_verified": true,
@@ -158,21 +151,11 @@ internal/adapter/http/
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "email": "user@example.com",
-  "username": "jonathandoe",
   "display_name": "Jonathan Doe",
   "is_active": true,
   "email_verified": true,
   "created_at": "2024-01-15T10:30:00Z",
   "updated_at": "2024-01-21T09:15:00Z"
-}
-```
-
-### Update Profile - Username Conflict (409)
-
-```json
-{
-  "error": "conflict",
-  "message": "Username is already taken"
 }
 ```
 
@@ -197,14 +180,6 @@ internal/adapter/http/
 ### Delete Account Success (204 No Content)
 
 No response body.
-
-## Username Change Warning
-
-When a user changes their username, a warning should be displayed:
-
-> Changing your username will update your CalDAV/CardDAV URLs. You will need to reconfigure any connected calendar or contact applications with the new URL.
-
-This is informational only - the system does not prevent the change.
 
 ## Definition of Done
 

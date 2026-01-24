@@ -1,29 +1,31 @@
 # Story 014: CalDAV Protocol Implementation
 
 ## Title
+
 Implement CalDAV Protocol Endpoints
 
 ## Description
+
 As a DAV client user, I want to access my calendars via CalDAV protocol so that I can sync events with applications like DAVx5, Apple Calendar, and Thunderbird.
 
 ## Related Acceptance Criteria
 
-| ID | Criterion |
-|----|-----------|
-| CD-3.3.1 | Server responds to OPTIONS with correct DAV headers |
-| CD-3.3.2 | /.well-known/caldav redirects to DAV root |
-| CD-3.3.3 | PROPFIND on principal returns calendar-home-set |
-| CD-3.3.4 | PROPFIND on calendar-home lists all calendars |
-| CD-3.3.5 | MKCALENDAR creates new calendar collection |
-| CD-3.3.6 | PUT creates new event in calendar |
-| CD-3.3.7 | PUT updates existing event (with correct ETag) |
-| CD-3.3.8 | PUT with wrong ETag returns 412 Precondition Failed |
-| CD-3.3.9 | GET retrieves event iCalendar data |
-| CD-3.3.10 | DELETE removes event |
-| CD-3.3.11 | REPORT calendar-query returns filtered events |
+| ID        | Criterion                                               |
+| --------- | ------------------------------------------------------- |
+| CD-3.3.1  | Server responds to OPTIONS with correct DAV headers     |
+| CD-3.3.2  | /.well-known/caldav redirects to DAV root               |
+| CD-3.3.3  | PROPFIND on principal returns calendar-home-set         |
+| CD-3.3.4  | PROPFIND on calendar-home lists all calendars           |
+| CD-3.3.5  | MKCALENDAR creates new calendar collection              |
+| CD-3.3.6  | PUT creates new event in calendar                       |
+| CD-3.3.7  | PUT updates existing event (with correct ETag)          |
+| CD-3.3.8  | PUT with wrong ETag returns 412 Precondition Failed     |
+| CD-3.3.9  | GET retrieves event iCalendar data                      |
+| CD-3.3.10 | DELETE removes event                                    |
+| CD-3.3.11 | REPORT calendar-query returns filtered events           |
 | CD-3.3.12 | REPORT calendar-multiget returns specific events by URL |
-| CD-3.3.13 | ETags change when events are modified |
-| CD-3.3.14 | CTag changes when calendar contents change |
+| CD-3.3.13 | ETags change when events are modified                   |
+| CD-3.3.14 | CTag changes when calendar contents change              |
 
 ## Acceptance Criteria
 
@@ -36,25 +38,25 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
 
 ### Principal Discovery
 
-- [ ] `PROPFIND /dav/principals/{username}/` returns:
+- [ ] `PROPFIND /dav/principals/{<url-encoded-email>}/` returns:
   - [ ] `current-user-principal`
-  - [ ] `calendar-home-set` -> `/dav/calendars/{username}/`
-  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{username}/`
+  - [ ] `calendar-home-set` -> `/dav/calendars/{<url-encoded-email>}/`
+  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{<url-encoded-email>}/`
   - [ ] `displayname`
 
 ### Calendar Home
 
-- [ ] `PROPFIND /dav/calendars/{username}/` (Depth: 0) returns:
+- [ ] `PROPFIND /dav/calendars/{<url-encoded-email>}/` (Depth: 0) returns:
   - [ ] `resourcetype` (collection)
   - [ ] `displayname`
   - [ ] `current-user-privilege-set`
-- [ ] `PROPFIND /dav/calendars/{username}/` (Depth: 1) returns:
+- [ ] `PROPFIND /dav/calendars/{<url-encoded-email>}/` (Depth: 1) returns:
   - [ ] List of all calendars
   - [ ] Each calendar's properties
 
 ### Calendar Collection Properties
 
-- [ ] `PROPFIND /dav/calendars/{username}/{calendar-id}/` returns:
+- [ ] `PROPFIND /dav/calendars/{<url-encoded-email>}/{calendar-id}/` returns:
   - [ ] `resourcetype` (collection, calendar)
   - [ ] `displayname`
   - [ ] `calendar-description`
@@ -66,30 +68,30 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
 
 ### Calendar Operations
 
-- [ ] `MKCALENDAR /dav/calendars/{username}/{new-calendar}/`
+- [ ] `MKCALENDAR /dav/calendars/{<url-encoded-email>}/{new-calendar}/`
   - [ ] Creates new calendar
   - [ ] Request body can include properties (displayname, color)
   - [ ] Returns 201 Created
-- [ ] `DELETE /dav/calendars/{username}/{calendar-id}/`
+- [ ] `DELETE /dav/calendars/{<url-encoded-email>}/{calendar-id}/`
   - [ ] Deletes calendar and all events
   - [ ] Returns 204 No Content
-- [ ] `PROPPATCH /dav/calendars/{username}/{calendar-id}/`
+- [ ] `PROPPATCH /dav/calendars/{<url-encoded-email>}/{calendar-id}/`
   - [ ] Updates calendar properties
   - [ ] Returns 207 Multi-Status
 
 ### Event Operations
 
-- [ ] `PUT /dav/calendars/{username}/{calendar-id}/{event-uid}.ics`
+- [ ] `PUT /dav/calendars/{<url-encoded-email>}/{calendar-id}/{event-uid}.ics`
   - [ ] Creates new event if not exists
   - [ ] Updates existing event with `If-Match: {etag}` header
   - [ ] Returns 201 Created (new) or 204 No Content (update)
   - [ ] Returns `ETag` header
   - [ ] Updates calendar CTag and sync-token
-- [ ] `GET /dav/calendars/{username}/{calendar-id}/{event-uid}.ics`
+- [ ] `GET /dav/calendars/{<url-encoded-email>}/{calendar-id}/{event-uid}.ics`
   - [ ] Returns iCalendar data
   - [ ] Returns `ETag` header
   - [ ] Content-Type: `text/calendar; charset=utf-8`
-- [ ] `DELETE /dav/calendars/{username}/{calendar-id}/{event-uid}.ics`
+- [ ] `DELETE /dav/calendars/{<url-encoded-email>}/{calendar-id}/{event-uid}.ics`
   - [ ] Deletes event
   - [ ] Updates calendar CTag and sync-token
   - [ ] Returns 204 No Content
@@ -117,6 +119,7 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
     </filter>
   </calendar-query>
   ```
+
   - [ ] Returns events matching filter
   - [ ] Supports time-range filtering
   - [ ] Supports component type filtering
@@ -131,18 +134,21 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
     <href>/dav/calendars/user/cal/event2.ics</href>
   </calendar-multiget>
   ```
+
   - [ ] Returns requested events by URL
   - [ ] Non-existent URLs return 404 in multistatus
 
 ## Technical Notes
 
 ### Dependencies
+
 ```go
 github.com/emersion/go-webdav  // CalDAV/CardDAV protocol
 github.com/emersion/go-ical    // iCalendar parsing
 ```
 
 ### CalDAV Backend Interface
+
 ```go
 // Implement caldav.Backend from go-webdav
 type CalDAVBackend struct {
@@ -162,15 +168,17 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, path string) e
 ```
 
 ### URL Structure
+
 ```
 /dav/                                    # DAV root
-/dav/principals/{username}/              # User principal
-/dav/calendars/{username}/               # Calendar home
-/dav/calendars/{username}/{cal-uuid}/    # Calendar collection
-/dav/calendars/{username}/{cal-uuid}/{event-uid}.ics  # Event resource
+/dav/principals/{<url-encoded-email>}/              # User principal
+/dav/calendars/{<url-encoded-email>}/               # Calendar home
+/dav/calendars/{<url-encoded-email>}/{cal-uuid}/    # Calendar collection
+/dav/calendars/{<url-encoded-email>}/{cal-uuid}/{event-uid}.ics  # Event resource
 ```
 
 ### Code Structure
+
 ```
 internal/adapter/webdav/
 ├── caldav_backend.go     # Implements caldav.Backend
@@ -184,6 +192,7 @@ internal/infrastructure/server/
 ```
 
 ### iCalendar Validation
+
 ```go
 func validateICalendar(data []byte) error {
     cal, err := ical.ParseCalendar(bytes.NewReader(data))
@@ -212,6 +221,7 @@ func validateICalendar(data []byte) error {
 ## Response Examples
 
 ### OPTIONS Response
+
 ```http
 HTTP/1.1 200 OK
 DAV: 1, 2, 3, calendar-access, addressbook
@@ -219,6 +229,7 @@ Allow: OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCALENDAR, REPORT
 ```
 
 ### PROPFIND Calendar Response (207 Multi-Status)
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:IC="http://apple.com/ns/ical/">
@@ -247,6 +258,7 @@ Allow: OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCALENDAR, REPORT
 ```
 
 ### PUT Event (201 Created)
+
 ```http
 HTTP/1.1 201 Created
 ETag: "a1b2c3d4e5f6"
@@ -254,6 +266,7 @@ Location: /dav/calendars/johndoe/work/meeting-123.ics
 ```
 
 ### calendar-multiget Response
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">

@@ -1,27 +1,29 @@
 # Story 019: CardDAV Protocol Implementation
 
 ## Title
+
 Implement CardDAV Protocol Endpoints
 
 ## Description
+
 As a DAV client user, I want to access my contacts via CardDAV protocol so that I can sync contacts with applications like DAVx5, Apple Contacts, and Thunderbird.
 
 ## Related Acceptance Criteria
 
-| ID | Criterion |
-|----|-----------|
-| AD-4.3.1 | Server responds to OPTIONS with CardDAV headers |
-| AD-4.3.2 | /.well-known/carddav redirects to DAV root |
-| AD-4.3.3 | PROPFIND on principal returns addressbook-home-set |
-| AD-4.3.4 | PROPFIND on addressbook-home lists all address books |
-| AD-4.3.5 | PUT creates new contact in address book |
-| AD-4.3.6 | PUT updates existing contact (with correct ETag) |
-| AD-4.3.7 | GET retrieves contact vCard data |
-| AD-4.3.8 | DELETE removes contact |
-| AD-4.3.9 | REPORT addressbook-query returns filtered contacts |
+| ID        | Criterion                                             |
+| --------- | ----------------------------------------------------- |
+| AD-4.3.1  | Server responds to OPTIONS with CardDAV headers       |
+| AD-4.3.2  | /.well-known/carddav redirects to DAV root            |
+| AD-4.3.3  | PROPFIND on principal returns addressbook-home-set    |
+| AD-4.3.4  | PROPFIND on addressbook-home lists all address books  |
+| AD-4.3.5  | PUT creates new contact in address book               |
+| AD-4.3.6  | PUT updates existing contact (with correct ETag)      |
+| AD-4.3.7  | GET retrieves contact vCard data                      |
+| AD-4.3.8  | DELETE removes contact                                |
+| AD-4.3.9  | REPORT addressbook-query returns filtered contacts    |
 | AD-4.3.10 | REPORT addressbook-multiget returns specific contacts |
-| AD-4.3.11 | Server supports vCard 3.0 format |
-| AD-4.3.12 | Server supports vCard 4.0 format |
+| AD-4.3.11 | Server supports vCard 3.0 format                      |
+| AD-4.3.12 | Server supports vCard 4.0 format                      |
 
 ## Acceptance Criteria
 
@@ -34,23 +36,23 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
 
 ### Principal Discovery
 
-- [ ] `PROPFIND /dav/principals/{username}/` returns:
-  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{username}/`
+- [ ] `PROPFIND /dav/principals/{<url-encoded-email>}/` returns:
+  - [ ] `addressbook-home-set` -> `/dav/addressbooks/{<url-encoded-email>}/`
   - [ ] (Already implemented in Story 014 for CalDAV)
 
 ### Address Book Home
 
-- [ ] `PROPFIND /dav/addressbooks/{username}/` (Depth: 0) returns:
+- [ ] `PROPFIND /dav/addressbooks/{<url-encoded-email>}/` (Depth: 0) returns:
   - [ ] `resourcetype` (collection)
   - [ ] `displayname`
   - [ ] `current-user-privilege-set`
-- [ ] `PROPFIND /dav/addressbooks/{username}/` (Depth: 1) returns:
+- [ ] `PROPFIND /dav/addressbooks/{<url-encoded-email>}/` (Depth: 1) returns:
   - [ ] List of all address books
   - [ ] Each address book's properties
 
 ### Address Book Collection Properties
 
-- [ ] `PROPFIND /dav/addressbooks/{username}/{addressbook-id}/` returns:
+- [ ] `PROPFIND /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/` returns:
   - [ ] `resourcetype` (collection, addressbook)
   - [ ] `displayname`
   - [ ] `addressbook-description`
@@ -61,31 +63,31 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
 
 ### Address Book Operations
 
-- [ ] `MKCOL /dav/addressbooks/{username}/{new-addressbook}/`
+- [ ] `MKCOL /dav/addressbooks/{<url-encoded-email>}/{new-addressbook}/`
   - [ ] Creates new address book
   - [ ] Request body can include properties (displayname)
   - [ ] Returns 201 Created
-- [ ] `DELETE /dav/addressbooks/{username}/{addressbook-id}/`
+- [ ] `DELETE /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/`
   - [ ] Deletes address book and all contacts
   - [ ] Returns 204 No Content
-- [ ] `PROPPATCH /dav/addressbooks/{username}/{addressbook-id}/`
+- [ ] `PROPPATCH /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/`
   - [ ] Updates address book properties
   - [ ] Returns 207 Multi-Status
 
 ### Contact Operations
 
-- [ ] `PUT /dav/addressbooks/{username}/{addressbook-id}/{contact-uid}.vcf`
+- [ ] `PUT /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/{contact-uid}.vcf`
   - [ ] Creates new contact if not exists
   - [ ] Updates existing contact with `If-Match: {etag}` header
   - [ ] Accepts both vCard 3.0 and 4.0 formats
   - [ ] Returns 201 Created (new) or 204 No Content (update)
   - [ ] Returns `ETag` header
   - [ ] Updates address book CTag and sync-token
-- [ ] `GET /dav/addressbooks/{username}/{addressbook-id}/{contact-uid}.vcf`
+- [ ] `GET /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/{contact-uid}.vcf`
   - [ ] Returns vCard data
   - [ ] Returns `ETag` header
   - [ ] Content-Type: `text/vcard; charset=utf-8`
-- [ ] `DELETE /dav/addressbooks/{username}/{addressbook-id}/{contact-uid}.vcf`
+- [ ] `DELETE /dav/addressbooks/{<url-encoded-email>}/{addressbook-id}/{contact-uid}.vcf`
   - [ ] Deletes contact
   - [ ] Updates address book CTag and sync-token
   - [ ] Returns 204 No Content
@@ -113,6 +115,7 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
     </filter>
   </addressbook-query>
   ```
+
   - [ ] Returns contacts matching filter
   - [ ] Supports prop-filter on any vCard property
   - [ ] Supports text-match with collation and match-type
@@ -128,6 +131,7 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
     <href>/dav/addressbooks/user/contacts/contact2.vcf</href>
   </addressbook-multiget>
   ```
+
   - [ ] Returns requested contacts by URL
   - [ ] Non-existent URLs return 404 in multistatus
 
@@ -142,12 +146,14 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
 ## Technical Notes
 
 ### Dependencies
+
 ```go
 github.com/emersion/go-webdav  // CardDAV protocol
 github.com/emersion/go-vcard   // vCard parsing
 ```
 
 ### CardDAV Backend Interface
+
 ```go
 // Implement carddav.Backend from go-webdav
 type CardDAVBackend struct {
@@ -167,15 +173,17 @@ func (b *CardDAVBackend) DeleteAddressObject(ctx context.Context, path string) e
 ```
 
 ### URL Structure
+
 ```
 /dav/                                         # DAV root
-/dav/principals/{username}/                   # User principal
-/dav/addressbooks/{username}/                 # Address book home
-/dav/addressbooks/{username}/{ab-uuid}/       # Address book collection
-/dav/addressbooks/{username}/{ab-uuid}/{contact-uid}.vcf  # Contact resource
+/dav/principals/{<url-encoded-email>}/                   # User principal
+/dav/addressbooks/{<url-encoded-email>}/                 # Address book home
+/dav/addressbooks/{<url-encoded-email>}/{ab-uuid}/       # Address book collection
+/dav/addressbooks/{<url-encoded-email>}/{ab-uuid}/{contact-uid}.vcf  # Contact resource
 ```
 
 ### vCard Validation
+
 ```go
 func validateVCard(data []byte) (*vcard.Card, error) {
     dec := vcard.NewDecoder(bytes.NewReader(data))
@@ -199,6 +207,7 @@ func validateVCard(data []byte) (*vcard.Card, error) {
 ```
 
 ### Code Structure
+
 ```
 internal/adapter/webdav/
 ├── carddav_backend.go    # Implements carddav.Backend
@@ -210,6 +219,7 @@ internal/adapter/webdav/
 ## Response Examples
 
 ### OPTIONS Response
+
 ```http
 HTTP/1.1 200 OK
 DAV: 1, 2, 3, addressbook
@@ -217,6 +227,7 @@ Allow: OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, REPORT
 ```
 
 ### PROPFIND Address Book Response (207 Multi-Status)
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <multistatus xmlns="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
@@ -244,6 +255,7 @@ Allow: OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, REPORT
 ```
 
 ### PUT Contact (201 Created)
+
 ```http
 HTTP/1.1 201 Created
 ETag: "v1-a1b2c3d4"
@@ -251,6 +263,7 @@ Location: /dav/addressbooks/johndoe/contacts/contact-123.vcf
 ```
 
 ### addressbook-query Response
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <multistatus xmlns="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
@@ -273,6 +286,7 @@ END:VCARD</CR:address-data>
 ```
 
 ### addressbook-multiget Response
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <multistatus xmlns="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
