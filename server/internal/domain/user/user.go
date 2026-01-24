@@ -19,6 +19,28 @@ type User struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DeletedAt     gorm.DeletedAt `gorm:"index"`
+
+	OAuthConnections []OAuthConnection `gorm:"foreignKey:UserID"`
+}
+
+// OAuthConnection represents a linked OAuth/OIDC provider
+type OAuthConnection struct {
+	ID            uint   `gorm:"primaryKey"`
+	UserID        uint   `gorm:"index;not null"`
+	Provider      string `gorm:"size:50;not null"`  // google, microsoft, custom
+	ProviderID    string `gorm:"size:255;not null"` // sub claim from OIDC
+	ProviderEmail string `gorm:"size:255"`
+	AccessToken   string `gorm:"size:2000"` // encrypted
+	RefreshToken  string `gorm:"size:2000"` // encrypted
+	TokenExpiry   *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	User          User `gorm:"foreignKey:UserID"`
+}
+
+// TableName returns the table name for the OAuthConnection model
+func (OAuthConnection) TableName() string {
+	return "oauth_connections"
 }
 
 // PasswordReset represents a password reset token

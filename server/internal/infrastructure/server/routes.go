@@ -92,7 +92,27 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	// App Password Routes (Protected)
 	appPwdGroup := v1.Group("/app-passwords", http.Authenticate(jwtManager))
-	appPwdGroup.Post("/", appPwdHandler.Create)
 	appPwdGroup.Get("/", appPwdHandler.List)
 	appPwdGroup.Delete("/:id", appPwdHandler.Revoke)
+
+	// OAuth Routes
+	oauthRepo := repository.NewOAuthConnectionRepository(db.DB())
+	oauthManager, err := authadapter.NewOAuthProviderManager(&cfg.OAuth)
+	if err != nil {
+		fmt.Printf("Failed to initialize OAuth provider manager: %v\n", err)
+	}
+
+	initiateOAuthUC := authusecase.NewInitiateOAuthUseCase(oauthManager)
+	oauthCallbackUC := authusecase.NewOAuthCallbackUseCase(oauthManager, userRepo, oauthRepo, tokenRepo, jwtManager, cfg)
+	unlinkUC := authusecase.NewUnlinkProviderUseCase(oauthRepo, userRepo)
+	listLinkedUC := authusecase.NewListLinkedProvidersUseCase(oauthRepo, userRepo)
+
+	oauthHandler := http.NewOAuthHandler(initiateOAuthUC, oauthCallbackUC, unlinkUC, listLinkedUC)
+
+	oauthGroup := v1.Group("/auth/oauth")
+	oauthGroup.Get("/providers", http.Authenticate(jwtManager), oauthHandler.List) // List linked providers (auth required)
+	oauthGroup.Get("/:provider", oauthHandler.Initiate)
+	oauthGroup.Get("/:provider/callback", oauthHandler.Callback)
+	oauthGroup.Post("/:provider/link", http.Authenticate(jwtManager), oauthHandler.Link)
+	oauthGroup.Delete("/:provider", http.Authenticate(jwtManager), oauthHandler.Unlink)
 }

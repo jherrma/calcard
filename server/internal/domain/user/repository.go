@@ -14,6 +14,7 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, userID uint) error
+	GetByOAuth(ctx context.Context, provider, providerID string) (*User, error)
 
 	CreateVerification(ctx context.Context, v *EmailVerification) error
 	GetVerificationByToken(ctx context.Context, token string) (*EmailVerification, error)
@@ -50,4 +51,13 @@ type TokenProvider interface {
 	GenerateRefreshToken() (string, error)
 	HashToken(token string) string
 	ValidateAccessToken(tokenStr string) (string, string, error) // Returns UserUUID, Email, error
+}
+
+// OAuthConnectionRepository defines the interface for OAuth connection persistence
+type OAuthConnectionRepository interface {
+	Create(ctx context.Context, conn *OAuthConnection) error
+	GetByProvider(ctx context.Context, userID uint, provider string) (*OAuthConnection, error)
+	ListByUserID(ctx context.Context, userID uint) ([]OAuthConnection, error)
+	Update(ctx context.Context, conn *OAuthConnection) error
+	Delete(ctx context.Context, userID uint, provider string) error
 }

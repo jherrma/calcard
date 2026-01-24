@@ -109,3 +109,16 @@ func (r *gormUserRepo) GetVerificationByToken(ctx context.Context, token string)
 func (r *gormUserRepo) DeleteVerification(ctx context.Context, token string) error {
 	return r.db.WithContext(ctx).Where("token = ?", token).Delete(&user.EmailVerification{}).Error
 }
+
+func (r *gormUserRepo) GetByOAuth(ctx context.Context, provider, providerID string) (*user.User, error) {
+	var conn user.OAuthConnection
+	if err := r.db.WithContext(ctx).Preload("User").
+		Where("provider = ? AND provider_id = ?", provider, providerID).
+		First(&conn).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &conn.User, nil
+}

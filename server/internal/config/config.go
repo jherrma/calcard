@@ -21,6 +21,7 @@ type Config struct {
 	SMTP      SMTPConfig      `yaml:"smtp"`
 	JWT       JWTConfig       `yaml:"jwt"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	OAuth     OAuthConfig     `yaml:"oauth"`
 }
 
 // ServerConfig contains server-specific settings
@@ -61,6 +62,20 @@ type JWTConfig struct {
 // RateLimitConfig contains rate limiting settings
 type RateLimitConfig struct {
 	Enabled bool `yaml:"enabled" env:"CALDAV_RATE_LIMIT_ENABLED"`
+}
+
+// OAuthConfig contains OAuth2/OIDC settings
+type OAuthConfig struct {
+	Google    OAuthProviderConfig `yaml:"google"`
+	Microsoft OAuthProviderConfig `yaml:"microsoft"`
+	Custom    OAuthProviderConfig `yaml:"custom"`
+}
+
+// OAuthProviderConfig contains settings for an OAuth/OIDC provider
+type OAuthProviderConfig struct {
+	ClientID     string `yaml:"client_id"`
+	ClientSecret string `yaml:"client_secret"`
+	Issuer       string `yaml:"issuer"`
 }
 
 // DSN returns the database connection string based on the driver
@@ -110,6 +125,14 @@ func Load(configPath string) (*Config, error) {
 		},
 		RateLimit: RateLimitConfig{
 			Enabled: true,
+		},
+		OAuth: OAuthConfig{
+			Google: OAuthProviderConfig{
+				Issuer: "https://accounts.google.com",
+			},
+			Microsoft: OAuthProviderConfig{
+				Issuer: "https://login.microsoftonline.com/common/v2.0",
+			},
 		},
 	}
 
