@@ -208,8 +208,9 @@ func TestOAuthCallbackUseCase_Execute_LinkNewUser(t *testing.T) {
 	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
 	userRepo.On("GetByEmail", ctx, userInfo.Email).Return(nil, nil)
+	userRepo.On("GetByUsername", ctx, mock.Anything).Return(nil, nil)
 	userRepo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
-		return u.Email == userInfo.Email && u.DisplayName == userInfo.Name
+		return u.Email == userInfo.Email && u.DisplayName == userInfo.Name && len(u.Username) == 16
 	})).Return(nil)
 	oauthRepo.On("Create", ctx, mock.MatchedBy(func(c *user.OAuthConnection) bool {
 		return c.Provider == providerName && c.ProviderID == userInfo.Subject

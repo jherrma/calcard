@@ -28,9 +28,9 @@ func NewRegisterUseCase(repo user.UserRepository, emailService EmailService, cfg
 	return &RegisterUseCase{repo: repo, emailService: emailService, cfg: cfg}
 }
 
-func (uc *RegisterUseCase) Execute(ctx context.Context, email, username, password, displayName string) (*user.User, string, error) {
+func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, displayName string) (*user.User, string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
-	username = strings.ToLower(strings.TrimSpace(username))
+
 	// 1. Validate domain rules
 	if err := user.ValidateEmail(email); err != nil {
 		return nil, "", err
@@ -48,13 +48,14 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, username, passwor
 		return nil, "", ErrUserAlreadyExists
 	}
 
-	// 2b. Check for duplicate username
-	existingUserByUsername, err := uc.repo.GetByUsername(ctx, username)
+	if existing != nil {
+		return nil, "", ErrUserAlreadyExists
+	}
+
+	// 2b. Generate unique username
+	username, err := uc.generateUniqueUsername(ctx)
 	if err != nil {
 		return nil, "", err
-	}
-	if existingUserByUsername != nil {
-		return nil, "", errors.New("username already taken")
 	}
 
 	// 3. Hash password
@@ -120,4 +121,30 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, username, passwor
 	}
 
 	return u, token, nil
+}
+
+func (uc *RegisterUseCase) generateUniqueUsername(ctx context.Context) (string, error) {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	length := 16
+	maxRetries := 10
+
+	for i := 0; i < maxRetries; i++ {
+		b := make([]byte, length)
+		if _, err := rand.Read(b); err != nil {
+			return "", fmt.Errorf("failed to generate random bytes: %w", err)
+		}
+		for i := range b {
+			b[i] = chars[b[i]%byte(len(chars))]
+		}
+		username := string(b)
+
+		existing, err := uc.repo.GetByUsername(ctx, username)
+		if err != nil {
+			return "", err
+		}
+		if existing == nil {
+			return username, nil
+		}
+	}
+	return "", errors.New("failed to generate unique username after max retries")
 }

@@ -2,8 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -169,8 +169,10 @@ func (uc *OAuthCallbackUseCase) linkProvider(ctx context.Context, userID uint, p
 }
 
 func (uc *OAuthCallbackUseCase) createUser(ctx context.Context, userInfo *UserInfo) (*user.User, error) {
-	username := strings.Split(userInfo.Email, "@")[0]
-	// handle username collision? simplistic for now.
+	username, err := uc.generateUniqueUsername(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	u := &user.User{
 		UUID:          uuid.New().String(),
@@ -191,4 +193,30 @@ func (uc *OAuthCallbackUseCase) createUser(ctx context.Context, userInfo *UserIn
 		return nil, err
 	}
 	return u, nil
+}
+
+func (uc *OAuthCallbackUseCase) generateUniqueUsername(ctx context.Context) (string, error) {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	length := 16
+	maxRetries := 10
+
+	for i := 0; i < maxRetries; i++ {
+		b := make([]byte, length)
+		if _, err := rand.Read(b); err != nil {
+			return "", fmt.Errorf("failed to generate random bytes: %w", err)
+		}
+		for i := range b {
+			b[i] = chars[b[i]%byte(len(chars))]
+		}
+		username := string(b)
+
+		existing, err := uc.userRepo.GetByUsername(ctx, username)
+		if err != nil {
+			return "", err
+		}
+		if existing == nil {
+			return username, nil
+		}
+	}
+	return "", fmt.Errorf("failed to generate unique username after max retries")
 }

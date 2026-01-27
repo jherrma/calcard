@@ -50,7 +50,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	user, _, err := h.registerUC.Execute(c.Context(), req.Email, req.Username, req.Password, req.DisplayName)
+	user, _, err := h.registerUC.Execute(c.Context(), req.Email, req.Password, req.DisplayName)
 	if err != nil {
 		if err == authusecase.ErrUserAlreadyExists {
 			return ErrorResponse(c, fiber.StatusConflict, "Email already registered")

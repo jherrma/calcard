@@ -26,6 +26,7 @@ As a DAV client user, I want to access my calendars via CalDAV protocol so that 
 | CD-3.3.12 | REPORT calendar-multiget returns specific events by URL |
 | CD-3.3.13 | ETags change when events are modified                   |
 | CD-3.3.14 | CTag changes when calendar contents change              |
+| CD-3.3.15 | Authentication with email and password                  |
 
 ## Acceptance Criteria
 

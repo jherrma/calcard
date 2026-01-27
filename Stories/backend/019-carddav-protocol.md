@@ -24,6 +24,7 @@ As a DAV client user, I want to access my contacts via CardDAV protocol so that 
 | AD-4.3.10 | REPORT addressbook-multiget returns specific contacts |
 | AD-4.3.11 | Server supports vCard 3.0 format                      |
 | AD-4.3.12 | Server supports vCard 4.0 format                      |
+| AD-4.3.13 | Authentication with email and password                |
 
 ## Acceptance Criteria
 

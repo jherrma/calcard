@@ -114,16 +114,17 @@ func TestRegisterUseCase_Execute_NoSMTP(t *testing.T) {
 	password := "SecurePass123!"
 
 	repo.On("GetByEmail", ctx, email).Return(nil, nil)
-	repo.On("GetByUsername", ctx, "test_user").Return(nil, nil)
+	// We can't predict the username, so we mock GetByUsername to return nil (available)
+	repo.On("GetByUsername", ctx, mock.Anything).Return(nil, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
-		return u.Email == email && u.Username == "test_user" && u.IsActive == true && u.EmailVerified == true
+		return u.Email == email && len(u.Username) == 16 && u.IsActive == true && u.EmailVerified == true
 	})).Return(nil)
 
-	u, token, err := uc.Execute(ctx, email, "test_user", password, "Test User")
+	u, token, err := uc.Execute(ctx, email, password, "Test User")
 
 	assert.NoError(t, err)
 	assert.NotNil(t, u)
-	assert.Equal(t, "test_user", u.Username)
+	assert.Len(t, u.Username, 16)
 	assert.Empty(t, token)
 	repo.AssertExpectations(t)
 }
@@ -142,18 +143,18 @@ func TestRegisterUseCase_Execute_WithSMTP(t *testing.T) {
 	password := "SecurePass123!"
 
 	repo.On("GetByEmail", ctx, email).Return(nil, nil)
-	repo.On("GetByUsername", ctx, "test_user").Return(nil, nil)
+	repo.On("GetByUsername", ctx, mock.Anything).Return(nil, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
-		return u.Email == email && u.Username == "test_user" && u.IsActive == false && u.EmailVerified == false
+		return u.Email == email && len(u.Username) == 16 && u.IsActive == false && u.EmailVerified == false
 	})).Return(nil)
 	repo.On("CreateVerification", ctx, mock.Anything).Return(nil)
 	emailSvc.On("SendActivationEmail", ctx, email, mock.Anything).Return(nil)
 
-	u, token, err := uc.Execute(ctx, email, "test_user", password, "Test User")
+	u, token, err := uc.Execute(ctx, email, password, "Test User")
 
 	assert.NoError(t, err)
 	assert.NotNil(t, u)
-	assert.Equal(t, "test_user", u.Username)
+	assert.Len(t, u.Username, 16)
 	assert.NotEmpty(t, token)
 	repo.AssertExpectations(t)
 	emailSvc.AssertExpectations(t)
@@ -173,12 +174,13 @@ func TestRegisterUseCase_Execute_CaseInsensitive(t *testing.T) {
 	password := "SecurePass123!"
 
 	repo.On("GetByEmail", ctx, expectedEmail).Return(nil, nil)
-	repo.On("GetByUsername", ctx, "test_user").Return(nil, nil)
+	repo.On("GetByEmail", ctx, expectedEmail).Return(nil, nil)
+	repo.On("GetByUsername", ctx, mock.Anything).Return(nil, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
 		return u.Email == expectedEmail
 	})).Return(nil)
 
-	u, _, err := uc.Execute(ctx, email, "test_user", password, "Test User")
+	u, _, err := uc.Execute(ctx, email, password, "Test User")
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedEmail, u.Email)

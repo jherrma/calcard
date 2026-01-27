@@ -1,21 +1,23 @@
 # Story 006: User Registration
 
 ## Title
+
 Implement User Registration with Email Verification
 
 ## Description
+
 As a new user, I want to create an account with email and password so that I can access the CalDAV/CardDAV server.
 
 ## Related Acceptance Criteria
 
-| ID | Criterion |
-|----|-----------|
+| ID       | Criterion                                           |
+| -------- | --------------------------------------------------- |
 | UM-1.1.1 | Users can create an account with email and password |
-| UM-1.1.2 | Email verification is sent upon registration |
-| UM-1.1.3 | Account is not active until email is verified |
-| UM-1.1.4 | Duplicate email addresses are rejected |
-| UM-1.1.5 | Password strength requirements are enforced |
-| UM-1.1.6 | Username uniqueness is enforced |
+| UM-1.1.2 | Email verification is sent upon registration        |
+| UM-1.1.3 | Account is not active until email is verified       |
+| UM-1.1.4 | Duplicate email addresses are rejected              |
+| UM-1.1.5 | Password strength requirements are enforced         |
+| UM-1.1.6 | Username uniqueness is enforced                     |
 
 ## Acceptance Criteria
 
@@ -32,10 +34,7 @@ As a new user, I want to create an account with email and password so that I can
 - [ ] Email validation:
   - [ ] Valid email format required
   - [ ] Duplicate email returns 409 Conflict
-- [ ] Username validation:
-  - [ ] 3-100 characters, alphanumeric + underscore/hyphen
-  - [ ] Duplicate username returns 409 Conflict
-  - [ ] Case-insensitive uniqueness check
+- [ ] Username is generated and 16 letters long
 - [ ] Password validation:
   - [ ] Minimum 8 characters
   - [ ] At least one uppercase letter
@@ -58,6 +57,7 @@ As a new user, I want to create an account with email and password so that I can
 ## Technical Notes
 
 ### New Configuration
+
 ```
 CALDAV_SMTP_HOST         (optional, disables email if not set)
 CALDAV_SMTP_PORT         (default: "587")
@@ -68,6 +68,7 @@ CALDAV_BASE_URL          (e.g., "https://caldav.example.com")
 ```
 
 ### New Database Table
+
 ```go
 type EmailVerification struct {
     ID        uint      `gorm:"primaryKey"`
@@ -80,12 +81,14 @@ type EmailVerification struct {
 ```
 
 ### Dependencies
+
 ```go
 golang.org/x/crypto/bcrypt  // Password hashing
 github.com/google/uuid      // UUID generation
 ```
 
 ### Code Structure
+
 ```
 internal/domain/user/
 ├── user.go              # User entity
@@ -108,6 +111,7 @@ internal/adapter/repository/
 ## API Response Examples
 
 ### Success (201 Created)
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -121,18 +125,23 @@ internal/adapter/repository/
 ```
 
 ### Validation Error (400 Bad Request)
+
 ```json
 {
   "error": "validation_error",
   "message": "Validation failed",
   "details": [
-    {"field": "password", "message": "must contain at least one uppercase letter"},
-    {"field": "email", "message": "invalid email format"}
+    {
+      "field": "password",
+      "message": "must contain at least one uppercase letter"
+    },
+    { "field": "email", "message": "invalid email format" }
   ]
 }
 ```
 
 ### Conflict (409)
+
 ```json
 {
   "error": "conflict",
