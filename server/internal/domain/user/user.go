@@ -59,6 +59,22 @@ func (PasswordReset) TableName() string {
 	return "password_resets"
 }
 
+// SAMLSession represents an active SAML session
+type SAMLSession struct {
+	ID        uint      `gorm:"primaryKey"`
+	UserID    uint      `gorm:"index;not null"`
+	SessionID string    `gorm:"uniqueIndex;size:64;not null"` // SAML SessionIndex
+	NameID    string    `gorm:"size:255;not null"`
+	ExpiresAt time.Time `gorm:"index;not null"`
+	CreatedAt time.Time
+	User      User `gorm:"foreignKey:UserID"`
+}
+
+// TableName returns the table name for the SAMLSession model
+func (SAMLSession) TableName() string {
+	return "saml_sessions"
+}
+
 // TableName returns the table name for the User model
 func (User) TableName() string {
 	return "users"

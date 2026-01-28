@@ -61,3 +61,11 @@ type OAuthConnectionRepository interface {
 	Update(ctx context.Context, conn *OAuthConnection) error
 	Delete(ctx context.Context, userID uint, provider string) error
 }
+
+// SAMLSessionRepository defines the interface for SAML session persistence
+type SAMLSessionRepository interface {
+	Create(ctx context.Context, session *SAMLSession) error
+	GetBySessionID(ctx context.Context, sessionID string) (*SAMLSession, error)
+	DeleteBySessionID(ctx context.Context, sessionID string) error
+	DeleteByUserID(ctx context.Context, userID uint) error
+}

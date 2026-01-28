@@ -1,4 +1,4 @@
-package authadapter
+package auth
 
 import (
 	"encoding/base64"

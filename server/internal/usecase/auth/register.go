@@ -53,7 +53,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 	}
 
 	// 2b. Generate unique username
-	username, err := uc.generateUniqueUsername(ctx)
+	username, err := GenerateUniqueUsername(ctx, uc.repo)
 	if err != nil {
 		return nil, "", err
 	}

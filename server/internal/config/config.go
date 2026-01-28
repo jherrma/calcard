@@ -22,6 +22,7 @@ type Config struct {
 	JWT       JWTConfig       `yaml:"jwt"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
 	OAuth     OAuthConfig     `yaml:"oauth"`
+	SAML      SAMLConfig      `yaml:"saml"`
 }
 
 // ServerConfig contains server-specific settings
@@ -76,6 +77,18 @@ type OAuthProviderConfig struct {
 	ClientID     string `yaml:"client_id"`
 	ClientSecret string `yaml:"client_secret"`
 	Issuer       string `yaml:"issuer"`
+}
+
+// SAMLConfig contains settings for SAML authentication
+type SAMLConfig struct {
+	EntityID             string `yaml:"entity_id" env:"CALDAV_SAML_ENTITY_ID"`
+	IDPMetadataURL       string `yaml:"idp_metadata_url" env:"CALDAV_SAML_IDP_METADATA_URL"`
+	IDPSSOURL            string `yaml:"idp_sso_url" env:"CALDAV_SAML_IDP_SSO_URL"`
+	IDPCert              string `yaml:"idp_cert" env:"CALDAV_SAML_IDP_CERT"` // Path to cert or content
+	SPCert               string `yaml:"sp_cert" env:"CALDAV_SAML_SP_CERT"`   // Path to cert or content
+	SPKey                string `yaml:"sp_key" env:"CALDAV_SAML_SP_KEY"`     // Path to key or content
+	SignRequests         bool   `yaml:"sign_requests" env:"CALDAV_SAML_SIGN_REQUESTS"`
+	WantSignedAssertions bool   `yaml:"want_signed_assertions" env:"CALDAV_SAML_WANT_SIGNED_ASSERTIONS"`
 }
 
 // DSN returns the database connection string based on the driver
