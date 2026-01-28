@@ -4,15 +4,17 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+
+	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 )
 
 // InitiateOAuthUseCase handles starting the OAuth flow
 type InitiateOAuthUseCase struct {
-	providerManager OAuthProviderManager
+	providerManager authadapter.OAuthProviderManager
 }
 
 // NewInitiateOAuthUseCase creates a new InitiateOAuthUseCase
-func NewInitiateOAuthUseCase(providerManager OAuthProviderManager) *InitiateOAuthUseCase {
+func NewInitiateOAuthUseCase(providerManager authadapter.OAuthProviderManager) *InitiateOAuthUseCase {
 	return &InitiateOAuthUseCase{
 		providerManager: providerManager,
 	}

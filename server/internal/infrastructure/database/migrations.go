@@ -2,6 +2,7 @@ package database
 
 import (
 	"github.com/jherrma/caldav-server/internal/domain"
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 )
 
@@ -13,6 +14,10 @@ func Models() []interface{} {
 		&user.RefreshToken{},
 		&user.PasswordReset{},
 		&user.AppPassword{},
+		&user.OAuthConnection{},
+		&user.SAMLSession{},
 		&domain.SystemSetting{},
+		&calendar.Calendar{},
+		&calendar.CalendarObject{},
 	}
 }

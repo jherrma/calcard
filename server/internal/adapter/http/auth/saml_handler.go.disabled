@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/crewjam/saml/samlsp"
 	"github.com/gofiber/fiber/v3"
 	adapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	httpadapter "github.com/jherrma/caldav-server/internal/adapter/http"
@@ -67,30 +66,29 @@ func (h *SAMLHandler) ACS(c fiber.Ctx) error {
 	if err != nil {
 		// Log detailed error
 		fmt.Printf("SAML ParseResponse Error: %v\n", err)
-		// Check for specific validation errors
-		if parseErr, ok := err.(*samlsp.InvalidResponseError); ok {
-			return httpadapter.ErrorResponse(c, fiber.StatusBadRequest, fmt.Sprintf("Invalid SAML response: %v", parseErr.PrivateErr))
-		}
 		return httpadapter.ErrorResponse(c, fiber.StatusUnauthorized, "SAML authentication failed")
 	}
 
-	// Create session object compatible with our use case
-	session := &samlsp.Session{
-		NameID:     assertion.Subject.NameID.Value,
-		Attributes: make(samlsp.Attributes),
-	}
+	// Extract nameID and attributes from assertion
+	nameID := assertion.Subject.NameID.Value
+	attributes := make(map[string][]string)
 
-	for _, attr := range assertion.AttributeStatement.Attributes {
-		var values []string
-		for _, v := range attr.Values {
-			values = append(values, v.Value)
+	// AttributeStatements is a slice, iterate through it
+	for _, attrStatement := range assertion.AttributeStatements {
+		for _, attr := range attrStatement.Attributes {
+			var values []string
+			for _, v := range attr.Values {
+				values = append(values, v.Value)
+			}
+			attributes[attr.Name] = values
+			if attr.FriendlyName != "" {
+				attributes[attr.FriendlyName] = values
+			}
 		}
-		session.Attributes[attr.Name] = values
-		session.Attributes[attr.FriendlyName] = values
 	}
 
 	// Delegate to UseCase
-	res, err := h.loginUC.HandleACS(c.Context(), session, c.Get("User-Agent"), c.IP())
+	res, err := h.loginUC.HandleACS(c.Context(), nameID, attributes, c.Get("User-Agent"), c.IP())
 	if err != nil {
 		return httpadapter.ErrorResponse(c, fiber.StatusUnauthorized, err.Error())
 	}

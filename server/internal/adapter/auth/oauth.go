@@ -90,13 +90,19 @@ func (p *oidcProvider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSou
 	}, nil
 }
 
-// OAuthProviderManager manages multiple OAuth providers
-type OAuthProviderManager struct {
+// OAuthProviderManager defines the interface for managing OAuth providers
+type OAuthProviderManager interface {
+	GetProvider(name string) (OAuthProvider, error)
+	ListProviders() []string
+}
+
+// oauthProviderManager implements OAuthProviderManager
+type oauthProviderManager struct {
 	providers map[string]OAuthProvider
 }
 
-// NewOAuthProviderManager creates a new OAuthProviderManager
-func NewOAuthProviderManager(cfg *config.OAuthConfig) (*OAuthProviderManager, error) {
+// NewOAuthProviderManager creates a new OAuth provider manager
+func NewOAuthProviderManager(cfg *config.OAuthConfig) (OAuthProviderManager, error) {
 	providers := make(map[string]OAuthProvider)
 	ctx := context.Background() // TODO: potentially pass context
 
@@ -124,10 +130,10 @@ func NewOAuthProviderManager(cfg *config.OAuthConfig) (*OAuthProviderManager, er
 		}
 	}
 
-	return &OAuthProviderManager{providers: providers}, nil
+	return &oauthProviderManager{providers: providers}, nil
 }
 
-func (m *OAuthProviderManager) GetProvider(name string) (OAuthProvider, error) {
+func (m *oauthProviderManager) GetProvider(name string) (OAuthProvider, error) {
 	p, ok := m.providers[name]
 	if !ok {
 		return nil, fmt.Errorf("provider %s not found or not configured", name)
@@ -135,7 +141,7 @@ func (m *OAuthProviderManager) GetProvider(name string) (OAuthProvider, error) {
 	return p, nil
 }
 
-func (m *OAuthProviderManager) ListProviders() []string {
+func (m *oauthProviderManager) ListProviders() []string {
 	var names []string
 	for name := range m.providers {
 		names = append(names, name)

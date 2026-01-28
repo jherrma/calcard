@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"time"
-
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/config"
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -20,12 +20,18 @@ var ErrUserAlreadyExists = errors.New("user already exists")
 
 type RegisterUseCase struct {
 	repo         user.UserRepository
+	calendarRepo calendar.CalendarRepository
 	emailService EmailService
 	cfg          *config.Config
 }
 
-func NewRegisterUseCase(repo user.UserRepository, emailService EmailService, cfg *config.Config) *RegisterUseCase {
-	return &RegisterUseCase{repo: repo, emailService: emailService, cfg: cfg}
+func NewRegisterUseCase(repo user.UserRepository, calendarRepo calendar.CalendarRepository, emailService EmailService, cfg *config.Config) *RegisterUseCase {
+	return &RegisterUseCase{
+		repo:         repo,
+		calendarRepo: calendarRepo,
+		emailService: emailService,
+		cfg:          cfg,
+	}
 }
 
 func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, displayName string) (*user.User, string, error) {
@@ -120,7 +126,34 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		}
 	}
 
+	// Create default calendar
+	if err := uc.createDefaultCalendar(ctx, u.ID); err != nil {
+		// Log error but don't fail registration
+		fmt.Printf("failed to create default calendar: %v\n", err)
+	}
+
 	return u, token, nil
+}
+
+// createDefaultCalendar creates a default "Personal" calendar for a new user
+func (uc *RegisterUseCase) createDefaultCalendar(ctx context.Context, userID uint) error {
+	calUUID := uuid.New().String()
+	path := fmt.Sprintf("%s.ics", calUUID)
+
+	defaultCal := &calendar.Calendar{
+		UUID:                calUUID,
+		UserID:              userID,
+		Path:                path,
+		Name:                "Personal",
+		Description:         "",
+		Color:               "#3788d8", // Blue
+		Timezone:            "UTC",
+		SupportedComponents: "VEVENT,VTODO",
+		SyncToken:           calendar.GenerateSyncToken(),
+		CTag:                calendar.GenerateCTag(),
+	}
+
+	return uc.calendarRepo.Create(ctx, defaultCal)
 }
 
 func (uc *RegisterUseCase) generateUniqueUsername(ctx context.Context) (string, error) {

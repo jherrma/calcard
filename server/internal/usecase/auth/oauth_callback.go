@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"golang.org/x/oauth2"
@@ -13,7 +14,7 @@ import (
 
 // OAuthCallbackUseCase handles the OAuth callback and user login/creation
 type OAuthCallbackUseCase struct {
-	providerManager  OAuthProviderManager
+	providerManager  authadapter.OAuthProviderManager
 	userRepo         user.UserRepository
 	oauthRepo        user.OAuthConnectionRepository
 	refreshTokenRepo user.RefreshTokenRepository
@@ -23,7 +24,7 @@ type OAuthCallbackUseCase struct {
 
 // NewOAuthCallbackUseCase creates a new OAuthCallbackUseCase
 func NewOAuthCallbackUseCase(
-	providerManager OAuthProviderManager,
+	providerManager authadapter.OAuthProviderManager,
 	userRepo user.UserRepository,
 	oauthRepo user.OAuthConnectionRepository,
 	refreshTokenRepo user.RefreshTokenRepository,
@@ -154,7 +155,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 	}, nil
 }
 
-func (uc *OAuthCallbackUseCase) linkProvider(ctx context.Context, userID uint, providerName string, userInfo *UserInfo, accessToken, refreshToken string, expiry time.Time) error {
+func (uc *OAuthCallbackUseCase) linkProvider(ctx context.Context, userID uint, providerName string, userInfo *authadapter.UserInfo, accessToken, refreshToken string, expiry time.Time) error {
 	conn := &user.OAuthConnection{
 		UserID:        userID,
 		Provider:      providerName,
@@ -167,7 +168,7 @@ func (uc *OAuthCallbackUseCase) linkProvider(ctx context.Context, userID uint, p
 	return uc.oauthRepo.Create(ctx, conn)
 }
 
-func (uc *OAuthCallbackUseCase) createUser(ctx context.Context, userInfo *UserInfo) (*user.User, error) {
+func (uc *OAuthCallbackUseCase) createUser(ctx context.Context, userInfo *authadapter.UserInfo) (*user.User, error) {
 	username, err := GenerateUniqueUsername(ctx, uc.userRepo)
 	if err != nil {
 		return nil, err

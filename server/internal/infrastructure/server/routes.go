@@ -8,13 +8,15 @@ import (
 	"github.com/gofiber/fiber/v3"
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/http"
-	samlhandler "github.com/jherrma/caldav-server/internal/adapter/http/auth"
+
+	// samlhandler "github.com/jherrma/caldav-server/internal/adapter/http/auth" // Commented out until SAML is restored
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
+	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
 
@@ -26,7 +28,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	systemRepo := repository.NewSystemSettingRepository(db.DB())
 	resetRepo := repository.NewGORMPasswordResetRepository(db.DB())
 	appPwdRepo := repository.NewAppPasswordRepository(db.DB())
-	samlSessionRepo := repository.NewSAMLSessionRepository(db.DB())
+	// samlSessionRepo := repository.NewSAMLSessionRepository(db.DB()) // Commented out until SAML is restored
+	calendarRepo := repository.NewCalendarRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -38,7 +41,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	}
 
 	// Use Cases
-	registerUC := authusecase.NewRegisterUseCase(userRepo, emailService, cfg)
+	registerUC := authusecase.NewRegisterUseCase(userRepo, calendarRepo, emailService, cfg)
 	verifyUC := authusecase.NewVerifyUseCase(userRepo)
 	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg)
 	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager)
@@ -118,26 +121,52 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	oauthGroup.Post("/:provider/link", http.Authenticate(jwtManager), oauthHandler.Link)
 	oauthGroup.Delete("/:provider", http.Authenticate(jwtManager), oauthHandler.Unlink)
 
-	// SAML Routes
-	samlSessionRepo := repository.NewSAMLSessionRepository(db.DB())
-	samlProvider, samlErr := authadapter.NewSAMLServiceProvider(
-		cfg.SAML.EntityID,
-		cfg.BaseURL,
-		cfg.SAML.IDPMetadataURL,
-		[]byte(cfg.SAML.SPKey),
-		[]byte(cfg.SAML.SPCert),
+	// SAML Routes - Commented out until SAML provider is restored
+	/*
+		samlProvider, samlErr := authadapter.NewSAMLServiceProvider(
+			cfg.SAML.EntityID,
+			cfg.BaseURL,
+			cfg.SAML.IDPMetadataURL,
+			[]byte(cfg.SAML.SPKey),
+			[]byte(cfg.SAML.SPCert),
+		)
+		if samlErr != nil {
+			fmt.Printf("Failed to initialize SAML provider: %v\n", samlErr)
+		} else {
+			samlLoginUC := authusecase.NewSAMLLoginUseCase(samlProvider, userRepo, oauthRepo, samlSessionRepo, jwtManager, tokenRepo, cfg)
+			samlMetadataUC := authusecase.NewSAMLMetadataUseCase(samlProvider)
+
+			samlHandler := samlhandler.NewSAMLHandler(samlProvider, samlLoginUC, samlMetadataUC)
+
+			samlGroup := v1.Group("/auth/saml")
+			samlGroup.Get("/metadata", samlHandler.Metadata)
+			samlGroup.Get("/login", samlHandler.Login)
+			samlGroup.Post("/acs", samlHandler.ACS)
+		}
+	*/
+
+	// Calendar Routes (Protected)
+	calendarCreateUC := calendarusecase.NewCreateCalendarUseCase(calendarRepo)
+	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo)
+	calendarGetUC := calendarusecase.NewGetCalendarUseCase(calendarRepo)
+	calendarUpdateUC := calendarusecase.NewUpdateCalendarUseCase(calendarRepo)
+	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo)
+	calendarExportUC := calendarusecase.NewExportCalendarUseCase(calendarRepo)
+
+	calendarHandler := http.NewCalendarHandler(
+		calendarCreateUC,
+		calendarListUC,
+		calendarGetUC,
+		calendarUpdateUC,
+		calendarDeleteUC,
+		calendarExportUC,
 	)
-	if samlErr != nil {
-		fmt.Printf("Failed to initialize SAML provider: %v\n", samlErr)
-	} else {
-		samlLoginUC := authusecase.NewSAMLLoginUseCase(samlProvider, userRepo, oauthRepo, samlSessionRepo, jwtManager, tokenRepo, cfg)
-		samlMetadataUC := authusecase.NewSAMLMetadataUseCase(samlProvider)
 
-		samlHandler := samlhandler.NewSAMLHandler(samlProvider, samlLoginUC, samlMetadataUC)
-
-		samlGroup := v1.Group("/auth/saml")
-		samlGroup.Get("/metadata", samlHandler.Metadata)
-		samlGroup.Get("/login", samlHandler.Login)
-		samlGroup.Post("/acs", samlHandler.ACS)
-	}
+	calendarGroup := v1.Group("/calendars", http.Authenticate(jwtManager))
+	calendarGroup.Post("/", calendarHandler.Create)
+	calendarGroup.Get("/", calendarHandler.List)
+	calendarGroup.Get("/:id", calendarHandler.Get)
+	calendarGroup.Patch("/:id", calendarHandler.Update)
+	calendarGroup.Delete("/:id", calendarHandler.Delete)
+	calendarGroup.Get("/:id/export", calendarHandler.Export)
 }
