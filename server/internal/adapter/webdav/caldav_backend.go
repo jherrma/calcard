@@ -286,11 +286,6 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		obj = newObj
 	}
 
-	c.UpdateSyncTokens()
-	if err := b.calendarRepo.Update(ctx, c); err != nil {
-		return nil, err
-	}
-
 	return b.mapCalendarObject(p, obj)
 }
 
@@ -318,14 +313,49 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 		return webdav.NewHTTPError(http.StatusNotFound, nil)
 	}
 
-	if err := b.calendarRepo.DeleteCalendarObject(ctx, obj.ID); err != nil {
+	if err := b.calendarRepo.DeleteCalendarObject(ctx, obj); err != nil {
 		return err
 	}
 
-	c.UpdateSyncTokens()
-	b.calendarRepo.Update(ctx, c)
-
 	return nil
+}
+
+func (b *CalDAVBackend) GetCalendarObjectByPath(ctx context.Context, calendarID uint, path string) (*calendar.CalendarObject, error) {
+	return b.calendarRepo.GetCalendarObjectByPath(ctx, calendarID, path)
+}
+
+func (b *CalDAVBackend) ResolvePath(ctx context.Context, p string) (*calendar.Calendar, *user.User, error) {
+	u, ok := UserFromContext(ctx)
+	if !ok {
+		return nil, nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
+	}
+
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 4 || parts[0] != "dav" || parts[1] != u.Username || parts[2] != "calendars" {
+		return nil, nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	}
+
+	calPath := parts[3]
+	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
+	if err != nil || c == nil {
+		return nil, nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	}
+
+	return c, u, nil
+}
+
+func (b *CalDAVBackend) GetSyncChanges(ctx context.Context, calendarPath, token string) ([]*calendar.SyncChangeLog, string, error) {
+	c, _, err := b.ResolvePath(ctx, calendarPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	changes, err := b.calendarRepo.GetChangesSinceToken(ctx, c.ID, token)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return changes, c.SyncToken, nil
 }
 
 func (b *CalDAVBackend) mapCalendar(username string, c *calendar.Calendar) *caldav.Calendar {

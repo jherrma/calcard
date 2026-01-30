@@ -43,6 +43,9 @@ type CalendarRepository interface {
 	// UpdateCalendarObject updates an existing calendar object
 	UpdateCalendarObject(ctx context.Context, obj *CalendarObject) error
 
-	// DeleteCalendarObject deletes a calendar object by ID
-	DeleteCalendarObject(ctx context.Context, id uint) error
+	// DeleteCalendarObject deletes a calendar object
+	DeleteCalendarObject(ctx context.Context, obj *CalendarObject) error
+
+	// GetChangesSinceToken retrieves all changes to a calendar since a given sync token
+	GetChangesSinceToken(ctx context.Context, calendarID uint, token string) ([]*SyncChangeLog, error)
 }

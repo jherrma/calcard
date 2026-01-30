@@ -2,7 +2,7 @@ package webdav
 
 import (
 	"encoding/base64"
-	"fmt"
+	"encoding/xml"
 	"net/http"
 	"strings"
 
@@ -95,14 +95,17 @@ func (h *Handler) Handler() fiber.Handler {
 		u := c.Locals("user").(*user.User)
 		stdCtx := WithUser(c.Context(), u)
 
+		if c.Method() == "REPORT" {
+			var syncQuery SyncCollectionQuery
+			// We need to be careful with the body. Fiber's c.Body() returns a copy.
+			if err := xml.Unmarshal(c.Body(), &syncQuery); err == nil && syncQuery.XMLName.Local == "sync-collection" {
+				return h.handleSyncReport(c, stdCtx, &syncQuery)
+			}
+		}
+
 		netHTTPHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Debug log
-			fmt.Printf("CalDAV Handler: %s %s\n", r.Method, r.URL.Path)
 			h.caldavHandler.ServeHTTP(w, r.WithContext(stdCtx))
 		})
-
-		// Debug log
-		fmt.Printf("Fiber Handler: %s %s\n", c.Method(), c.Path())
 
 		return adaptor.HTTPHandler(netHTTPHandler)(c)
 	}

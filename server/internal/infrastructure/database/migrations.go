@@ -19,5 +19,6 @@ func Models() []interface{} {
 		&domain.SystemSetting{},
 		&calendar.Calendar{},
 		&calendar.CalendarObject{},
+		&calendar.SyncChangeLog{},
 	}
 }

@@ -19,8 +19,8 @@ type Calendar struct {
 	Color               string         `gorm:"size:7;not null" json:"color"` // #RRGGBB
 	Timezone            string         `gorm:"size:50;not null" json:"timezone"`
 	SupportedComponents string         `gorm:"size:100;not null" json:"supported_components"` // "VEVENT,VTODO"
-	SyncToken           string         `gorm:"size:64;not null" json:"sync_token"`
-	CTag                string         `gorm:"size:64;not null" json:"ctag"`
+	SyncToken           string         `gorm:"size:64;not null;default:''" json:"sync_token"`
+	CTag                string         `gorm:"column:ctag;size:64;not null;default:''" json:"ctag"`
 	CreatedAt           time.Time      `json:"created_at"`
 	UpdatedAt           time.Time      `json:"updated_at"`
 	DeletedAt           gorm.DeletedAt `gorm:"index" json:"-"`

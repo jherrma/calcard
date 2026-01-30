@@ -114,15 +114,75 @@ func (r *CalendarRepository) GetCalendarObjectByPath(ctx context.Context, calend
 
 // CreateCalendarObject creates a new calendar object
 func (r *CalendarRepository) CreateCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
-	return r.db.WithContext(ctx).Create(obj).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(obj).Error; err != nil {
+			return err
+		}
+		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "created")
+	})
 }
 
 // UpdateCalendarObject updates an existing calendar object
 func (r *CalendarRepository) UpdateCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
-	return r.db.WithContext(ctx).Save(obj).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(obj).Error; err != nil {
+			return err
+		}
+		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "modified")
+	})
 }
 
-// DeleteCalendarObject deletes a calendar object by ID
-func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&calendar.CalendarObject{}, id).Error
+// DeleteCalendarObject deletes a calendar object
+func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&calendar.CalendarObject{}, obj.ID).Error; err != nil {
+			return err
+		}
+		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "deleted")
+	})
+}
+
+// GetChangesSinceToken retrieves all changes to a calendar since a given sync token
+func (r *CalendarRepository) GetChangesSinceToken(ctx context.Context, calendarID uint, token string) ([]*calendar.SyncChangeLog, error) {
+	var changes []*calendar.SyncChangeLog
+	query := r.db.WithContext(ctx).Where("calendar_id = ?", calendarID)
+	if token != "" {
+		// Find the ID of the sync change log entry with the given token
+		var lastChange calendar.SyncChangeLog
+		err := r.db.WithContext(ctx).Where("calendar_id = ? AND sync_token = ?", calendarID, token).First(&lastChange).Error
+		if err == nil {
+			query = query.Where("id > ?", lastChange.ID)
+		} else if err != gorm.ErrRecordNotFound {
+			return nil, err
+		}
+		// If token not found, RFC 6578 says we SHOULD return 403 Forbidden with valid-sync-token error.
+		// For now, if we can't find the token, we'll return an error that the caller can handle.
+		if err == gorm.ErrRecordNotFound {
+			return nil, gorm.ErrRecordNotFound
+		}
+	}
+
+	err := query.Order("id ASC").Find(&changes).Error
+	return changes, err
+}
+
+func (r *CalendarRepository) recordChange(tx *gorm.DB, calendarID uint, path, uid, changeType string) error {
+	newToken := calendar.GenerateSyncToken()
+
+	// Update calendar sync token and ctag
+	if err := tx.Model(&calendar.Calendar{}).Where("id = ?", calendarID).Updates(map[string]interface{}{
+		"sync_token": newToken,
+		"ctag":       newToken,
+	}).Error; err != nil {
+		return err
+	}
+
+	// Record change
+	return tx.Create(&calendar.SyncChangeLog{
+		CalendarID:   calendarID,
+		ResourcePath: path,
+		ResourceUID:  uid,
+		ChangeType:   changeType,
+		SyncToken:    newToken,
+	}).Error
 }
