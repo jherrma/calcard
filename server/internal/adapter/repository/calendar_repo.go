@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"gorm.io/gorm"
@@ -164,6 +165,27 @@ func (r *CalendarRepository) GetChangesSinceToken(ctx context.Context, calendarI
 
 	err := query.Order("id ASC").Find(&changes).Error
 	return changes, err
+}
+
+// GetCalendarObjectByUUID retrieves a calendar object by UUID
+func (r *CalendarRepository) GetCalendarObjectByUUID(ctx context.Context, uuid string) (*calendar.CalendarObject, error) {
+	var obj calendar.CalendarObject
+	err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&obj).Error
+	if err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+// ListEvents retrieves calendar objects within a time range
+func (r *CalendarRepository) ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*calendar.CalendarObject, error) {
+	var objects []*calendar.CalendarObject
+	err := r.db.WithContext(ctx).
+		Where("calendar_id = ?", calendarID).
+		Where("start_time < ? AND end_time > ?", end, start).
+		Order("start_time ASC, created_at ASC").
+		Find(&objects).Error
+	return objects, err
 }
 
 func (r *CalendarRepository) recordChange(tx *gorm.DB, calendarID uint, path, uid, changeType string) error {

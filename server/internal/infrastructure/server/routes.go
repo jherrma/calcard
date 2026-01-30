@@ -18,6 +18,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
+	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
 
@@ -180,4 +181,29 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	davGroup := app.Group("/dav", davHandler.Authenticate())
 
 	davGroup.Use("/*", davHandler.Handler())
+
+	// Event Routes (Protected)
+	eventListUC := eventusecase.NewListEventsUseCase(calendarRepo)
+	eventGetUC := eventusecase.NewGetEventUseCase(calendarRepo)
+	eventCreateUC := eventusecase.NewCreateEventUseCase(calendarRepo)
+	eventUpdateUC := eventusecase.NewUpdateEventUseCase(calendarRepo)
+	eventDeleteUC := eventusecase.NewDeleteEventUseCase(calendarRepo)
+	eventMoveUC := eventusecase.NewMoveEventUseCase(calendarRepo)
+
+	eventHandler := http.NewEventHandler(
+		eventListUC,
+		eventGetUC,
+		eventCreateUC,
+		eventUpdateUC,
+		eventDeleteUC,
+		eventMoveUC,
+	)
+
+	eventGroup := calendarGroup.Group("/:calendar_id/events")
+	eventGroup.Get("/", eventHandler.List)
+	eventGroup.Post("/", eventHandler.Create)
+	eventGroup.Get("/:event_id", eventHandler.Get)
+	eventGroup.Patch("/:event_id", eventHandler.Update)
+	eventGroup.Delete("/:event_id", eventHandler.Delete)
+	eventGroup.Post("/:event_id/move", eventHandler.Move)
 }

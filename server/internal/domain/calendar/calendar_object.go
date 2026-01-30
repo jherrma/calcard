@@ -17,8 +17,10 @@ type CalendarObject struct {
 	ComponentType string         `gorm:"size:20;not null" json:"component_type"` // VEVENT, VTODO
 	ICalData      string         `gorm:"type:text;not null" json:"ical_data"`
 	ContentLength int            `gorm:"not null" json:"content_length"`
-	Summary       string         `gorm:"size:500" json:"summary"` // Denormalized for search
-	StartTime     *time.Time     `gorm:"index" json:"start_time"` // Denormalized
+	Summary       string         `gorm:"size:500" json:"summary"`      // Denormalized for search
+	Description   string         `gorm:"type:text" json:"description"` // Denormalized
+	Location      string         `gorm:"size:500" json:"location"`     // Denormalized
+	StartTime     *time.Time     `gorm:"index" json:"start_time"`      // Denormalized
 	EndTime       *time.Time     `json:"end_time"`
 	IsAllDay      bool           `json:"is_all_day"`
 	CreatedAt     time.Time      `json:"created_at"`

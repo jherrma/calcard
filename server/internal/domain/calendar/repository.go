@@ -1,6 +1,9 @@
 package calendar
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // CalendarRepository defines the interface for calendar persistence
 type CalendarRepository interface {
@@ -48,4 +51,10 @@ type CalendarRepository interface {
 
 	// GetChangesSinceToken retrieves all changes to a calendar since a given sync token
 	GetChangesSinceToken(ctx context.Context, calendarID uint, token string) ([]*SyncChangeLog, error)
+
+	// ListEvents retrieves calendar objects within a time range
+	ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*CalendarObject, error)
+
+	// GetCalendarObjectByUUID retrieves a calendar object by UUID
+	GetCalendarObjectByUUID(ctx context.Context, uuid string) (*CalendarObject, error)
 }
