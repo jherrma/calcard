@@ -11,7 +11,21 @@ This is the backend for the CalCard project, a modern, self-hostable CalDAV/Card
 
 ## Configuration
 
-The server can be configured using a `config.yaml` file in the current directory or environment variables.
+### WebDAV HTTP Methods
+
+The server uses Fiber v3, which by default only allows standard HTTP methods. To support CalDAV/CardDAV, the following methods have been explicitly enabled in `internal/infrastructure/server/server.go`:
+
+- `PROPFIND`
+- `PROPPATCH`
+- `MKCOL`
+- `COPY`
+- `MOVE`
+- `LOCK`
+- `UNLOCK`
+- `REPORT`
+- `MKCALENDAR` (standard CalDAV method)
+
+If you add new WebDAV-based features, ensure the required methods are added to the `fiber.Config.RequestMethods` slice.
 
 ### OAuth2/OpenID Connect Setup
 

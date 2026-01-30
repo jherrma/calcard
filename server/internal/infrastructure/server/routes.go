@@ -11,6 +11,7 @@ import (
 
 	// samlhandler "github.com/jherrma/caldav-server/internal/adapter/http/auth" // Commented out until SAML is restored
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
+	"github.com/jherrma/caldav-server/internal/adapter/webdav"
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
@@ -169,4 +170,14 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	calendarGroup.Patch("/:id", calendarHandler.Update)
 	calendarGroup.Delete("/:id", calendarHandler.Delete)
 	calendarGroup.Get("/:id/export", calendarHandler.Export)
+
+	// CalDAV Routes
+	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)
+	davHandler := webdav.NewHandler(caldavBackend, userRepo, appPwdRepo, jwtManager)
+
+	app.Get("/.well-known/caldav", webdav.WellKnownRedirect)
+
+	davGroup := app.Group("/dav", davHandler.Authenticate())
+
+	davGroup.Use("/*", davHandler.Handler())
 }

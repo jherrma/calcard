@@ -30,4 +30,19 @@ type CalendarRepository interface {
 
 	// GetCalendarObjects retrieves all calendar objects (events/todos) for a calendar
 	GetCalendarObjects(ctx context.Context, calendarID uint) ([]*CalendarObject, error)
+
+	// GetByPath retrieves a calendar by user ID and path
+	GetByPath(ctx context.Context, userID uint, path string) (*Calendar, error)
+
+	// GetCalendarObjectByPath retrieves a calendar object by calendar ID and path
+	GetCalendarObjectByPath(ctx context.Context, calendarID uint, path string) (*CalendarObject, error)
+
+	// CreateCalendarObject creates a new calendar object
+	CreateCalendarObject(ctx context.Context, obj *CalendarObject) error
+
+	// UpdateCalendarObject updates an existing calendar object
+	UpdateCalendarObject(ctx context.Context, obj *CalendarObject) error
+
+	// DeleteCalendarObject deletes a calendar object by ID
+	DeleteCalendarObject(ctx context.Context, id uint) error
 }

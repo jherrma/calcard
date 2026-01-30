@@ -27,6 +27,9 @@ func New(cfg *config.Config, db database.Database) *Server {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
+		RequestMethods: append(fiber.DefaultMethods,
+			"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "REPORT", "MKCALENDAR",
+		),
 	})
 
 	SetupMiddleware(app)
