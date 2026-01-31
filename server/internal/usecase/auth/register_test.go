@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/jherrma/caldav-server/internal/config"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -12,6 +14,26 @@ import (
 
 type mockUserRepo struct {
 	mock.Mock
+}
+
+type mockCalendarRepo struct {
+	mock.Mock
+	calendar.CalendarRepository // Embed to satisfy interface
+}
+
+func (m *mockCalendarRepo) Create(ctx context.Context, c *calendar.Calendar) error {
+	args := m.Called(ctx, c)
+	return args.Error(0)
+}
+
+type mockAddressBookRepo struct {
+	mock.Mock
+	addressbook.Repository // Embed to satisfy interface
+}
+
+func (m *mockAddressBookRepo) Create(ctx context.Context, ab *addressbook.AddressBook) error {
+	args := m.Called(ctx, ab)
+	return args.Error(0)
 }
 
 func (m *mockUserRepo) Create(ctx context.Context, u *user.User) error {
@@ -103,11 +125,13 @@ func (m *mockEmailService) SendEmail(ctx context.Context, to, subject, body stri
 
 func TestRegisterUseCase_Execute_NoSMTP(t *testing.T) {
 	repo := new(mockUserRepo)
+	calRepo := new(mockCalendarRepo)
+	abRepo := new(mockAddressBookRepo)
 	emailSvc := new(mockEmailService)
 	cfg := &config.Config{
 		SMTP: config.SMTPConfig{Host: ""},
 	}
-	uc := NewRegisterUseCase(repo, emailSvc, cfg)
+	uc := NewRegisterUseCase(repo, calRepo, abRepo, emailSvc, cfg)
 
 	ctx := context.Background()
 	email := "test@example.com"
@@ -119,6 +143,8 @@ func TestRegisterUseCase_Execute_NoSMTP(t *testing.T) {
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
 		return u.Email == email && len(u.Username) == 16 && u.IsActive == true && u.EmailVerified == true
 	})).Return(nil)
+	calRepo.On("Create", ctx, mock.Anything).Return(nil)
+	abRepo.On("Create", ctx, mock.Anything).Return(nil)
 
 	u, token, err := uc.Execute(ctx, email, password, "Test User")
 
@@ -131,12 +157,14 @@ func TestRegisterUseCase_Execute_NoSMTP(t *testing.T) {
 
 func TestRegisterUseCase_Execute_WithSMTP(t *testing.T) {
 	repo := new(mockUserRepo)
+	calRepo := new(mockCalendarRepo)
+	abRepo := new(mockAddressBookRepo)
 	emailSvc := new(mockEmailService)
 	cfg := &config.Config{
 		SMTP:    config.SMTPConfig{Host: "smtp.example.com", From: "no-reply@example.com"},
 		BaseURL: "http://localhost:8080",
 	}
-	uc := NewRegisterUseCase(repo, emailSvc, cfg)
+	uc := NewRegisterUseCase(repo, calRepo, abRepo, emailSvc, cfg)
 
 	ctx := context.Background()
 	email := "test@example.com"
@@ -147,6 +175,8 @@ func TestRegisterUseCase_Execute_WithSMTP(t *testing.T) {
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
 		return u.Email == email && len(u.Username) == 16 && u.IsActive == false && u.EmailVerified == false
 	})).Return(nil)
+	calRepo.On("Create", ctx, mock.Anything).Return(nil)
+	abRepo.On("Create", ctx, mock.Anything).Return(nil)
 	repo.On("CreateVerification", ctx, mock.Anything).Return(nil)
 	emailSvc.On("SendActivationEmail", ctx, email, mock.Anything).Return(nil)
 
@@ -162,11 +192,13 @@ func TestRegisterUseCase_Execute_WithSMTP(t *testing.T) {
 
 func TestRegisterUseCase_Execute_CaseInsensitive(t *testing.T) {
 	repo := new(mockUserRepo)
+	calRepo := new(mockCalendarRepo)
+	abRepo := new(mockAddressBookRepo)
 	emailSvc := new(mockEmailService)
 	cfg := &config.Config{
 		SMTP: config.SMTPConfig{Host: ""},
 	}
-	uc := NewRegisterUseCase(repo, emailSvc, cfg)
+	uc := NewRegisterUseCase(repo, calRepo, abRepo, emailSvc, cfg)
 
 	ctx := context.Background()
 	email := "TEST@Example.Com"
@@ -174,11 +206,13 @@ func TestRegisterUseCase_Execute_CaseInsensitive(t *testing.T) {
 	password := "SecurePass123!"
 
 	repo.On("GetByEmail", ctx, expectedEmail).Return(nil, nil)
-	repo.On("GetByEmail", ctx, expectedEmail).Return(nil, nil)
+	// Duplicate removed
 	repo.On("GetByUsername", ctx, mock.Anything).Return(nil, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
 		return u.Email == expectedEmail
 	})).Return(nil)
+	calRepo.On("Create", ctx, mock.Anything).Return(nil)
+	abRepo.On("Create", ctx, mock.Anything).Return(nil)
 
 	u, _, err := uc.Execute(ctx, email, password, "Test User")
 

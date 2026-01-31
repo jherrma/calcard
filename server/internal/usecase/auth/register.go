@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/config"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"golang.org/x/crypto/bcrypt"
@@ -19,18 +20,20 @@ import (
 var ErrUserAlreadyExists = errors.New("user already exists")
 
 type RegisterUseCase struct {
-	repo         user.UserRepository
-	calendarRepo calendar.CalendarRepository
-	emailService EmailService
-	cfg          *config.Config
+	repo            user.UserRepository
+	calendarRepo    calendar.CalendarRepository
+	addressBookRepo addressbook.Repository
+	emailService    EmailService
+	cfg             *config.Config
 }
 
-func NewRegisterUseCase(repo user.UserRepository, calendarRepo calendar.CalendarRepository, emailService EmailService, cfg *config.Config) *RegisterUseCase {
+func NewRegisterUseCase(repo user.UserRepository, calendarRepo calendar.CalendarRepository, addressBookRepo addressbook.Repository, emailService EmailService, cfg *config.Config) *RegisterUseCase {
 	return &RegisterUseCase{
-		repo:         repo,
-		calendarRepo: calendarRepo,
-		emailService: emailService,
-		cfg:          cfg,
+		repo:            repo,
+		calendarRepo:    calendarRepo,
+		addressBookRepo: addressBookRepo,
+		emailService:    emailService,
+		cfg:             cfg,
 	}
 }
 
@@ -53,11 +56,6 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 	if existing != nil {
 		return nil, "", ErrUserAlreadyExists
 	}
-
-	if existing != nil {
-		return nil, "", ErrUserAlreadyExists
-	}
-
 	// 2b. Generate unique username
 	username, err := GenerateUniqueUsername(ctx, uc.repo)
 	if err != nil {
@@ -132,6 +130,12 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		fmt.Printf("failed to create default calendar: %v\n", err)
 	}
 
+	// Create default address book
+	if err := uc.createDefaultAddressBook(ctx, u.ID); err != nil {
+		// Log error but don't fail registration
+		fmt.Printf("failed to create default address book: %v\n", err)
+	}
+
 	return u, token, nil
 }
 
@@ -154,6 +158,21 @@ func (uc *RegisterUseCase) createDefaultCalendar(ctx context.Context, userID uin
 	}
 
 	return uc.calendarRepo.Create(ctx, defaultCal)
+}
+
+func (uc *RegisterUseCase) createDefaultAddressBook(ctx context.Context, userID uint) error {
+	abUUID := uuid.New().String()
+
+	defaultAB := &addressbook.AddressBook{
+		UserID:    userID,
+		UUID:      abUUID,
+		Name:      "Contacts",
+		Path:      abUUID, // Usually UUID
+		SyncToken: addressbook.GenerateSyncToken(),
+		CTag:      addressbook.GenerateCTag(),
+	}
+
+	return uc.addressBookRepo.Create(ctx, defaultAB)
 }
 
 func (uc *RegisterUseCase) generateUniqueUsername(ctx context.Context) (string, error) {

@@ -1,6 +1,8 @@
 package database
 
 import (
+	"calcard/server/internal/domain/addressbook"
+
 	"github.com/jherrma/caldav-server/internal/domain"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
@@ -20,5 +22,7 @@ func Models() []interface{} {
 		&calendar.Calendar{},
 		&calendar.CalendarObject{},
 		&calendar.SyncChangeLog{},
+		&addressbook.AddressBook{},
+		&addressbook.AddressObject{},
 	}
 }

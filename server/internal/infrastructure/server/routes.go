@@ -15,6 +15,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
+	addressbookusecase "github.com/jherrma/caldav-server/internal/usecase/addressbook"
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
@@ -30,8 +31,9 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	systemRepo := repository.NewSystemSettingRepository(db.DB())
 	resetRepo := repository.NewGORMPasswordResetRepository(db.DB())
 	appPwdRepo := repository.NewAppPasswordRepository(db.DB())
-	// samlSessionRepo := repository.NewSAMLSessionRepository(db.DB()) // Commented out until SAML is restored
+
 	calendarRepo := repository.NewCalendarRepository(db.DB())
+	addressBookRepo := repository.NewAddressBookRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -43,7 +45,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	}
 
 	// Use Cases
-	registerUC := authusecase.NewRegisterUseCase(userRepo, calendarRepo, emailService, cfg)
+	registerUC := authusecase.NewRegisterUseCase(userRepo, calendarRepo, addressBookRepo, emailService, cfg)
 	verifyUC := authusecase.NewVerifyUseCase(userRepo)
 	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg)
 	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager)
@@ -169,8 +171,37 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	calendarGroup.Get("/", calendarHandler.List)
 	calendarGroup.Get("/:id", calendarHandler.Get)
 	calendarGroup.Patch("/:id", calendarHandler.Update)
+
 	calendarGroup.Delete("/:id", calendarHandler.Delete)
 	calendarGroup.Get("/:id/export", calendarHandler.Export)
+
+	// Address Book Routes (Protected)
+	abCreateUC := addressbookusecase.NewCreateUseCase(addressBookRepo)
+	abListUC := addressbookusecase.NewListUseCase(addressBookRepo)
+	abGetUC := addressbookusecase.NewGetUseCase(addressBookRepo)
+	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
+	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)
+	abExportUC := addressbookusecase.NewExportUseCase(addressBookRepo)
+	abCreateContactUC := addressbookusecase.NewCreateContactUseCase(addressBookRepo)
+
+	abHandler := http.NewAddressBookHandler(
+		abCreateUC,
+		abListUC,
+		abGetUC,
+		abUpdateUC,
+		abDeleteUC,
+		abExportUC,
+		abCreateContactUC,
+	)
+
+	abGroup := v1.Group("/addressbooks", http.Authenticate(jwtManager))
+	abGroup.Post("/", abHandler.Create)
+	abGroup.Get("/", abHandler.List)
+	abGroup.Get("/:id", abHandler.Get)
+	abGroup.Patch("/:id", abHandler.Update)
+	abGroup.Delete("/:id", abHandler.Delete)
+	abGroup.Post("/:id/contacts", abHandler.CreateContact)
+	abGroup.Get("/:id/export", abHandler.Export)
 
 	// CalDAV Routes
 	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)
