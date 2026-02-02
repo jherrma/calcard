@@ -8,8 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/http"
-
-	// samlhandler "github.com/jherrma/caldav-server/internal/adapter/http/auth" // Commented out until SAML is restored
+	samlhandler "github.com/jherrma/caldav-server/internal/adapter/http/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/adapter/webdav"
 	"github.com/jherrma/caldav-server/internal/config"
@@ -126,29 +125,22 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	oauthGroup.Post("/:provider/link", http.Authenticate(jwtManager, userRepo), oauthHandler.Link)
 	oauthGroup.Delete("/:provider", http.Authenticate(jwtManager, userRepo), oauthHandler.Unlink)
 
-	// SAML Routes - Commented out until SAML provider is restored
-	/*
-		samlProvider, samlErr := authadapter.NewSAMLServiceProvider(
-			cfg.SAML.EntityID,
-			cfg.BaseURL,
-			cfg.SAML.IDPMetadataURL,
-			[]byte(cfg.SAML.SPKey),
-			[]byte(cfg.SAML.SPCert),
-		)
-		if samlErr != nil {
-			fmt.Printf("Failed to initialize SAML provider: %v\n", samlErr)
-		} else {
-			samlLoginUC := authusecase.NewSAMLLoginUseCase(samlProvider, userRepo, oauthRepo, samlSessionRepo, jwtManager, tokenRepo, cfg)
-			samlMetadataUC := authusecase.NewSAMLMetadataUseCase(samlProvider)
+	// SAML Routes - Conditionally enabled based on config
+	samlSessionRepo := repository.NewSAMLSessionRepository(db.DB())
+	samlProvider, samlErr := authadapter.NewSAMLServiceProvider(&cfg.SAML, cfg.BaseURL)
+	if samlErr != nil {
+		fmt.Printf("Failed to initialize SAML provider: %v\n", samlErr)
+	} else if samlProvider != nil {
+		samlLoginUC := authusecase.NewSAMLLoginUseCase(samlProvider, userRepo, oauthRepo, samlSessionRepo, jwtManager, tokenRepo, cfg)
+		samlMetadataUC := authusecase.NewSAMLMetadataUseCase(samlProvider)
 
-			samlHandler := samlhandler.NewSAMLHandler(samlProvider, samlLoginUC, samlMetadataUC)
+		samlHandler := samlhandler.NewSAMLHandler(samlProvider, samlLoginUC, samlMetadataUC)
 
-			samlGroup := v1.Group("/auth/saml")
-			samlGroup.Get("/metadata", samlHandler.Metadata)
-			samlGroup.Get("/login", samlHandler.Login)
-			samlGroup.Post("/acs", samlHandler.ACS)
-		}
-	*/
+		samlGroup := v1.Group("/auth/saml")
+		samlGroup.Get("/metadata", samlHandler.Metadata)
+		samlGroup.Get("/login", samlHandler.Login)
+		samlGroup.Post("/acs", samlHandler.ACS)
+	}
 
 	// Calendar Routes (Protected)
 	calendarCreateUC := calendarusecase.NewCreateCalendarUseCase(calendarRepo)
