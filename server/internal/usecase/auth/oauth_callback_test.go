@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
@@ -18,12 +19,12 @@ type mockOAuthProviderManager struct {
 	mock.Mock
 }
 
-func (m *mockOAuthProviderManager) GetProvider(name string) (OAuthProvider, error) {
+func (m *mockOAuthProviderManager) GetProvider(name string) (authadapter.OAuthProvider, error) {
 	args := m.Called(name)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(OAuthProvider), args.Error(1)
+	return args.Get(0).(authadapter.OAuthProvider), args.Error(1)
 }
 
 func (m *mockOAuthProviderManager) ListProviders() []string {
@@ -53,12 +54,12 @@ func (m *mockOAuthProvider) Exchange(ctx context.Context, code string) (*oauth2.
 	return args.Get(0).(*oauth2.Token), args.Error(1)
 }
 
-func (m *mockOAuthProvider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*UserInfo, error) {
+func (m *mockOAuthProvider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*authadapter.UserInfo, error) {
 	args := m.Called(ctx, tokenSource)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*UserInfo), args.Error(1)
+	return args.Get(0).(*authadapter.UserInfo), args.Error(1)
 }
 
 type mockOAuthRepo struct {
@@ -164,7 +165,7 @@ func TestOAuthCallbackUseCase_Execute_LoginExistingUser(t *testing.T) {
 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
-	userInfo := &UserInfo{Subject: "sub123", Email: "test@example.com"}
+	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "test@example.com"}
 	existingUser := &user.User{ID: 1, UUID: "uuid1", Email: userInfo.Email}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
@@ -201,7 +202,7 @@ func TestOAuthCallbackUseCase_Execute_LinkNewUser(t *testing.T) {
 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
-	userInfo := &UserInfo{Subject: "sub123", Email: "new@example.com", Name: "New User"}
+	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "new@example.com", Name: "New User"}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
 	provider.On("Exchange", ctx, code).Return(token, nil)
@@ -247,7 +248,7 @@ func TestOAuthCallbackUseCase_Execute_LinkLoggedInUser(t *testing.T) {
 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
-	userInfo := &UserInfo{Subject: "sub123", Email: "new@example.com"}
+	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "new@example.com"}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
 	provider.On("Exchange", ctx, code).Return(token, nil)
@@ -282,7 +283,7 @@ func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedError(t *testing.T) {
 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
-	userInfo := &UserInfo{Subject: "sub123", Email: "test@example.com"}
+	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "test@example.com"}
 	otherUser := &user.User{ID: 100}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
@@ -313,7 +314,7 @@ func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedSuccess(t *testing.T) {
 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "new_access_token", RefreshToken: "new_refresh_token", Expiry: time.Now().Add(time.Hour)}
-	userInfo := &UserInfo{Subject: "sub123", Email: "test@example.com"}
+	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "test@example.com"}
 	existingUser := &user.User{ID: 99} // Same ID as currentUser
 	existingConn := &user.OAuthConnection{ID: 1, UserID: 99, Provider: providerName, ProviderID: userInfo.Subject}
 

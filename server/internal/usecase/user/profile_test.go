@@ -79,6 +79,14 @@ func (m *mockUserRepo) DeleteVerification(ctx context.Context, token string) err
 	return args.Error(0)
 }
 
+func (m *mockUserRepo) GetByOAuth(ctx context.Context, provider, providerID string) (*user.User, error) {
+	args := m.Called(ctx, provider, providerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*user.User), args.Error(1)
+}
+
 func TestGetProfileUseCase_Execute(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := NewGetProfileUseCase(repo)

@@ -4,4 +4,4 @@ This project contains documentation, stories and implementation (backend and fro
 
 # Instructions
 
-If you encounter issues during development or have ideas for a better solution than proposed in the story, then propse a new implementation.
+If you encounter issues during development or have ideas for a better solution than proposed in the story, then propse a new implementation. Always write unit and integration tests to ensure your implementation is working

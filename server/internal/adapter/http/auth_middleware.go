@@ -40,6 +40,7 @@ func Authenticate(jwtManager user.TokenProvider, userRepo user.UserRepository) f
 		c.Locals("user_uuid", userUUID)
 		c.Locals("user_email", email)
 		c.Locals("user_id", u.ID)
+		c.Locals("user", u)
 
 		return c.Next()
 	}

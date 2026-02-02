@@ -94,14 +94,14 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	authGroup.Post("/reset-password", authHandler.ResetPassword)
 
 	// User Routes (Protected)
-	userGroup := v1.Group("/users", http.Authenticate(jwtManager))
+	userGroup := v1.Group("/users", http.Authenticate(jwtManager, userRepo))
 	userGroup.Get("/me", userHandler.GetProfile)
 	userGroup.Patch("/me", userHandler.UpdateProfile)
 	userGroup.Delete("/me", userHandler.DeleteAccount)
 	userGroup.Put("/me/password", userHandler.ChangePassword)
 
 	// App Password Routes (Protected)
-	appPwdGroup := v1.Group("/app-passwords", http.Authenticate(jwtManager))
+	appPwdGroup := v1.Group("/app-passwords", http.Authenticate(jwtManager, userRepo))
 	appPwdGroup.Get("/", appPwdHandler.List)
 	appPwdGroup.Delete("/:id", appPwdHandler.Revoke)
 
@@ -120,11 +120,11 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	oauthHandler := http.NewOAuthHandler(initiateOAuthUC, oauthCallbackUC, unlinkUC, listLinkedUC)
 
 	oauthGroup := v1.Group("/auth/oauth")
-	oauthGroup.Get("/providers", http.Authenticate(jwtManager), oauthHandler.List) // List linked providers (auth required)
+	oauthGroup.Get("/providers", http.Authenticate(jwtManager, userRepo), oauthHandler.List) // List linked providers (auth required)
 	oauthGroup.Get("/:provider", oauthHandler.Initiate)
 	oauthGroup.Get("/:provider/callback", oauthHandler.Callback)
-	oauthGroup.Post("/:provider/link", http.Authenticate(jwtManager), oauthHandler.Link)
-	oauthGroup.Delete("/:provider", http.Authenticate(jwtManager), oauthHandler.Unlink)
+	oauthGroup.Post("/:provider/link", http.Authenticate(jwtManager, userRepo), oauthHandler.Link)
+	oauthGroup.Delete("/:provider", http.Authenticate(jwtManager, userRepo), oauthHandler.Unlink)
 
 	// SAML Routes - Commented out until SAML provider is restored
 	/*
@@ -167,7 +167,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		calendarExportUC,
 	)
 
-	calendarGroup := v1.Group("/calendars", http.Authenticate(jwtManager))
+	calendarGroup := v1.Group("/calendars", http.Authenticate(jwtManager, userRepo))
 	calendarGroup.Post("/", calendarHandler.Create)
 	calendarGroup.Get("/", calendarHandler.List)
 	calendarGroup.Get("/:id", calendarHandler.Get)
@@ -195,7 +195,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		abCreateContactUC,
 	)
 
-	abGroup := v1.Group("/addressbooks", http.Authenticate(jwtManager))
+	abGroup := v1.Group("/addressbooks", http.Authenticate(jwtManager, userRepo))
 	abGroup.Post("/", abHandler.Create)
 	abGroup.Get("/", abHandler.List)
 	abGroup.Get("/:id", abHandler.Get)
@@ -238,7 +238,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abGroup.Get("/:addressbook_id/contacts/:contact_id/photo", contactHandler.ServePhoto)
 
 	// Global Contact Search
-	v1.Get("/contacts/search", http.Authenticate(jwtManager), contactHandler.Search)
+	v1.Get("/contacts/search", http.Authenticate(jwtManager, userRepo), contactHandler.Search)
 
 	// CalDAV Routes
 	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)

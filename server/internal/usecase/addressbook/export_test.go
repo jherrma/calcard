@@ -25,9 +25,9 @@ func (m *mockRepo) GetByID(ctx context.Context, id uint) (*addressbook.AddressBo
 	return args.Get(0).(*addressbook.AddressBook), args.Error(1)
 }
 
-func (m *mockRepo) ListObjects(ctx context.Context, addressBookID uint) ([]addressbook.AddressObject, error) {
+func (m *mockRepo) ListObjects(ctx context.Context, addressBookID uint, limit, offset int, sort, order string) ([]addressbook.AddressObject, int64, error) {
 	args := m.Called(ctx, addressBookID)
-	return args.Get(0).([]addressbook.AddressObject), args.Error(1)
+	return args.Get(0).([]addressbook.AddressObject), int64(len(args.Get(0).([]addressbook.AddressObject))), args.Error(1)
 }
 
 // Implement other methods to satisfy interface...
@@ -44,6 +44,16 @@ func (m *mockRepo) GetObjectByID(ctx context.Context, id uint) (*addressbook.Add
 	return nil, nil
 }
 func (m *mockRepo) GetByUUID(ctx context.Context, uuid string) (*addressbook.AddressBook, error) {
+	return nil, nil
+}
+func (m *mockRepo) GetObjectByUUID(ctx context.Context, uuid string) (*addressbook.AddressObject, error) {
+	return nil, nil
+}
+func (m *mockRepo) UpdateObject(ctx context.Context, object *addressbook.AddressObject) error {
+	return nil
+}
+func (m *mockRepo) DeleteObjectByUUID(ctx context.Context, uuid string) error { return nil }
+func (m *mockRepo) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
 	return nil, nil
 }
 

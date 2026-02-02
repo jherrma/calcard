@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -32,10 +33,10 @@ func ExtractEmailMiddleware() fiber.Handler {
 		var body struct {
 			Email string `json:"email"`
 		}
-		// Use Body() and json.Unmarshal to avoid consuming the stream if needed,
-		// but Fiber v3 Bind might be okay if it supports multiple reads or if we reset it.
-		// Actually, let's just use c.Body() and simple parsing.
-		if err := c.Bind().JSON(&body); err == nil {
+
+		// Use c.Body() to peek at the request body without consuming the stream
+		// if Fiber's Bind() implementation were to do so.
+		if err := json.Unmarshal(c.Body(), &body); err == nil {
 			c.Locals("login_email", body.Email)
 		}
 		return c.Next()
