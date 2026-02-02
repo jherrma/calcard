@@ -56,6 +56,15 @@ func (m *mockRepo) DeleteObjectByUUID(ctx context.Context, uuid string) error { 
 func (m *mockRepo) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
 	return nil, nil
 }
+func (m *mockRepo) GetByUserAndPath(ctx context.Context, userID uint, path string) (*addressbook.AddressBook, error) {
+	return nil, nil
+}
+func (m *mockRepo) GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*addressbook.AddressObject, error) {
+	return nil, nil
+}
+func (m *mockRepo) QueryObjects(ctx context.Context, addressBookID uint, query *addressbook.ObjectQuery) ([]addressbook.AddressObject, error) {
+	return nil, nil
+}
 
 func TestExportUseCase_Execute(t *testing.T) {
 	repo := new(mockRepo)

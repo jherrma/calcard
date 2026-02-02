@@ -232,11 +232,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// Global Contact Search
 	v1.Get("/contacts/search", http.Authenticate(jwtManager, userRepo), contactHandler.Search)
 
-	// CalDAV Routes
+	// CalDAV/CardDAV Routes
 	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)
-	davHandler := webdav.NewHandler(caldavBackend, userRepo, appPwdRepo, jwtManager)
+	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo)
+	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, jwtManager)
 
-	app.Get("/.well-known/caldav", webdav.WellKnownRedirect)
+	app.Get("/.well-known/caldav", webdav.WellKnownCalDAVRedirect)
+	app.Get("/.well-known/carddav", webdav.WellKnownCardDAVRedirect)
 
 	davGroup := app.Group("/dav", davHandler.Authenticate())
 

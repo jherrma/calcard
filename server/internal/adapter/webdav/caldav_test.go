@@ -51,9 +51,12 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
 
 	caldavBackend := NewCalDAVBackend(calendarRepo, userRepo)
-	davHandler := NewHandler(caldavBackend, userRepo, appPwdRepo, jwtManager)
+	addressBookRepo := repository.NewAddressBookRepository(db.DB())
+	carddavBackend := NewCardDAVBackend(addressBookRepo, userRepo)
+	davHandler := NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, jwtManager)
 
-	app.Get("/.well-known/caldav", WellKnownRedirect)
+	app.Get("/.well-known/caldav", WellKnownCalDAVRedirect)
+	app.Get("/.well-known/carddav", WellKnownCardDAVRedirect)
 	davGroup := app.Group("/dav", davHandler.Authenticate())
 
 	davGroup.All("/*", davHandler.Handler())

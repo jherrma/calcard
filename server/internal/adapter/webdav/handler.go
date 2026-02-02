@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/emersion/go-webdav/caldav"
+	"github.com/emersion/go-webdav/carddav"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/jherrma/caldav-server/internal/domain/user"
@@ -14,14 +15,16 @@ import (
 )
 
 type Handler struct {
-	caldavHandler *caldav.Handler
-	userRepo      user.UserRepository
-	appPwdRepo    user.AppPasswordRepository
-	jwtManager    user.TokenProvider
+	caldavHandler  *caldav.Handler
+	carddavHandler *carddav.Handler
+	userRepo       user.UserRepository
+	appPwdRepo     user.AppPasswordRepository
+	jwtManager     user.TokenProvider
 }
 
 func NewHandler(
 	caldavBackend *CalDAVBackend,
+	carddavBackend *CardDAVBackend,
 	userRepo user.UserRepository,
 	appPwdRepo user.AppPasswordRepository,
 	jwtManager user.TokenProvider,
@@ -29,6 +32,10 @@ func NewHandler(
 	return &Handler{
 		caldavHandler: &caldav.Handler{
 			Backend: caldavBackend,
+			Prefix:  "/dav",
+		},
+		carddavHandler: &carddav.Handler{
+			Backend: carddavBackend,
 			Prefix:  "/dav",
 		},
 		userRepo:   userRepo,
@@ -41,7 +48,7 @@ func (h *Handler) Authenticate() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
-			c.Set("WWW-Authenticate", `Basic realm="CalDAV Server"`)
+			c.Set("WWW-Authenticate", `Basic realm="CalDAV/CardDAV Server"`)
 			return c.SendStatus(fiber.StatusUnauthorized)
 		}
 
@@ -81,7 +88,7 @@ func (h *Handler) Authenticate() fiber.Handler {
 		}
 
 		if u == nil {
-			c.Set("WWW-Authenticate", `Basic realm="CalDAV Server"`)
+			c.Set("WWW-Authenticate", `Basic realm="CalDAV/CardDAV Server"`)
 			return c.SendStatus(fiber.StatusUnauthorized)
 		}
 
@@ -94,23 +101,36 @@ func (h *Handler) Handler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		u := c.Locals("user").(*user.User)
 		stdCtx := WithUser(c.Context(), u)
+		reqPath := c.Path()
 
-		if c.Method() == "REPORT" {
+		// Handle WebDAV-Sync REPORT for CalDAV
+		if c.Method() == "REPORT" && strings.Contains(reqPath, "/calendars/") {
 			var syncQuery SyncCollectionQuery
-			// We need to be careful with the body. Fiber's c.Body() returns a copy.
 			if err := xml.Unmarshal(c.Body(), &syncQuery); err == nil && syncQuery.XMLName.Local == "sync-collection" {
 				return h.handleSyncReport(c, stdCtx, &syncQuery)
 			}
 		}
 
-		netHTTPHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h.caldavHandler.ServeHTTP(w, r.WithContext(stdCtx))
-		})
+		// Route to appropriate handler based on path
+		var httpHandler http.Handler
+		if strings.Contains(reqPath, "/addressbooks/") {
+			httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				h.carddavHandler.ServeHTTP(w, r.WithContext(stdCtx))
+			})
+		} else {
+			httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				h.caldavHandler.ServeHTTP(w, r.WithContext(stdCtx))
+			})
+		}
 
-		return adaptor.HTTPHandler(netHTTPHandler)(c)
+		return adaptor.HTTPHandler(httpHandler)(c)
 	}
 }
 
-func WellKnownRedirect(c fiber.Ctx) error {
+func WellKnownCalDAVRedirect(c fiber.Ctx) error {
+	return c.Redirect().Status(fiber.StatusMovedPermanently).To("/dav/")
+}
+
+func WellKnownCardDAVRedirect(c fiber.Ctx) error {
 	return c.Redirect().Status(fiber.StatusMovedPermanently).To("/dav/")
 }

@@ -62,6 +62,122 @@ func (r *AddressBookRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&addressbook.AddressBook{}, id).Error
 }
 
+func (r *AddressBookRepository) GetByUserAndPath(ctx context.Context, userID uint, path string) (*addressbook.AddressBook, error) {
+	var ab addressbook.AddressBook
+	if err := r.db.WithContext(ctx).Where("user_id = ? AND path = ?", userID, path).First(&ab).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &ab, nil
+}
+
+func (r *AddressBookRepository) GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*addressbook.AddressObject, error) {
+	var obj addressbook.AddressObject
+	if err := r.db.WithContext(ctx).Where("address_book_id = ? AND path = ?", addressBookID, path).First(&obj).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &obj, nil
+}
+
+// QueryObjects performs database-level filtering based on CardDAV query parameters.
+// It maps vCard property names to database columns.
+func (r *AddressBookRepository) QueryObjects(ctx context.Context, addressBookID uint, query *addressbook.ObjectQuery) ([]addressbook.AddressObject, error) {
+	var objs []addressbook.AddressObject
+
+	db := r.db.WithContext(ctx).Model(&addressbook.AddressObject{}).Where("address_book_id = ?", addressBookID)
+
+	// Apply filters
+	for _, filter := range query.Filters {
+		db = r.applyFilter(db, filter)
+	}
+
+	// Apply limit
+	if query.Limit > 0 {
+		db = db.Limit(query.Limit)
+	}
+
+	if err := db.Find(&objs).Error; err != nil {
+		return nil, err
+	}
+
+	return objs, nil
+}
+
+// applyFilter applies a single filter to the query.
+func (r *AddressBookRepository) applyFilter(db *gorm.DB, filter addressbook.ObjectQueryFilter) *gorm.DB {
+	// Map vCard property names to database columns
+	column := r.propertyToColumn(filter.PropertyName)
+	if column == "" {
+		// Unknown property - can't filter at DB level, skip
+		return db
+	}
+
+	if filter.IsNotDefined {
+		if filter.NegateCondition {
+			return db.Where(column + " IS NOT NULL AND " + column + " != ''")
+		}
+		return db.Where(column + " IS NULL OR " + column + " = ''")
+	}
+
+	searchText := strings.ToLower(filter.SearchText)
+
+	var condition string
+	var value interface{}
+
+	switch filter.MatchType {
+	case "equals":
+		condition = "LOWER(" + column + ") = ?"
+		value = searchText
+	case "starts-with":
+		condition = "LOWER(" + column + ") LIKE ?"
+		value = searchText + "%"
+	case "ends-with":
+		condition = "LOWER(" + column + ") LIKE ?"
+		value = "%" + searchText
+	case "contains":
+		fallthrough
+	default:
+		condition = "LOWER(" + column + ") LIKE ?"
+		value = "%" + searchText + "%"
+	}
+
+	if filter.NegateCondition {
+		return db.Where("NOT ("+condition+")", value)
+	}
+	return db.Where(condition, value)
+}
+
+// propertyToColumn maps vCard property names to database columns.
+func (r *AddressBookRepository) propertyToColumn(property string) string {
+	// Normalize property name to uppercase
+	prop := strings.ToUpper(property)
+	switch prop {
+	case "FN":
+		return "formatted_name"
+	case "N":
+		return "family_name" // For N, we primarily match on family_name
+	case "EMAIL":
+		return "email"
+	case "TEL":
+		return "phone"
+	case "ORG":
+		return "organization"
+	case "GIVEN-NAME":
+		return "given_name"
+	case "FAMILY-NAME":
+		return "family_name"
+	case "UID":
+		return "uid"
+	default:
+		return ""
+	}
+}
+
 // Address Object methods
 // Helpers for Photo Management
 func (r *AddressBookRepository) extractPhoto(vcardData string) (string, string, string, error) {
