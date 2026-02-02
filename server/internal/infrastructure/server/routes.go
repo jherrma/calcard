@@ -20,6 +20,7 @@ import (
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
 	contactusecase "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
+	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
 
@@ -36,6 +37,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	addressBookRepo := repository.NewAddressBookRepository(db.DB())
 	caldavCredRepo := repository.NewCalDAVCredentialRepository(db.DB())
 	carddavCredRepo := repository.NewCardDAVCredentialRepository(db.DB())
+	shareRepo := repository.NewCalendarShareRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -76,12 +78,19 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	listCarddavCredUC := apppassword.NewListCardDAVCredentialsUseCase(carddavCredRepo)
 	revokeCarddavCredUC := apppassword.NewRevokeCardDAVCredentialUseCase(carddavCredRepo)
 
+	// Sharing Use Cases
+	createShareUC := sharing.NewCreateCalendarShareUseCase(shareRepo, calendarRepo, userRepo)
+	listShareUC := sharing.NewListCalendarSharesUseCase(shareRepo, calendarRepo)
+	updateShareUC := sharing.NewUpdateCalendarShareUseCase(shareRepo, calendarRepo)
+	revokeShareUC := sharing.NewRevokeCalendarShareUseCase(shareRepo, calendarRepo)
+
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
+	shareHandler := http.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Routes
@@ -193,6 +202,12 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	calendarGroup.Delete("/:id", calendarHandler.Delete)
 	calendarGroup.Get("/:id/export", calendarHandler.Export)
+
+	// Calendar Share Routes
+	calendarGroup.Post("/:id/shares", shareHandler.Create)
+	calendarGroup.Get("/:id/shares", shareHandler.List)
+	calendarGroup.Patch("/:id/shares/:share_id", shareHandler.Update)
+	calendarGroup.Delete("/:id/shares/:share_id", shareHandler.Revoke)
 
 	// Address Book Routes (Protected)
 	abCreateUC := addressbookusecase.NewCreateUseCase(addressBookRepo)

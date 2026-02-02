@@ -13,6 +13,7 @@ import (
 	"github.com/emersion/go-webdav/caldav"
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 )
 
@@ -20,12 +21,18 @@ import (
 type CalDAVBackend struct {
 	calendarRepo calendar.CalendarRepository
 	userRepo     user.UserRepository
+	shareRepo    sharing.CalendarShareRepository
 }
 
-func NewCalDAVBackend(calendarRepo calendar.CalendarRepository, userRepo user.UserRepository) *CalDAVBackend {
+func NewCalDAVBackend(
+	calendarRepo calendar.CalendarRepository,
+	userRepo user.UserRepository,
+	shareRepo sharing.CalendarShareRepository,
+) *CalDAVBackend {
 	return &CalDAVBackend{
 		calendarRepo: calendarRepo,
 		userRepo:     userRepo,
+		shareRepo:    shareRepo,
 	}
 }
 
@@ -55,15 +62,30 @@ func (b *CalDAVBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, e
 		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	calendars, err := b.calendarRepo.ListByUserID(ctx, u.ID)
+	// 1. Get owned calendars
+	owned, err := b.calendarRepo.ListByUserID(ctx, u.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	res := make([]caldav.Calendar, len(calendars))
-	for i, c := range calendars {
-		res[i] = *b.mapCalendar(u.Username, c)
+	// 2. Get shared calendars
+	shared, err := b.shareRepo.FindCalendarsSharedWithUser(ctx, u.ID)
+	if err != nil {
+		return nil, err
 	}
+
+	res := make([]caldav.Calendar, 0, len(owned)+len(shared))
+	for _, c := range owned {
+		res = append(res, *b.mapCalendar(u.Username, c, calendar.PermissionOwner))
+	}
+	for _, s := range shared {
+		perm := calendar.PermissionRead
+		if s.Permission == "read-write" {
+			perm = calendar.PermissionReadWrite
+		}
+		res = append(res, *b.mapCalendar(u.Username, &s.Calendar, perm))
+	}
+
 	return res, nil
 }
 
@@ -81,11 +103,39 @@ func (b *CalDAVBackend) GetCalendar(ctx context.Context, p string) (*caldav.Cale
 
 	calPath := parts[3]
 	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
+
+	// If not found in owned, check shared
+	var perm calendar.CalendarPermission
 	if err != nil || c == nil {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+		// Try to find if it's a shared calendar.
+		// Since GetByPath checks user_id, it won't find shared calendars.
+		// We iterate shared calendars to find a match by path.
+		// Note: Potential name collisions are not yet handled; first match wins.
+		shared, err := b.shareRepo.FindCalendarsSharedWithUser(ctx, u.ID)
+		if err != nil {
+			return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+		}
+		found := false
+		for _, s := range shared {
+			if s.Calendar.Path == calPath {
+				c = &s.Calendar
+				if s.Permission == "read-write" {
+					perm = calendar.PermissionReadWrite
+				} else {
+					perm = calendar.PermissionRead
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+		}
+	} else {
+		perm = calendar.PermissionOwner
 	}
 
-	return b.mapCalendar(u.Username, c), nil
+	return b.mapCalendar(u.Username, c, perm), nil
 }
 
 func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar) error {
@@ -117,50 +167,38 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 }
 
 func (b *CalDAVBackend) GetCalendarObject(ctx context.Context, p string, req *caldav.CalendarCompRequest) (*caldav.CalendarObject, error) {
-	u, ok := UserFromContext(ctx)
-	if !ok {
-		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
+	c, _, perm, err := b.ResolvePath(ctx, p)
+	if err != nil {
+		return nil, err
 	}
 
-	// Path: /dav/username/calendars/calname/obj.ics
 	parts := strings.Split(strings.Trim(p, "/"), "/")
-	if len(parts) != 5 || parts[1] != u.Username || parts[2] != "calendars" {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
-	}
-
-	calPath := parts[3]
 	objPath := parts[4]
-
-	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
-	if err != nil || c == nil {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
-	}
 
 	obj, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
 	if err != nil || obj == nil {
 		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
 	}
 
+	// Build ACL based on perm
+	// Permission check happens before mapping the object.
+
+	if perm == calendar.PermissionNone {
+		return nil, webdav.NewHTTPError(http.StatusForbidden, nil)
+	}
+
 	return b.mapCalendarObject(p, obj)
 }
 
 func (b *CalDAVBackend) ListCalendarObjects(ctx context.Context, p string, req *caldav.CalendarCompRequest) ([]caldav.CalendarObject, error) {
-	u, ok := UserFromContext(ctx)
-	if !ok {
-		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
+	// Trim trailing slash for ResolvePath compatibility if needed, or handle it
+	c, _, perm, err := b.ResolvePath(ctx, p)
+	if err != nil {
+		return nil, err
 	}
 
-	parts := strings.Split(strings.Trim(p, "/"), "/")
-	if len(parts) != 4 || parts[1] != u.Username || parts[2] != "calendars" {
-		// If it's the home set (calendars/), we might get this call?
-		// Actually go-webdav should handle this.
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
-	}
-
-	calPath := parts[3]
-	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
-	if err != nil || c == nil {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	if perm == calendar.PermissionNone {
+		return nil, webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
 	objects, err := b.calendarRepo.GetCalendarObjects(ctx, c.ID)
@@ -170,7 +208,14 @@ func (b *CalDAVBackend) ListCalendarObjects(ctx context.Context, p string, req *
 
 	res := make([]caldav.CalendarObject, 0, len(objects))
 	for _, obj := range objects {
-		co, err := b.mapCalendarObject(path.Join(p, obj.Path), obj)
+		// Join path correctly
+		objUrl := path.Join(p, obj.Path)
+		// Ensure it starts with /dav/ if p didn't
+		if !strings.HasPrefix(objUrl, "/dav/") {
+			// This shouldn't happen given standard usage, but let's be safe
+		}
+
+		co, err := b.mapCalendarObject(objUrl, obj)
 		if err == nil {
 			res = append(res, *co)
 		}
@@ -184,23 +229,18 @@ func (b *CalDAVBackend) QueryCalendarObjects(ctx context.Context, p string, quer
 }
 
 func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal *ical.Calendar, opts *caldav.PutCalendarObjectOptions) (*caldav.CalendarObject, error) {
-	u, ok := UserFromContext(ctx)
-	if !ok {
-		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
+	c, _, perm, err := b.ResolvePath(ctx, p)
+	if err != nil {
+		return nil, err
 	}
 
-	parts := strings.Split(strings.Trim(p, "/"), "/")
-	if len(parts) != 5 || parts[1] != u.Username || parts[2] != "calendars" {
+	// Check Write Permission
+	if perm != calendar.PermissionOwner && perm != calendar.PermissionReadWrite {
 		return nil, webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
-	calPath := parts[3]
+	parts := strings.Split(strings.Trim(p, "/"), "/")
 	objPath := parts[4]
-
-	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
-	if err != nil || c == nil {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
-	}
 
 	_, uid, err := caldav.ValidateCalendarObject(icalCal)
 	if err != nil {
@@ -290,23 +330,18 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 }
 
 func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) error {
-	u, ok := UserFromContext(ctx)
-	if !ok {
-		return webdav.NewHTTPError(http.StatusUnauthorized, nil)
+	c, _, perm, err := b.ResolvePath(ctx, p)
+	if err != nil {
+		return err
 	}
 
-	parts := strings.Split(strings.Trim(p, "/"), "/")
-	if len(parts) != 5 || parts[1] != u.Username || parts[2] != "calendars" {
+	// Check Write Permission
+	if perm != calendar.PermissionOwner && perm != calendar.PermissionReadWrite {
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
-	calPath := parts[3]
+	parts := strings.Split(strings.Trim(p, "/"), "/")
 	objPath := parts[4]
-
-	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
-	if err != nil || c == nil {
-		return webdav.NewHTTPError(http.StatusNotFound, nil)
-	}
 
 	obj, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
 	if err != nil || obj == nil {
@@ -324,30 +359,57 @@ func (b *CalDAVBackend) GetCalendarObjectByPath(ctx context.Context, calendarID 
 	return b.calendarRepo.GetCalendarObjectByPath(ctx, calendarID, path)
 }
 
-func (b *CalDAVBackend) ResolvePath(ctx context.Context, p string) (*calendar.Calendar, *user.User, error) {
+// ResolvePath resolves a path to a calendar, user, and permission
+func (b *CalDAVBackend) ResolvePath(ctx context.Context, p string) (*calendar.Calendar, *user.User, calendar.CalendarPermission, error) {
 	u, ok := UserFromContext(ctx)
 	if !ok {
-		return nil, nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
+		return nil, nil, calendar.PermissionNone, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	if len(parts) < 4 || parts[0] != "dav" || parts[1] != u.Username || parts[2] != "calendars" {
-		return nil, nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+		return nil, nil, calendar.PermissionNone, webdav.NewHTTPError(http.StatusNotFound, nil)
 	}
 
 	calPath := parts[3]
+
+	// 1. Try owned calendar
 	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
-	if err != nil || c == nil {
-		return nil, nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	if err == nil && c != nil {
+		return c, u, calendar.PermissionOwner, nil
 	}
 
-	return c, u, nil
+	// 2. Try shared calendar
+	// We need to fetch ID to check permission, but GetByPath failed for user.
+	// So we need to look up shared calendars by path.
+	// This is inefficient loop, but acceptable for MVP.
+	shared, err := b.shareRepo.FindCalendarsSharedWithUser(ctx, u.ID)
+	if err != nil {
+		return nil, nil, calendar.PermissionNone, webdav.NewHTTPError(http.StatusNotFound, nil)
+	}
+
+	for _, s := range shared {
+		if s.Calendar.Path == calPath {
+			perm := calendar.PermissionRead
+			if s.Permission == "read-write" {
+				perm = calendar.PermissionReadWrite
+			}
+			// Preload of Calendar is expected in FindCalendarsSharedWithUser
+			return &s.Calendar, u, perm, nil
+		}
+	}
+
+	return nil, nil, calendar.PermissionNone, webdav.NewHTTPError(http.StatusNotFound, nil)
 }
 
 func (b *CalDAVBackend) GetSyncChanges(ctx context.Context, calendarPath, token string) ([]*calendar.SyncChangeLog, string, error) {
-	c, _, err := b.ResolvePath(ctx, calendarPath)
+	c, _, perm, err := b.ResolvePath(ctx, calendarPath)
 	if err != nil {
 		return nil, "", err
+	}
+
+	if perm == calendar.PermissionNone {
+		return nil, "", webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
 	changes, err := b.calendarRepo.GetChangesSinceToken(ctx, c.ID, token)
@@ -358,11 +420,24 @@ func (b *CalDAVBackend) GetSyncChanges(ctx context.Context, calendarPath, token 
 	return changes, c.SyncToken, nil
 }
 
-func (b *CalDAVBackend) mapCalendar(username string, c *calendar.Calendar) *caldav.Calendar {
+func (b *CalDAVBackend) mapCalendar(username string, c *calendar.Calendar, permission calendar.CalendarPermission) *caldav.Calendar {
+	// Set Description
+	desc := c.Description
+	if desc == "" {
+		if permission == calendar.PermissionOwner {
+			desc = "My Calendar"
+		} else {
+			desc = "Shared Calendar"
+			if c.Owner.Username != "" {
+				desc = fmt.Sprintf("Shared Calendar (%s)", c.Owner.Username)
+			}
+		}
+	}
+
 	return &caldav.Calendar{
 		Path:                  fmt.Sprintf("/dav/%s/calendars/%s/", username, c.Path),
 		Name:                  c.Name,
-		Description:           c.Description,
+		Description:           desc,
 		SupportedComponentSet: []string{"VEVENT", "VTODO"},
 	}
 }

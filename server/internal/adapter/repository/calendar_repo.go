@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"gorm.io/gorm"
 )
 
@@ -207,4 +209,35 @@ func (r *CalendarRepository) recordChange(tx *gorm.DB, calendarID uint, path, ui
 		ChangeType:   changeType,
 		SyncToken:    newToken,
 	}).Error
+}
+
+// GetUserPermission determines a user's permission for a calendar
+func (r *CalendarRepository) GetUserPermission(ctx context.Context, calendarID, userID uint) (calendar.CalendarPermission, error) {
+	// Check ownership
+	var cal calendar.Calendar
+	if err := r.db.WithContext(ctx).First(&cal, calendarID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return calendar.PermissionNone, nil
+		}
+		return calendar.PermissionNone, err
+	}
+
+	if cal.UserID == userID {
+		return calendar.PermissionOwner, nil
+	}
+
+	// Check share
+	var share sharing.CalendarShare
+	err := r.db.WithContext(ctx).Where("calendar_id = ? AND shared_with_id = ?", calendarID, userID).First(&share).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return calendar.PermissionNone, nil
+		}
+		return calendar.PermissionNone, err
+	}
+
+	if share.Permission == "read-write" {
+		return calendar.PermissionReadWrite, nil
+	}
+	return calendar.PermissionRead, nil
 }

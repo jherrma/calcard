@@ -5,6 +5,7 @@ import (
 
 	"github.com/jherrma/caldav-server/internal/domain"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 )
 
@@ -27,6 +28,8 @@ func Models() []interface{} {
 		&addressbook.ContactPhoto{},
 		&addressbook.SyncChangeLog{},
 		&user.CalDAVCredential{},
+		&user.CalDAVCredential{},
 		&user.CardDAVCredential{},
+		&sharing.CalendarShare{},
 	}
 }

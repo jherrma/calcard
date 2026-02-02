@@ -57,4 +57,7 @@ type CalendarRepository interface {
 
 	// GetCalendarObjectByUUID retrieves a calendar object by UUID
 	GetCalendarObjectByUUID(ctx context.Context, uuid string) (*CalendarObject, error)
+
+	// GetUserPermission determines a user's permission for a calendar
+	GetUserPermission(ctx context.Context, calendarID, userID uint) (CalendarPermission, error)
 }

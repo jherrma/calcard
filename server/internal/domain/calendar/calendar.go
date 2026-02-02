@@ -5,7 +5,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jherrma/caldav-server/internal/domain/user"
 	"gorm.io/gorm"
+)
+
+// CalendarPermission represents access level
+type CalendarPermission int
+
+const (
+	PermissionNone CalendarPermission = iota
+	PermissionRead
+	PermissionReadWrite
+	PermissionOwner
 )
 
 // Calendar represents a calendar collection
@@ -13,6 +24,7 @@ type Calendar struct {
 	ID                  uint           `gorm:"primaryKey" json:"id"`
 	UUID                string         `gorm:"uniqueIndex;size:36;not null" json:"uuid"`
 	UserID              uint           `gorm:"index;not null" json:"user_id"`
+	Owner               user.User      `gorm:"foreignKey:UserID" json:"-"`
 	Path                string         `gorm:"size:255;not null" json:"path"` // URL path component
 	Name                string         `gorm:"size:255;not null" json:"name"`
 	Description         string         `gorm:"size:1000" json:"description"`
