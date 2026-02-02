@@ -14,3 +14,14 @@ type CalendarShareRepository interface {
 	Revoke(ctx context.Context, id uint) error
 	GetByCalendarAndUser(ctx context.Context, calendarID, userID uint) (*CalendarShare, error)
 }
+
+// AddressBookShareRepository defines the interface for address book share persistence
+type AddressBookShareRepository interface {
+	Create(ctx context.Context, share *AddressBookShare) error
+	GetByUUID(ctx context.Context, uuid string) (*AddressBookShare, error)
+	ListByAddressBookID(ctx context.Context, addressBookID uint) ([]AddressBookShare, error)
+	FindAddressBooksSharedWithUser(ctx context.Context, userID uint) ([]AddressBookShare, error)
+	Update(ctx context.Context, share *AddressBookShare) error
+	Revoke(ctx context.Context, id uint) error
+	GetByAddressBookAndUser(ctx context.Context, addressBookID, userID uint) (*AddressBookShare, error)
+}

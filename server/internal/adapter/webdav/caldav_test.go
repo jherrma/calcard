@@ -53,9 +53,10 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
 
 	shareRepo := repository.NewCalendarShareRepository(db.DB())
+	abShareRepo := repository.NewAddressBookShareRepository(db.DB())
 	caldavBackend := NewCalDAVBackend(calendarRepo, userRepo, shareRepo)
 	addressBookRepo := repository.NewAddressBookRepository(db.DB())
-	carddavBackend := NewCardDAVBackend(addressBookRepo, userRepo)
+	carddavBackend := NewCardDAVBackend(addressBookRepo, userRepo, abShareRepo)
 	davHandler := NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, carddavCredRepo, jwtManager)
 
 	app.Get("/.well-known/caldav", WellKnownCalDAVRedirect)

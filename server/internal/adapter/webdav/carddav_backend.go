@@ -12,6 +12,7 @@ import (
 	"github.com/emersion/go-webdav/carddav"
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 )
 
@@ -19,12 +20,14 @@ import (
 type CardDAVBackend struct {
 	addressBookRepo addressbook.Repository
 	userRepo        user.UserRepository
+	shareRepo       sharing.AddressBookShareRepository
 }
 
-func NewCardDAVBackend(addressBookRepo addressbook.Repository, userRepo user.UserRepository) *CardDAVBackend {
+func NewCardDAVBackend(addressBookRepo addressbook.Repository, userRepo user.UserRepository, shareRepo sharing.AddressBookShareRepository) *CardDAVBackend {
 	return &CardDAVBackend{
 		addressBookRepo: addressBookRepo,
 		userRepo:        userRepo,
+		shareRepo:       shareRepo,
 	}
 }
 
@@ -53,15 +56,29 @@ func (b *CardDAVBackend) ListAddressBooks(ctx context.Context) ([]carddav.Addres
 		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
+	// 1. Get owned address books
 	books, err := b.addressBookRepo.ListByUserID(ctx, u.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	res := make([]carddav.AddressBook, len(books))
-	for i, ab := range books {
-		res[i] = *b.mapAddressBook(u.Username, &ab)
+	// 2. Get shared address books
+	var shared []sharing.AddressBookShare
+	if b.shareRepo != nil {
+		shared, err = b.shareRepo.FindAddressBooksSharedWithUser(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
+
+	res := make([]carddav.AddressBook, 0, len(books)+len(shared))
+	for _, ab := range books {
+		res = append(res, *b.mapAddressBook(u.Username, &ab))
+	}
+	for _, s := range shared {
+		res = append(res, *b.mapAddressBook(u.Username, &s.AddressBook))
+	}
+
 	return res, nil
 }
 

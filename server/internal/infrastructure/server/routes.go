@@ -38,6 +38,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	caldavCredRepo := repository.NewCalDAVCredentialRepository(db.DB())
 	carddavCredRepo := repository.NewCardDAVCredentialRepository(db.DB())
 	shareRepo := repository.NewCalendarShareRepository(db.DB())
+	abShareRepo := repository.NewAddressBookShareRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -84,6 +85,12 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	updateShareUC := sharing.NewUpdateCalendarShareUseCase(shareRepo, calendarRepo)
 	revokeShareUC := sharing.NewRevokeCalendarShareUseCase(shareRepo, calendarRepo)
 
+	// Address Book Sharing Use Cases
+	createABShareUC := sharing.NewCreateAddressBookShareUseCase(abShareRepo, addressBookRepo, userRepo)
+	listABShareUC := sharing.NewListAddressBookSharesUseCase(abShareRepo, addressBookRepo)
+	updateABShareUC := sharing.NewUpdateAddressBookShareUseCase(abShareRepo, addressBookRepo)
+	revokeABShareUC := sharing.NewRevokeAddressBookShareUseCase(abShareRepo, addressBookRepo)
+
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
@@ -91,6 +98,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
 	shareHandler := http.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC)
+	abShareHandler := http.NewAddressBookShareHandler(createABShareUC, listABShareUC, updateABShareUC, revokeABShareUC)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Routes
@@ -236,6 +244,12 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abGroup.Delete("/:id", abHandler.Delete)
 	abGroup.Get("/:id/export", abHandler.Export)
 
+	// Address Book Share Routes
+	abGroup.Post("/:id/shares", abShareHandler.Create)
+	abGroup.Get("/:id/shares", abShareHandler.List)
+	abGroup.Patch("/:id/shares/:share_id", abShareHandler.Update)
+	abGroup.Delete("/:id/shares/:share_id", abShareHandler.Revoke)
+
 	// Contact Use Cases
 	contactCreateUC := contactusecase.NewCreateUseCase(abCreateContactUC)
 	contactGetUC := contactusecase.NewGetUseCase(addressBookRepo)
@@ -274,8 +288,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	v1.Get("/contacts/search", http.Authenticate(jwtManager, userRepo), contactHandler.Search)
 
 	// CalDAV/CardDAV Routes
-	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)
-	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo)
+	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo, shareRepo)
+	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo, abShareRepo)
 	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, carddavCredRepo, jwtManager)
 
 	app.Get("/.well-known/caldav", webdav.WellKnownCalDAVRedirect)

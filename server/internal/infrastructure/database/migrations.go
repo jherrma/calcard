@@ -31,5 +31,6 @@ func Models() []interface{} {
 		&user.CalDAVCredential{},
 		&user.CardDAVCredential{},
 		&sharing.CalendarShare{},
+		&sharing.AddressBookShare{},
 	}
 }
