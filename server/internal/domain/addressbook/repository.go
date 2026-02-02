@@ -34,4 +34,8 @@ type Repository interface {
 	UpdateObject(ctx context.Context, object *AddressObject) error
 	DeleteObjectByUUID(ctx context.Context, uuid string) error
 	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
+
+	// Sync-related methods for WebDAV-Sync (RFC 6578)
+	GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*SyncChangeLog, error)
+	RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error
 }

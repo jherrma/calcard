@@ -443,3 +443,66 @@ func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, 
 	}
 	return objs, nil
 }
+
+// GetChangesSinceToken returns all changes since the given sync token.
+// If token is empty, returns all current objects as "created".
+func (r *AddressBookRepository) GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*addressbook.SyncChangeLog, error) {
+	var changes []*addressbook.SyncChangeLog
+
+	if token == "" {
+		// Initial sync: return all objects as "created"
+		var objs []addressbook.AddressObject
+		if err := r.db.WithContext(ctx).Where("address_book_id = ?", addressBookID).Find(&objs).Error; err != nil {
+			return nil, err
+		}
+
+		// Get current sync token from address book
+		var ab addressbook.AddressBook
+		if err := r.db.WithContext(ctx).First(&ab, addressBookID).Error; err != nil {
+			return nil, err
+		}
+
+		for _, obj := range objs {
+			changes = append(changes, &addressbook.SyncChangeLog{
+				AddressBookID: addressBookID,
+				ResourcePath:  obj.Path,
+				ResourceUID:   obj.UID,
+				ChangeType:    "created",
+				SyncToken:     ab.SyncToken,
+			})
+		}
+		return changes, nil
+	}
+
+	// Incremental sync: validate token exists
+	var lastChange addressbook.SyncChangeLog
+	if err := r.db.WithContext(ctx).
+		Where("address_book_id = ? AND sync_token = ?", addressBookID, token).
+		First(&lastChange).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, gorm.ErrRecordNotFound // Invalid token
+		}
+		return nil, err
+	}
+
+	// Get all changes after the token's timestamp
+	if err := r.db.WithContext(ctx).
+		Where("address_book_id = ? AND created_at > ?", addressBookID, lastChange.CreatedAt).
+		Order("created_at ASC").
+		Find(&changes).Error; err != nil {
+		return nil, err
+	}
+
+	return changes, nil
+}
+
+// RecordChange records a sync change for an address object.
+func (r *AddressBookRepository) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
+	return r.db.WithContext(ctx).Create(&addressbook.SyncChangeLog{
+		AddressBookID: addressBookID,
+		ResourcePath:  path,
+		ResourceUID:   uid,
+		ChangeType:    changeType,
+		SyncToken:     token,
+	}).Error
+}

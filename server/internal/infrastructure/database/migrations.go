@@ -25,5 +25,6 @@ func Models() []interface{} {
 		&addressbook.AddressBook{},
 		&addressbook.AddressObject{},
 		&addressbook.ContactPhoto{},
+		&addressbook.SyncChangeLog{},
 	}
 }

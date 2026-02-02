@@ -471,3 +471,28 @@ func (b *CardDAVBackend) mapAddressObject(p string, obj *addressbook.AddressObje
 		ModTime:       obj.UpdatedAt,
 	}, nil
 }
+
+// GetSyncChanges returns all changes since the given sync token.
+func (b *CardDAVBackend) GetSyncChanges(ctx context.Context, addressBookPath, token string) ([]*addressbook.SyncChangeLog, string, error) {
+	u, ok := UserFromContext(ctx)
+	if !ok {
+		return nil, "", fmt.Errorf("unauthorized")
+	}
+
+	ab, err := b.resolveAddressBook(ctx, u, addressBookPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	changes, err := b.addressBookRepo.GetChangesSinceToken(ctx, ab.ID, token)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return changes, ab.SyncToken, nil
+}
+
+// GetAddressObjectByPath returns an address object by its path within an address book.
+func (b *CardDAVBackend) GetAddressObjectByPath(ctx context.Context, addressBookID uint, objPath string) (*addressbook.AddressObject, error) {
+	return b.addressBookRepo.GetObjectByPath(ctx, addressBookID, objPath)
+}

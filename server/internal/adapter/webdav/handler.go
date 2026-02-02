@@ -111,6 +111,14 @@ func (h *Handler) Handler() fiber.Handler {
 			}
 		}
 
+		// Handle WebDAV-Sync REPORT for CardDAV
+		if c.Method() == "REPORT" && strings.Contains(reqPath, "/addressbooks/") {
+			var syncQuery SyncCollectionQuery
+			if err := xml.Unmarshal(c.Body(), &syncQuery); err == nil && syncQuery.XMLName.Local == "sync-collection" {
+				return h.handleAddressBookSyncReport(c, stdCtx, &syncQuery)
+			}
+		}
+
 		// Route to appropriate handler based on path
 		var httpHandler http.Handler
 		if strings.Contains(reqPath, "/addressbooks/") {

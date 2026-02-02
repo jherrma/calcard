@@ -65,6 +65,12 @@ func (m *mockRepo) GetObjectByPath(ctx context.Context, addressBookID uint, path
 func (m *mockRepo) QueryObjects(ctx context.Context, addressBookID uint, query *addressbook.ObjectQuery) ([]addressbook.AddressObject, error) {
 	return nil, nil
 }
+func (m *mockRepo) GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*addressbook.SyncChangeLog, error) {
+	return nil, nil
+}
+func (m *mockRepo) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
+	return nil
+}
 
 func TestExportUseCase_Execute(t *testing.T) {
 	repo := new(mockRepo)
