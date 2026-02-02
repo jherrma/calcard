@@ -11,5 +11,9 @@ type Repository interface {
 	Delete(ctx context.Context, id uint) error
 	CreateObject(ctx context.Context, object *AddressObject) error
 	GetObjectByID(ctx context.Context, id uint) (*AddressObject, error)
-	ListObjects(ctx context.Context, addressBookID uint) ([]AddressObject, error)
+	ListObjects(ctx context.Context, addressBookID uint, limit, offset int, sort, order string) ([]AddressObject, int64, error)
+	GetObjectByUUID(ctx context.Context, uuid string) (*AddressObject, error)
+	UpdateObject(ctx context.Context, object *AddressObject) error
+	DeleteObjectByUUID(ctx context.Context, uuid string) error
+	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
 }

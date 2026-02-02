@@ -81,7 +81,7 @@ func setupEventHandlerTest(t *testing.T) (*fiber.App, database.Database, *user.U
 	handler := NewEventHandler(eventListUC, eventGetUC, eventCreateUC, eventUpdateUC, eventDeleteUC, eventMoveUC)
 
 	v1 := app.Group("/api/v1")
-	calendars := v1.Group("/calendars", Authenticate(jwtManager))
+	calendars := v1.Group("/calendars", Authenticate(jwtManager, userRepo))
 	events := calendars.Group("/:calendar_id/events")
 	events.Post("/", handler.Create)
 	events.Get("/", handler.List)

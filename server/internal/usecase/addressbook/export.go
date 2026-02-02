@@ -26,7 +26,7 @@ func (uc *ExportUseCase) Execute(ctx context.Context, id uint, userID uint) ([]b
 	}
 
 	// Fetch all contacts (AddressObjects) for this address book
-	contacts, err := uc.repo.ListObjects(ctx, ab.ID)
+	contacts, _, err := uc.repo.ListObjects(ctx, ab.ID, -1, 0, "name", "asc")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to fetch contacts: %w", err)
 	}

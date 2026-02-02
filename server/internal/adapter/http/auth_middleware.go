@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -9,7 +10,7 @@ import (
 )
 
 // Authenticate returns a Fiber middleware that validates JWT tokens
-func Authenticate(jwtManager user.TokenProvider) fiber.Handler {
+func Authenticate(jwtManager user.TokenProvider, userRepo user.UserRepository) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
@@ -29,10 +30,26 @@ func Authenticate(jwtManager user.TokenProvider) fiber.Handler {
 			return UnauthorizedResponse(c, "invalid or expired token")
 		}
 
+		// Look up user to get uint ID
+		u, err := userRepo.GetByUUID(c.Context(), userUUID)
+		if err != nil {
+			return UnauthorizedResponse(c, "user not found")
+		}
+
 		// Store user info in context
 		c.Locals("user_uuid", userUUID)
 		c.Locals("user_email", email)
+		c.Locals("user_id", u.ID)
 
 		return c.Next()
 	}
+}
+
+// GetUserIDFromContext retrieves the user ID from the fiber context
+func GetUserIDFromContext(c fiber.Ctx) (uint, error) {
+	userID, ok := c.Locals("user_id").(uint)
+	if !ok {
+		return 0, fmt.Errorf("user id not found in context")
+	}
+	return userID, nil
 }

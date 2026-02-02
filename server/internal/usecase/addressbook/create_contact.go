@@ -1,6 +1,7 @@
 package addressbook
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -35,17 +36,29 @@ func (uc *CreateContactUseCase) Execute(ctx context.Context, input CreateContact
 		return nil, fmt.Errorf("address book not found or access denied")
 	}
 
-	// 2. Generate identifiers
-	uid := uuid.New().String()
-	objUUID := uuid.New().String()
-	path := uid + ".vcf"
-
 	// 3. Parse VCard data to extract denormalized fields
 	dec := vcard.NewDecoder(strings.NewReader(input.VCardData))
 	card, err := dec.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("invalid vcard data: %w", err)
 	}
+
+	// Reuse UID from vCard if present, otherwise generate new and inject it
+	uid := card.PreferredValue(vcard.FieldUID)
+	if uid == "" {
+		uid = uuid.New().String()
+		card.Set(vcard.FieldUID, &vcard.Field{Value: uid})
+
+		// Re-encode vCard with new UID
+		var buf bytes.Buffer
+		if err := vcard.NewEncoder(&buf).Encode(card); err != nil {
+			return nil, fmt.Errorf("failed to encode vcard with generated UID: %w", err)
+		}
+		input.VCardData = buf.String()
+	}
+
+	objUUID := uuid.New().String() // Internal DB UUID
+	path := uid + ".vcf"
 
 	var formattedName, givenName, familyName, email, phone, organization string
 
@@ -56,10 +69,8 @@ func (uc *CreateContactUseCase) Execute(ctx context.Context, input CreateContact
 	if n := card.Get(vcard.FieldName); n != nil {
 		givenName = n.Params.Get("GIVEN")
 		familyName = n.Params.Get("FAMILY")
-		// The vcard library returns values joined by semicolon for N field structure if fetched as string
-		// But Address struct helpers for name components might need specific handling or just use common name
-		// Let's rely on FormattedName mainly, but if we want components we can parse the Value string
-		// N:Family;Given;Middle;Prefix;Suffix
+
+		// Fallback: Parse distinct parts from N value (Family;Given;Middle;Prefix;Suffix)
 		parts := strings.Split(n.Value, ";")
 		if len(parts) > 0 {
 			familyName = parts[0]

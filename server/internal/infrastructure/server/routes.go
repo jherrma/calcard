@@ -19,6 +19,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
+	contactusecase "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
@@ -200,8 +201,44 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abGroup.Get("/:id", abHandler.Get)
 	abGroup.Patch("/:id", abHandler.Update)
 	abGroup.Delete("/:id", abHandler.Delete)
-	abGroup.Post("/:id/contacts", abHandler.CreateContact)
 	abGroup.Get("/:id/export", abHandler.Export)
+
+	// Contact Use Cases
+	contactCreateUC := contactusecase.NewCreateUseCase(abCreateContactUC)
+	contactGetUC := contactusecase.NewGetUseCase(addressBookRepo)
+	contactListUC := contactusecase.NewListUseCase(addressBookRepo)
+	contactUpdateUC := contactusecase.NewUpdateUseCase(addressBookRepo)
+	contactDeleteUC := contactusecase.NewDeleteUseCase(addressBookRepo)
+	contactSearchUC := contactusecase.NewSearchUseCase(addressBookRepo)
+	contactMoveUC := contactusecase.NewMoveUseCase(addressBookRepo)
+	contactPhotoUC := contactusecase.NewPhotoUseCase(addressBookRepo)
+
+	contactHandler := http.NewContactHandler(
+		contactCreateUC,
+		contactListUC,
+		contactGetUC,
+		contactUpdateUC,
+		contactDeleteUC,
+		contactSearchUC,
+		contactMoveUC,
+		contactPhotoUC,
+	)
+
+	// Contact Routes
+	// Using :addressbook_id to match handler expectation
+	abGroup.Get("/:addressbook_id/contacts", contactHandler.List)
+	abGroup.Post("/:addressbook_id/contacts", contactHandler.Create)
+	abGroup.Get("/:addressbook_id/contacts/:contact_id", contactHandler.Get)
+	abGroup.Patch("/:addressbook_id/contacts/:contact_id", contactHandler.Update)
+	abGroup.Delete("/:addressbook_id/contacts/:contact_id", contactHandler.Delete)
+
+	abGroup.Post("/:addressbook_id/contacts/:contact_id/move", contactHandler.Move)
+	abGroup.Put("/:addressbook_id/contacts/:contact_id/photo", contactHandler.UploadPhoto)
+	abGroup.Delete("/:addressbook_id/contacts/:contact_id/photo", contactHandler.DeletePhoto)
+	abGroup.Get("/:addressbook_id/contacts/:contact_id/photo", contactHandler.ServePhoto)
+
+	// Global Contact Search
+	v1.Get("/contacts/search", http.Authenticate(jwtManager), contactHandler.Search)
 
 	// CalDAV Routes
 	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)
