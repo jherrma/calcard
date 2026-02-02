@@ -27,5 +27,6 @@ func Models() []interface{} {
 		&addressbook.ContactPhoto{},
 		&addressbook.SyncChangeLog{},
 		&user.CalDAVCredential{},
+		&user.CardDAVCredential{},
 	}
 }

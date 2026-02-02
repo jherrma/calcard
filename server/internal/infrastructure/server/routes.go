@@ -35,6 +35,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	calendarRepo := repository.NewCalendarRepository(db.DB())
 	addressBookRepo := repository.NewAddressBookRepository(db.DB())
 	caldavCredRepo := repository.NewCalDAVCredentialRepository(db.DB())
+	carddavCredRepo := repository.NewCardDAVCredentialRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -70,11 +71,17 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	listCaldavCredUC := apppassword.NewListCalDAVCredentialsUseCase(caldavCredRepo)
 	revokeCaldavCredUC := apppassword.NewRevokeCalDAVCredentialUseCase(caldavCredRepo)
 
+	// CardDAV Credential Use Cases
+	createCarddavCredUC := apppassword.NewCreateCardDAVCredentialUseCase(carddavCredRepo)
+	listCarddavCredUC := apppassword.NewListCardDAVCredentialsUseCase(carddavCredRepo)
+	revokeCarddavCredUC := apppassword.NewRevokeCardDAVCredentialUseCase(carddavCredRepo)
+
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
+	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Routes
@@ -116,6 +123,12 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	caldavCredGroup.Post("/", caldavCredHandler.Create)
 	caldavCredGroup.Get("/", caldavCredHandler.List)
 	caldavCredGroup.Delete("/:id", caldavCredHandler.Revoke)
+
+	// CardDAV Credential Routes (Protected)
+	carddavCredGroup := v1.Group("/carddav-credentials", http.Authenticate(jwtManager, userRepo))
+	carddavCredGroup.Post("/", carddavCredHandler.Create)
+	carddavCredGroup.Get("/", carddavCredHandler.List)
+	carddavCredGroup.Delete("/:id", carddavCredHandler.Revoke)
 
 	// OAuth Routes
 	oauthRepo := repository.NewOAuthConnectionRepository(db.DB())
@@ -248,7 +261,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// CalDAV/CardDAV Routes
 	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)
 	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo)
-	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, jwtManager)
+	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, carddavCredRepo, jwtManager)
 
 	app.Get("/.well-known/caldav", webdav.WellKnownCalDAVRedirect)
 	app.Get("/.well-known/carddav", webdav.WellKnownCardDAVRedirect)

@@ -16,12 +16,13 @@ import (
 )
 
 type Handler struct {
-	caldavHandler  *caldav.Handler
-	carddavHandler *carddav.Handler
-	userRepo       user.UserRepository
-	appPwdRepo     user.AppPasswordRepository
-	caldavCredRepo user.CalDAVCredentialRepository
-	jwtManager     user.TokenProvider
+	caldavHandler   *caldav.Handler
+	carddavHandler  *carddav.Handler
+	userRepo        user.UserRepository
+	appPwdRepo      user.AppPasswordRepository
+	caldavCredRepo  user.CalDAVCredentialRepository
+	carddavCredRepo user.CardDAVCredentialRepository
+	jwtManager      user.TokenProvider
 }
 
 func NewHandler(
@@ -30,6 +31,7 @@ func NewHandler(
 	userRepo user.UserRepository,
 	appPwdRepo user.AppPasswordRepository,
 	caldavCredRepo user.CalDAVCredentialRepository,
+	carddavCredRepo user.CardDAVCredentialRepository,
 	jwtManager user.TokenProvider,
 ) *Handler {
 	return &Handler{
@@ -41,10 +43,11 @@ func NewHandler(
 			Backend: carddavBackend,
 			Prefix:  "/dav",
 		},
-		userRepo:       userRepo,
-		appPwdRepo:     appPwdRepo,
-		caldavCredRepo: caldavCredRepo,
-		jwtManager:     jwtManager,
+		userRepo:        userRepo,
+		appPwdRepo:      appPwdRepo,
+		caldavCredRepo:  caldavCredRepo,
+		carddavCredRepo: carddavCredRepo,
+		jwtManager:      jwtManager,
 	}
 }
 
@@ -93,8 +96,9 @@ func (h *Handler) Authenticate() fiber.Handler {
 				}
 			}
 
-			// If not authenticated as primary user, try CalDAV credentials
+			// If not authenticated as primary user, try dedicated credentials
 			if u == nil {
+				// Try CalDAV credential
 				cred, _ := h.caldavCredRepo.GetByUsername(c.Context(), emailOrUsername)
 				if cred != nil && cred.IsValid() {
 					if err := bcrypt.CompareHashAndPassword([]byte(cred.PasswordHash), []byte(password)); err == nil {
@@ -102,8 +106,22 @@ func (h *Handler) Authenticate() fiber.Handler {
 						if u != nil {
 							c.Locals("can_write", cred.CanWrite())
 							c.Locals("caldav_credential_id", cred.ID)
-							// Update last used (async)
 							go h.caldavCredRepo.UpdateLastUsed(context.Background(), cred.ID, c.IP())
+						}
+					}
+				}
+
+				// If still nil, try CardDAV credential (only if CalDAV failed)
+				if u == nil {
+					cardCred, _ := h.carddavCredRepo.GetByUsername(c.Context(), emailOrUsername)
+					if cardCred != nil && cardCred.IsValid() {
+						if err := bcrypt.CompareHashAndPassword([]byte(cardCred.PasswordHash), []byte(password)); err == nil {
+							u, _ = h.userRepo.GetByID(c.Context(), cardCred.UserID)
+							if u != nil {
+								c.Locals("can_write", cardCred.CanWrite())
+								c.Locals("carddav_credential_id", cardCred.ID)
+								go h.carddavCredRepo.UpdateLastUsed(context.Background(), cardCred.ID, c.IP())
+							}
 						}
 					}
 				}

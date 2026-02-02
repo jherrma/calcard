@@ -38,6 +38,16 @@ type AppPasswordRepository interface {
 	FindValidForUser(ctx context.Context, userID uint, password string) (*AppPassword, error)
 }
 
+type CardDAVCredentialRepository interface {
+	Create(ctx context.Context, cred *CardDAVCredential) error
+	GetByUUID(ctx context.Context, uuid string) (*CardDAVCredential, error)
+	GetByUsername(ctx context.Context, username string) (*CardDAVCredential, error)
+	ListByUserID(ctx context.Context, userID uint) ([]CardDAVCredential, error)
+	Update(ctx context.Context, cred *CardDAVCredential) error
+	Revoke(ctx context.Context, id uint) error
+	UpdateLastUsed(ctx context.Context, id uint, ip string) error
+}
+
 // PasswordResetRepository defines the interface for password reset persistence
 type PasswordResetRepository interface {
 	Create(ctx context.Context, reset *PasswordReset) error
