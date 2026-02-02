@@ -69,3 +69,13 @@ type SAMLSessionRepository interface {
 	DeleteBySessionID(ctx context.Context, sessionID string) error
 	DeleteByUserID(ctx context.Context, userID uint) error
 }
+
+// CalDAVCredentialRepository defines the interface for CalDAV credential persistence
+type CalDAVCredentialRepository interface {
+	Create(ctx context.Context, cred *CalDAVCredential) error
+	GetByUUID(ctx context.Context, uuid string) (*CalDAVCredential, error)
+	GetByUsername(ctx context.Context, username string) (*CalDAVCredential, error)
+	ListByUserID(ctx context.Context, userID uint) ([]CalDAVCredential, error)
+	Revoke(ctx context.Context, id uint) error
+	UpdateLastUsed(ctx context.Context, id uint, ip string) error
+}

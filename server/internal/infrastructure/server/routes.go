@@ -34,6 +34,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	calendarRepo := repository.NewCalendarRepository(db.DB())
 	addressBookRepo := repository.NewAddressBookRepository(db.DB())
+	caldavCredRepo := repository.NewCalDAVCredentialRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -64,10 +65,16 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	listAppPwdUC := apppassword.NewListUseCase(appPwdRepo)
 	revokeAppPwdUC := apppassword.NewRevokeUseCase(appPwdRepo)
 
+	// CalDAV Credential Use Cases
+	createCaldavCredUC := apppassword.NewCreateCalDAVCredentialUseCase(caldavCredRepo)
+	listCaldavCredUC := apppassword.NewListCalDAVCredentialsUseCase(caldavCredRepo)
+	revokeCaldavCredUC := apppassword.NewRevokeCalDAVCredentialUseCase(caldavCredRepo)
+
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
+	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Routes
@@ -103,6 +110,12 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	appPwdGroup := v1.Group("/app-passwords", http.Authenticate(jwtManager, userRepo))
 	appPwdGroup.Get("/", appPwdHandler.List)
 	appPwdGroup.Delete("/:id", appPwdHandler.Revoke)
+
+	// CalDAV Credential Routes (Protected)
+	caldavCredGroup := v1.Group("/caldav-credentials", http.Authenticate(jwtManager, userRepo))
+	caldavCredGroup.Post("/", caldavCredHandler.Create)
+	caldavCredGroup.Get("/", caldavCredHandler.List)
+	caldavCredGroup.Delete("/:id", caldavCredHandler.Revoke)
 
 	// OAuth Routes
 	oauthRepo := repository.NewOAuthConnectionRepository(db.DB())
@@ -235,7 +248,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// CalDAV/CardDAV Routes
 	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo)
 	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo)
-	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, jwtManager)
+	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, jwtManager)
 
 	app.Get("/.well-known/caldav", webdav.WellKnownCalDAVRedirect)
 	app.Get("/.well-known/carddav", webdav.WellKnownCardDAVRedirect)

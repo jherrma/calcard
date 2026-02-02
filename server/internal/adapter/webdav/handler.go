@@ -1,6 +1,7 @@
 package webdav
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/xml"
 	"net/http"
@@ -19,6 +20,7 @@ type Handler struct {
 	carddavHandler *carddav.Handler
 	userRepo       user.UserRepository
 	appPwdRepo     user.AppPasswordRepository
+	caldavCredRepo user.CalDAVCredentialRepository
 	jwtManager     user.TokenProvider
 }
 
@@ -27,6 +29,7 @@ func NewHandler(
 	carddavBackend *CardDAVBackend,
 	userRepo user.UserRepository,
 	appPwdRepo user.AppPasswordRepository,
+	caldavCredRepo user.CalDAVCredentialRepository,
 	jwtManager user.TokenProvider,
 ) *Handler {
 	return &Handler{
@@ -38,9 +41,10 @@ func NewHandler(
 			Backend: carddavBackend,
 			Prefix:  "/dav",
 		},
-		userRepo:   userRepo,
-		appPwdRepo: appPwdRepo,
-		jwtManager: jwtManager,
+		userRepo:       userRepo,
+		appPwdRepo:     appPwdRepo,
+		caldavCredRepo: caldavCredRepo,
+		jwtManager:     jwtManager,
 	}
 }
 
@@ -75,13 +79,32 @@ func (h *Handler) Authenticate() fiber.Handler {
 				return c.SendStatus(fiber.StatusUnauthorized)
 			}
 
-			email, password := pair[0], pair[1]
-			u, _ = h.userRepo.GetByEmail(c.Context(), email)
+			emailOrUsername, password := pair[0], pair[1]
+			u, _ = h.userRepo.GetByEmail(c.Context(), emailOrUsername)
 			if u != nil {
 				ap, _ := h.appPwdRepo.FindValidForUser(c.Context(), u.ID, password)
 				if ap == nil {
 					if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 						u = nil
+					}
+				}
+				if u != nil {
+					c.Locals("can_write", true) // Direct user/app password always has write access
+				}
+			}
+
+			// If not authenticated as primary user, try CalDAV credentials
+			if u == nil {
+				cred, _ := h.caldavCredRepo.GetByUsername(c.Context(), emailOrUsername)
+				if cred != nil && cred.IsValid() {
+					if err := bcrypt.CompareHashAndPassword([]byte(cred.PasswordHash), []byte(password)); err == nil {
+						u, _ = h.userRepo.GetByID(c.Context(), cred.UserID)
+						if u != nil {
+							c.Locals("can_write", cred.CanWrite())
+							c.Locals("caldav_credential_id", cred.ID)
+							// Update last used (async)
+							go h.caldavCredRepo.UpdateLastUsed(context.Background(), cred.ID, c.IP())
+						}
 					}
 				}
 			}
@@ -90,6 +113,17 @@ func (h *Handler) Authenticate() fiber.Handler {
 		if u == nil {
 			c.Set("WWW-Authenticate", `Basic realm="CalDAV/CardDAV Server"`)
 			return c.SendStatus(fiber.StatusUnauthorized)
+		}
+
+		// Check for write permission on non-safe methods if restricted
+		if canWrite, ok := c.Locals("can_write").(bool); ok && !canWrite {
+			method := c.Method()
+			if method != "GET" && method != "HEAD" && method != "PROPFIND" && method != "REPORT" && method != "OPTIONS" {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+					"error":   "forbidden",
+					"message": "This credential has read-only access",
+				})
+			}
 		}
 
 		c.Locals("user", u)
