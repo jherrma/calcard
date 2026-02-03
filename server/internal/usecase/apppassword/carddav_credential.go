@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -18,6 +19,8 @@ type CreateCardDAVCredentialInput struct {
 	Password   string     `json:"password"`
 	Permission string     `json:"permission"`
 	ExpiresAt  *time.Time `json:"expires_at"`
+	IP         string     `json:"-"`
+	UserAgent  string     `json:"-"`
 }
 
 // CreateCardDAVCredentialOutput is the output after creating a CardDAV credential
@@ -33,11 +36,12 @@ type CreateCardDAVCredentialOutput struct {
 // CreateCardDAVCredentialUseCase handles creating CardDAV credentials
 type CreateCardDAVCredentialUseCase struct {
 	credRepo user.CardDAVCredentialRepository
+	logger   *logging.SecurityLogger
 }
 
 // NewCreateCardDAVCredentialUseCase creates a new use case
-func NewCreateCardDAVCredentialUseCase(credRepo user.CardDAVCredentialRepository) *CreateCardDAVCredentialUseCase {
-	return &CreateCardDAVCredentialUseCase{credRepo: credRepo}
+func NewCreateCardDAVCredentialUseCase(credRepo user.CardDAVCredentialRepository, logger *logging.SecurityLogger) *CreateCardDAVCredentialUseCase {
+	return &CreateCardDAVCredentialUseCase{credRepo: credRepo, logger: logger}
 }
 
 // Execute creates a new CardDAV credential
@@ -96,6 +100,8 @@ func (uc *CreateCardDAVCredentialUseCase) Execute(ctx context.Context, userID ui
 		return nil, fmt.Errorf("failed to create credential: %w", err)
 	}
 
+	uc.logger.LogAppPasswordCreated(ctx, userID, input.Name, input.IP, input.UserAgent)
+
 	return &CreateCardDAVCredentialOutput{
 		ID:         cred.UUID,
 		Name:       cred.Name,
@@ -124,15 +130,16 @@ func (uc *ListCardDAVCredentialsUseCase) Execute(ctx context.Context, userID uin
 // RevokeCardDAVCredentialUseCase handles revoking CardDAV credentials
 type RevokeCardDAVCredentialUseCase struct {
 	credRepo user.CardDAVCredentialRepository
+	logger   *logging.SecurityLogger
 }
 
 // NewRevokeCardDAVCredentialUseCase creates a new use case
-func NewRevokeCardDAVCredentialUseCase(credRepo user.CardDAVCredentialRepository) *RevokeCardDAVCredentialUseCase {
-	return &RevokeCardDAVCredentialUseCase{credRepo: credRepo}
+func NewRevokeCardDAVCredentialUseCase(credRepo user.CardDAVCredentialRepository, logger *logging.SecurityLogger) *RevokeCardDAVCredentialUseCase {
+	return &RevokeCardDAVCredentialUseCase{credRepo: credRepo, logger: logger}
 }
 
 // Execute revokes a CardDAV credential
-func (uc *RevokeCardDAVCredentialUseCase) Execute(ctx context.Context, userID uint, credUUID string) error {
+func (uc *RevokeCardDAVCredentialUseCase) Execute(ctx context.Context, userID uint, credUUID, ip, userAgent string) error {
 	cred, err := uc.credRepo.GetByUUID(ctx, credUUID)
 	if err != nil {
 		return fmt.Errorf("credential not found")
@@ -142,5 +149,10 @@ func (uc *RevokeCardDAVCredentialUseCase) Execute(ctx context.Context, userID ui
 		return fmt.Errorf("credential not found")
 	}
 
-	return uc.credRepo.Revoke(ctx, cred.ID)
+	if err := uc.credRepo.Revoke(ctx, cred.ID); err != nil {
+		return err
+	}
+
+	uc.logger.LogAppPasswordRevoked(ctx, cred.UserID, cred.Name, ip, userAgent)
+	return nil
 }

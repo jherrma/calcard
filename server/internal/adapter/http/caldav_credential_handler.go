@@ -54,6 +54,8 @@ func (h *CalDAVCredentialHandler) Create(c fiber.Ctx) error {
 		Username:   req.Username,
 		Password:   req.Password,
 		Permission: req.Permission,
+		IP:         c.IP(),
+		UserAgent:  c.Get("User-Agent"),
 	}
 
 	// Parse expires_at if provided
@@ -145,7 +147,7 @@ func (h *CalDAVCredentialHandler) Revoke(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 	credUUID := c.Params("id")
 
-	err := h.revokeUC.Execute(c.Context(), u.ID, credUUID)
+	err := h.revokeUC.Execute(c.Context(), u.ID, credUUID, c.IP(), c.Get("User-Agent"))
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error":   "not_found",

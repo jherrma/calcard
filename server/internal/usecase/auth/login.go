@@ -9,6 +9,7 @@ import (
 
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -23,6 +24,7 @@ type LoginUseCase struct {
 	tokenRepo  user.RefreshTokenRepository
 	jwtManager user.TokenProvider
 	cfg        *config.Config
+	logger     *logging.SecurityLogger
 }
 
 // LoginResult contains the tokens and user info after successful login
@@ -39,12 +41,14 @@ func NewLoginUseCase(
 	tokenRepo user.RefreshTokenRepository,
 	jwtManager user.TokenProvider,
 	cfg *config.Config,
+	logger *logging.SecurityLogger,
 ) *LoginUseCase {
 	return &LoginUseCase{
 		userRepo:   userRepo,
 		tokenRepo:  tokenRepo,
 		jwtManager: jwtManager,
 		cfg:        cfg,
+		logger:     logger,
 	}
 }
 
@@ -54,19 +58,25 @@ func (uc *LoginUseCase) Execute(ctx context.Context, email, password string, use
 
 	u, err := uc.userRepo.GetByEmail(ctx, email)
 	if err != nil {
+		uc.logger.LogLoginAttempt(ctx, email, ip, userAgent, false, "db_error")
 		return nil, ErrInvalidCredentials
 	}
 	if u == nil {
+		uc.logger.LogLoginAttempt(ctx, email, ip, userAgent, false, "user_not_found")
 		return nil, ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+		uc.logger.LogLoginAttempt(ctx, email, ip, userAgent, false, "invalid_password")
 		return nil, ErrInvalidCredentials
 	}
 
 	if !u.IsActive {
+		uc.logger.LogLoginAttempt(ctx, email, ip, userAgent, false, "account_inactive")
 		return nil, ErrInactiveAccount
 	}
+
+	uc.logger.LogLoginAttempt(ctx, email, ip, userAgent, true, "")
 
 	accessToken, expiresAt, err := uc.jwtManager.GenerateAccessToken(u.UUID, u.Email)
 	if err != nil {

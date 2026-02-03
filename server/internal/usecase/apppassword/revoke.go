@@ -6,17 +6,19 @@ import (
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 )
 
 type RevokeUseCase struct {
-	repo user.AppPasswordRepository
+	repo   user.AppPasswordRepository
+	logger *logging.SecurityLogger
 }
 
-func NewRevokeUseCase(repo user.AppPasswordRepository) *RevokeUseCase {
-	return &RevokeUseCase{repo: repo}
+func NewRevokeUseCase(repo user.AppPasswordRepository, logger *logging.SecurityLogger) *RevokeUseCase {
+	return &RevokeUseCase{repo: repo, logger: logger}
 }
 
-func (uc *RevokeUseCase) Execute(ctx context.Context, userUUID, appPwdUUID string) error {
+func (uc *RevokeUseCase) Execute(ctx context.Context, userUUID, appPwdUUID, ip, userAgent string) error {
 	ap, err := uc.repo.GetByUUID(ctx, appPwdUUID)
 	if err != nil {
 		return err
@@ -28,5 +30,10 @@ func (uc *RevokeUseCase) Execute(ctx context.Context, userUUID, appPwdUUID strin
 	now := time.Now()
 	ap.RevokedAt = &now
 
-	return uc.repo.Update(ctx, ap)
+	if err := uc.repo.Update(ctx, ap); err != nil {
+		return err
+	}
+
+	uc.logger.LogAppPasswordRevoked(ctx, ap.UserID, ap.Name, ip, userAgent)
+	return nil
 }

@@ -9,13 +9,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type CreateAppPasswordRequest struct {
-	UserUUID string
-	Name     string
-	Scopes   []string
+	UserUUID  string
+	Name      string
+	Scopes    []string
+	IP        string
+	UserAgent string
 }
 
 type CreateAppPasswordResult struct {
@@ -30,10 +33,11 @@ type CreateAppPasswordResult struct {
 type CreateUseCase struct {
 	userRepo user.UserRepository
 	repo     user.AppPasswordRepository
+	logger   *logging.SecurityLogger
 }
 
-func NewCreateUseCase(userRepo user.UserRepository, repo user.AppPasswordRepository) *CreateUseCase {
-	return &CreateUseCase{userRepo: userRepo, repo: repo}
+func NewCreateUseCase(userRepo user.UserRepository, repo user.AppPasswordRepository, logger *logging.SecurityLogger) *CreateUseCase {
+	return &CreateUseCase{userRepo: userRepo, repo: repo, logger: logger}
 }
 
 func (uc *CreateUseCase) Execute(ctx context.Context, req CreateAppPasswordRequest) (*CreateAppPasswordResult, error) {
@@ -64,6 +68,8 @@ func (uc *CreateUseCase) Execute(ctx context.Context, req CreateAppPasswordReque
 	if err := uc.repo.Create(ctx, ap); err != nil {
 		return nil, err
 	}
+
+	uc.logger.LogAppPasswordCreated(ctx, u.ID, req.Name, req.IP, req.UserAgent)
 
 	return &CreateAppPasswordResult{
 		ID:        ap.UUID,

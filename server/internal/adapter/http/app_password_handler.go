@@ -41,9 +41,11 @@ func (h *AppPasswordHandler) Create(c fiber.Ctx) error {
 	}
 
 	usecaseReq := apppassword.CreateAppPasswordRequest{
-		UserUUID: userUUID,
-		Name:     req.Name,
-		Scopes:   req.Scopes,
+		UserUUID:  userUUID,
+		Name:      req.Name,
+		Scopes:    req.Scopes,
+		IP:        c.IP(),
+		UserAgent: c.Get("User-Agent"),
 	}
 
 	res, err := h.createUC.Execute(c.Context(), usecaseReq)
@@ -110,7 +112,7 @@ func (h *AppPasswordHandler) Revoke(c fiber.Ctx) error {
 		return UnauthorizedResponse(c, "Unauthorized")
 	}
 
-	if err := h.revokeUC.Execute(c.Context(), userUUID, appPwdUUID); err != nil {
+	if err := h.revokeUC.Execute(c.Context(), userUUID, appPwdUUID, c.IP(), c.Get("User-Agent")); err != nil {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to revoke app password")
 	}
 

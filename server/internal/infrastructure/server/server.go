@@ -27,12 +27,13 @@ func New(cfg *config.Config, db database.Database) *Server {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
+		BodyLimit:    10 * 1024 * 1024, // 10 MB
 		RequestMethods: append(fiber.DefaultMethods,
 			"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "REPORT", "MKCALENDAR",
 		),
 	})
 
-	SetupMiddleware(app)
+	SetupMiddleware(app, cfg)
 	SetupRoutes(app, db, cfg)
 
 	return &Server{
@@ -48,7 +49,18 @@ func (s *Server) Run() error {
 	addr := fmt.Sprintf("%s:%s", s.cfg.Server.Host, s.cfg.Server.Port)
 	go func() {
 		fmt.Printf("Server starting on %s\n", addr)
-		if err := s.app.Listen(addr); err != nil {
+		var err error
+		if s.cfg.TLS.Enabled {
+			fmt.Printf("TLS Enabled. Cert: %s, Key: %s\n", s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
+			err = s.app.Listen(addr, fiber.ListenConfig{
+				CertFile:    s.cfg.TLS.CertFile,
+				CertKeyFile: s.cfg.TLS.KeyFile,
+			})
+		} else {
+			err = s.app.Listen(addr)
+		}
+
+		if err != nil {
 			fmt.Printf("Server failed to start: %v\n", err)
 		}
 	}()

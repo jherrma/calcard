@@ -159,6 +159,8 @@ func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
 		UserUUID:        userUUID,
 		CurrentPassword: req.CurrentPassword,
 		NewPassword:     req.NewPassword,
+		IP:              c.IP(),
+		UserAgent:       c.Get("User-Agent"),
 	}
 
 	res, err := h.changePasswordUC.Execute(c.Context(), usecaseReq)

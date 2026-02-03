@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -18,6 +19,8 @@ type ChangePasswordRequest struct {
 	UserUUID        string
 	CurrentPassword string
 	NewPassword     string
+	IP              string
+	UserAgent       string
 }
 
 type ChangePasswordResult struct {
@@ -28,17 +31,20 @@ type ChangePasswordUseCase struct {
 	userRepo    user.UserRepository
 	refreshRepo user.RefreshTokenRepository
 	jwtManager  user.TokenProvider
+	logger      *logging.SecurityLogger
 }
 
 func NewChangePasswordUseCase(
 	userRepo user.UserRepository,
 	refreshRepo user.RefreshTokenRepository,
 	jwtManager user.TokenProvider,
+	logger *logging.SecurityLogger,
 ) *ChangePasswordUseCase {
 	return &ChangePasswordUseCase{
 		userRepo:    userRepo,
 		refreshRepo: refreshRepo,
 		jwtManager:  jwtManager,
+		logger:      logger,
 	}
 }
 
@@ -77,6 +83,8 @@ func (uc *ChangePasswordUseCase) Execute(ctx context.Context, req ChangePassword
 	if err := uc.userRepo.Update(ctx, u); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
+
+	uc.logger.LogPasswordChange(ctx, u.ID, req.IP, req.UserAgent)
 
 	// Generate new access token
 	token, _, err := uc.jwtManager.GenerateAccessToken(u.UUID, u.Email)

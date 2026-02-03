@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -18,6 +19,8 @@ type CreateCalDAVCredentialInput struct {
 	Password   string     `json:"password"`
 	Permission string     `json:"permission"`
 	ExpiresAt  *time.Time `json:"expires_at"`
+	IP         string     `json:"-"`
+	UserAgent  string     `json:"-"`
 }
 
 // CreateCalDAVCredentialOutput is the output after creating a CalDAV credential
@@ -33,11 +36,12 @@ type CreateCalDAVCredentialOutput struct {
 // CreateCalDAVCredentialUseCase handles creating CalDAV credentials
 type CreateCalDAVCredentialUseCase struct {
 	credRepo user.CalDAVCredentialRepository
+	logger   *logging.SecurityLogger
 }
 
 // NewCreateCalDAVCredentialUseCase creates a new use case
-func NewCreateCalDAVCredentialUseCase(credRepo user.CalDAVCredentialRepository) *CreateCalDAVCredentialUseCase {
-	return &CreateCalDAVCredentialUseCase{credRepo: credRepo}
+func NewCreateCalDAVCredentialUseCase(credRepo user.CalDAVCredentialRepository, logger *logging.SecurityLogger) *CreateCalDAVCredentialUseCase {
+	return &CreateCalDAVCredentialUseCase{credRepo: credRepo, logger: logger}
 }
 
 // Execute creates a new CalDAV credential
@@ -96,6 +100,8 @@ func (uc *CreateCalDAVCredentialUseCase) Execute(ctx context.Context, userID uin
 		return nil, fmt.Errorf("failed to create credential: %w", err)
 	}
 
+	uc.logger.LogAppPasswordCreated(ctx, userID, input.Name, input.IP, input.UserAgent) // Using generic app password event for now or create specific if needed
+
 	return &CreateCalDAVCredentialOutput{
 		ID:         cred.UUID,
 		Name:       cred.Name,
@@ -124,15 +130,16 @@ func (uc *ListCalDAVCredentialsUseCase) Execute(ctx context.Context, userID uint
 // RevokeCalDAVCredentialUseCase handles revoking CalDAV credentials
 type RevokeCalDAVCredentialUseCase struct {
 	credRepo user.CalDAVCredentialRepository
+	logger   *logging.SecurityLogger
 }
 
 // NewRevokeCalDAVCredentialUseCase creates a new use case
-func NewRevokeCalDAVCredentialUseCase(credRepo user.CalDAVCredentialRepository) *RevokeCalDAVCredentialUseCase {
-	return &RevokeCalDAVCredentialUseCase{credRepo: credRepo}
+func NewRevokeCalDAVCredentialUseCase(credRepo user.CalDAVCredentialRepository, logger *logging.SecurityLogger) *RevokeCalDAVCredentialUseCase {
+	return &RevokeCalDAVCredentialUseCase{credRepo: credRepo, logger: logger}
 }
 
 // Execute revokes a CalDAV credential
-func (uc *RevokeCalDAVCredentialUseCase) Execute(ctx context.Context, userID uint, credUUID string) error {
+func (uc *RevokeCalDAVCredentialUseCase) Execute(ctx context.Context, userID uint, credUUID, ip, userAgent string) error {
 	cred, err := uc.credRepo.GetByUUID(ctx, credUUID)
 	if err != nil {
 		return fmt.Errorf("credential not found")
@@ -142,5 +149,10 @@ func (uc *RevokeCalDAVCredentialUseCase) Execute(ctx context.Context, userID uin
 		return fmt.Errorf("credential not found")
 	}
 
-	return uc.credRepo.Revoke(ctx, cred.ID)
+	if err := uc.credRepo.Revoke(ctx, cred.ID); err != nil {
+		return err
+	}
+
+	uc.logger.LogAppPasswordRevoked(ctx, cred.UserID, cred.Name, ip, userAgent)
+	return nil
 }

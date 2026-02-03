@@ -23,6 +23,9 @@ type Config struct {
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
 	OAuth     OAuthConfig     `yaml:"oauth"`
 	SAML      SAMLConfig      `yaml:"saml"`
+	TLS       TLSConfig       `yaml:"tls"`
+	CORS      CORSConfig      `yaml:"cors"`
+	Security  SecurityConfig  `yaml:"security"`
 }
 
 // ServerConfig contains server-specific settings
@@ -62,7 +65,9 @@ type JWTConfig struct {
 
 // RateLimitConfig contains rate limiting settings
 type RateLimitConfig struct {
-	Enabled bool `yaml:"enabled" env:"CALDAV_RATE_LIMIT_ENABLED"`
+	Enabled  bool          `yaml:"enabled" env:"CALDAV_RATE_LIMIT_ENABLED"`
+	Requests int           `yaml:"requests" env:"CALDAV_RATE_LIMIT_REQUESTS"`
+	Window   time.Duration `yaml:"window" env:"CALDAV_RATE_LIMIT_WINDOW"`
 }
 
 // OAuthConfig contains OAuth2/OIDC settings
@@ -89,6 +94,31 @@ type SAMLConfig struct {
 	SPKey                string `yaml:"sp_key" env:"CALDAV_SAML_SP_KEY"`     // Path to key or content
 	SignRequests         bool   `yaml:"sign_requests" env:"CALDAV_SAML_SIGN_REQUESTS"`
 	WantSignedAssertions bool   `yaml:"want_signed_assertions" env:"CALDAV_SAML_WANT_SIGNED_ASSERTIONS"`
+}
+
+// TLSConfig contains TLS/SSL settings
+type TLSConfig struct {
+	Enabled  bool   `yaml:"enabled" env:"CALDAV_TLS_ENABLED"`
+	CertFile string `yaml:"cert_file" env:"CALDAV_TLS_CERT_FILE"`
+	KeyFile  string `yaml:"key_file" env:"CALDAV_TLS_KEY_FILE"`
+}
+
+// CORSConfig contains CORS settings
+type CORSConfig struct {
+	Enabled          bool     `yaml:"enabled" env:"CALDAV_CORS_ENABLED"`
+	AllowedOrigins   []string `yaml:"allowed_origins" env:"CALDAV_CORS_ALLOWED_ORIGINS" envSeparator:","`
+	ExposeHeaders    []string `yaml:"expose_headers" env:"CALDAV_CORS_EXPOSE_HEADERS" envSeparator:","`
+	AllowCredentials bool     `yaml:"allow_credentials" env:"CALDAV_CORS_ALLOW_CREDENTIALS"`
+	MaxAge           int      `yaml:"max_age" env:"CALDAV_CORS_MAX_AGE"`
+}
+
+// SecurityConfig contains general security settings
+type SecurityConfig struct {
+	Enabled        bool          `yaml:"enabled" env:"CALDAV_SECURITY_HEADERS_ENABLED"`
+	HSTSEnabled    bool          `yaml:"hsts_enabled" env:"CALDAV_HSTS_ENABLED"`
+	HSTSMaxAge     int           `yaml:"hsts_max_age" env:"CALDAV_HSTS_MAX_AGE"`
+	MaxRequestSize int64         `yaml:"max_request_size" env:"CALDAV_MAX_REQUEST_SIZE"` // Bytes
+	RequestTimeout time.Duration `yaml:"request_timeout" env:"CALDAV_REQUEST_TIMEOUT"`
 }
 
 // DSN returns the database connection string based on the driver
@@ -137,7 +167,9 @@ func Load(configPath string) (*Config, error) {
 			ResetExpiry:   time.Hour,
 		},
 		RateLimit: RateLimitConfig{
-			Enabled: true,
+			Enabled:  true,
+			Requests: 100,
+			Window:   time.Minute,
 		},
 		OAuth: OAuthConfig{
 			Google: OAuthProviderConfig{
@@ -146,6 +178,23 @@ func Load(configPath string) (*Config, error) {
 			Microsoft: OAuthProviderConfig{
 				Issuer: "https://login.microsoftonline.com/common/v2.0",
 			},
+		},
+		TLS: TLSConfig{
+			Enabled: false,
+		},
+		CORS: CORSConfig{
+			Enabled:          false,
+			AllowedOrigins:   []string{"*"},
+			ExposeHeaders:    []string{"ETag", "DAV", "Allow", "Link"},
+			AllowCredentials: true,
+			MaxAge:           86400,
+		},
+		Security: SecurityConfig{
+			Enabled:        true,
+			HSTSEnabled:    false,
+			HSTSMaxAge:     31536000,
+			MaxRequestSize: 10 * 1024 * 1024, // 10MB
+			RequestTimeout: 30 * time.Second,
 		},
 	}
 
@@ -199,6 +248,17 @@ func (c *Config) Validate() error {
 	}
 	if c.BaseURL == "" {
 		errs = append(errs, "CALDAV_BASE_URL must be set")
+	}
+
+	if c.TLS.Enabled {
+		if c.TLS.CertFile == "" || c.TLS.KeyFile == "" {
+			errs = append(errs, "CALDAV_TLS_CERT_FILE and CALDAV_TLS_KEY_FILE must be set when TLS is enabled")
+		}
+		// Basic file existence check
+		if _, err := os.Stat(c.TLS.CertFile); err != nil && !os.IsNotExist(err) {
+			// Don't fail if file doesn't exist yet (might be generated), but fail on permission errors
+			errs = append(errs, fmt.Sprintf("Cannot access TLS cert file: %v", err))
+		}
 	}
 
 	if len(errs) > 0 {

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -14,6 +15,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	addressbookusecase "github.com/jherrma/caldav-server/internal/usecase/addressbook"
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
@@ -49,13 +51,16 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		fmt.Printf("failed to ensure JWT secret: %v\n", err)
 	}
 
+	// Logging
+	securityLogger := logging.NewSecurityLogger(slog.Default())
+
 	// Use Cases
 	registerUC := authusecase.NewRegisterUseCase(userRepo, calendarRepo, addressBookRepo, emailService, cfg)
 	verifyUC := authusecase.NewVerifyUseCase(userRepo)
-	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg)
+	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg, securityLogger)
 	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager)
 	logoutUC := authusecase.NewLogoutUseCase(tokenRepo, jwtManager)
-	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager)
+	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager, securityLogger)
 	forgotPasswordUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, emailService, cfg.JWT.ResetExpiry)
 	resetPasswordUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo, tokenRepo)
 
@@ -65,19 +70,19 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
 
 	// App Password Use Cases
-	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo)
+	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo, securityLogger)
 	listAppPwdUC := apppassword.NewListUseCase(appPwdRepo)
-	revokeAppPwdUC := apppassword.NewRevokeUseCase(appPwdRepo)
+	revokeAppPwdUC := apppassword.NewRevokeUseCase(appPwdRepo, securityLogger)
 
 	// CalDAV Credential Use Cases
-	createCaldavCredUC := apppassword.NewCreateCalDAVCredentialUseCase(caldavCredRepo)
+	createCaldavCredUC := apppassword.NewCreateCalDAVCredentialUseCase(caldavCredRepo, securityLogger)
 	listCaldavCredUC := apppassword.NewListCalDAVCredentialsUseCase(caldavCredRepo)
-	revokeCaldavCredUC := apppassword.NewRevokeCalDAVCredentialUseCase(caldavCredRepo)
+	revokeCaldavCredUC := apppassword.NewRevokeCalDAVCredentialUseCase(caldavCredRepo, securityLogger)
 
 	// CardDAV Credential Use Cases
-	createCarddavCredUC := apppassword.NewCreateCardDAVCredentialUseCase(carddavCredRepo)
+	createCarddavCredUC := apppassword.NewCreateCardDAVCredentialUseCase(carddavCredRepo, securityLogger)
 	listCarddavCredUC := apppassword.NewListCardDAVCredentialsUseCase(carddavCredRepo)
-	revokeCarddavCredUC := apppassword.NewRevokeCardDAVCredentialUseCase(carddavCredRepo)
+	revokeCarddavCredUC := apppassword.NewRevokeCardDAVCredentialUseCase(carddavCredRepo, securityLogger)
 
 	// Sharing Use Cases
 	createShareUC := sharing.NewCreateCalendarShareUseCase(shareRepo, calendarRepo, userRepo)

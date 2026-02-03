@@ -3,9 +3,13 @@ package http
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 
 	"github.com/gofiber/fiber/v3"
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
@@ -66,15 +70,19 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		},
 	}
 
+	// Logger
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	securityLogger := logging.NewSecurityLogger(logger)
+
 	// Auth Use Cases
 	registerUC := authusecase.NewRegisterUseCase(userRepo, calendarRepo, addressBookRepo, emailService, cfg)
 	verifyUC := authusecase.NewVerifyUseCase(userRepo)
-	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg)
+	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg, securityLogger)
 	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager)
 	logoutUC := authusecase.NewLogoutUseCase(tokenRepo, jwtManager)
 	forgotUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, emailService, cfg.JWT.ResetExpiry)
 	resetUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo, tokenRepo)
-	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager)
+	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager, securityLogger)
 
 	// OAuth Use Cases
 	oauthInitiateUC := authusecase.NewInitiateOAuthUseCase(mockProviderManager)
@@ -88,9 +96,9 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
 
 	// App Password Use Cases
-	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo)
+	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo, securityLogger)
 	listAppPwdUC := apppassword.NewListUseCase(appPwdRepo)
-	revokeAppPwdUC := apppassword.NewRevokeUseCase(appPwdRepo)
+	revokeAppPwdUC := apppassword.NewRevokeUseCase(appPwdRepo, securityLogger)
 
 	// Calendar Use Cases
 	calendarCreateUC := calendarusecase.NewCreateCalendarUseCase(calendarRepo)

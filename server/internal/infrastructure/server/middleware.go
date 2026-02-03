@@ -3,15 +3,16 @@ package server
 import (
 	"time"
 
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/middleware/cors"
-	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
+	"github.com/jherrma/caldav-server/internal/adapter/middleware"
+	"github.com/jherrma/caldav-server/internal/config"
 )
 
 // SetupMiddleware configures global middleware for the Fiber app
-func SetupMiddleware(app *fiber.App) {
+func SetupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Request ID
 	app.Use(requestid.New())
 
@@ -25,10 +26,12 @@ func SetupMiddleware(app *fiber.App) {
 	// Recover from panics
 	app.Use(recover.New())
 
+	// Security Headers
+	app.Use(middleware.SecurityHeadersMiddleware(cfg.Security))
+
 	// CORS
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"*"}, // TODO: Configure from config
-		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "REPORT", "OPTIONS"},
-		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "Depth", "User-Agent", "X-File-Size", "X-Requested-With", "If-Modified-Since", "X-File-Name", "Cache-Control"},
-	}))
+	app.Use(middleware.CORSMiddleware(cfg.CORS))
+
+	// Rate Limiting
+	app.Use(middleware.GlobalRateLimiter(cfg.RateLimit))
 }
