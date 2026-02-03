@@ -22,6 +22,7 @@ import (
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
 	contactusecase "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
+	"github.com/jherrma/caldav-server/internal/usecase/importexport"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
@@ -143,6 +144,17 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	userGroup.Delete("/me", userHandler.DeleteAccount)
 	userGroup.Put("/me/password", userHandler.ChangePassword)
 
+	// Import/Export Use Cases
+	calendarImportUC := importexport.NewCalendarImportUseCase(calendarRepo)
+	contactImportUC := importexport.NewContactImportUseCase(addressBookRepo)
+	backupExportUC := importexport.NewBackupExportUseCase(calendarRepo, addressBookRepo)
+
+	importHandler := http.NewImportHandler(calendarImportUC, contactImportUC)
+	backupHandler := http.NewBackupHandler(backupExportUC)
+
+	// Backup Export Route
+	userGroup.Get("/me/export", backupHandler.Export)
+
 	// App Password Routes (Protected)
 	appPwdGroup := v1.Group("/app-passwords", http.Authenticate(jwtManager, userRepo))
 	appPwdGroup.Get("/", appPwdHandler.List)
@@ -223,6 +235,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	calendarGroup.Delete("/:id", calendarHandler.Delete)
 	calendarGroup.Get("/:id/export", calendarHandler.Export)
+	calendarGroup.Post("/:id/import", importHandler.ImportCalendar)
 
 	// Calendar Share Routes
 	calendarGroup.Post("/:id/shares", shareHandler.Create)
@@ -261,6 +274,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abGroup.Patch("/:id", abHandler.Update)
 	abGroup.Delete("/:id", abHandler.Delete)
 	abGroup.Get("/:id/export", abHandler.Export)
+	abGroup.Post("/:id/import", importHandler.ImportContact)
 
 	// Address Book Share Routes
 	abGroup.Post("/:id/shares", abShareHandler.Create)
