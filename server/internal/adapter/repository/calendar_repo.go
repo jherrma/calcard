@@ -241,3 +241,16 @@ func (r *CalendarRepository) GetUserPermission(ctx context.Context, calendarID, 
 	}
 	return calendar.PermissionRead, nil
 }
+
+// FindByPublicToken retrieves a calendar by its public token
+func (r *CalendarRepository) FindByPublicToken(ctx context.Context, token string) (*calendar.Calendar, error) {
+	var cal calendar.Calendar
+	err := r.db.WithContext(ctx).Where("public_token = ? AND public_enabled = ?", token, true).First(&cal).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &cal, nil
+}

@@ -60,4 +60,7 @@ type CalendarRepository interface {
 
 	// GetUserPermission determines a user's permission for a calendar
 	GetUserPermission(ctx context.Context, calendarID, userID uint) (CalendarPermission, error)
+
+	// FindByPublicToken retrieves a calendar by its public token
+	FindByPublicToken(ctx context.Context, token string) (*Calendar, error)
 }

@@ -101,9 +101,17 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abShareHandler := http.NewAddressBookShareHandler(createABShareUC, listABShareUC, updateABShareUC, revokeABShareUC)
 	healthHandler := http.NewHealthHandler(db)
 
+	// Public Calendar Use Cases
+	enablePublicUC := calendarusecase.NewEnablePublicUseCase(calendarRepo, cfg.BaseURL)
+	getPublicStatusUC := calendarusecase.NewGetPublicStatusUseCase(calendarRepo, cfg.BaseURL)
+	regenerateTokenUC := calendarusecase.NewRegenerateTokenUseCase(calendarRepo, cfg.BaseURL)
+	calendarPublicHandler := http.NewCalendarPublicHandler(enablePublicUC, getPublicStatusUC, regenerateTokenUC)
+	publicCalendarHandler := http.NewPublicCalendarHandler(calendarRepo)
+
 	// Public Routes
 	app.Get("/health", healthHandler.Liveness)
 	app.Get("/ready", healthHandler.Readiness)
+	app.Get("/public/calendar/:token", publicCalendarHandler.GetICalFeed)
 
 	// API Group
 	v1 := app.Group("/api/v1")
@@ -216,6 +224,11 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	calendarGroup.Get("/:id/shares", shareHandler.List)
 	calendarGroup.Patch("/:id/shares/:share_id", shareHandler.Update)
 	calendarGroup.Delete("/:id/shares/:share_id", shareHandler.Revoke)
+
+	// Calendar Public Access Routes
+	calendarGroup.Post("/:id/public", calendarPublicHandler.EnablePublic)
+	calendarGroup.Get("/:id/public", calendarPublicHandler.GetPublicStatus)
+	calendarGroup.Post("/:id/public/regenerate", calendarPublicHandler.RegenerateToken)
 
 	// Address Book Routes (Protected)
 	abCreateUC := addressbookusecase.NewCreateUseCase(addressBookRepo)

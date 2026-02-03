@@ -33,6 +33,9 @@ type Calendar struct {
 	SupportedComponents string         `gorm:"size:100;not null" json:"supported_components"` // "VEVENT,VTODO"
 	SyncToken           string         `gorm:"size:64;not null;default:''" json:"sync_token"`
 	CTag                string         `gorm:"column:ctag;size:64;not null;default:''" json:"ctag"`
+	PublicToken         *string        `gorm:"uniqueIndex;size:64" json:"-"`
+	PublicEnabled       bool           `gorm:"default:false" json:"public_enabled"`
+	PublicEnabledAt     *time.Time     `json:"public_enabled_at,omitempty"`
 	CreatedAt           time.Time      `json:"created_at"`
 	UpdatedAt           time.Time      `json:"updated_at"`
 	DeletedAt           gorm.DeletedAt `gorm:"index" json:"-"`

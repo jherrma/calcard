@@ -107,6 +107,9 @@ func (m *mockCalendarRepo) GetCalendarObjectByUUID(ctx context.Context, u string
 func (m *mockCalendarRepo) GetUserPermission(ctx context.Context, cid, uid uint) (calendar.CalendarPermission, error) {
 	return 0, nil
 }
+func (m *mockCalendarRepo) FindByPublicToken(ctx context.Context, token string) (*calendar.Calendar, error) {
+	return nil, nil
+}
 
 type mockUserRepo struct {
 	mock.Mock
