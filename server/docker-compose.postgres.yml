@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  caldav:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - CALDAV_SERVER_HOST=0.0.0.0
+      - CALDAV_SERVER_PORT=8080
+      - CALDAV_DB_HOST=postgres
+      - CALDAV_DB_PORT=5432
+      - CALDAV_DB_USER=caldav
+      - CALDAV_DB_PASSWORD=${POSTGRES_PASSWORD:-caldav_secret}
+      - CALDAV_DB_NAME=caldav
+      - CALDAV_DB_SSLMODE=disable
+      - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-change-me-in-production}
+      - CALDAV_BASE_URL=${CALDAV_BASE_URL:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=caldav
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-caldav_secret}
+      - POSTGRES_DB=caldav
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caldav -d caldav"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v10"
@@ -67,16 +67,16 @@ type RateLimitConfig struct {
 
 // OAuthConfig contains OAuth2/OIDC settings
 type OAuthConfig struct {
-	Google    OAuthProviderConfig `yaml:"google"`
-	Microsoft OAuthProviderConfig `yaml:"microsoft"`
-	Custom    OAuthProviderConfig `yaml:"custom"`
+	Google    OAuthProviderConfig `yaml:"google" envPrefix:"CALDAV_OAUTH_GOOGLE_"`
+	Microsoft OAuthProviderConfig `yaml:"microsoft" envPrefix:"CALDAV_OAUTH_MICROSOFT_"`
+	Custom    OAuthProviderConfig `yaml:"custom" envPrefix:"CALDAV_OAUTH_CUSTOM_"`
 }
 
 // OAuthProviderConfig contains settings for an OAuth/OIDC provider
 type OAuthProviderConfig struct {
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	Issuer       string `yaml:"issuer"`
+	ClientID     string `yaml:"client_id" env:"CLIENT_ID"`
+	ClientSecret string `yaml:"client_secret" env:"CLIENT_SECRET"`
+	Issuer       string `yaml:"issuer" env:"ISSUER"`
 }
 
 // SAMLConfig contains settings for SAML authentication
@@ -185,4 +185,24 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// Validate checks the configuration for errors and security issues
+func (c *Config) Validate() error {
+	var errs []string
+
+	if c.JWT.Secret == "" || c.JWT.Secret == "change-me-in-production" {
+		errs = append(errs, "CALDAV_JWT_SECRET must be set to a secure value")
+	}
+	if len(c.JWT.Secret) < 32 {
+		errs = append(errs, "CALDAV_JWT_SECRET must be at least 32 characters")
+	}
+	if c.BaseURL == "" {
+		errs = append(errs, "CALDAV_BASE_URL must be set")
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("configuration errors:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
 }

@@ -17,6 +17,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		fmt.Printf("Configuration validaton failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	// 2. Initialize database
 	db, err := database.New(cfg)
 	if err != nil {

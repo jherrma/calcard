@@ -1,21 +1,35 @@
-# Server Configuration
 server:
-  host: "0.0.0.0"
-  port: "8080"
+  host: 0.0.0.0
+  port: 8080
 
-# Database Configuration
+base_url: https://caldav.example.com
+
+# Database configuration
+# Omit this section entirely to use SQLite (default)
 database:
-  # Driver: "sqlite" or "postgres"
-  driver: "sqlite"
-  
-  # For PostgreSQL:
-  # host: "localhost"
-  # port: "5432"
-  # user: "postgres"
-  # password: "password"
-  # name: "caldav"
-  # ssl_mode: "disable"
+  host: postgres
+  port: 5432
+  user: caldav
+  password: ${CALDAV_DB_PASSWORD}  # Environment variable substitution
+  name: caldav
+  ssl_mode: require
 
-# Application Settings
-data_dir: "./data"
-log_level: "info"
+jwt:
+  secret: ${CALDAV_JWT_SECRET}
+  access_expiry: 15m
+  refresh_expiry: 168h  # 7 days
+
+oauth:
+  google:
+    client_id: ${CALDAV_OAUTH_GOOGLE_CLIENT_ID}
+    client_secret: ${CALDAV_OAUTH_GOOGLE_CLIENT_SECRET}
+  
+  # Custom OIDC Provider (e.g. Keycloak, Auth0)
+  custom:
+    client_id: ${CALDAV_OAUTH_CUSTOM_CLIENT_ID}
+    client_secret: ${CALDAV_OAUTH_CUSTOM_CLIENT_SECRET}
+    issuer: ${CALDAV_OAUTH_CUSTOM_ISSUER}
+
+logging:
+  level: info
+  format: json  # or "text"
