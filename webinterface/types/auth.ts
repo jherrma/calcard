@@ -25,3 +25,15 @@ export interface SystemSettings {
   smtp_enabled: boolean;
   registration_enabled: boolean;
 }
+
+export interface AuthMethod {
+  id: string;
+  type: 'local' | 'oauth2' | 'oidc' | 'saml';
+  name: string;
+  url?: string; // For external providers, the initiation URL
+  icon?: string; // Optional icon identifier
+}
+
+export interface AuthMethodsResponse {
+  methods: AuthMethod[];
+}

@@ -64,7 +64,8 @@
       </Message>
     </form>
 
-    <div class="mt-8">
+    <!-- External Auth Providers -->
+    <div v-if="externalMethods.length > 0" class="mt-8">
       <div class="relative">
         <div class="absolute inset-0 flex items-center">
           <div class="w-full border-t border-surface-200 dark:border-surface-800" />
@@ -74,22 +75,16 @@
         </div>
       </div>
 
-      <div class="mt-6 grid grid-cols-2 gap-3">
+      <div class="mt-6 flex flex-col gap-3">
         <Button
-          label="Google"
-          icon="pi pi-google"
+          v-for="method in externalMethods"
+          :key="method.id"
+          :label="method.name"
+          :icon="getProviderIcon(method)"
           severity="secondary"
           outlined
           class="w-full"
-          @click="loginWithOAuth('google')"
-        />
-        <Button
-          label="Microsoft"
-          icon="pi pi-microsoft"
-          severity="secondary"
-          outlined
-          class="w-full"
-          @click="loginWithOAuth('microsoft')"
+          @click="loginWithProvider(method)"
         />
       </div>
     </div>
@@ -109,7 +104,7 @@
 <script setup lang="ts">
 import { useVuelidate } from '@vuelidate/core';
 import { required, email } from '@vuelidate/validators';
-import type { SystemSettings } from '~/types/auth';
+import type { SystemSettings, AuthMethod, AuthMethodsResponse } from '~/types/auth';
 
 definePageMeta({
   layout: "auth",
@@ -119,6 +114,7 @@ definePageMeta({
 const authStore = useAuthStore();
 const router = useRouter();
 const api = useApi();
+const config = useRuntimeConfig();
 
 const form = reactive({
   email: "",
@@ -141,13 +137,46 @@ const systemSettings = ref<SystemSettings>({
   registration_enabled: true
 });
 
+const authMethods = ref<AuthMethod[]>([]);
+
+const externalMethods = computed(() => {
+  return authMethods.value.filter(m => m.type !== 'local');
+});
+
+// Helper to determine icon based on provider name or type
+const getProviderIcon = (method: AuthMethod) => {
+  if (method.icon) return method.icon;
+  
+  const lowerName = method.name.toLowerCase();
+  if (lowerName.includes('google')) return 'pi pi-google';
+  if (lowerName.includes('microsoft') || lowerName.includes('azure')) return 'pi pi-microsoft';
+  if (lowerName.includes('github')) return 'pi pi-github';
+  if (method.type === 'oidc' || method.type === 'oauth2') return 'pi pi-lock';
+  
+  return 'pi pi-key'; // Default
+};
+
 onMounted(async () => {
   try {
+    // Fetch system settings
     const settings = await api<SystemSettings>("/api/v1/system/settings");
     systemSettings.value = settings;
     if (!settings.admin_configured) {
       router.push("/auth/setup");
     }
+
+    // Fetch auth methods
+    // We try/catch this specifically in case the endpoint doesn't exist yet on backend
+    try {
+        const response = await api<AuthMethodsResponse>("/api/v1/auth/methods");
+        authMethods.value = response.methods;
+    } catch (e) {
+        // Fallback: if endpoint fails, we assume just local auth (which is always shown)
+        // or we could hardcode some defaults for dev if needed. 
+        // For now, we do nothing, so only local auth form is shown.
+        console.warn("Failed to fetch auth methods, defaulting to local only.");
+    }
+
   } catch (e) {
     console.error("Failed to fetch system settings", e);
   }
@@ -173,8 +202,13 @@ const handleLogin = async () => {
   }
 };
 
-const loginWithOAuth = (provider: string) => {
-  const config = useRuntimeConfig();
-  window.location.href = `${config.public.apiBaseUrl}/api/v1/auth/oauth/${provider}`;
+const loginWithProvider = (method: AuthMethod) => {
+  if (method.url) {
+    window.location.href = method.url;
+  } else {
+    // Fallback construction if backend didn't provide full URL
+    // This assumes a standard pattern logic
+    window.location.href = `${config.public.apiBaseUrl}/api/v1/auth/external/${method.id}`;
+  }
 };
 </script>

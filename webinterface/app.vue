@@ -3,14 +3,16 @@
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
-    <Toast />
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 // Root component
 </script>
 
 <style>
-/* Global styles if needed */
+/* 
+  Global transition styles for page navigation if desired
+  e.g. .page-enter-active, .page-leave-active { ... }
+*/
 </style>

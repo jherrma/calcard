@@ -1,49 +1,85 @@
 <template>
-  <div class="min-h-screen flex flex-col bg-slate-50">
-    <header class="h-16 bg-white border-b flex items-center px-6 sticky top-0 z-10 shadow-sm">
-      <div class="flex items-center gap-2">
-        <i class="pi pi-calendar text-primary-500 text-2xl"></i>
-        <h1 class="text-xl font-bold text-slate-800">CalCard</h1>
-      </div>
-      <div class="flex-1"></div>
-      <div class="flex items-center gap-4">
-        <Button icon="pi pi-bell" text rounded aria-label="Notifications" />
-        <Avatar icon="pi pi-user" shape="circle" class="bg-primary-500 text-white" />
-      </div>
-    </header>
+  <div class="min-h-screen bg-surface-50 dark:bg-surface-950 transition-colors duration-300">
+    <!-- Mobile sidebar backdrop -->
+    <Transition
+      enter-active-class="transition-opacity ease-linear duration-300"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity ease-linear duration-300"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="sidebarOpen"
+        class="fixed inset-0 bg-surface-900/50 backdrop-blur-sm z-20 lg:hidden"
+        @click="sidebarOpen = false"
+      />
+    </Transition>
 
-    <div class="flex flex-1 overflow-hidden">
-      <aside class="w-64 bg-white border-r hidden md:flex flex-col">
-        <nav class="flex-1 p-4 space-y-1">
-          <NuxtLink v-for="item in menuItems" :key="item.label" :to="item.to"
-            class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors"
-            :class="[route.path === item.to ? 'bg-primary-50 text-primary-600 font-medium' : 'text-slate-600 hover:bg-slate-50']">
-            <i :class="[item.icon, route.path === item.to ? 'text-primary-600' : 'text-slate-400']"></i>
-            {{ item.label }}
-          </NuxtLink>
-        </nav>
-      </aside>
+    <!-- Sidebar -->
+    <AppSidebar
+      :open="sidebarOpen"
+      @close="sidebarOpen = false"
+    />
 
-      <main class="flex-1 overflow-y-auto p-6">
+    <!-- Main content -->
+    <div class="lg:pl-64 flex flex-col min-h-screen transition-all duration-300">
+      <!-- Header -->
+      <AppHeader @toggle-sidebar="sidebarOpen = !sidebarOpen" />
+
+      <!-- Page content -->
+      <main class="flex-1 p-4 lg:p-8">
         <slot />
       </main>
     </div>
+
+    <!-- Toast notifications -->
+    <Toast position="top-right" />
+
+    <!-- Global loading overlay -->
+    <Transition
+      enter-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-200"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="isNavigating"
+        class="fixed inset-0 bg-surface-0/50 dark:bg-surface-950/50 z-50 flex items-center justify-center backdrop-blur-sm"
+      >
+        <ProgressSpinner strokeWidth="4" />
+      </div>
+    </Transition>
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
+import AppSidebar from '~/components/common/AppSidebar.vue';
+import AppHeader from '~/components/common/AppHeader.vue';
+
+const sidebarOpen = ref(false);
+
+// Track navigation loading state
+const nuxtApp = useNuxtApp();
+const isNavigating = ref(false);
+
+nuxtApp.hook('page:start', () => {
+  isNavigating.value = true;
+});
+
+nuxtApp.hook('page:finish', () => {
+  isNavigating.value = false;
+  // Also close sidebar on navigation on mobile
+  sidebarOpen.value = false;
+});
+
+// Close sidebar on route change (mobile)
 const route = useRoute();
-
-const menuItems = [
-  { label: 'Dashboard', icon: 'pi pi-home', to: '/' },
-  { label: 'Calendar', icon: 'pi pi-calendar', to: '/calendar' },
-  { label: 'Contacts', icon: 'pi pi-address-book', to: '/contacts' },
-  { label: 'Settings', icon: 'pi pi-cog', to: '/settings' },
-];
+watch(() => route.path, () => {
+  if (window.innerWidth < 1024) {
+    sidebarOpen.value = false;
+  }
+});
 </script>
-
-<style scoped>
-.router-link-active {
-  /* NuxtLink active state is handled via class binding above */
-}
-</style>
