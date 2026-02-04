@@ -1,0 +1,37 @@
+{
+  "name": "webinterface",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@fullcalendar/core": "^6.1.20",
+    "@fullcalendar/daygrid": "^6.1.20",
+    "@fullcalendar/interaction": "^6.1.20",
+    "@fullcalendar/timegrid": "^6.1.20",
+    "@fullcalendar/vue3": "^6.1.20",
+    "@pinia/nuxt": "^0.11.3",
+    "@primeuix/themes": "^2.0.3",
+    "@primevue/nuxt-module": "^4.5.4",
+    "@vueuse/nuxt": "^14.2.0",
+    "nuxt": "^4.3.0",
+    "primeicons": "^7.0.0",
+    "primevue": "^4.5.4",
+    "vue": "^3.5.27",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@nuxtjs/eslint-config-typescript": "^12.1.0",
+    "@nuxtjs/tailwindcss": "6",
+    "@tailwindcss/postcss": "^4.1.18",
+    "eslint": "^9.39.2",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3"
+  }
+}

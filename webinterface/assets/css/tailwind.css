@@ -1,0 +1,21 @@
+@layer tailwind-base, primevue, tailwind-utilities;
+
+@layer tailwind-base {
+  @tailwind base;
+}
+
+@layer tailwind-utilities {
+  @tailwind components;
+  @tailwind utilities;
+}
+
+:root {
+  --primary-color: #3788d8;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: var(--surface-board);
+  color: var(--text-color);
+}

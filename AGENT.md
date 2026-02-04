@@ -35,7 +35,7 @@ This is a **CalDAV/CardDAV server** implementing RFC 4791 (CalDAV) and RFC 6352 
 
 ## Development Instructions
 
-1. **Follow the stories**: Implementation details are in `Stories/backend/` and `Stories/frontend/`.
+1. **Follow the stories**: Implementation details are in `stories/backend/` and `stories/frontend/`.
 2. **Propose alternatives**: If you encounter issues or have better solutions than proposed in the story, propose a new implementation approach.
 3. **Write tests**: Always write unit and integration tests to verify your implementation works correctly.
 4. **Check existing patterns**: Review existing code in similar areas before implementing new features.

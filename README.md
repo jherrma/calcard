@@ -67,3 +67,43 @@ If you modify the API handlers, you need to regenerate the Swagger documentation
 
 > [!NOTE]
 > The Docker build process automatically runs the Swagger generation step, ensuring documentation is always up-to-date in production builds.
+
+---
+
+## Web Interface
+
+The project includes a modern web interface built with Nuxt 3.
+
+### Prerequisites
+
+- Node.js 22+
+- pnpm (Recommended)
+
+### Running the Frontend
+
+1. Navigate to the web interface directory:
+   ```bash
+   cd webinterface
+   ```
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+3. Run in development mode:
+   ```bash
+   pnpm run dev
+   ```
+   The interface will be available at `http://localhost:3000`.
+
+### Building and Deploying
+
+To create a production-optimized build:
+
+1. Build the project:
+   ```bash
+   pnpm run build
+   ```
+2. Preview the production build:
+   ```bash
+   pnpm run preview
+   ```
