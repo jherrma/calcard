@@ -119,6 +119,9 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	app.Get("/ready", healthHandler.Readiness)
 	app.Get("/public/calendar/:token", publicCalendarHandler.GetICalFeed)
 
+	// API Documentation Routes
+	http.SetupDocsRoutes(app, "./docs")
+
 	// API Group
 	v1 := app.Group("/api/v1")
 

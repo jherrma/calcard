@@ -1,0 +1,3645 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "HTTP Basic Authentication for DAV endpoints",
+        "title": "CalDAV/CardDAV Server API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/addressbooks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all address books for the user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AddressBooks"
+                ],
+                "summary": "List address books",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "addressbooks": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new address book",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AddressBooks"
+                ],
+                "summary": "Create address book",
+                "parameters": [
+                    {
+                        "description": "Address book details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateAddressBookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/addressbooks/{addressbook_id}/contacts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get contacts from address book",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "List contacts",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort field (default name)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order (asc/desc)",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_contact.ListOutput"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new contact",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Create contact",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Contact details",
+                        "name": "contact",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/addressbooks/{addressbook_id}/contacts/{contact_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get contact by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Get contact",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update contact details",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Update contact",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Contact updates",
+                        "name": "contact",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_contact.UpdateInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a contact",
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Delete contact",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/addressbooks/{addressbook_id}/contacts/{contact_id}/photo": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get contact's photo content",
+                "produces": [
+                    "image/jpeg",
+                    "image/png",
+                    "image/gif"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Get contact photo",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upload a photo for a contact (JPEG, PNG, GIF)",
+                "consumes": [
+                    "image/jpeg",
+                    "image/png",
+                    "image/gif"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Upload contact photo",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Photo data",
+                        "name": "file",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "413": {
+                        "description": "Photo too large",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported file type",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Remove photo from contact",
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Delete contact photo",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/addressbooks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get address book by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AddressBooks"
+                ],
+                "summary": "Get address book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete address book",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AddressBooks"
+                ],
+                "summary": "Delete address book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Confirmation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAddressBookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update address book details",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AddressBooks"
+                ],
+                "summary": "Update address book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateAddressBookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/addressbooks/{id}/contacts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new contact in address book",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Create contact",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Contact VCard",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Ref: domain.AddressObject",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/addressbooks/{id}/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Export address book as vCard",
+                "produces": [
+                    "text/vcard"
+                ],
+                "tags": [
+                    "Import/Export"
+                ],
+                "summary": "Export address book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/forgot-password": {
+            "post": {
+                "description": "Send password reset email to user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Request password reset",
+                "parameters": [
+                    {
+                        "description": "User email",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "email": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.SuccessResponseBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login": {
+            "post": {
+                "description": "Authenticate user and receive JWT tokens",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Login with email and password",
+                "parameters": [
+                    {
+                        "description": "Login credentials",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "description": "Invalidate refresh token to logout",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Logout user",
+                "parameters": [
+                    {
+                        "description": "Refresh token to invalidate",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "refresh_token": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.SuccessResponseBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/refresh": {
+            "post": {
+                "description": "Get a new access token using refresh token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Refresh access token",
+                "parameters": [
+                    {
+                        "description": "Refresh token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "refresh_token": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "access_token": {
+                                    "type": "string"
+                                },
+                                "expires_at": {
+                                    "type": "integer"
+                                },
+                                "token_type": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid refresh token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/register": {
+            "post": {
+                "description": "Create a new user account with email and password",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Register a new user",
+                "parameters": [
+                    {
+                        "description": "Registration details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "409": {
+                        "description": "Email already registered",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/reset-password": {
+            "post": {
+                "description": "Set new password using reset token from email",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Reset password with token",
+                "parameters": [
+                    {
+                        "description": "Reset token and new password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "new_password": {
+                                    "type": "string"
+                                },
+                                "token": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.SuccessResponseBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/verify": {
+            "get": {
+                "description": "Verify user email with token from verification email",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Verify email address",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Verification token",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.SuccessResponseBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/caldav-credentials": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List all CalDAV credentials for the current user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Credentials"
+                ],
+                "summary": "List CalDAV credentials",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new app-specific password/credential for CalDAV access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Credentials"
+                ],
+                "summary": "Create CalDAV credential",
+                "parameters": [
+                    {
+                        "description": "Credential details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCalDAVCredentialRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCalDAVCredentialOutput"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/caldav-credentials/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Revoke/Delete a CalDAV credential",
+                "tags": [
+                    "Credentials"
+                ],
+                "summary": "Revoke CalDAV credential",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Credential UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/calendars": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all calendars for the authenticated user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calendars"
+                ],
+                "summary": "List all calendars",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "calendars": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a calendar for the authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calendars"
+                ],
+                "summary": "Create a new calendar",
+                "parameters": [
+                    {
+                        "description": "Calendar details",
+                        "name": "calendar",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.CreateCalendarRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/calendars/{calendar_id}/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get events from calendar",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "List events",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Calendar ID",
+                        "name": "calendar_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (RFC3339)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (RFC3339)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Expand recurring events (default true)",
+                        "name": "expand",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new event",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Create event",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Calendar ID",
+                        "name": "calendar_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Event details",
+                        "name": "event",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/calendars/{calendar_id}/events/{event_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get event by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Get event",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Calendar ID",
+                        "name": "calendar_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event UUID",
+                        "name": "event_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update event details",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Update event",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Calendar ID",
+                        "name": "calendar_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event UUID",
+                        "name": "event_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recurrence ID (for recurring events)",
+                        "name": "recurrence_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Update scope (this, all, future)",
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Event updates",
+                        "name": "event",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete an event",
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Delete event",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Calendar ID",
+                        "name": "calendar_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event UUID",
+                        "name": "event_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Delete scope (this, all, future)",
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recurrence ID (for recurring events)",
+                        "name": "recurrence_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/calendars/{calendar_id}/events/{event_id}/move": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Move event to another calendar",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Move event",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Source Calendar ID",
+                        "name": "calendar_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event UUID",
+                        "name": "event_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target calendar",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/calendars/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a specific calendar by UUID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calendars"
+                ],
+                "summary": "Get calendar by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Calendar UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a calendar and all its events",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calendars"
+                ],
+                "summary": "Delete calendar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Calendar UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Delete confirmation",
+                        "name": "confirm",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.DeleteCalendarRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a calendar's properties",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calendars"
+                ],
+                "summary": "Update calendar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Calendar UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated calendar details",
+                        "name": "calendar",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.UpdateCalendarRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/calendars/{id}/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Download calendar as .ics file",
+                "produces": [
+                    "text/calendar"
+                ],
+                "tags": [
+                    "Import/Export"
+                ],
+                "summary": "Export calendar as iCalendar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Calendar UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/carddav-credentials": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List all CardDAV credentials for the current user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Credentials"
+                ],
+                "summary": "List CardDAV credentials",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new app-specific password/credential for CardDAV access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Credentials"
+                ],
+                "summary": "Create CardDAV credential",
+                "parameters": [
+                    {
+                        "description": "Credential details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCardDAVCredentialRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCardDAVCredentialOutput"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/carddav-credentials/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Revoke/Delete a CardDAV credential",
+                "tags": [
+                    "Credentials"
+                ],
+                "summary": "Revoke CardDAV credential",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Credential UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/contacts/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Search for contacts by query",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Search contacts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Address Book ID filter",
+                        "name": "addressbook_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_contact.SearchOutput"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/contacts/{contact_id}/move": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Move contact to another address book",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Move contact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target address book",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/public/calendar/{token}": {
+            "get": {
+                "description": "Get calendar events in iCalendar format via public token",
+                "produces": [
+                    "text/calendar"
+                ],
+                "tags": [
+                    "Public"
+                ],
+                "summary": "Get public calendar feed",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Public Token or Token.ics",
+                        "name": "token",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Calendar not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get current user's profile information",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get user profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently delete user account",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Delete user account",
+                "parameters": [
+                    {
+                        "description": "Delete confirmation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update current user's display name",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Update user profile",
+                "parameters": [
+                    {
+                        "description": "Profile updates",
+                        "name": "profile",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/password": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Change the current user's password",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Change password",
+                "parameters": [
+                    {
+                        "description": "Password change details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.ChangePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "access_token": {
+                                    "type": "string"
+                                },
+                                "message": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialListResponse": {
+            "type": "object",
+            "properties": {
+                "credentials": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialResponse"
+                    }
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "last_used_ip": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permission": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialListResponse": {
+            "type": "object",
+            "properties": {
+                "credentials": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialResponse"
+                    }
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "last_used_ip": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permission": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.ChangePasswordRequest": {
+            "type": "object",
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateAddressBookRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCalDAVCredentialRequest": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "permission": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCardDAVCredentialRequest": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "permission": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest": {
+            "type": "object",
+            "properties": {
+                "vcard_data": {
+                    "type": "string",
+                    "example": "BEGIN:VCARD..."
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateEventRequest": {
+            "type": "object",
+            "required": [
+                "end",
+                "start",
+                "summary"
+            ],
+            "properties": {
+                "all_day": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "recurrence": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAccountRequest": {
+            "type": "object",
+            "properties": {
+                "confirmation": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAddressBookRequest": {
+            "type": "object",
+            "properties": {
+                "confirmation": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.EventListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse"
+                    }
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse": {
+            "type": "object",
+            "properties": {
+                "all_day": {
+                    "type": "boolean"
+                },
+                "calendar_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_recurring": {
+                    "type": "boolean"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "recurrence": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO"
+                },
+                "recurrence_id": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "uid": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "integer"
+                },
+                "refresh_token": {
+                    "type": "string"
+                },
+                "token_type": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserResponse"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest": {
+            "type": "object",
+            "properties": {
+                "target_addressbook_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveEventRequest": {
+            "type": "object",
+            "required": [
+                "target_calendar_id"
+            ],
+            "properties": {
+                "target_calendar_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO": {
+            "type": "object",
+            "properties": {
+                "by_day": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "by_month": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "by_month_day": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "frequency": {
+                    "type": "string"
+                },
+                "interval": {
+                    "type": "integer"
+                },
+                "until": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterRequest": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "email_verified": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateAddressBookRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateEventRequest": {
+            "type": "object",
+            "properties": {
+                "all_day": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "recurrence": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateProfileRequest": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileResponse": {
+            "type": "object",
+            "properties": {
+                "auth_methods": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "email_verified": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "stats": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileStats"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileStats": {
+            "type": "object",
+            "properties": {
+                "app_password_count": {
+                    "type": "integer"
+                },
+                "calendar_count": {
+                    "type": "integer"
+                },
+                "contact_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.UserResponse": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook": {
+            "type": "object",
+            "properties": {
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressObject"
+                    }
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "ctag": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "syncToken": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_user.User"
+                },
+                "userID": {
+                    "type": "integer"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_addressbook.AddressObject": {
+            "type": "object",
+            "properties": {
+                "addressBook": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook"
+                },
+                "addressBookID": {
+                    "type": "integer"
+                },
+                "contentLength": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "email": {
+                    "description": "Primary email",
+                    "type": "string"
+                },
+                "etag": {
+                    "type": "string"
+                },
+                "familyName": {
+                    "type": "string"
+                },
+                "formattedName": {
+                    "description": "Denormalized fields for search",
+                    "type": "string"
+                },
+                "givenName": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "organization": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "phone": {
+                    "description": "Primary phone",
+                    "type": "string"
+                },
+                "uid": {
+                    "description": "vCard UID",
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                },
+                "vcardData": {
+                    "type": "string"
+                },
+                "vcardVersion": {
+                    "description": "\"3.0\" or \"4.0\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_calendar.Calendar": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "description": "#RRGGBB",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "ctag": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "description": "URL path component",
+                    "type": "string"
+                },
+                "public_enabled": {
+                    "type": "boolean"
+                },
+                "public_enabled_at": {
+                    "type": "string"
+                },
+                "supported_components": {
+                    "description": "\"VEVENT,VTODO\"",
+                    "type": "string"
+                },
+                "sync_token": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_contact.Address": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "postal_code": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "street": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_contact.Contact": {
+            "type": "object",
+            "properties": {
+                "addressbook_id": {
+                    "description": "UUID of the AddressBook",
+                    "type": "string"
+                },
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Address"
+                    }
+                },
+                "birthday": {
+                    "description": "Other",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "emails": {
+                    "description": "Lists",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Email"
+                    }
+                },
+                "etag": {
+                    "type": "string"
+                },
+                "family_name": {
+                    "type": "string"
+                },
+                "formatted_name": {
+                    "type": "string"
+                },
+                "given_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "UUID of the AddressObject",
+                    "type": "string"
+                },
+                "middle_name": {
+                    "type": "string"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "organization": {
+                    "description": "Organization",
+                    "type": "string"
+                },
+                "phones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Phone"
+                    }
+                },
+                "photo_url": {
+                    "description": "Constructed URL for the photo",
+                    "type": "string"
+                },
+                "prefix": {
+                    "description": "Name components",
+                    "type": "string"
+                },
+                "suffix": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "uid": {
+                    "description": "vCard UID",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "urls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.URL"
+                    }
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_contact.Email": {
+            "type": "object",
+            "properties": {
+                "primary": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_contact.Phone": {
+            "type": "object",
+            "properties": {
+                "primary": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_contact.URL": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_user.OAuthConnection": {
+            "type": "object",
+            "properties": {
+                "accessToken": {
+                    "description": "encrypted",
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "description": "google, microsoft, custom",
+                    "type": "string"
+                },
+                "providerEmail": {
+                    "type": "string"
+                },
+                "providerID": {
+                    "description": "sub claim from OIDC",
+                    "type": "string"
+                },
+                "refreshToken": {
+                    "description": "encrypted",
+                    "type": "string"
+                },
+                "tokenExpiry": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_user.User"
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_domain_user.User": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "emailVerified": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "oauthConnections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_user.OAuthConnection"
+                    }
+                },
+                "passwordHash": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCalDAVCredentialOutput": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permission": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCardDAVCredentialOutput": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permission": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_calendar.CreateCalendarRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_calendar.DeleteCalendarRequest": {
+            "type": "object",
+            "properties": {
+                "confirmation": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_calendar.UpdateCalendarRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_contact.ListOutput": {
+            "type": "object",
+            "properties": {
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_contact.SearchOutput": {
+            "type": "object",
+            "properties": {
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                    }
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "query": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_contact.UpdateInput": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Address"
+                    }
+                },
+                "birthday": {
+                    "type": "string"
+                },
+                "emails": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Email"
+                    }
+                },
+                "family_name": {
+                    "type": "string"
+                },
+                "formatted_name": {
+                    "type": "string"
+                },
+                "given_name": {
+                    "type": "string"
+                },
+                "middle_name": {
+                    "type": "string"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "organization": {
+                    "type": "string"
+                },
+                "phones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Phone"
+                    }
+                },
+                "prefix": {
+                    "type": "string"
+                },
+                "suffix": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "urls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.URL"
+                    }
+                }
+            }
+        },
+        "gorm.DeletedAt": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                },
+                "valid": {
+                    "description": "Valid is true if Time is not NULL",
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_adapter_http.ErrorResponseBody": {
+            "description": "Error response body",
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "error_code"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Human readable message"
+                }
+            }
+        },
+        "internal_adapter_http.SuccessResponseBody": {
+            "description": "Success response body",
+            "type": "object",
+            "properties": {
+                "data": {}
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BasicAuth": {
+            "type": "basic"
+        },
+        "BearerAuth": {
+            "description": "JWT Bearer token. Format: \"Bearer {token}\"",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    },
+    "tags": [
+        {
+            "description": "User authentication and session management",
+            "name": "Authentication"
+        },
+        {
+            "description": "User profile management",
+            "name": "Users"
+        },
+        {
+            "description": "Calendar management",
+            "name": "Calendars"
+        },
+        {
+            "description": "Calendar event management",
+            "name": "Events"
+        },
+        {
+            "description": "Address book management",
+            "name": "Address Books"
+        },
+        {
+            "description": "Contact management",
+            "name": "Contacts"
+        },
+        {
+            "description": "Calendar and address book sharing",
+            "name": "Sharing"
+        },
+        {
+            "description": "CalDAV/CardDAV access credentials",
+            "name": "Credentials"
+        },
+        {
+            "description": "Data import and export operations",
+            "name": "Import/Export"
+        }
+    ]
+}

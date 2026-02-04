@@ -18,7 +18,16 @@ func NewPublicCalendarHandler(calendarRepo calendar.CalendarRepository) *PublicC
 	}
 }
 
-// GET /public/calendar/:token.ics
+// GetICalFeed godoc
+// @Summary      Get public calendar feed
+// @Description  Get calendar events in iCalendar format via public token
+// @Tags         Public
+// @Produce      text/calendar
+// @Param        token  path   string  true  "Public Token or Token.ics"
+// @Success      200    {file} file
+// @Failure      404    {string} string "Calendar not found"
+// @Failure      500    {string} string "Internal error"
+// @Router       /public/calendar/{token} [get]
 func (h *PublicCalendarHandler) GetICalFeed(c fiber.Ctx) error {
 	token := c.Params("token")
 	// Remove .ics extension if present

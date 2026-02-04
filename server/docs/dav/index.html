@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CalDAV/CardDAV Protocol Documentation</title>
+    <style>
+      :root {
+        --primary: #3788d8;
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --text: #e2e8f0;
+        --text-muted: #94a3b8;
+        --border: #334155;
+        --code-bg: #0d1117;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      header {
+        text-align: center;
+        padding: 3rem 0;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 2rem;
+      }
+
+      h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, var(--primary), #60a5fa);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      header p {
+        color: var(--text-muted);
+        font-size: 1.1rem;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 3rem;
+      }
+
+      .card {
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid var(--border);
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+      }
+
+      .card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+      }
+
+      .card h2 {
+        color: var(--primary);
+        margin-bottom: 0.75rem;
+        font-size: 1.5rem;
+      }
+
+      .card p {
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+      }
+
+      .card a {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .card a:hover {
+        text-decoration: underline;
+      }
+
+      h3 {
+        margin: 2rem 0 1rem;
+        color: var(--text);
+      }
+
+      .methods {
+        background: var(--surface);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+      }
+
+      .method {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .method:last-child {
+        border-bottom: none;
+      }
+
+      .method-name {
+        font-family: "Monaco", "Menlo", monospace;
+        background: var(--code-bg);
+        padding: 0.25rem 0.75rem;
+        border-radius: 6px;
+        font-weight: 600;
+        min-width: 120px;
+        text-align: center;
+      }
+
+      .method-desc {
+        color: var(--text-muted);
+      }
+
+      pre {
+        background: var(--code-bg);
+        padding: 1.5rem;
+        border-radius: 8px;
+        overflow-x: auto;
+        margin: 1rem 0;
+        border: 1px solid var(--border);
+      }
+
+      code {
+        font-family: "Monaco", "Menlo", monospace;
+        font-size: 0.9rem;
+        color: #e6db74;
+      }
+
+      .highlight-xml {
+        color: #66d9ef;
+      }
+      .highlight-attr {
+        color: #a6e22e;
+      }
+      .highlight-string {
+        color: #e6db74;
+      }
+
+      footer {
+        text-align: center;
+        padding: 2rem 0;
+        color: var(--text-muted);
+        border-top: 1px solid var(--border);
+        margin-top: 3rem;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--primary);
+        text-decoration: none;
+        margin-bottom: 2rem;
+      }
+
+      .back-link:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <a href="/api/docs" class="back-link">← Back to REST API Docs</a>
+
+      <header>
+        <h1>WebDAV/CalDAV/CardDAV Protocol Documentation</h1>
+        <p>HTTP extension methods for calendar and contact synchronization</p>
+      </header>
+
+      <div class="cards">
+        <div class="card">
+          <h2>CalDAV</h2>
+          <p>
+            Calendar synchronization protocol (RFC 4791). Used by Apple
+            Calendar, Thunderbird, and other clients.
+          </p>
+          <p>
+            <strong>Endpoint:</strong> <code>/dav/calendars/{username}/</code>
+          </p>
+        </div>
+
+        <div class="card">
+          <h2>CardDAV</h2>
+          <p>
+            Contact synchronization protocol (RFC 6352). Used by Apple Contacts,
+            Thunderbird, and other clients.
+          </p>
+          <p>
+            <strong>Endpoint:</strong>
+            <code>/dav/addressbooks/{username}/</code>
+          </p>
+        </div>
+      </div>
+
+      <h3>WebDAV Methods</h3>
+      <div class="methods">
+        <div class="method">
+          <span class="method-name">PROPFIND</span>
+          <span class="method-desc"
+            >Retrieve properties of a resource (collection or item)</span
+          >
+        </div>
+        <div class="method">
+          <span class="method-name">PROPPATCH</span>
+          <span class="method-desc">Update properties of a resource</span>
+        </div>
+        <div class="method">
+          <span class="method-name">MKCALENDAR</span>
+          <span class="method-desc">Create a new calendar collection</span>
+        </div>
+        <div class="method">
+          <span class="method-name">MKCOL</span>
+          <span class="method-desc"
+            >Create a new collection (address book)</span
+          >
+        </div>
+        <div class="method">
+          <span class="method-name">REPORT</span>
+          <span class="method-desc"
+            >Query calendar/contact data (calendar-query, sync-collection)</span
+          >
+        </div>
+        <div class="method">
+          <span class="method-name">GET</span>
+          <span class="method-desc"
+            >Retrieve a resource (event .ics, contact .vcf)</span
+          >
+        </div>
+        <div class="method">
+          <span class="method-name">PUT</span>
+          <span class="method-desc">Create or update a resource</span>
+        </div>
+        <div class="method">
+          <span class="method-name">DELETE</span>
+          <span class="method-desc">Remove a resource</span>
+        </div>
+      </div>
+
+      <h3>Authentication</h3>
+      <p style="color: var(--text-muted); margin-bottom: 1rem">
+        DAV endpoints use HTTP Basic Authentication with either:
+      </p>
+      <ul
+        style="
+          color: var(--text-muted);
+          margin-left: 1.5rem;
+          margin-bottom: 2rem;
+        "
+      >
+        <li>App Passwords (created in account settings)</li>
+        <li>CalDAV Credentials (calendar-specific access)</li>
+        <li>CardDAV Credentials (address book-specific access)</li>
+      </ul>
+
+      <h3>Example: PROPFIND Calendar List</h3>
+      <pre><code>curl -X PROPFIND https://server/dav/calendars/johndoe/ \
+  -H "Authorization: Basic am9obmRvZTpwYXNzd29yZA==" \
+  -H "Content-Type: application/xml" \
+  -H "Depth: 1" \
+  -d '&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;propfind xmlns="DAV:"&gt;
+  &lt;prop&gt;
+    &lt;displayname/&gt;
+    &lt;resourcetype/&gt;
+    &lt;getctag xmlns="http://calendarserver.org/ns/"/&gt;
+  &lt;/prop&gt;
+&lt;/propfind&gt;'</code></pre>
+
+      <h3>Example: sync-collection REPORT</h3>
+      <pre><code>curl -X REPORT https://server/dav/calendars/johndoe/personal/ \
+  -H "Authorization: Basic am9obmRvZTpwYXNzd29yZA==" \
+  -H "Content-Type: application/xml" \
+  -d '&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;sync-collection xmlns="DAV:"&gt;
+  &lt;sync-token/&gt;
+  &lt;sync-level&gt;1&lt;/sync-level&gt;
+  &lt;prop&gt;
+    &lt;getetag/&gt;
+    &lt;calendar-data xmlns="urn:ietf:params:xml:ns:caldav"/&gt;
+  &lt;/prop&gt;
+&lt;/sync-collection&gt;'</code></pre>
+
+      <h3>XML Namespaces</h3>
+      <div class="methods">
+        <div class="method">
+          <span class="method-name">DAV:</span>
+          <span class="method-desc">WebDAV core namespace</span>
+        </div>
+        <div class="method">
+          <span class="method-name">urn:ietf:params:xml:ns:caldav</span>
+          <span class="method-desc">CalDAV namespace</span>
+        </div>
+        <div class="method">
+          <span class="method-name">urn:ietf:params:xml:ns:carddav</span>
+          <span class="method-desc">CardDAV namespace</span>
+        </div>
+        <div class="method">
+          <span class="method-name">http://calendarserver.org/ns/</span>
+          <span class="method-desc"
+            >Apple Calendar Server extensions (getctag)</span
+          >
+        </div>
+      </div>
+
+      <footer>
+        <p>CalDAV/CardDAV Server Documentation</p>
+      </footer>
+    </div>
+  </body>
+</html>

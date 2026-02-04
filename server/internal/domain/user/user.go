@@ -11,7 +11,7 @@ type User struct {
 	ID            uint   `gorm:"primaryKey"`
 	UUID          string `gorm:"uniqueIndex;size:36;not null"`
 	Email         string `gorm:"uniqueIndex;size:255;not null"`
-	Username      string `gorm:"uniqueIndex;size:100;not null"`
+	Username      string `gorm:"uniqueIndex;size:100;not null;default:''"` // Default empty for migration
 	PasswordHash  string `gorm:"size:255;not null"`
 	DisplayName   string `gorm:"size:255"`
 	IsActive      bool   `gorm:"not null"`

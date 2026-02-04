@@ -30,7 +30,17 @@ func NewUserHandler(
 	}
 }
 
-// GetProfile (GET /api/v1/users/me)
+// GetProfile godoc
+// @Summary      Get user profile
+// @Description  Get current user's profile information
+// @Tags         Users
+// @Produce      json
+// @Success      200  {object}  dto.UserProfileResponse
+// @Failure      401  {object}  ErrorResponseBody
+// @Failure      404  {object}  ErrorResponseBody
+// @Failure      500  {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /users/me [get]
 func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 	userUUID, ok := c.Locals("user_uuid").(string)
 	if !ok {
@@ -64,7 +74,21 @@ func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 	return SuccessResponse(c, res)
 }
 
-// UpdateProfile (PATCH /api/v1/users/me)
+// UpdateProfile godoc
+// @Summary      Update user profile
+// @Description  Update current user's display name
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        profile  body      dto.UpdateProfileRequest  true  "Profile updates"
+// @Success      200      {object}  dto.UserProfileResponse
+// @Failure      400      {object}  ErrorResponseBody
+// @Failure      401      {object}  ErrorResponseBody
+// @Failure      404      {object}  ErrorResponseBody
+// @Failure      409      {object}  ErrorResponseBody
+// @Failure      500      {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /users/me [patch]
 func (h *UserHandler) UpdateProfile(c fiber.Ctx) error {
 	var req dto.UpdateProfileRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -113,7 +137,18 @@ func (h *UserHandler) UpdateProfile(c fiber.Ctx) error {
 	return SuccessResponse(c, res)
 }
 
-// DeleteAccount (DELETE /api/v1/users/me)
+// DeleteAccount godoc
+// @Summary      Delete user account
+// @Description  Permanently delete user account
+// @Tags         Users
+// @Accept       json
+// @Param        request  body  dto.DeleteAccountRequest  true  "Delete confirmation"
+// @Success      204
+// @Failure      400       {object}  ErrorResponseBody
+// @Failure      401       {object}  ErrorResponseBody
+// @Failure      500       {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /users/me [delete]
 func (h *UserHandler) DeleteAccount(c fiber.Ctx) error {
 	var req dto.DeleteAccountRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -139,12 +174,21 @@ func (h *UserHandler) DeleteAccount(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// ChangePassword (PUT /api/v1/users/me/password)
+// ChangePassword godoc
+// @Summary      Change password
+// @Description  Change the current user's password
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        request  body      dto.ChangePasswordRequest  true  "Password change details"
+// @Success      200      {object}  object{message=string,access_token=string}
+// @Failure      400      {object}  ErrorResponseBody
+// @Failure      401      {object}  ErrorResponseBody
+// @Failure      500      {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /users/me/password [put]
 func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
-	var req struct {
-		CurrentPassword string `json:"current_password"`
-		NewPassword     string `json:"new_password"`
-	}
+	var req dto.ChangePasswordRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return BadRequestResponse(c, "Invalid request body")
 	}

@@ -11,6 +11,9 @@ RUN go mod download
 
 # Build
 COPY . .
+# Install and run swag
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+RUN /go/bin/swag init -g cmd/server/main.go --parseDependency --parseInternal
 RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags '-linkmode external -extldflags "-static"' -o server ./cmd/server
 
 # Runtime stage
@@ -26,6 +29,7 @@ WORKDIR /app
 
 # Copy binary
 COPY --from=builder /app/server .
+COPY --from=builder /app/docs ./docs
 
 # Create data directory
 RUN mkdir -p /data && chown caldav:caldav /data

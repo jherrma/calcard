@@ -70,3 +70,9 @@ type AppPasswordResponse struct {
 type ListAppPasswordsResponse struct {
 	AppPasswords []AppPasswordResponse `json:"app_passwords"`
 }
+
+// ChangePasswordRequest represents variable for change password
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}

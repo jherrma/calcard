@@ -1,9 +1,48 @@
+// @title           CalDAV/CardDAV Server API
+// @version         1.0
+// @description     REST API for the CalDAV/CardDAV server. Provides calendar and contact management.
+// @description
+// @description     ## Authentication
+// @description     Most endpoints require JWT Bearer token authentication.
+// @description     Obtain a token via the `/api/v1/auth/login` endpoint.
+
+// @host            localhost:8080
+// @BasePath        /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT Bearer token. Format: "Bearer {token}"
+
+// @securityDefinitions.basic BasicAuth
+// @description HTTP Basic Authentication for DAV endpoints
+
+// @tag.name Authentication
+// @tag.description User authentication and session management
+// @tag.name Users
+// @tag.description User profile management
+// @tag.name Calendars
+// @tag.description Calendar management
+// @tag.name Events
+// @tag.description Calendar event management
+// @tag.name Address Books
+// @tag.description Address book management
+// @tag.name Contacts
+// @tag.description Contact management
+// @tag.name Sharing
+// @tag.description Calendar and address book sharing
+// @tag.name Credentials
+// @tag.description CalDAV/CardDAV access credentials
+// @tag.name Import/Export
+// @tag.description Data import and export operations
+
 package main
 
 import (
 	"fmt"
 	"os"
 
+	_ "github.com/jherrma/caldav-server/docs" // swagger docs
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/server"

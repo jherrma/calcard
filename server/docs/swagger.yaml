@@ -1,0 +1,2354 @@
+basePath: /api/v1
+definitions:
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialListResponse:
+    properties:
+      credentials:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialResponse'
+        type: array
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialResponse:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      last_used_ip:
+        type: string
+      name:
+        type: string
+      permission:
+        type: string
+      username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialListResponse:
+    properties:
+      credentials:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialResponse'
+        type: array
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialResponse:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      last_used_ip:
+        type: string
+      name:
+        type: string
+      permission:
+        type: string
+      username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateAddressBookRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCalDAVCredentialRequest:
+    properties:
+      expires_at:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+      permission:
+        type: string
+      username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCardDAVCredentialRequest:
+    properties:
+      expires_at:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+      permission:
+        type: string
+      username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest:
+    properties:
+      vcard_data:
+        example: BEGIN:VCARD...
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateEventRequest:
+    properties:
+      all_day:
+        type: boolean
+      description:
+        type: string
+      end:
+        type: string
+      location:
+        type: string
+      recurrence:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO'
+      start:
+        type: string
+      summary:
+        type: string
+      timezone:
+        type: string
+    required:
+    - end
+    - start
+    - summary
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAccountRequest:
+    properties:
+      confirmation:
+        type: string
+      password:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAddressBookRequest:
+    properties:
+      confirmation:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.EventListResponse:
+    properties:
+      count:
+        type: integer
+      events:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse'
+        type: array
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse:
+    properties:
+      all_day:
+        type: boolean
+      calendar_id:
+        type: integer
+      description:
+        type: string
+      end:
+        type: string
+      id:
+        type: string
+      is_recurring:
+        type: boolean
+      location:
+        type: string
+      recurrence:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO'
+      recurrence_id:
+        type: string
+      start:
+        type: string
+      summary:
+        type: string
+      uid:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginResponse:
+    properties:
+      access_token:
+        type: string
+      expires_at:
+        type: integer
+      refresh_token:
+        type: string
+      token_type:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserResponse'
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest:
+    properties:
+      target_addressbook_id:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveEventRequest:
+    properties:
+      target_calendar_id:
+        type: string
+    required:
+    - target_calendar_id
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO:
+    properties:
+      by_day:
+        items:
+          type: string
+        type: array
+      by_month:
+        items:
+          type: integer
+        type: array
+      by_month_day:
+        items:
+          type: integer
+        type: array
+      count:
+        type: integer
+      frequency:
+        type: string
+      interval:
+        type: integer
+      until:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterRequest:
+    properties:
+      display_name:
+        type: string
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterResponse:
+    properties:
+      created_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      email_verified:
+        type: boolean
+      id:
+        type: string
+      is_active:
+        type: boolean
+      username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateAddressBookRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateEventRequest:
+    properties:
+      all_day:
+        type: boolean
+      description:
+        type: string
+      end:
+        type: string
+      location:
+        type: string
+      recurrence:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO'
+      start:
+        type: string
+      summary:
+        type: string
+      timezone:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateProfileRequest:
+    properties:
+      display_name:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileResponse:
+    properties:
+      auth_methods:
+        items:
+          type: string
+        type: array
+      created_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      email_verified:
+        type: boolean
+      id:
+        type: string
+      is_active:
+        type: boolean
+      stats:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileStats'
+      updated_at:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileStats:
+    properties:
+      app_password_count:
+        type: integer
+      calendar_count:
+        type: integer
+      contact_count:
+        type: integer
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.UserResponse:
+    properties:
+      display_name:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook:
+    properties:
+      contacts:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressObject'
+        type: array
+      createdAt:
+        type: string
+      ctag:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      path:
+        type: string
+      syncToken:
+        type: string
+      updatedAt:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_user.User'
+      userID:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_addressbook.AddressObject:
+    properties:
+      addressBook:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook'
+      addressBookID:
+        type: integer
+      contentLength:
+        type: integer
+      createdAt:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      email:
+        description: Primary email
+        type: string
+      etag:
+        type: string
+      familyName:
+        type: string
+      formattedName:
+        description: Denormalized fields for search
+        type: string
+      givenName:
+        type: string
+      id:
+        type: integer
+      organization:
+        type: string
+      path:
+        type: string
+      phone:
+        description: Primary phone
+        type: string
+      uid:
+        description: vCard UID
+        type: string
+      updatedAt:
+        type: string
+      uuid:
+        type: string
+      vcardData:
+        type: string
+      vcardVersion:
+        description: '"3.0" or "4.0"'
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_calendar.Calendar:
+    properties:
+      color:
+        description: '#RRGGBB'
+        type: string
+      created_at:
+        type: string
+      ctag:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      path:
+        description: URL path component
+        type: string
+      public_enabled:
+        type: boolean
+      public_enabled_at:
+        type: string
+      supported_components:
+        description: '"VEVENT,VTODO"'
+        type: string
+      sync_token:
+        type: string
+      timezone:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_contact.Address:
+    properties:
+      city:
+        type: string
+      country:
+        type: string
+      postal_code:
+        type: string
+      state:
+        type: string
+      street:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_contact.Contact:
+    properties:
+      addressbook_id:
+        description: UUID of the AddressBook
+        type: string
+      addresses:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Address'
+        type: array
+      birthday:
+        description: Other
+        type: string
+      created_at:
+        type: string
+      emails:
+        description: Lists
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Email'
+        type: array
+      etag:
+        type: string
+      family_name:
+        type: string
+      formatted_name:
+        type: string
+      given_name:
+        type: string
+      id:
+        description: UUID of the AddressObject
+        type: string
+      middle_name:
+        type: string
+      nickname:
+        type: string
+      notes:
+        type: string
+      organization:
+        description: Organization
+        type: string
+      phones:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Phone'
+        type: array
+      photo_url:
+        description: Constructed URL for the photo
+        type: string
+      prefix:
+        description: Name components
+        type: string
+      suffix:
+        type: string
+      title:
+        type: string
+      uid:
+        description: vCard UID
+        type: string
+      updated_at:
+        type: string
+      urls:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.URL'
+        type: array
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_contact.Email:
+    properties:
+      primary:
+        type: boolean
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_contact.Phone:
+    properties:
+      primary:
+        type: boolean
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_contact.URL:
+    properties:
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_user.OAuthConnection:
+    properties:
+      accessToken:
+        description: encrypted
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      provider:
+        description: google, microsoft, custom
+        type: string
+      providerEmail:
+        type: string
+      providerID:
+        description: sub claim from OIDC
+        type: string
+      refreshToken:
+        description: encrypted
+        type: string
+      tokenExpiry:
+        type: string
+      updatedAt:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_user.User'
+      userID:
+        type: integer
+    type: object
+  github_com_jherrma_caldav-server_internal_domain_user.User:
+    properties:
+      createdAt:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      displayName:
+        type: string
+      email:
+        type: string
+      emailVerified:
+        type: boolean
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      oauthConnections:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_user.OAuthConnection'
+        type: array
+      passwordHash:
+        type: string
+      updatedAt:
+        type: string
+      username:
+        type: string
+      uuid:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCalDAVCredentialOutput:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      permission:
+        type: string
+      username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCardDAVCredentialOutput:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      permission:
+        type: string
+      username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_calendar.CreateCalendarRequest:
+    properties:
+      color:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      timezone:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_calendar.DeleteCalendarRequest:
+    properties:
+      confirmation:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_calendar.UpdateCalendarRequest:
+    properties:
+      color:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      timezone:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_contact.ListOutput:
+    properties:
+      contacts:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_contact.SearchOutput:
+    properties:
+      contacts:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+        type: array
+      count:
+        type: integer
+      query:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_contact.UpdateInput:
+    properties:
+      addresses:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Address'
+        type: array
+      birthday:
+        type: string
+      emails:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Email'
+        type: array
+      family_name:
+        type: string
+      formatted_name:
+        type: string
+      given_name:
+        type: string
+      middle_name:
+        type: string
+      nickname:
+        type: string
+      notes:
+        type: string
+      organization:
+        type: string
+      phones:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Phone'
+        type: array
+      prefix:
+        type: string
+      suffix:
+        type: string
+      title:
+        type: string
+      urls:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.URL'
+        type: array
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  internal_adapter_http.ErrorResponseBody:
+    description: Error response body
+    properties:
+      error:
+        example: error_code
+        type: string
+      message:
+        example: Human readable message
+        type: string
+    type: object
+  internal_adapter_http.SuccessResponseBody:
+    description: Success response body
+    properties:
+      data: {}
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: HTTP Basic Authentication for DAV endpoints
+  title: CalDAV/CardDAV Server API
+  version: "1.0"
+paths:
+  /addressbooks:
+    get:
+      description: Get all address books for the user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              addressbooks:
+                items:
+                  $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook'
+                type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: List address books
+      tags:
+      - AddressBooks
+    post:
+      consumes:
+      - application/json
+      description: Create a new address book
+      parameters:
+      - description: Address book details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateAddressBookRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Create address book
+      tags:
+      - AddressBooks
+  /addressbooks/{addressbook_id}/contacts:
+    get:
+      description: Get contacts from address book
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Limit (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      - description: Sort field (default name)
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_contact.ListOutput'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: List contacts
+      tags:
+      - Contacts
+    post:
+      consumes:
+      - application/json
+      description: Create a new contact
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Contact details
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Create contact
+      tags:
+      - Contacts
+  /addressbooks/{addressbook_id}/contacts/{contact_id}:
+    delete:
+      description: Delete a contact
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Delete contact
+      tags:
+      - Contacts
+    get:
+      description: Get contact by ID
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get contact
+      tags:
+      - Contacts
+    put:
+      consumes:
+      - application/json
+      description: Update contact details
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      - description: Contact updates
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_contact.UpdateInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Update contact
+      tags:
+      - Contacts
+  /addressbooks/{addressbook_id}/contacts/{contact_id}/photo:
+    delete:
+      description: Remove photo from contact
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Delete contact photo
+      tags:
+      - Contacts
+    get:
+      description: Get contact's photo content
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      produces:
+      - image/jpeg
+      - image/png
+      - image/gif
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get contact photo
+      tags:
+      - Contacts
+    put:
+      consumes:
+      - image/jpeg
+      - image/png
+      - image/gif
+      description: Upload a photo for a contact (JPEG, PNG, GIF)
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: addressbook_id
+        required: true
+        type: integer
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      - description: Photo data
+        in: body
+        name: file
+        required: true
+        schema:
+          items:
+            type: integer
+          type: array
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "413":
+          description: Photo too large
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "415":
+          description: Unsupported file type
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Upload contact photo
+      tags:
+      - Contacts
+  /addressbooks/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete address book
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Confirmation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAddressBookRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Delete address book
+      tags:
+      - AddressBooks
+    get:
+      description: Get address book by ID
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get address book
+      tags:
+      - AddressBooks
+    patch:
+      consumes:
+      - application/json
+      description: Update address book details
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateAddressBookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressBook'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Update address book
+      tags:
+      - AddressBooks
+  /addressbooks/{id}/contacts:
+    post:
+      consumes:
+      - application/json
+      description: Create a new contact in address book
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Contact VCard
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 'Ref: domain.AddressObject'
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Create contact
+      tags:
+      - Contacts
+  /addressbooks/{id}/export:
+    get:
+      description: Export address book as vCard
+      parameters:
+      - description: Address Book ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/vcard
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Export address book
+      tags:
+      - Import/Export
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Send password reset email to user
+      parameters:
+      - description: User email
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_adapter_http.SuccessResponseBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      summary: Request password reset
+      tags:
+      - Authentication
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and receive JWT tokens
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.LoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Invalid credentials
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      summary: Login with email and password
+      tags:
+      - Authentication
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Invalidate refresh token to logout
+      parameters:
+      - description: Refresh token to invalidate
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            refresh_token:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_adapter_http.SuccessResponseBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      summary: Logout user
+      tags:
+      - Authentication
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Get a new access token using refresh token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            refresh_token:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              access_token:
+                type: string
+              expires_at:
+                type: integer
+              token_type:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Invalid refresh token
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      summary: Refresh access token
+      tags:
+      - Authentication
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user account with email and password
+      parameters:
+      - description: Registration details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.RegisterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "409":
+          description: Email already registered
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      summary: Register a new user
+      tags:
+      - Authentication
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Set new password using reset token from email
+      parameters:
+      - description: Reset token and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            new_password:
+              type: string
+            token:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_adapter_http.SuccessResponseBody'
+        "400":
+          description: Invalid token
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      summary: Reset password with token
+      tags:
+      - Authentication
+  /auth/verify:
+    get:
+      consumes:
+      - application/json
+      description: Verify user email with token from verification email
+      parameters:
+      - description: Verification token
+        in: query
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_adapter_http.SuccessResponseBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      summary: Verify email address
+      tags:
+      - Authentication
+  /caldav-credentials:
+    get:
+      description: List all CalDAV credentials for the current user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CalDAVCredentialListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: List CalDAV credentials
+      tags:
+      - Credentials
+    post:
+      consumes:
+      - application/json
+      description: Create a new app-specific password/credential for CalDAV access
+      parameters:
+      - description: Credential details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCalDAVCredentialRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCalDAVCredentialOutput'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Create CalDAV credential
+      tags:
+      - Credentials
+  /caldav-credentials/{id}:
+    delete:
+      description: Revoke/Delete a CalDAV credential
+      parameters:
+      - description: Credential UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Revoke CalDAV credential
+      tags:
+      - Credentials
+  /calendars:
+    get:
+      description: Get all calendars for the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              calendars:
+                items:
+                  $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar'
+                type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: List all calendars
+      tags:
+      - Calendars
+    post:
+      consumes:
+      - application/json
+      description: Create a calendar for the authenticated user
+      parameters:
+      - description: Calendar details
+        in: body
+        name: calendar
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.CreateCalendarRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Create a new calendar
+      tags:
+      - Calendars
+  /calendars/{calendar_id}/events:
+    get:
+      description: Get events from calendar
+      parameters:
+      - description: Calendar ID
+        in: path
+        name: calendar_id
+        required: true
+        type: integer
+      - description: Start time (RFC3339)
+        in: query
+        name: start
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: end
+        type: string
+      - description: Expand recurring events (default true)
+        in: query
+        name: expand
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: List events
+      tags:
+      - Events
+    post:
+      consumes:
+      - application/json
+      description: Create a new event
+      parameters:
+      - description: Calendar ID
+        in: path
+        name: calendar_id
+        required: true
+        type: integer
+      - description: Event details
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateEventRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Create event
+      tags:
+      - Events
+  /calendars/{calendar_id}/events/{event_id}:
+    delete:
+      description: Delete an event
+      parameters:
+      - description: Calendar ID
+        in: path
+        name: calendar_id
+        required: true
+        type: integer
+      - description: Event UUID
+        in: path
+        name: event_id
+        required: true
+        type: string
+      - description: Delete scope (this, all, future)
+        in: query
+        name: scope
+        type: string
+      - description: Recurrence ID (for recurring events)
+        in: query
+        name: recurrence_id
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Delete event
+      tags:
+      - Events
+    get:
+      description: Get event by ID
+      parameters:
+      - description: Calendar ID
+        in: path
+        name: calendar_id
+        required: true
+        type: integer
+      - description: Event UUID
+        in: path
+        name: event_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get event
+      tags:
+      - Events
+    put:
+      consumes:
+      - application/json
+      description: Update event details
+      parameters:
+      - description: Calendar ID
+        in: path
+        name: calendar_id
+        required: true
+        type: integer
+      - description: Event UUID
+        in: path
+        name: event_id
+        required: true
+        type: string
+      - description: Recurrence ID (for recurring events)
+        in: query
+        name: recurrence_id
+        type: string
+      - description: Update scope (this, all, future)
+        in: query
+        name: scope
+        type: string
+      - description: Event updates
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateEventRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Update event
+      tags:
+      - Events
+  /calendars/{calendar_id}/events/{event_id}/move:
+    post:
+      consumes:
+      - application/json
+      description: Move event to another calendar
+      parameters:
+      - description: Source Calendar ID
+        in: path
+        name: calendar_id
+        required: true
+        type: integer
+      - description: Event UUID
+        in: path
+        name: event_id
+        required: true
+        type: string
+      - description: Target calendar
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveEventRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Move event
+      tags:
+      - Events
+  /calendars/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a calendar and all its events
+      parameters:
+      - description: Calendar UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Delete confirmation
+        in: body
+        name: confirm
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.DeleteCalendarRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Delete calendar
+      tags:
+      - Calendars
+    get:
+      description: Get a specific calendar by UUID
+      parameters:
+      - description: Calendar UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get calendar by ID
+      tags:
+      - Calendars
+    patch:
+      consumes:
+      - application/json
+      description: Update a calendar's properties
+      parameters:
+      - description: Calendar UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated calendar details
+        in: body
+        name: calendar
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.UpdateCalendarRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_calendar.Calendar'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Update calendar
+      tags:
+      - Calendars
+  /calendars/{id}/export:
+    get:
+      description: Download calendar as .ics file
+      parameters:
+      - description: Calendar UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/calendar
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Export calendar as iCalendar
+      tags:
+      - Import/Export
+  /carddav-credentials:
+    get:
+      description: List all CardDAV credentials for the current user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CardDAVCredentialListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: List CardDAV credentials
+      tags:
+      - Credentials
+    post:
+      consumes:
+      - application/json
+      description: Create a new app-specific password/credential for CardDAV access
+      parameters:
+      - description: Credential details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateCardDAVCredentialRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCardDAVCredentialOutput'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Create CardDAV credential
+      tags:
+      - Credentials
+  /carddav-credentials/{id}:
+    delete:
+      description: Revoke/Delete a CardDAV credential
+      parameters:
+      - description: Credential UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Revoke CardDAV credential
+      tags:
+      - Credentials
+  /contacts/{contact_id}/move:
+    post:
+      consumes:
+      - application/json
+      description: Move contact to another address book
+      parameters:
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      - description: Target address book
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Move contact
+      tags:
+      - Contacts
+  /contacts/search:
+    get:
+      description: Search for contacts by query
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: Limit (default 20)
+        in: query
+        name: limit
+        type: integer
+      - description: Address Book ID filter
+        in: query
+        name: addressbook_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_contact.SearchOutput'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Search contacts
+      tags:
+      - Contacts
+  /public/calendar/{token}:
+    get:
+      description: Get calendar events in iCalendar format via public token
+      parameters:
+      - description: Public Token or Token.ics
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - text/calendar
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Calendar not found
+          schema:
+            type: string
+        "500":
+          description: Internal error
+          schema:
+            type: string
+      summary: Get public calendar feed
+      tags:
+      - Public
+  /users/me:
+    delete:
+      consumes:
+      - application/json
+      description: Permanently delete user account
+      parameters:
+      - description: Delete confirmation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.DeleteAccountRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Delete user account
+      tags:
+      - Users
+    get:
+      description: Get current user's profile information
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get user profile
+      tags:
+      - Users
+    patch:
+      consumes:
+      - application/json
+      description: Update current user's display name
+      parameters:
+      - description: Profile updates
+        in: body
+        name: profile
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UserProfileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Update user profile
+      tags:
+      - Users
+  /users/me/password:
+    put:
+      consumes:
+      - application/json
+      description: Change the current user's password
+      parameters:
+      - description: Password change details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              access_token:
+                type: string
+              message:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - Users
+securityDefinitions:
+  BasicAuth:
+    type: basic
+  BearerAuth:
+    description: 'JWT Bearer token. Format: "Bearer {token}"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
+tags:
+- description: User authentication and session management
+  name: Authentication
+- description: User profile management
+  name: Users
+- description: Calendar management
+  name: Calendars
+- description: Calendar event management
+  name: Events
+- description: Address book management
+  name: Address Books
+- description: Contact management
+  name: Contacts
+- description: Calendar and address book sharing
+  name: Sharing
+- description: CalDAV/CardDAV access credentials
+  name: Credentials
+- description: Data import and export operations
+  name: Import/Export

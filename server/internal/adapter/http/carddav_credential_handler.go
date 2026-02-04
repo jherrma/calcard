@@ -3,6 +3,8 @@ package http
 import (
 	"time"
 
+	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
@@ -28,20 +30,22 @@ func NewCardDAVCredentialHandler(
 	}
 }
 
-// CreateCardDAVCredentialRequest is the request for creating a CardDAV credential
-type CreateCardDAVCredentialRequest struct {
-	Name       string  `json:"name"`
-	Username   string  `json:"username"`
-	Password   string  `json:"password"`
-	Permission string  `json:"permission"`
-	ExpiresAt  *string `json:"expires_at"`
-}
-
-// Create handles POST /api/v1/carddav-credentials
+// Create godoc
+// @Summary      Create CardDAV credential
+// @Description  Create a new app-specific password/credential for CardDAV access
+// @Tags         Credentials
+// @Accept       json
+// @Produce      json
+// @Param        request  body      dto.CreateCardDAVCredentialRequest  true  "Credential details"
+// @Success      201      {object}  apppassword.CreateCardDAVCredentialOutput
+// @Failure      400      {object}  ErrorResponseBody
+// @Failure      409      {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /carddav-credentials [post]
 func (h *CardDAVCredentialHandler) Create(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 
-	var req CreateCardDAVCredentialRequest
+	var req dto.CreateCardDAVCredentialRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error":   "invalid_request",
@@ -88,7 +92,15 @@ func (h *CardDAVCredentialHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(output)
 }
 
-// List handles GET /api/v1/carddav-credentials
+// List godoc
+// @Summary      List CardDAV credentials
+// @Description  List all CardDAV credentials for the current user
+// @Tags         Credentials
+// @Produce      json
+// @Success      200  {object}  dto.CardDAVCredentialListResponse
+// @Failure      500  {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /carddav-credentials [get]
 func (h *CardDAVCredentialHandler) List(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 
@@ -100,19 +112,7 @@ func (h *CardDAVCredentialHandler) List(c fiber.Ctx) error {
 		})
 	}
 
-	// Map to response (without password hash)
-	type CredentialResponse struct {
-		ID         string  `json:"id"`
-		Name       string  `json:"name"`
-		Username   string  `json:"username"`
-		Permission string  `json:"permission"`
-		ExpiresAt  *string `json:"expires_at"`
-		CreatedAt  string  `json:"created_at"`
-		LastUsedAt *string `json:"last_used_at"`
-		LastUsedIP *string `json:"last_used_ip"`
-	}
-
-	response := make([]CredentialResponse, len(creds))
+	response := make([]dto.CardDAVCredentialResponse, len(creds))
 	for i, cred := range creds {
 		var expiresAt, lastUsedAt, lastUsedIP *string
 		if cred.ExpiresAt != nil {
@@ -127,7 +127,7 @@ func (h *CardDAVCredentialHandler) List(c fiber.Ctx) error {
 			lastUsedIP = &cred.LastUsedIP
 		}
 
-		response[i] = CredentialResponse{
+		response[i] = dto.CardDAVCredentialResponse{
 			ID:         cred.UUID,
 			Name:       cred.Name,
 			Username:   cred.Username,
@@ -139,10 +139,18 @@ func (h *CardDAVCredentialHandler) List(c fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(fiber.Map{"credentials": response})
+	return c.JSON(dto.CardDAVCredentialListResponse{Credentials: response})
 }
 
-// Revoke handles DELETE /api/v1/carddav-credentials/:id
+// Revoke godoc
+// @Summary      Revoke CardDAV credential
+// @Description  Revoke/Delete a CardDAV credential
+// @Tags         Credentials
+// @Param        id   path      string  true  "Credential UUID"
+// @Success      204
+// @Failure      404  {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /carddav-credentials/{id} [delete]
 func (h *CardDAVCredentialHandler) Revoke(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 	credUUID := c.Params("id")
