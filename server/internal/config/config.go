@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v10"
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -142,6 +143,10 @@ func (c *DatabaseConfig) IsPostgres() bool {
 
 // Load initialization the configuration from environment variables and an optional YAML file
 func Load(configPath string) (*Config, error) {
+	// 0. Load .env files if they exist
+	// We ignore errors because .env files are optional
+	_ = godotenv.Load(".env", ".env.local")
+
 	// Set hardcoded defaults
 	cfg := &Config{
 		Server: ServerConfig{

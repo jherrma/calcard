@@ -46,7 +46,7 @@ export default defineNuxtConfig({
       },
     },
     components: {
-      include: ['Button', 'InputText', 'Dialog', 'Toast', 'Menu', 'Avatar', 'DataTable', 'Column', 'Card', 'Password', 'Checkbox', 'Message', 'ProgressSpinner'],
+      include: ['Button', 'InputText', 'Dialog', 'Toast', 'Menu', 'Avatar', 'DataTable', 'Column', 'Card', 'Password', 'Checkbox', 'Message', 'ProgressSpinner', 'SelectButton'],
     },
   },
 
