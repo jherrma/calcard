@@ -174,29 +174,3 @@ func (uc *RegisterUseCase) createDefaultAddressBook(ctx context.Context, userID 
 
 	return uc.addressBookRepo.Create(ctx, defaultAB)
 }
-
-func (uc *RegisterUseCase) generateUniqueUsername(ctx context.Context) (string, error) {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	length := 16
-	maxRetries := 10
-
-	for i := 0; i < maxRetries; i++ {
-		b := make([]byte, length)
-		if _, err := rand.Read(b); err != nil {
-			return "", fmt.Errorf("failed to generate random bytes: %w", err)
-		}
-		for i := range b {
-			b[i] = chars[b[i]%byte(len(chars))]
-		}
-		username := string(b)
-
-		existing, err := uc.repo.GetByUsername(ctx, username)
-		if err != nil {
-			return "", err
-		}
-		if existing == nil {
-			return username, nil
-		}
-	}
-	return "", errors.New("failed to generate unique username after max retries")
-}

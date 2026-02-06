@@ -6,7 +6,7 @@
     </div>
 
     <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-      <div class="bg-surface-0 dark:bg-surface-900 py-8 px-4 shadow-xl border border-surface-200 dark:border-surface-800 sm:rounded-xl sm:px-10">
+      <div class="bg-surface-0 dark:bg-surface-900 py-8 px-4 shadow-lg border border-surface-200 dark:border-surface-800 sm:rounded-2xl sm:px-10">
         <slot />
       </div>
     </div>

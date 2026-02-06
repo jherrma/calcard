@@ -18,18 +18,6 @@
     </div>
 
     <form v-else @submit.prevent="handleRegister" class="space-y-4">
-      <div class="flex flex-col gap-1.5">
-        <label for="username" class="text-sm font-medium text-surface-700 dark:text-surface-300">Username</label>
-        <InputText
-          id="username"
-          v-model="form.username"
-          required
-          placeholder="johndoe"
-          class="w-full"
-          :class="{ 'p-invalid': v$.username.$error }"
-        />
-        <small v-if="v$.username.$error" class="p-error">{{ v$.username.$errors[0].$message }}</small>
-      </div>
 
       <div class="flex flex-col gap-1.5">
         <label for="email" class="text-sm font-medium text-surface-700 dark:text-surface-300">Email Address</label>
@@ -126,7 +114,6 @@ definePageMeta({
 const authStore = useAuthStore();
 
 const form = reactive({
-  username: "",
   email: "",
   display_name: "",
   password: "",
@@ -134,11 +121,6 @@ const form = reactive({
 });
 
 const rules = {
-  username: { 
-    required, 
-    minLength: minLength(3),
-    alphaNum: helpers.withMessage('Username must be alphanumeric', (value: string) => /^[a-z0-9]+$/i.test(value))
-  },
   email: { required, email },
   password: { required, minLength: minLength(8) },
   confirmPassword: { 
@@ -162,7 +144,6 @@ const handleRegister = async () => {
 
   try {
     await authStore.register({
-      username: form.username,
       email: form.email,
       display_name: form.display_name,
       password: form.password,

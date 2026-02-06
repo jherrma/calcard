@@ -8,7 +8,7 @@
     <!-- Logo -->
     <div class="flex items-center justify-between h-16 px-6 border-b border-surface-200 dark:border-surface-800">
       <NuxtLink to="/" class="flex items-center gap-3" @click="$emit('close')">
-        <div class="w-8 h-8 rounded bg-primary-600 flex items-center justify-center text-white font-bold text-lg">
+        <div class="w-8 h-8 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold text-lg">
           C
         </div>
         <span class="text-xl font-bold text-surface-900 dark:text-surface-0">CalCard</span>
@@ -35,7 +35,7 @@
           :href="href"
           @click="navigate"
           :class="[
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+            'flex items-center gap-3 px-3 py-2.5 rounded-full text-sm font-medium transition-all duration-200',
             (isActive && item.to !== '/') || (item.to === '/' && isExactActive)
               ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
               : 'text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800'
@@ -59,7 +59,7 @@
         to="/settings"
         @click="$emit('close')"
         :class="[
-          'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+          'flex items-center gap-3 px-3 py-2.5 rounded-full text-sm font-medium transition-colors',
           isActive('/settings')
             ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
             : 'text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800'
@@ -83,7 +83,14 @@ defineEmits<{
 
 const route = useRoute();
 
-const navigation = [
+interface NavigationItem {
+  to: string;
+  label: string;
+  icon: string;
+  badge?: string;
+}
+
+const navigation: NavigationItem[] = [
   { to: '/calendar', label: 'Calendar', icon: 'pi pi-calendar' },
   { to: '/contacts', label: 'Contacts', icon: 'pi pi-users' },
 ];

@@ -25,6 +25,11 @@ export default {
           950: '#172554',
         },
       },
+      borderRadius: {
+        'xl': '16px',
+        '2xl': '24px',
+        '3xl': '32px',
+      },
     },
   },
   plugins: [],
