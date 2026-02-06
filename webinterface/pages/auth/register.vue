@@ -11,8 +11,11 @@
         </div>
       </div>
       <h3 class="text-xl font-semibold mb-2">Registration Successful!</h3>
-      <p class="text-surface-600 dark:text-surface-400 mb-6">
+      <p v-if="needsEmailVerification" class="text-surface-600 dark:text-surface-400 mb-6">
         Please check your email to verify your account before logging in.
+      </p>
+      <p v-else class="text-surface-600 dark:text-surface-400 mb-6">
+        Your account is ready. You can now sign in.
       </p>
       <Button label="Back to Login" @click="navigateTo('/auth/login')" class="w-full" />
     </div>
@@ -134,6 +137,7 @@ const v$ = useVuelidate(rules, form);
 const isLoading = ref(false);
 const error = ref("");
 const isRegistered = ref(false);
+const needsEmailVerification = ref(false);
 
 const handleRegister = async () => {
   const isFormCorrect = await v$.value.$validate();
@@ -143,12 +147,13 @@ const handleRegister = async () => {
   isLoading.value = true;
 
   try {
-    await authStore.register({
+    const result = await authStore.register({
       email: form.email,
       display_name: form.display_name,
       password: form.password,
     });
     isRegistered.value = true;
+    needsEmailVerification.value = !(result?.is_active && result?.email_verified);
   } catch (e: any) {
     error.value = e.data?.message || "Registration failed. Please try again.";
   } finally {

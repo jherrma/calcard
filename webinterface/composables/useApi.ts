@@ -14,6 +14,12 @@ export const useApi = () => {
         };
       }
     },
+    async onResponse({ response }) {
+      // Unwrap the backend's { status: "ok", data: ... } response wrapper
+      if (response._data?.status === "ok" && response._data?.data !== undefined) {
+        response._data = response._data.data;
+      }
+    },
     async onResponseError({ response }) {
       if (response.status === 401 && authStore.isAuthenticated) {
         // Try to refresh token or logout

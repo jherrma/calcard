@@ -87,6 +87,11 @@ func (m *mockUserRepo) GetByOAuth(ctx context.Context, provider, providerID stri
 	return args.Get(0).(*user.User), args.Error(1)
 }
 
+func (m *mockUserRepo) Count(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func TestGetProfileUseCase_Execute(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := NewGetProfileUseCase(repo)

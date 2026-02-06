@@ -97,8 +97,23 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	updateABShareUC := sharing.NewUpdateAddressBookShareUseCase(abShareRepo, addressBookRepo)
 	revokeABShareUC := sharing.NewRevokeAddressBookShareUseCase(abShareRepo, addressBookRepo)
 
+	// OAuth Manager (initialized early for system handler)
+	oauthRepo := repository.NewOAuthConnectionRepository(db.DB())
+	oauthManager, err := authadapter.NewOAuthProviderManager(&cfg.OAuth)
+	if err != nil {
+		fmt.Printf("Failed to initialize OAuth provider manager: %v\n", err)
+	}
+
+	// SAML Provider (initialized early for system handler)
+	samlSessionRepo := repository.NewSAMLSessionRepository(db.DB())
+	samlProvider, samlErr := authadapter.NewSAMLServiceProvider(&cfg.SAML, cfg.BaseURL)
+	if samlErr != nil {
+		fmt.Printf("Failed to initialize SAML provider: %v\n", samlErr)
+	}
+
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
+	systemHandler := http.NewSystemHandler(cfg, userRepo, oauthManager, samlProvider != nil)
 	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
@@ -125,8 +140,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// API Group
 	v1 := app.Group("/api/v1")
 
+	// System Routes (public - needed by frontend before auth)
+	systemGroup := v1.Group("/system")
+	systemGroup.Get("/settings", systemHandler.Settings)
+
 	// Auth Routes
 	authGroup := v1.Group("/auth")
+	authGroup.Get("/methods", systemHandler.AuthMethods)
 	authGroup.Post("/register", authHandler.Register)
 	authGroup.Get("/verify", authHandler.Verify)
 
@@ -176,12 +196,6 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	carddavCredGroup.Delete("/:id", carddavCredHandler.Revoke)
 
 	// OAuth Routes
-	oauthRepo := repository.NewOAuthConnectionRepository(db.DB())
-	oauthManager, err := authadapter.NewOAuthProviderManager(&cfg.OAuth)
-	if err != nil {
-		fmt.Printf("Failed to initialize OAuth provider manager: %v\n", err)
-	}
-
 	initiateOAuthUC := authusecase.NewInitiateOAuthUseCase(oauthManager)
 	oauthCallbackUC := authusecase.NewOAuthCallbackUseCase(oauthManager, userRepo, oauthRepo, tokenRepo, jwtManager, cfg)
 	unlinkUC := authusecase.NewUnlinkProviderUseCase(oauthRepo, userRepo)
@@ -197,11 +211,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	oauthGroup.Delete("/:provider", http.Authenticate(jwtManager, userRepo), oauthHandler.Unlink)
 
 	// SAML Routes - Conditionally enabled based on config
-	samlSessionRepo := repository.NewSAMLSessionRepository(db.DB())
-	samlProvider, samlErr := authadapter.NewSAMLServiceProvider(&cfg.SAML, cfg.BaseURL)
-	if samlErr != nil {
-		fmt.Printf("Failed to initialize SAML provider: %v\n", samlErr)
-	} else if samlProvider != nil {
+	if samlProvider != nil {
 		samlLoginUC := authusecase.NewSAMLLoginUseCase(samlProvider, userRepo, oauthRepo, samlSessionRepo, jwtManager, tokenRepo, cfg)
 		samlMetadataUC := authusecase.NewSAMLMetadataUseCase(samlProvider)
 

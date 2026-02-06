@@ -110,6 +110,14 @@ func (r *gormUserRepo) DeleteVerification(ctx context.Context, token string) err
 	return r.db.WithContext(ctx).Where("token = ?", token).Delete(&user.EmailVerification{}).Error
 }
 
+func (r *gormUserRepo) Count(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&user.User{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (r *gormUserRepo) GetByOAuth(ctx context.Context, provider, providerID string) (*user.User, error) {
 	var conn user.OAuthConnection
 	if err := r.db.WithContext(ctx).Preload("User").

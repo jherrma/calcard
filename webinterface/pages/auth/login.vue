@@ -166,14 +166,11 @@ onMounted(async () => {
     }
 
     // Fetch auth methods
-    // We try/catch this specifically in case the endpoint doesn't exist yet on backend
     try {
         const response = await api<AuthMethodsResponse>("/api/v1/auth/methods");
         authMethods.value = response.methods;
     } catch (e) {
-        // Fallback: if endpoint fails, we assume just local auth (which is always shown)
-        // or we could hardcode some defaults for dev if needed. 
-        // For now, we do nothing, so only local auth form is shown.
+        // Fallback: if endpoint fails, assume just local auth
         console.warn("Failed to fetch auth methods, defaulting to local only.");
     }
 

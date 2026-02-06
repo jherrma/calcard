@@ -45,12 +45,12 @@ export const useAuthStore = defineStore("auth", {
       refreshCookie.value = response.refresh_token;
 
       // Schedule token refresh
-      this.scheduleTokenRefresh(response.expires_in);
+      this.scheduleTokenRefresh(response.expires_at);
     },
 
     async register(data: any) {
       const api = useApi();
-      await api("/api/v1/auth/register", {
+      return await api<any>("/api/v1/auth/register", {
         method: "POST",
         body: data,
       });
@@ -89,15 +89,16 @@ export const useAuthStore = defineStore("auth", {
         });
 
         this.accessToken = response.access_token;
-        this.scheduleTokenRefresh(response.expires_in);
+        this.scheduleTokenRefresh(response.expires_at);
       } catch {
         this.clearAuth();
       }
     },
 
-    scheduleTokenRefresh(expiresIn: number) {
+    scheduleTokenRefresh(expiresAt: number) {
       // Refresh 1 minute before expiration
-      const refreshTime = (expiresIn - 60) * 1000;
+      const now = Math.floor(Date.now() / 1000);
+      const refreshTime = (expiresAt - now - 60) * 1000;
       if (refreshTime > 0) {
         setTimeout(() => this.refreshToken(), refreshTime);
       }

@@ -15,6 +15,7 @@ type UserRepository interface {
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, userID uint) error
 	GetByOAuth(ctx context.Context, provider, providerID string) (*User, error)
+	Count(ctx context.Context) (int64, error)
 
 	CreateVerification(ctx context.Context, v *EmailVerification) error
 	GetVerificationByToken(ctx context.Context, token string) (*EmailVerification, error)

@@ -149,6 +149,10 @@ func (m *mockUserRepo) GetByOAuth(ctx context.Context, provider, providerID stri
 func (m *mockUserRepo) GetVerificationByToken(ctx context.Context, token string) (*user.EmailVerification, error) {
 	return nil, nil
 }
+func (m *mockUserRepo) Count(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
 
 func TestCreateCalendarShare(t *testing.T) {
 	shareRepo := new(mockShareRepo)
