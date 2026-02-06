@@ -157,6 +157,7 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 		Start:       req.Start,
 		End:         req.End,
 		IsAllDay:    req.AllDay,
+		Timezone:    req.Timezone,
 	}
 	if req.Recurrence != nil {
 		input.RRule = req.Recurrence.ToRRule() // Need to add ToRRule to DTO
@@ -209,6 +210,7 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 		Start:        req.Start,
 		End:          req.End,
 		IsAllDay:     req.AllDay,
+		Timezone:     req.Timezone,
 		RecurrenceID: c.Query("recurrence_id"),
 		Scope:        c.Query("scope", "all"),
 	}

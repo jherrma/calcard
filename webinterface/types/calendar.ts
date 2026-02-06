@@ -13,9 +13,19 @@ export interface Calendar {
   updated_at: string;
 }
 
+export interface RecurrenceRule {
+  frequency: string;
+  interval: number;
+  by_day?: string[];
+  by_month_day?: number[];
+  by_month?: number[];
+  until?: string;
+  count?: number;
+}
+
 export interface CalendarEvent {
   id: string;
-  calendar_id: string;
+  calendar_id: number;
   uid: string;
   summary: string;
   description?: string;
@@ -23,9 +33,21 @@ export interface CalendarEvent {
   start: string;
   end: string;
   all_day: boolean;
-  recurrence_rule?: string;
-  created_at: string;
-  updated_at: string;
+  is_recurring: boolean;
+  recurrence_id?: string;
+  recurrence?: RecurrenceRule;
+}
+
+export interface EventFormData {
+  summary: string;
+  description: string;
+  location: string;
+  calendar_id: string;
+  all_day: boolean;
+  start: Date;
+  end: Date;
+  timezone: string;
+  recurrence?: RecurrenceRule;
 }
 
 export interface EventsQuery {

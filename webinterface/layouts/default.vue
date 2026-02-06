@@ -35,6 +35,7 @@
 
     <!-- Toast notifications -->
     <Toast position="top-right" />
+    <ConfirmDialog />
 
     <!-- Global loading overlay -->
     <Transition

@@ -19,6 +19,7 @@ type UpdateEventInput struct {
 	End          *string // ISO 8601
 	IsAllDay     *bool
 	RRule        *string
+	Timezone     *string
 	RecurrenceID string // Specific instance to update (RFC 5545 format, e.g., 20230101T100000Z)
 	Scope        string // this, this_and_future, all
 }
@@ -259,6 +260,14 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			}
 		} else {
 			return nil, fmt.Errorf("invalid end time format: %w", err)
+		}
+	}
+
+	// Convert times to the named IANA timezone so go-ical produces TZID parameters
+	if input.Timezone != nil && *input.Timezone != "" {
+		if loc, err := time.LoadLocation(*input.Timezone); err == nil {
+			effectiveStart = effectiveStart.In(loc)
+			effectiveEnd = effectiveEnd.In(loc)
 		}
 	}
 

@@ -20,6 +20,7 @@ type CreateEventInput struct {
 	End         time.Time
 	IsAllDay    bool
 	RRule       string
+	Timezone    string
 }
 
 type CreateEventUseCase struct {
@@ -33,6 +34,14 @@ func NewCreateEventUseCase(calendarRepo calendar.CalendarRepository) *CreateEven
 func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInput) (*calendar.CalendarObject, error) {
 	eventUUID := uuid.New().String()
 	eventUID := fmt.Sprintf("%s@calcard.io", eventUUID)
+
+	// Convert times to the named IANA timezone so go-ical produces TZID parameters
+	if input.Timezone != "" {
+		if loc, err := time.LoadLocation(input.Timezone); err == nil {
+			input.Start = input.Start.In(loc)
+			input.End = input.End.In(loc)
+		}
+	}
 
 	icalData, err := uc.generateICal(input, eventUID)
 	if err != nil {
