@@ -18,7 +18,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: Config{
 				BaseURL: "http://localhost:8080",
 				JWT: JWTConfig{
-					Secret: "this-is-a-very-secure-secret-that-is-at-least-32-chars-long",
+					Secret: "secure-secret-16",
 				},
 				Database: DatabaseConfig{
 					Driver: "sqlite",
@@ -31,7 +31,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: Config{
 				BaseURL: "http://localhost:8080",
 				JWT: JWTConfig{
-					Secret: "this-is-a-very-secure-secret-that-is-at-least-32-chars-long",
+					Secret: "secure-secret-16",
 				},
 				Database: DatabaseConfig{
 					Driver: "postgres",
@@ -47,7 +47,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: Config{
 				BaseURL: "",
 				JWT: JWTConfig{
-					Secret: "this-is-a-very-secure-secret-that-is-at-least-32-chars-long",
+					Secret: "secure-secret-16",
 				},
 			},
 			wantErr: true,
