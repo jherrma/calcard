@@ -6,7 +6,7 @@ User-Configurable Default Event Duration and All-Day Toggle
 
 ## Description
 
-As a user, I want to configure my default event duration and whether new events are all-day by default, so that the event creation form matches my typical scheduling habits without requiring manual adjustment every time.
+As a user, I want to configure my default event duration, whether new events are all-day by default, and my preferred time format (12-hour or 24-hour), so that the event creation form and calendar display match my typical scheduling habits without requiring manual adjustment every time.
 
 ## Acceptance Criteria
 
@@ -27,6 +27,7 @@ As a user, I want to configure my default event duration and whether new events 
 - [ ] Define preference key constants:
   - `default_event_duration` — integer, minutes (default: `60`)
   - `default_all_day` — boolean string `"true"` / `"false"` (default: `"false"`)
+  - `time_format` — string `"12h"` / `"24h"` (default: `"24h"`)
 
 ### Backend: Preferences Repository
 
@@ -52,7 +53,8 @@ As a user, I want to configure my default event duration and whether new events 
       "data": {
         "preferences": {
           "default_event_duration": "60",
-          "default_all_day": "false"
+          "default_all_day": "false",
+          "time_format": "24h"
         }
       }
     }
@@ -64,12 +66,14 @@ As a user, I want to configure my default event duration and whether new events 
     {
       "preferences": {
         "default_event_duration": "30",
-        "default_all_day": "true"
+        "default_all_day": "true",
+        "time_format": "12h"
       }
     }
     ```
   - Validate `default_event_duration` is an integer in `[15, 30, 45, 60, 90, 120, 180, 240, 480]`
   - Validate `default_all_day` is `"true"` or `"false"`
+  - Validate `time_format` is `"12h"` or `"24h"`
   - Reject unknown preference keys with 400
   - Response (200): same shape as GET, returning the full updated preference map
 
@@ -93,6 +97,7 @@ As a user, I want to configure my default event duration and whether new events 
   - `updatePreferences(prefs: Record<string, string>)` — PATCH, updates state
   - `defaultEventDuration` getter — returns number (parsed from string, fallback 60)
   - `defaultAllDay` getter — returns boolean (parsed from string, fallback false)
+  - `timeFormat` getter — returns `"12h"` or `"24h"` (fallback `"24h"`)
 
 ### Frontend: Calendar Settings Page
 
@@ -101,6 +106,7 @@ As a user, I want to configure my default event duration and whether new events 
 - [ ] Settings form with:
   - **Default event duration** — `Select` dropdown with options: 15 min, 30 min, 45 min, 1 hour, 1.5 hours, 2 hours, 3 hours, 4 hours, 8 hours
   - **Default all-day** — `InputSwitch` toggle
+  - **Time format** — `SelectButton` with two options: 12-hour (`1:00 PM`) and 24-hour (`13:00`)
 - [ ] Auto-save on change (with toast confirmation) or explicit Save button
 - [ ] Load preferences on mount; show current values
 
@@ -112,6 +118,11 @@ As a user, I want to configure my default event duration and whether new events 
   - `form.all_day` initial value uses `preferencesStore.defaultAllDay` when creating (not editing)
   - `watch(form.start)` uses `preferencesStore.defaultEventDuration` instead of hardcoded `+1 hour`
   - `watch(form.all_day)` toggling off all-day uses `preferencesStore.defaultEventDuration` instead of hardcoded `+1 hour`
+  - DatePicker `hour-format` bound to `preferencesStore.timeFormat === '12h' ? '12' : '24'`
+- [ ] Update `webinterface/pages/calendar/index.vue`:
+  - FullCalendar `slotLabelFormat` and `eventTimeFormat` use `preferencesStore.timeFormat` to switch between 12h/24h display
+- [ ] Update `webinterface/components/calendar/EventDetailDialog.vue`:
+  - Format displayed start/end times using `preferencesStore.timeFormat`
 - [ ] Ensure preferences store is loaded before EventForm renders (fetch in calendar page `onMounted` or use a Nuxt plugin/middleware)
 
 ## Technical Notes
@@ -122,6 +133,7 @@ As a user, I want to configure my default event duration and whether new events 
 |-----|------|---------|----------------|
 | `default_event_duration` | string (integer minutes) | `"60"` | `"15"`, `"30"`, `"45"`, `"60"`, `"90"`, `"120"`, `"180"`, `"240"`, `"480"` |
 | `default_all_day` | string (boolean) | `"false"` | `"true"`, `"false"` |
+| `time_format` | string | `"24h"` | `"12h"`, `"24h"` |
 
 ### Backend Code Structure
 
@@ -153,7 +165,9 @@ server/internal/infrastructure/
 webinterface/
 ├── stores/preferences.ts                    # NEW — preferences state
 ├── pages/settings/calendar.vue              # NEW — calendar settings page
-└── components/calendar/EventForm.vue        # MODIFY — use preferences for defaults
+├── pages/calendar/index.vue                 # MODIFY — use time format for FullCalendar
+├── components/calendar/EventForm.vue        # MODIFY — use preferences for defaults + time format
+└── components/calendar/EventDetailDialog.vue # MODIFY — use time format for displayed times
 ```
 
 ### EventForm Changes (Pseudocode)
@@ -162,6 +176,7 @@ webinterface/
 // In EventForm.vue setup
 const preferencesStore = usePreferencesStore();
 const durationMinutes = computed(() => preferencesStore.defaultEventDuration);
+const hourFormat = computed(() => preferencesStore.timeFormat === '12h' ? '12' : '24');
 
 // defaultEnd() — for create mode only
 const defaultEnd = () => {
@@ -174,6 +189,9 @@ const defaultEnd = () => {
 
 // form.all_day default
 all_day: props.event?.all_day ?? props.initialAllDay ?? preferencesStore.defaultAllDay,
+
+// DatePicker uses computed hourFormat
+// <DatePicker :hour-format="hourFormat" ... />
 
 // watch(form.start) — apply configured duration
 watch(() => form.start, (newStart) => {
@@ -198,6 +216,29 @@ watch(() => form.all_day, (newVal, oldVal) => {
 });
 ```
 
+### Calendar View Time Format (Pseudocode)
+
+```typescript
+// In pages/calendar/index.vue
+const preferencesStore = usePreferencesStore();
+const is12h = computed(() => preferencesStore.timeFormat === '12h');
+
+// FullCalendar options
+const calendarOptions = computed(() => ({
+  // ...existing options...
+  slotLabelFormat: {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: is12h.value,
+  },
+  eventTimeFormat: {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: is12h.value,
+  },
+}));
+```
+
 ### API Route Registration
 
 ```go
@@ -211,9 +252,12 @@ users.Patch("/me/preferences", userHandler.UpdatePreferences)
 - [ ] `UserPreference` model created and auto-migrated
 - [ ] `GET /api/v1/users/me/preferences` returns user preferences with defaults
 - [ ] `PATCH /api/v1/users/me/preferences` validates and persists preferences
-- [ ] Settings page at `/settings/calendar` allows changing default duration and all-day
+- [ ] Settings page at `/settings/calendar` allows changing default duration, all-day, and time format
 - [ ] EventForm uses configured duration for new events (not hardcoded 1 hour)
 - [ ] EventForm uses configured all-day default for new events
+- [ ] EventForm DatePicker uses configured time format (12h/24h)
+- [ ] Calendar view (FullCalendar) displays times in the configured format
+- [ ] Event detail dialog displays times in the configured format
 - [ ] Changing start time adjusts end time by the configured duration
 - [ ] Backend unit tests for preference use cases
 - [ ] Frontend preferences store works correctly
