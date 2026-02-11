@@ -1,6 +1,6 @@
 <template>
   <div
-    class="flex items-center gap-3 px-4 py-3 hover:bg-surface-100 dark:hover:bg-surface-800 cursor-pointer group transition-colors"
+    class="flex items-center gap-3 px-4 py-3 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900 shadow-sm hover:shadow-md hover:border-surface-300 dark:hover:border-surface-600 cursor-pointer group transition-all"
     @click="$emit('click', contact)"
   >
     <!-- Avatar -->

@@ -16,7 +16,7 @@ func CORSMiddleware(cfg config.CORSConfig) fiber.Handler {
 
 	return cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PROPFIND", "PROPPATCH", "REPORT", "MKCOL", "MOVE", "COPY", "LOCK", "UNLOCK"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "PROPFIND", "PROPPATCH", "REPORT", "MKCOL", "MOVE", "COPY", "LOCK", "UNLOCK"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With", "Brief", "Depth", "If-Match", "If-None-Match", "If-Schedule-Tag-Match"},
 		ExposeHeaders:    cfg.ExposeHeaders,
 		AllowCredentials: cfg.AllowCredentials,

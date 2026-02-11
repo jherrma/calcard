@@ -63,7 +63,7 @@
         </div>
 
         <div
-          v-else-if="flatList.length === 0"
+          v-else-if="contactList.length === 0"
           class="flex-1 flex flex-col items-center justify-center p-8 text-center"
         >
           <i class="pi pi-users text-4xl text-surface-300 dark:text-surface-600 mb-4" />
@@ -80,75 +80,47 @@
         </div>
 
         <!-- Virtual scrolled contact list -->
-        <div v-else ref="listContainerRef" class="flex-1 overflow-y-auto" @scroll="onScroll">
-          <div :style="{ height: totalHeight + 'px', position: 'relative' }">
+        <div v-else ref="listContainerRef" class="flex-1 overflow-y-auto relative" @scroll="onScroll">
+          <div :style="{ height: (totalHeight + LIST_PADDING_TOP) + 'px' }" class="relative">
+            <!-- Contact cards with inline letter indicators -->
             <div
               v-for="item in visibleItems"
               :key="item.key"
-              :style="{ position: 'absolute', top: item.top + 'px', left: 0, right: 0, height: item.height + 'px' }"
+              :style="{ position: 'absolute', top: (item.top + LIST_PADDING_TOP) + 'px', left: 0, right: 0, height: item.height + 'px' }"
+              class="flex justify-center px-4 pl-12 md:pl-16"
             >
-              <!-- Section header -->
-              <div
-                v-if="item.type === 'header'"
-                class="sticky top-0 z-10 px-4 py-1.5 text-xs font-bold uppercase text-surface-500 dark:text-surface-400 bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700"
-                :data-letter="item.letter"
+              <!-- Letter indicator for first contact in group -->
+              <span
+                v-if="item.isFirstInGroup"
+                class="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 text-2xl md:text-3xl font-bold text-surface-300 dark:text-surface-600 select-none pointer-events-none"
               >
                 {{ item.letter }}
+              </span>
+
+              <div class="w-full max-w-2xl">
+                <ContactListItem
+                  :contact="item.contact!"
+                  :search-query="contactsStore.searchQuery"
+                  @click="selectContact"
+                  @edit="handleEdit"
+                  @delete="handleDelete"
+                />
               </div>
-              <!-- Contact row -->
-              <ContactListItem
-                v-else
-                :contact="item.contact!"
-                :search-query="contactsStore.searchQuery"
-                @click="selectContact"
-                @edit="handleEdit"
-                @delete="handleDelete"
-              />
             </div>
           </div>
         </div>
 
         <!-- Alphabet navigation -->
         <AlphabetNavigation
-          v-if="flatList.length > 0"
+          v-if="contactList.length > 0"
           :available-letters="contactsStore.availableLetters"
           class="hidden md:flex"
           @scroll-to="scrollToLetter"
         />
 
-        <!-- Detail panel (desktop) -->
-        <div
-          v-if="selectedContact && !isMobile"
-          class="w-96 flex-shrink-0 hidden md:block"
-        >
-          <ContactDetailPanel
-            :contact="selectedContact"
-            @edit="handleEdit"
-            @delete="handleDelete"
-            @close="selectedContact = null"
-          />
-        </div>
       </div>
     </div>
 
-    <!-- Detail dialog (mobile) -->
-    <Dialog
-      v-model:visible="showMobileDetail"
-      modal
-      :header="selectedContact?.formatted_name || 'Contact'"
-      class="w-full max-w-lg"
-      :dismissable-mask="true"
-    >
-      <ContactDetailPanel
-        v-if="selectedContact"
-        :contact="selectedContact"
-        @edit="handleEdit"
-        @delete="handleDelete"
-        @close="showMobileDetail = false"
-      />
-    </Dialog>
-
-    <ConfirmDialog />
   </div>
 </template>
 
@@ -157,7 +129,6 @@ import { useConfirm } from 'primevue/useconfirm';
 import ContactsSidebar from '~/components/contacts/ContactsSidebar.vue';
 import ContactListItem from '~/components/contacts/ContactListItem.vue';
 import AlphabetNavigation from '~/components/contacts/AlphabetNavigation.vue';
-import ContactDetailPanel from '~/components/contacts/ContactDetailPanel.vue';
 import { useContactsStore } from '~/stores/contacts';
 import type { Contact } from '~/types/contacts';
 
@@ -169,19 +140,13 @@ definePageMeta({
 const contactsStore = useContactsStore();
 const toast = useAppToast();
 const confirm = useConfirm();
-const isMobile = useMediaQuery('(max-width: 767px)');
-
-const selectedContact = ref<Contact | null>(null);
-const showMobileDetail = ref(false);
 const searchInput = ref('');
 const listContainerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 
 const sortOptions = [
-  { label: 'Name', value: 'name' as const },
-  { label: 'Organization', value: 'organization' as const },
-  { label: 'Email', value: 'email' as const },
-  { label: 'Last Updated', value: 'updated' as const },
+  { label: 'First Name', value: 'first_name' as const },
+  { label: 'Last Name', value: 'last_name' as const },
 ];
 
 // Debounced search
@@ -193,34 +158,42 @@ watch(searchInput, (val) => {
   debouncedSearch(val);
 });
 
-// Virtual scroll constants
-const HEADER_HEIGHT = 28;
-const ROW_HEIGHT = 64;
+// Virtual scroll — contacts only (no inline headers)
+const ROW_HEIGHT = 84; // card height (64) + gap (20)
+const LIST_PADDING_TOP = 16;
 
 interface FlatItem {
-  type: 'header' | 'contact';
+  type: 'contact';
   key: string;
-  letter?: string;
-  contact?: Contact;
+  letter: string;
+  isFirstInGroup: boolean;
+  contact: Contact;
   height: number;
 }
 
-const flatList = computed<FlatItem[]>(() => {
+const contactList = computed<FlatItem[]>(() => {
   const items: FlatItem[] = [];
   for (const [letter, contacts] of contactsStore.groupedContacts) {
-    items.push({ type: 'header', key: `header-${letter}`, letter, height: HEADER_HEIGHT });
-    for (const contact of contacts) {
-      items.push({ type: 'contact', key: `contact-${contact.id}`, contact, height: ROW_HEIGHT });
+    for (let j = 0; j < contacts.length; j++) {
+      const contact = contacts[j]!;
+      items.push({
+        type: 'contact',
+        key: `contact-${contact.id}`,
+        letter,
+        isFirstInGroup: j === 0,
+        contact,
+        height: ROW_HEIGHT,
+      });
     }
   }
   return items;
 });
 
-// Precompute cumulative offsets for virtual scroll
+// Precompute cumulative offsets
 const itemOffsets = computed(() => {
   const offsets: number[] = [];
   let offset = 0;
-  for (const item of flatList.value) {
+  for (const item of contactList.value) {
     offsets.push(offset);
     offset += item.height;
   }
@@ -228,27 +201,25 @@ const itemOffsets = computed(() => {
 });
 
 const totalHeight = computed(() => {
-  const len = flatList.value.length;
+  const len = contactList.value.length;
   if (len === 0) return 0;
-  const lastOffset = itemOffsets.value[len - 1]!;
-  const lastItem = flatList.value[len - 1]!;
-  return lastOffset + lastItem.height;
+  return itemOffsets.value[len - 1]! + contactList.value[len - 1]!.height;
 });
 
 const visibleItems = computed(() => {
   const container = listContainerRef.value;
-  if (!container || flatList.value.length === 0) {
-    return flatList.value.map((item, i) => ({ ...item, top: itemOffsets.value[i]! }));
+  if (!container || contactList.value.length === 0) {
+    return contactList.value.map((item, i) => ({ ...item, top: itemOffsets.value[i]! }));
   }
 
   const viewTop = scrollTop.value;
   const viewBottom = viewTop + container.clientHeight;
-  const buffer = 200; // render extra items above/below
+  const buffer = 200;
 
   const result: (FlatItem & { top: number })[] = [];
-  for (let i = 0; i < flatList.value.length; i++) {
+  for (let i = 0; i < contactList.value.length; i++) {
     const itemTop = itemOffsets.value[i]!;
-    const item = flatList.value[i]!;
+    const item = contactList.value[i]!;
     const bottom = itemTop + item.height;
     if (bottom >= viewTop - buffer && itemTop <= viewBottom + buffer) {
       result.push({ ...item, top: itemTop });
@@ -268,7 +239,7 @@ const scrollToLetter = (letter: string) => {
   const container = listContainerRef.value;
   if (!container) return;
 
-  const idx = flatList.value.findIndex(item => item.type === 'header' && item.letter === letter);
+  const idx = contactList.value.findIndex(item => item.letter === letter);
   if (idx >= 0) {
     container.scrollTop = itemOffsets.value[idx] ?? 0;
   }
@@ -276,14 +247,11 @@ const scrollToLetter = (letter: string) => {
 
 // Contact actions
 const selectContact = (contact: Contact) => {
-  selectedContact.value = contact;
-  if (isMobile.value) {
-    showMobileDetail.value = true;
-  }
+  navigateTo(`/contacts/${contact.id}?ab=${contact.addressbook_id}`);
 };
 
 const handleEdit = (contact: Contact) => {
-  navigateTo(`/contacts/${contact.id}/edit`);
+  navigateTo(`/contacts/${contact.id}/edit?ab=${contact.addressbook_id}`);
 };
 
 const handleDelete = (contact: Contact) => {
@@ -296,13 +264,9 @@ const handleDelete = (contact: Contact) => {
     acceptClass: 'p-button-danger',
     accept: async () => {
       try {
-        const ab = contactsStore.addressBooks.find(ab => ab.UUID === contact.addressbook_id);
+        const ab = contactsStore.addressBooks.find(ab => String(ab.ID) === contact.addressbook_id);
         if (!ab) throw new Error('Address book not found');
         await contactsStore.deleteContact(ab.ID, contact.id);
-        if (selectedContact.value?.id === contact.id) {
-          selectedContact.value = null;
-          showMobileDetail.value = false;
-        }
         toast.success('Contact deleted');
       } catch (e: unknown) {
         toast.error((e as Error).message || 'Failed to delete contact');

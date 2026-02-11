@@ -5,8 +5,12 @@ import (
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/config"
+	"log"
+	"os"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type postgresDB struct {
@@ -23,7 +27,14 @@ func NewPostgres(cfg *config.Config) (Database, error) {
 	// Automatic retry on initial connection failure (3 attempts, exponential backoff)
 	backoff := 1 * time.Second
 	for i := 0; i < 3; i++ {
-		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		dbLogger := logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+		})
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: dbLogger,
+		})
 		if err == nil {
 			break
 		}

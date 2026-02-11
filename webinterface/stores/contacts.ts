@@ -1,11 +1,12 @@
-import type { AddressBook, Contact } from '~/types/contacts';
+import type { AddressBook, Contact, ContactFormData } from '~/types/contacts';
+import { useAuthStore } from '~/stores/auth';
 
 interface ContactsState {
   addressBooks: AddressBook[];
   contacts: Contact[];
   selectedAddressBookIds: Set<number>;
   searchQuery: string;
-  sortBy: 'name' | 'organization' | 'email' | 'updated';
+  sortBy: 'first_name' | 'last_name';
   isLoading: boolean;
   error: string | null;
 }
@@ -16,7 +17,7 @@ export const useContactsStore = defineStore('contacts', {
     contacts: [],
     selectedAddressBookIds: new Set(),
     searchQuery: '',
-    sortBy: 'name',
+    sortBy: 'first_name',
     isLoading: false,
     error: null,
   }),
@@ -26,7 +27,7 @@ export const useContactsStore = defineStore('contacts', {
       if (state.selectedAddressBookIds.size === 0) return [];
       return state.contacts.filter((c: Contact) =>
         state.selectedAddressBookIds.has(
-          state.addressBooks.find((ab: AddressBook) => ab.UUID === c.addressbook_id)?.ID ?? -1
+          state.addressBooks.find((ab: AddressBook) => String(ab.ID) === c.addressbook_id)?.ID ?? -1
         )
       );
     },
@@ -34,21 +35,13 @@ export const useContactsStore = defineStore('contacts', {
     sortedContacts(): Contact[] {
       const filtered = [...this.filteredContacts];
       switch (this.sortBy) {
-        case 'name':
+        case 'first_name':
           return filtered.sort((a: Contact, b: Contact) =>
-            (a.formatted_name || '').localeCompare(b.formatted_name || '')
+            (a.given_name || a.formatted_name || '').localeCompare(b.given_name || b.formatted_name || '')
           );
-        case 'organization':
+        case 'last_name':
           return filtered.sort((a: Contact, b: Contact) =>
-            (a.organization || '').localeCompare(b.organization || '')
-          );
-        case 'email': {
-          const primaryEmail = (c: Contact) => c.emails?.find(e => e.primary)?.value || c.emails?.[0]?.value || '';
-          return filtered.sort((a: Contact, b: Contact) => primaryEmail(a).localeCompare(primaryEmail(b)));
-        }
-        case 'updated':
-          return filtered.sort((a: Contact, b: Contact) =>
-            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            (a.family_name || a.formatted_name || '').localeCompare(b.family_name || b.formatted_name || '')
           );
         default:
           return filtered;
@@ -58,7 +51,10 @@ export const useContactsStore = defineStore('contacts', {
     groupedContacts(): Map<string, Contact[]> {
       const groups = new Map<string, Contact[]>();
       for (const contact of this.sortedContacts) {
-        const letter = (contact.formatted_name || '?').charAt(0).toUpperCase();
+        const name = this.sortBy === 'last_name'
+          ? (contact.family_name || contact.formatted_name || '?')
+          : (contact.given_name || contact.formatted_name || '?');
+        const letter = name.charAt(0).toUpperCase();
         const key = /[A-Z]/.test(letter) ? letter : '#';
         if (!groups.has(key)) {
           groups.set(key, []);
@@ -157,6 +153,78 @@ export const useContactsStore = defineStore('contacts', {
         method: 'DELETE',
       });
       this.contacts = this.contacts.filter((c: Contact) => c.id !== contactId);
+    },
+
+    getAddressBookByNumericId(id: string): AddressBook | undefined {
+      return this.addressBooks.find((ab: AddressBook) => String(ab.ID) === id);
+    },
+
+    async getContact(abId: number, contactId: string): Promise<Contact> {
+      const api = useApi();
+      return await api<Contact>(`/api/v1/addressbooks/${abId}/contacts/${contactId}`);
+    },
+
+    buildFormattedName(data: ContactFormData): string {
+      const parts = [data.prefix, data.given_name, data.middle_name, data.family_name, data.suffix]
+        .map(s => s.trim())
+        .filter(Boolean);
+      if (parts.length > 0) return parts.join(' ');
+      if (data.organization.trim()) return data.organization.trim();
+      return 'Unnamed Contact';
+    },
+
+    async createContact(abId: number, data: ContactFormData): Promise<Contact> {
+      const api = useApi();
+      const payload = {
+        ...data,
+        formatted_name: this.buildFormattedName(data),
+      };
+      const contact = await api<Contact>(`/api/v1/addressbooks/${abId}/contacts`, {
+        method: 'POST',
+        body: payload,
+      });
+      this.contacts.push(contact);
+      return contact;
+    },
+
+    async updateContact(abId: number, contactId: string, data: ContactFormData): Promise<Contact> {
+      const api = useApi();
+      const payload = {
+        ...data,
+        formatted_name: this.buildFormattedName(data),
+      };
+      const updated = await api<Contact>(`/api/v1/addressbooks/${abId}/contacts/${contactId}`, {
+        method: 'PATCH',
+        body: payload,
+      });
+      const idx = this.contacts.findIndex((c: Contact) => c.id === contactId);
+      if (idx >= 0) {
+        this.contacts[idx] = updated;
+      }
+      return updated;
+    },
+
+    async uploadPhoto(abId: number, contactId: string, file: File) {
+      const config = useRuntimeConfig();
+      const authStore = useAuthStore();
+      const baseURL = (config.public.apiBaseUrl as string) || '';
+      const url = `${baseURL}/api/v1/addressbooks/${abId}/contacts/${contactId}/photo`;
+
+      await $fetch(url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type,
+          ...(authStore.accessToken ? { Authorization: `Bearer ${authStore.accessToken}` } : {}),
+        },
+      });
+    },
+
+    async deletePhoto(abId: number, contactId: string) {
+      const api = useApi();
+      await api(`/api/v1/addressbooks/${abId}/contacts/${contactId}/photo`, {
+        method: 'DELETE',
+      });
     },
   },
 });

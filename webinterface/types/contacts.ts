@@ -34,6 +34,23 @@ export interface ContactURL {
   value: string;
 }
 
+export interface ContactFormData {
+  prefix: string;
+  given_name: string;
+  middle_name: string;
+  family_name: string;
+  suffix: string;
+  nickname: string;
+  organization: string;
+  title: string;
+  emails: ContactEmail[];
+  phones: ContactPhone[];
+  addresses: ContactAddress[];
+  urls: ContactURL[];
+  birthday: string;
+  notes: string;
+}
+
 export interface Contact {
   id: string;
   addressbook_id: string;

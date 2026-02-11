@@ -91,14 +91,21 @@
           <div v-for="(addr, i) in contact.addresses" :key="i" class="flex items-start gap-2">
             <i class="pi pi-map-marker text-surface-400 text-sm mt-0.5" />
             <div>
-              <div v-if="addr.street" class="text-sm text-surface-700 dark:text-surface-300">{{ addr.street }}</div>
-              <div class="text-sm text-surface-700 dark:text-surface-300">
-                <span v-if="addr.city">{{ addr.city }}</span>
-                <span v-if="addr.city && addr.state">, </span>
-                <span v-if="addr.state">{{ addr.state }}</span>
-                <span v-if="addr.postal_code"> {{ addr.postal_code }}</span>
-              </div>
-              <div v-if="addr.country" class="text-sm text-surface-700 dark:text-surface-300">{{ addr.country }}</div>
+              <a
+                :href="mapsUrl(addr)"
+                target="_blank"
+                rel="noopener"
+                class="hover:underline text-primary-600 dark:text-primary-400"
+              >
+                <div v-if="addr.street" class="text-sm">{{ addr.street }}</div>
+                <div class="text-sm">
+                  <span v-if="addr.city">{{ addr.city }}</span>
+                  <span v-if="addr.city && addr.state">, </span>
+                  <span v-if="addr.state">{{ addr.state }}</span>
+                  <span v-if="addr.postal_code"> {{ addr.postal_code }}</span>
+                </div>
+                <div v-if="addr.country" class="text-sm">{{ addr.country }}</div>
+              </a>
               <span class="text-xs text-surface-400 capitalize">{{ addr.type }}</span>
             </div>
           </div>
@@ -137,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Contact } from '~/types/contacts';
+import type { Contact, ContactAddress } from '~/types/contacts';
 
 const props = defineProps<{
   contact: Contact | null;
@@ -156,6 +163,11 @@ const initials = computed(() => {
   if (parts.length >= 2) return (parts[0]!.charAt(0) + parts[parts.length - 1]!.charAt(0)).toUpperCase();
   return (parts[0]?.[0] || '?').toUpperCase();
 });
+
+const mapsUrl = (addr: ContactAddress): string => {
+  const parts = [addr.street, addr.city, addr.state, addr.postal_code, addr.country].filter(Boolean);
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(parts.join(', '))}`;
+};
 
 const avatarColor = computed(() => {
   if (!props.contact) return '#3b82f6';
