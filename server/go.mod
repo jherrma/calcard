@@ -1,6 +1,6 @@
 module github.com/jherrma/caldav-server
 
-go 1.25.0
+go 1.25.6
 
 require (
 	github.com/caarlos0/env/v10 v10.0.0

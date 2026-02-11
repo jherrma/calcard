@@ -95,6 +95,73 @@ oauth:
 2.  Ensure your provider supports OpenID Connect discovery (`/.well-known/openid-configuration`).
 3.  Whitelist the callback URL: `http://localhost:8080/api/v1/auth/oauth/custom/callback`.
 
+## Building for Release
+
+### Prerequisites
+
+- Go 1.25.6+
+- GCC and SQLite dev libraries (for CGO/SQLite support)
+- Node.js 18+ and npm (for the web interface)
+- [swag](https://github.com/swaggo/swag) (`go install github.com/swaggo/swag/cmd/swag@latest`)
+
+### Backend
+
+1.  Generate Swagger docs:
+
+    ```bash
+    cd server
+    swag init -g cmd/server/main.go --parseDependency --parseInternal
+    ```
+
+2.  Build a statically linked binary:
+
+    ```bash
+    CGO_ENABLED=1 go build -a -ldflags '-linkmode external -extldflags "-static"' -o server ./cmd/server
+    ```
+
+    The resulting `server` binary is self-contained and can be deployed to any compatible Linux host.
+
+### Frontend
+
+1.  Install dependencies and build the SPA:
+
+    ```bash
+    cd webinterface
+    npm install
+    npm run build
+    ```
+
+2.  The build output is in `webinterface/.output/public/`. Serve it with any static file server or reverse proxy (e.g., Nginx, Caddy) and point the `NUXT_PUBLIC_API_BASE_URL` environment variable at the backend.
+
+### Docker
+
+The simplest way to build and run the server is with Docker Compose:
+
+```bash
+# SQLite (default)
+cd server && docker-compose up --build
+
+# PostgreSQL
+cd server && docker-compose -f docker-compose.postgres.yml up --build
+```
+
+The Dockerfile produces a minimal Alpine-based image with a statically linked binary. Key environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CALDAV_SERVER_HOST` | `0.0.0.0` | Listen address |
+| `CALDAV_SERVER_PORT` | `8080` | Listen port |
+| `CALDAV_JWT_SECRET` | — | **Required.** Secret for signing JWTs |
+| `CALDAV_BASE_URL` | `http://localhost:8080` | Public-facing URL |
+| `CALDAV_DATA_DIR` | `/data` | Data directory (SQLite DB, uploads) |
+| `CALDAV_DB_HOST` | — | PostgreSQL host (omit for SQLite) |
+| `CALDAV_DB_PORT` | `5432` | PostgreSQL port |
+| `CALDAV_DB_USER` | — | PostgreSQL user |
+| `CALDAV_DB_PASSWORD` | — | PostgreSQL password |
+| `CALDAV_DB_NAME` | — | PostgreSQL database name |
+
+See `configs/config.yaml.example` for the full configuration reference.
+
 ## Architecture
 
 The project follows Clean Architecture principles:
