@@ -42,7 +42,8 @@ onMounted(async () => {
       authStore.setAuth({
         access_token: access_token as string,
         refresh_token: refresh_token as string,
-        expires_in: Number(expires_in) || 3600,
+        expires_at: Math.floor(Date.now() / 1000) + (Number(expires_in) || 3600),
+        token_type: 'Bearer',
         user: {} as any // Will be fetched immediately
       });
 

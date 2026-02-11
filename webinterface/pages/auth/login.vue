@@ -16,7 +16,7 @@
           class="w-full"
           :class="{ 'p-invalid': v$.email.$error }"
         />
-        <small v-if="v$.email.$error" class="p-error">{{ v$.email.$errors[0].$message }}</small>
+        <small v-if="v$.email.$error" class="p-error">{{ v$.email.$errors[0]?.$message }}</small>
       </div>
 
       <div class="flex flex-col gap-2">
@@ -41,7 +41,7 @@
           input-class="w-full"
           :class="{ 'p-invalid': v$.password.$error }"
         />
-        <small v-if="v$.password.$error" class="p-error">{{ v$.password.$errors[0].$message }}</small>
+        <small v-if="v$.password.$error" class="p-error">{{ v$.password.$errors[0]?.$message }}</small>
       </div>
 
       <div class="flex items-center">

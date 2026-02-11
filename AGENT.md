@@ -15,6 +15,7 @@ This is a **CalDAV/CardDAV server** implementing RFC 4791 (CalDAV) and RFC 6352 
 ├── Acceptance Criteria.md   # Full list of acceptance criteria
 ├── Stories/                  # User stories for implementation
 │   ├── backend/              # Backend stories (Go server)
+│   ├── continuation/         # stories after core features in backend and frontend are implemented
 │   └── frontend/             # Frontend stories (web interface)
 ├── server/                   # Go backend implementation
 │   ├── cmd/server/           # Application entrypoint

@@ -8,10 +8,8 @@ export const useApi = () => {
     baseURL: (config.public.apiBaseUrl as string) || "",
     async onRequest({ options }) {
       if (authStore.accessToken) {
-        options.headers = {
-          ...options.headers,
-          Authorization: `Bearer ${authStore.accessToken}`,
-        };
+        options.headers = new Headers(options.headers as HeadersInit);
+        options.headers.set('Authorization', `Bearer ${authStore.accessToken}`);
       }
     },
     async onResponse({ response }) {

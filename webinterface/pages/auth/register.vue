@@ -33,7 +33,7 @@
           class="w-full"
           :class="{ 'p-invalid': v$.email.$error }"
         />
-        <small v-if="v$.email.$error" class="p-error">{{ v$.email.$errors[0].$message }}</small>
+        <small v-if="v$.email.$error" class="p-error">{{ v$.email.$errors[0]?.$message }}</small>
       </div>
 
       <div class="flex flex-col gap-1.5">
@@ -60,7 +60,7 @@
           :feedback="false"
         />
         <AuthPasswordStrength :password="form.password" />
-        <small v-if="v$.password.$error" class="p-error">{{ v$.password.$errors[0].$message }}</small>
+        <small v-if="v$.password.$error" class="p-error">{{ v$.password.$errors[0]?.$message }}</small>
       </div>
 
       <div class="flex flex-col gap-1.5">
@@ -76,7 +76,7 @@
           input-class="w-full"
           :class="{ 'p-invalid': v$.confirmPassword.$error }"
         />
-        <small v-if="v$.confirmPassword.$error" class="p-error">{{ v$.confirmPassword.$errors[0].$message }}</small>
+        <small v-if="v$.confirmPassword.$error" class="p-error">{{ v$.confirmPassword.$errors[0]?.$message }}</small>
       </div>
 
       <div class="pt-2">

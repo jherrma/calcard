@@ -25,14 +25,20 @@ const MyPreset = definePreset(Material, {
     },
     components: {
         card: {
-            borderRadius: '{borderRadius.xl}',
-            shadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+            root: {
+                borderRadius: '{borderRadius.xl}',
+                shadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+            }
         },
         button: {
-            borderRadius: '2rem' // Pill shape for buttons
+            root: {
+                borderRadius: '2rem' // Pill shape for buttons
+            }
         },
         inputtext: {
-            borderRadius: '{borderRadius.md}'
+            root: {
+                borderRadius: '{borderRadius.md}'
+            }
         }
     }
 });

@@ -1,4 +1,3 @@
-import { defineStore } from "pinia";
 import type { User, LoginResponse, RefreshResponse } from "~/types/auth";
 
 interface AuthState {

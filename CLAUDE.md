@@ -15,6 +15,7 @@ This is a CalDAV/CardDAV server project with a Go backend and web interface. The
 ├── Acceptance Criteria.md   # Full list of acceptance criteria
 ├── stories/                  # User stories for implementation
 │   ├── backend/              # Backend stories (Go server)
+│   ├── continuation/         # stories after core features in backend and frontend are implemented
 │   └── frontend/             # Frontend stories (web interface)
 ├── server/                   # Go backend implementation
 │   ├── cmd/server/           # Application entrypoint

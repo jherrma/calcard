@@ -71,7 +71,8 @@ import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import type { CalendarOptions, EventClickArg, DateSelectArg, EventDropArg, EventResizeArg } from '@fullcalendar/core';
+import type { CalendarOptions, EventClickArg, DateSelectArg, EventDropArg } from '@fullcalendar/core';
+import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import CalendarSidebar from '~/components/calendar/CalendarSidebar.vue';
 import CalendarToolbar from '~/components/calendar/CalendarToolbar.vue';
 import EventDetailDialog from '~/components/calendar/EventDetailDialog.vue';
@@ -195,7 +196,7 @@ const handleEventDrop = async (arg: EventDropArg) => {
   }
 };
 
-const handleEventResize = async (arg: EventResizeArg) => {
+const handleEventResize = async (arg: EventResizeDoneArg) => {
   try {
     await calendarStore.updateEventTime(
       arg.event.id,

@@ -28,7 +28,7 @@
           class="w-full"
           :class="{ 'p-invalid': v$.email.$error }"
         />
-        <small v-if="v$.email.$error" class="p-error">{{ v$.email.$errors[0].$message }}</small>
+        <small v-if="v$.email.$error" class="p-error">{{ v$.email.$errors[0]?.$message }}</small>
       </div>
 
       <Button
