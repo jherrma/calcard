@@ -35,6 +35,9 @@ type Repository interface {
 	DeleteObjectByUUID(ctx context.Context, uuid string) error
 	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
 
+	// CountContactsByUserID counts all contacts across all address books for a user
+	CountContactsByUserID(ctx context.Context, userID uint) (int64, error)
+
 	// Sync-related methods for WebDAV-Sync (RFC 6578)
 	GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*SyncChangeLog, error)
 	RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error

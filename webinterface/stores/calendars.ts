@@ -81,8 +81,8 @@ export const useCalendarStore = defineStore('calendars', {
         const api = useApi();
         const allEvents: CalendarEvent[] = [];
 
-        // Fetch events for each visible calendar
-        for (const calId of this.visibleCalendarIds) {
+        // Fetch events for all calendars so toggling visibility doesn't require refetching
+        for (const calId of this.calendars.map((c: Calendar) => c.id)) {
           try {
             const response = await api<{ events: CalendarEvent[] }>(
               `/api/v1/calendars/${calId}/events?start=${start.toISOString()}&end=${end.toISOString()}`

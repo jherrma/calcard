@@ -134,6 +134,9 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		getProfileUC,
 		updateProfileUC,
 		deleteAccountUC,
+		calendarRepo,
+		addressBookRepo,
+		appPwdRepo,
 	)
 
 	calendarHandler := NewCalendarHandler(

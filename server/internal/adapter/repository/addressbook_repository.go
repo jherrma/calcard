@@ -496,6 +496,17 @@ func (r *AddressBookRepository) GetChangesSinceToken(ctx context.Context, addres
 	return changes, nil
 }
 
+// CountContactsByUserID counts all contacts across all address books for a user.
+func (r *AddressBookRepository) CountContactsByUserID(ctx context.Context, userID uint) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&addressbook.AddressObject{}).
+		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id").
+		Where("address_books.user_id = ?", userID).
+		Count(&count).Error
+	return count, err
+}
+
 // RecordChange records a sync change for an address object.
 func (r *AddressBookRepository) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
 	return r.db.WithContext(ctx).Create(&addressbook.SyncChangeLog{

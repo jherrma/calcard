@@ -71,6 +71,9 @@ func (m *mockRepo) GetChangesSinceToken(ctx context.Context, addressBookID uint,
 func (m *mockRepo) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
 	return nil
 }
+func (m *mockRepo) CountContactsByUserID(ctx context.Context, userID uint) (int64, error) {
+	return 0, nil
+}
 
 func TestExportUseCase_Execute(t *testing.T) {
 	repo := new(mockRepo)

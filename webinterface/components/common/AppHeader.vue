@@ -48,7 +48,7 @@
         >
           <div
             v-if="userMenuOpen"
-            class="absolute right-0 mt-2 w-56 bg-surface-0 dark:bg-surface-900 rounded-lg shadow-lg border border-surface-200 dark:border-surface-700 py-1 z-30"
+            class="absolute right-0 mt-2 w-56 bg-white dark:bg-surface-900 rounded-lg shadow-lg border border-surface-200 dark:border-surface-700 py-1 z-30"
           >
             <div class="px-4 py-3 border-b border-surface-200 dark:border-surface-700 sm:hidden">
               <p class="text-sm font-medium text-surface-900 dark:text-surface-0 truncate">
@@ -116,7 +116,13 @@ const pageTitle = computed(() => {
     '/contacts': 'Contacts',
     '/settings': 'Settings',
     '/settings/profile': 'Profile Settings',
+    '/settings/password': 'Change Password',
     '/settings/app-passwords': 'App Passwords',
+    '/settings/caldav-credentials': 'CalDAV Credentials',
+    '/settings/carddav-credentials': 'CardDAV Credentials',
+    '/settings/connections': 'Connected Accounts',
+    '/settings/admin': 'Admin Console',
+    '/settings/danger': 'Danger Zone',
   };
   // Check exact match first, then startsWith for nested routes
   if (titles[route.path]) return titles[route.path];

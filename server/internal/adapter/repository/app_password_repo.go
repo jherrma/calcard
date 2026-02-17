@@ -45,6 +45,15 @@ func (r *gormAppPasswordRepo) Update(ctx context.Context, ap *user.AppPassword) 
 	return r.db.WithContext(ctx).Save(ap).Error
 }
 
+func (r *gormAppPasswordRepo) CountByUserID(ctx context.Context, userID uint) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&user.AppPassword{}).
+		Where("user_id = ? AND revoked_at IS NULL", userID).
+		Count(&count).Error
+	return count, err
+}
+
 func (r *gormAppPasswordRepo) FindValidForUser(ctx context.Context, userID uint, password string) (*user.AppPassword, error) {
 	var aps []user.AppPassword
 	// We might have multiple app passwords, we need to check each one

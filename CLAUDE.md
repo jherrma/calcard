@@ -79,9 +79,9 @@ cd server && go build ./...
 cd server && go test ./...
 
 # Frontend
-cd webinterface && npm run dev          # Dev server
-cd webinterface && npx nuxt typecheck   # TypeScript check (strict mode)
-cd webinterface && npm run build        # Production build
+cd webinterface && pnpm dev             # Dev server
+cd webinterface && pnpm nuxt typecheck  # TypeScript check (strict mode)
+cd webinterface && pnpm build           # Production build
 
 # Docker
 cd server && docker-compose up                                    # SQLite

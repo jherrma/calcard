@@ -37,6 +37,7 @@ type AppPasswordRepository interface {
 	ListByUserID(ctx context.Context, userID uint) ([]AppPassword, error)
 	Update(ctx context.Context, ap *AppPassword) error
 	FindValidForUser(ctx context.Context, userID uint, password string) (*AppPassword, error)
+	CountByUserID(ctx context.Context, userID uint) (int64, error)
 }
 
 type CardDAVCredentialRepository interface {

@@ -5,6 +5,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/user"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
@@ -14,6 +17,9 @@ type UserHandler struct {
 	getProfileUC     *userusecase.GetProfileUseCase
 	updateProfileUC  *userusecase.UpdateProfileUseCase
 	deleteAccountUC  *userusecase.DeleteAccountUseCase
+	calendarRepo     calendar.CalendarRepository
+	addressBookRepo  addressbook.Repository
+	appPasswordRepo  user.AppPasswordRepository
 }
 
 func NewUserHandler(
@@ -21,12 +27,18 @@ func NewUserHandler(
 	getProfileUC *userusecase.GetProfileUseCase,
 	updateProfileUC *userusecase.UpdateProfileUseCase,
 	deleteAccountUC *userusecase.DeleteAccountUseCase,
+	calendarRepo calendar.CalendarRepository,
+	addressBookRepo addressbook.Repository,
+	appPasswordRepo user.AppPasswordRepository,
 ) *UserHandler {
 	return &UserHandler{
 		changePasswordUC: changePasswordUC,
 		getProfileUC:     getProfileUC,
 		updateProfileUC:  updateProfileUC,
 		deleteAccountUC:  deleteAccountUC,
+		calendarRepo:     calendarRepo,
+		addressBookRepo:  addressBookRepo,
+		appPasswordRepo:  appPasswordRepo,
 	}
 }
 
@@ -55,6 +67,10 @@ func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusNotFound, "User not found")
 	}
 
+	calCount, _ := h.calendarRepo.CountByUserID(c.Context(), u.ID)
+	contactCount, _ := h.addressBookRepo.CountContactsByUserID(c.Context(), u.ID)
+	appPwdCount, _ := h.appPasswordRepo.CountByUserID(c.Context(), u.ID)
+
 	res := dto.UserProfileResponse{
 		ID:            u.UUID,
 		Email:         u.Email,
@@ -65,9 +81,9 @@ func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 		UpdatedAt:     u.UpdatedAt,
 		AuthMethods:   []string{"local"},
 		Stats: dto.UserProfileStats{
-			CalendarCount:    0,
-			ContactCount:     0,
-			AppPasswordCount: 0,
+			CalendarCount:    int(calCount),
+			ContactCount:     int(contactCount),
+			AppPasswordCount: int(appPwdCount),
 		},
 	}
 
@@ -118,6 +134,10 @@ func (h *UserHandler) UpdateProfile(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update profile")
 	}
 
+	calCount, _ := h.calendarRepo.CountByUserID(c.Context(), u.ID)
+	contactCount, _ := h.addressBookRepo.CountContactsByUserID(c.Context(), u.ID)
+	appPwdCount, _ := h.appPasswordRepo.CountByUserID(c.Context(), u.ID)
+
 	res := dto.UserProfileResponse{
 		ID:            u.UUID,
 		Email:         u.Email,
@@ -128,9 +148,9 @@ func (h *UserHandler) UpdateProfile(c fiber.Ctx) error {
 		UpdatedAt:     u.UpdatedAt,
 		AuthMethods:   []string{"local"},
 		Stats: dto.UserProfileStats{
-			CalendarCount:    0,
-			ContactCount:     0,
-			AppPasswordCount: 0,
+			CalendarCount:    int(calCount),
+			ContactCount:     int(contactCount),
+			AppPasswordCount: int(appPwdCount),
 		},
 	}
 

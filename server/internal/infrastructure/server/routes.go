@@ -114,7 +114,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	systemHandler := http.NewSystemHandler(cfg, userRepo, oauthManager, samlProvider != nil)
-	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC)
+	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC, calendarRepo, addressBookRepo, appPwdRepo)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
@@ -181,6 +181,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// App Password Routes (Protected)
 	appPwdGroup := v1.Group("/app-passwords", http.Authenticate(jwtManager, userRepo))
 	appPwdGroup.Get("/", appPwdHandler.List)
+	appPwdGroup.Post("/", appPwdHandler.Create)
 	appPwdGroup.Delete("/:id", appPwdHandler.Revoke)
 
 	// CalDAV Credential Routes (Protected)

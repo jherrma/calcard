@@ -29,7 +29,7 @@
           <Checkbox
             :model-value="calendar.visible"
             :binary="true"
-            @change="$emit('toggle-calendar', calendar.id)"
+            @update:model-value="$emit('toggle-calendar', calendar.id)"
           />
           <span
             class="w-3 h-3 rounded-full flex-shrink-0"
@@ -57,7 +57,7 @@
             <Checkbox
               :model-value="calendar.visible"
               :binary="true"
-              @change="$emit('toggle-calendar', calendar.id)"
+              @update:model-value="$emit('toggle-calendar', calendar.id)"
             />
             <span
               class="w-3 h-3 rounded-full flex-shrink-0"

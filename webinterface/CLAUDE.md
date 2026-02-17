@@ -246,9 +246,9 @@ confirm.require({
 ## Development
 
 ```bash
-npm run dev           # Dev server (hot reload)
-npx nuxt typecheck    # TypeScript check (must pass with zero errors)
-npm run build         # Production build
+pnpm dev              # Dev server (hot reload)
+pnpm nuxt typecheck   # TypeScript check (must pass with zero errors)
+pnpm build            # Production build
 ```
 
 The `NUXT_PUBLIC_API_BASE_URL` environment variable must point to the running backend (default: `http://localhost:8080`).
