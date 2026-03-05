@@ -1,10 +1,15 @@
 export interface Calendar {
   id: string;
+  uuid: string;
+  path: string;
   name: string;
   description?: string;
   color: string;
+  timezone?: string;
   owner_id: string;
   shared?: boolean;
+  public_enabled?: boolean;
+  public_url?: string;
   owner?: {
     id: string;
     display_name: string;

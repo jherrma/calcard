@@ -102,7 +102,8 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 
 	// Calendar Use Cases
 	calendarCreateUC := calendarusecase.NewCreateCalendarUseCase(calendarRepo)
-	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo)
+	calShareRepo := repository.NewCalendarShareRepository(db.DB())
+	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo, calShareRepo)
 	calendarGetUC := calendarusecase.NewGetCalendarUseCase(calendarRepo)
 	calendarUpdateUC := calendarusecase.NewUpdateCalendarUseCase(calendarRepo)
 	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo)

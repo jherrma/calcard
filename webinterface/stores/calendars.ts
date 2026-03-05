@@ -42,7 +42,7 @@ export const useCalendarStore = defineStore('calendars', {
     calendarOptions(state: CalendarState) {
       return state.calendars.map((cal: Calendar) => ({
         ...cal,
-        visible: state.visibleCalendarIds.has(cal.id),
+        visible: state.visibleCalendarIds.has(String(cal.id)),
       }));
     },
 
@@ -210,6 +210,44 @@ export const useCalendarStore = defineStore('calendars', {
       if (event) {
         event.start = toRFC3339(start);
         event.end = toRFC3339(end);
+      }
+    },
+
+    async createCalendar(data: { name: string; color: string; timezone: string; description: string }) {
+      const api = useApi();
+      const response = await api<Calendar>('/api/v1/calendars', {
+        method: 'POST',
+        body: data,
+      });
+      this.calendars.push(response);
+      this.visibleCalendarIds.add(response.id);
+      return response;
+    },
+
+    async updateCalendar(calendarUuid: string, data: { name?: string; color?: string; timezone?: string; description?: string }) {
+      const api = useApi();
+      const response = await api<Calendar>(`/api/v1/calendars/${calendarUuid}`, {
+        method: 'PATCH',
+        body: data,
+      });
+      const idx = this.calendars.findIndex((c: Calendar) => c.uuid === calendarUuid);
+      if (idx >= 0) {
+        this.calendars[idx] = response;
+      }
+      return response;
+    },
+
+    async deleteCalendar(calendarUuid: string) {
+      const api = useApi();
+      const cal = this.calendars.find((c: Calendar) => c.uuid === calendarUuid);
+      await api(`/api/v1/calendars/${calendarUuid}`, {
+        method: 'DELETE',
+        body: { confirmation: 'DELETE' },
+      });
+      this.calendars = this.calendars.filter((c: Calendar) => c.uuid !== calendarUuid);
+      if (cal) {
+        this.visibleCalendarIds.delete(String(cal.id));
+        this.events = this.events.filter((e: CalendarEvent) => String(e.calendar_id) !== String(cal.id));
       }
     },
 

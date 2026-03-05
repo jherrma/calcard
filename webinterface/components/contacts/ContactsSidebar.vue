@@ -10,7 +10,15 @@
     </div>
 
     <div class="flex-1 overflow-y-auto p-4">
-      <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300 mb-3">Address Books</h3>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300">Address Books</h3>
+        <button
+          class="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
+          @click="$emit('add-addressbook')"
+        >
+          <i class="pi pi-plus text-sm" />
+        </button>
+      </div>
 
       <div class="space-y-1">
         <!-- All Contacts option -->
@@ -21,7 +29,7 @@
           <Checkbox
             :model-value="allSelected"
             :binary="true"
-            @change="$emit('select-all')"
+            @update:model-value="$emit('select-all')"
           />
           <i class="pi pi-address-book text-surface-500" />
           <span class="flex-1 text-sm text-surface-700 dark:text-surface-300">All Contacts</span>
@@ -38,7 +46,7 @@
           <Checkbox
             :model-value="selectedIds.has(ab.ID)"
             :binary="true"
-            @change="$emit('toggle', ab.ID)"
+            @update:model-value="$emit('toggle', ab.ID)"
           />
           <i class="pi pi-book text-surface-500" />
           <span class="flex-1 text-sm truncate text-surface-700 dark:text-surface-300">{{ ab.Name }}</span>
@@ -65,9 +73,13 @@ const props = defineProps<{
   totalCount: number;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   toggle: [id: number];
   'select-all': [];
+  'add-addressbook': [];
+  'edit-addressbook': [ab: AddressBook];
+  'share-addressbook': [ab: AddressBook];
+  'delete-addressbook': [ab: AddressBook];
 }>();
 
 const allSelected = computed(() =>
@@ -81,19 +93,19 @@ const menuItems = computed(() => [
   {
     label: 'Edit',
     icon: 'pi pi-pencil',
-    command: () => {/* future story */},
+    command: () => { if (selectedAb.value) emit('edit-addressbook', selectedAb.value); },
   },
   {
     label: 'Share',
     icon: 'pi pi-share-alt',
-    command: () => {/* future story */},
+    command: () => { if (selectedAb.value) emit('share-addressbook', selectedAb.value); },
   },
   { separator: true },
   {
     label: 'Delete',
     icon: 'pi pi-trash',
     class: 'text-red-600',
-    command: () => {/* future story */},
+    command: () => { if (selectedAb.value) emit('delete-addressbook', selectedAb.value); },
   },
 ]);
 

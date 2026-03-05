@@ -5,7 +5,7 @@
         label="New Event"
         icon="pi pi-plus"
         class="w-full"
-        @click="$emit('create-event')"
+        @click="emit('create-event')"
       />
     </div>
 
@@ -14,7 +14,7 @@
         <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300">My Calendars</h3>
         <button
           class="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
-          @click="$emit('add-calendar')"
+          @click="emit('add-calendar')"
         >
           <i class="pi pi-plus text-sm" />
         </button>
@@ -29,7 +29,7 @@
           <Checkbox
             :model-value="calendar.visible"
             :binary="true"
-            @update:model-value="$emit('toggle-calendar', calendar.id)"
+            @update:model-value="emit('toggle-calendar', calendar.id)"
           />
           <span
             class="w-3 h-3 rounded-full flex-shrink-0"
@@ -57,7 +57,7 @@
             <Checkbox
               :model-value="calendar.visible"
               :binary="true"
-              @update:model-value="$emit('toggle-calendar', calendar.id)"
+              @update:model-value="emit('toggle-calendar', calendar.id)"
             />
             <span
               class="w-3 h-3 rounded-full flex-shrink-0"
@@ -84,14 +84,17 @@ const props = defineProps<{
   calendars: (Calendar & { visible: boolean })[];
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   'toggle-calendar': [id: string];
   'add-calendar': [];
   'create-event': [];
+  'edit-calendar': [calendar: Calendar];
+  'share-calendar': [calendar: Calendar];
+  'delete-calendar': [calendar: Calendar];
 }>();
 
 const calendarMenu = ref();
-const selectedCalendar = ref<Calendar | null>(null);
+const selectedCalendar = ref<(Calendar & { visible: boolean }) | null>(null);
 
 const ownedCalendars = computed(() =>
   props.calendars.filter(c => !c.shared)
@@ -101,27 +104,39 @@ const sharedCalendars = computed(() =>
   props.calendars.filter(c => c.shared)
 );
 
-const menuItems = computed(() => [
+const handleEdit = () => {
+  if (selectedCalendar.value) emit('edit-calendar', selectedCalendar.value);
+};
+
+const handleShare = () => {
+  if (selectedCalendar.value) emit('share-calendar', selectedCalendar.value);
+};
+
+const handleDelete = () => {
+  if (selectedCalendar.value) emit('delete-calendar', selectedCalendar.value);
+};
+
+const menuItems = ref([
   {
     label: 'Edit',
     icon: 'pi pi-pencil',
-    command: () => navigateTo(`/calendar/settings/${selectedCalendar.value?.id}`),
+    command: handleEdit,
   },
   {
     label: 'Share',
     icon: 'pi pi-share-alt',
-    command: () => navigateTo(`/calendar/share/${selectedCalendar.value?.id}`),
+    command: handleShare,
   },
   { separator: true },
   {
     label: 'Delete',
     icon: 'pi pi-trash',
     class: 'text-red-600',
-    command: () => {/* Show delete confirmation */},
+    command: handleDelete,
   },
 ]);
 
-const showCalendarMenu = (event: Event, calendar: Calendar) => {
+const showCalendarMenu = (event: Event, calendar: Calendar & { visible: boolean }) => {
   selectedCalendar.value = calendar;
   calendarMenu.value.toggle(event);
 };

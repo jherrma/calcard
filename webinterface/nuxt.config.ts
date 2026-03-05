@@ -70,9 +70,11 @@ export default defineNuxtConfig({
       },
     },
     components: {
-      include: ['Button', 'InputText', 'Dialog', 'Toast', 'Menu', 'Avatar', 'DataTable', 'Column', 'Card', 'Password', 'Checkbox', 'Message', 'ProgressSpinner', 'SelectButton', 'DatePicker', 'InputSwitch', 'InputNumber', 'Textarea', 'RadioButton', 'ToggleButton', 'Select', 'ConfirmDialog', 'Tag'],
+      include: ['Button', 'InputText', 'Dialog', 'Toast', 'Menu', 'Avatar', 'DataTable', 'Column', 'Card', 'Password', 'Checkbox', 'Message', 'ProgressSpinner', 'SelectButton', 'DatePicker', 'InputSwitch', 'InputNumber', 'Textarea', 'RadioButton', 'ToggleButton', 'Select', 'ConfirmDialog', 'Tag', 'ColorPicker', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel'],
     },
   },
+
+  css: ['primeicons/primeicons.css'],
 
   tailwindcss: {
     cssPath: '~/assets/css/tailwind.css',

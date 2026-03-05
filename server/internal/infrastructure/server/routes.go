@@ -226,7 +226,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	// Calendar Routes (Protected)
 	calendarCreateUC := calendarusecase.NewCreateCalendarUseCase(calendarRepo)
-	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo)
+	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo, shareRepo)
 	calendarGetUC := calendarusecase.NewGetCalendarUseCase(calendarRepo)
 	calendarUpdateUC := calendarusecase.NewUpdateCalendarUseCase(calendarRepo)
 	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo)

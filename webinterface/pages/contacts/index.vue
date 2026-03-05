@@ -7,6 +7,10 @@
       :total-count="contactsStore.contacts.length"
       @toggle="contactsStore.toggleAddressBook"
       @select-all="contactsStore.selectAllAddressBooks"
+      @add-addressbook="showAddAddressBookDialog = true"
+      @edit-addressbook="openAddressBookSettings"
+      @share-addressbook="openAddressBookSharing"
+      @delete-addressbook="handleDeleteAddressBook"
     />
 
     <!-- Main content area -->
@@ -122,6 +126,23 @@
     </div>
 
   </div>
+
+  <!-- Add Address Book Dialog -->
+  <ContactsAddAddressBookDialog
+    :visible="showAddAddressBookDialog"
+    @update:visible="showAddAddressBookDialog = $event"
+    @created="handleAddressBookCreated"
+  />
+
+  <!-- Address Book Settings Dialog -->
+  <ContactsAddressBookSettingsDialog
+    :visible="showAddressBookSettingsDialog"
+    :address-book="settingsAddressBook"
+    :initial-tab="settingsAbInitialTab"
+    @update:visible="showAddressBookSettingsDialog = $event"
+    @updated="handleAddressBookUpdated"
+    @deleted="() => {}"
+  />
 </template>
 
 <script setup lang="ts">
@@ -130,7 +151,7 @@ import ContactsSidebar from '~/components/contacts/ContactsSidebar.vue';
 import ContactListItem from '~/components/contacts/ContactListItem.vue';
 import AlphabetNavigation from '~/components/contacts/AlphabetNavigation.vue';
 import { useContactsStore } from '~/stores/contacts';
-import type { Contact } from '~/types/contacts';
+import type { Contact, AddressBook } from '~/types/contacts';
 
 definePageMeta({
   middleware: 'auth',
@@ -141,6 +162,10 @@ const contactsStore = useContactsStore();
 const toast = useAppToast();
 const confirm = useConfirm();
 const searchInput = ref('');
+const showAddAddressBookDialog = ref(false);
+const showAddressBookSettingsDialog = ref(false);
+const settingsAddressBook = ref<AddressBook | null>(null);
+const settingsAbInitialTab = ref<string | undefined>();
 const listContainerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 
@@ -273,6 +298,44 @@ const handleDelete = (contact: Contact) => {
       }
     },
   });
+};
+
+// Address book management
+const openAddressBookSettings = (ab: AddressBook) => {
+  settingsAddressBook.value = ab;
+  settingsAbInitialTab.value = 'general';
+  showAddressBookSettingsDialog.value = true;
+};
+
+const openAddressBookSharing = (ab: AddressBook) => {
+  settingsAddressBook.value = ab;
+  settingsAbInitialTab.value = 'sharing';
+  showAddressBookSettingsDialog.value = true;
+};
+
+const handleDeleteAddressBook = (ab: AddressBook) => {
+  confirm.require({
+    message: `Are you sure you want to delete "${ab.Name}"? All contacts will be permanently deleted.`,
+    header: 'Delete Address Book',
+    icon: 'pi pi-exclamation-triangle',
+    acceptClass: 'p-button-danger',
+    accept: async () => {
+      try {
+        await contactsStore.deleteAddressBook(ab.ID);
+        toast.success('Address book deleted');
+      } catch (e: unknown) {
+        toast.error((e as Error).message || 'Failed to delete address book');
+      }
+    },
+  });
+};
+
+const handleAddressBookCreated = () => {
+  contactsStore.fetchContacts();
+};
+
+const handleAddressBookUpdated = () => {
+  contactsStore.fetchAddressBooks();
 };
 
 // Load data

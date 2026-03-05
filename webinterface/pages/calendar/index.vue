@@ -6,6 +6,9 @@
       @toggle-calendar="calendarStore.toggleCalendarVisibility"
       @add-calendar="showAddCalendarDialog = true"
       @create-event="openCreateDialog()"
+      @edit-calendar="openCalendarSettings"
+      @share-calendar="openCalendarSharing"
+      @delete-calendar="handleDeleteCalendar"
     />
 
     <!-- Main calendar area -->
@@ -64,6 +67,23 @@
     @update:visible="showEditDialog = $event"
     @updated="handleEventUpdated"
   />
+
+  <!-- Add Calendar Dialog -->
+  <CalendarAddCalendarDialog
+    :visible="showAddCalendarDialog"
+    @update:visible="showAddCalendarDialog = $event"
+    @created="handleCalendarCreated"
+  />
+
+  <!-- Calendar Settings Dialog -->
+  <CalendarSettingsDialog
+    :visible="showCalendarSettingsDialog"
+    :calendar="settingsCalendar"
+    :initial-tab="settingsInitialTab"
+    @update:visible="showCalendarSettingsDialog = $event"
+    @updated="handleCalendarUpdated"
+    @deleted="handleCalendarDeleted"
+  />
 </template>
 
 <script setup lang="ts">
@@ -73,13 +93,14 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import type { CalendarOptions, EventClickArg, DateSelectArg, EventDropArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
+import { useConfirm } from 'primevue/useconfirm';
 import CalendarSidebar from '~/components/calendar/CalendarSidebar.vue';
 import CalendarToolbar from '~/components/calendar/CalendarToolbar.vue';
 import EventDetailDialog from '~/components/calendar/EventDetailDialog.vue';
 import EventCreateDialog from '~/components/calendar/EventCreateDialog.vue';
 import EventEditDialog from '~/components/calendar/EventEditDialog.vue';
 import { useCalendarStore } from '~/stores/calendars';
-import type { CalendarEvent } from '~/types/calendar';
+import type { Calendar, CalendarEvent } from '~/types/calendar';
 
 definePageMeta({
   middleware: 'auth',
@@ -88,9 +109,13 @@ definePageMeta({
 
 const calendarStore = useCalendarStore();
 const toast = useAppToast();
+const confirm = useConfirm();
 
 const calendarRef = ref<InstanceType<typeof FullCalendar>>();
 const showAddCalendarDialog = ref(false);
+const showCalendarSettingsDialog = ref(false);
+const settingsCalendar = ref<Calendar | null>(null);
+const settingsInitialTab = ref<string | undefined>();
 
 // Dialog state
 const showDetailDialog = ref(false);
@@ -114,19 +139,13 @@ onMounted(async () => {
 
 // Get calendar color
 const getCalendarColor = (calendarId: number) => {
-  const calendar = calendarStore.calendars.find(c => c.id === String(calendarId));
+  const calendar = calendarStore.calendars.find(c => String(c.id) === String(calendarId));
   return calendar?.color || '#3b82f6';
 };
 
-// FullCalendar options
-const calendarOptions = computed<CalendarOptions>(() => ({
-  plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
-  initialView: calendarStore.currentView,
-  initialDate: calendarStore.currentDate,
-  headerToolbar: false, // We use custom toolbar
-
-  // Events
-  events: calendarStore.visibleEvents.map(event => ({
+// Map store events to FullCalendar event objects
+const mappedEvents = computed(() =>
+  calendarStore.visibleEvents.map(event => ({
     id: event.id,
     title: event.summary,
     start: event.start,
@@ -139,7 +158,27 @@ const calendarOptions = computed<CalendarOptions>(() => ({
       description: event.description,
       location: event.location,
     },
-  })),
+  }))
+);
+
+// Sync events to FullCalendar via API when store changes
+watch(mappedEvents, (newEvents) => {
+  const api = calendarRef.value?.getApi();
+  if (!api) return;
+  api.removeAllEvents();
+  for (const event of newEvents) {
+    api.addEvent(event);
+  }
+});
+
+// FullCalendar options
+const calendarOptions = computed<CalendarOptions>(() => ({
+  plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
+  initialView: calendarStore.currentView,
+  initialDate: calendarStore.currentDate,
+  headerToolbar: false, // We use custom toolbar
+
+  events: mappedEvents.value,
 
   // Interactions
   editable: true,
@@ -253,6 +292,50 @@ const handleEventUpdated = () => {
   if (currentDateRange.value) {
     calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
   }
+};
+
+// Calendar settings/management
+const openCalendarSettings = (calendar: Calendar) => {
+  settingsCalendar.value = calendar;
+  settingsInitialTab.value = 'general';
+  showCalendarSettingsDialog.value = true;
+};
+
+const openCalendarSharing = (calendar: Calendar) => {
+  settingsCalendar.value = calendar;
+  settingsInitialTab.value = 'sharing';
+  showCalendarSettingsDialog.value = true;
+};
+
+const handleDeleteCalendar = (calendar: Calendar) => {
+  confirm.require({
+    message: `Are you sure you want to delete "${calendar.name}"? All events will be permanently deleted.`,
+    header: 'Delete Calendar',
+    icon: 'pi pi-exclamation-triangle',
+    acceptClass: 'p-button-danger',
+    accept: async () => {
+      try {
+        await calendarStore.deleteCalendar(calendar.uuid);
+        toast.success('Calendar deleted');
+      } catch (e: unknown) {
+        toast.error((e as Error).message || 'Failed to delete calendar');
+      }
+    },
+  });
+};
+
+const handleCalendarCreated = () => {
+  if (currentDateRange.value) {
+    calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
+  }
+};
+
+const handleCalendarUpdated = () => {
+  calendarStore.fetchCalendars();
+};
+
+const handleCalendarDeleted = () => {
+  // Events are already removed from store by deleteCalendar action
 };
 
 // Navigation

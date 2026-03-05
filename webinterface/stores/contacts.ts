@@ -147,6 +147,42 @@ export const useContactsStore = defineStore('contacts', {
       this.selectedAddressBookIds = new Set(this.addressBooks.map((ab: AddressBook) => ab.ID));
     },
 
+    async createAddressBook(data: { name: string; description: string }) {
+      const api = useApi();
+      const response = await api<{ addressbook: AddressBook }>('/api/v1/addressbooks', {
+        method: 'POST',
+        body: data,
+      });
+      const ab = response.addressbook || response as unknown as AddressBook;
+      this.addressBooks.push(ab);
+      this.selectedAddressBookIds.add(ab.ID);
+      return ab;
+    },
+
+    async updateAddressBook(id: number, data: { name?: string; description?: string }) {
+      const api = useApi();
+      const response = await api<AddressBook>(`/api/v1/addressbooks/${id}`, {
+        method: 'PATCH',
+        body: data,
+      });
+      const idx = this.addressBooks.findIndex((ab: AddressBook) => ab.ID === id);
+      if (idx >= 0) {
+        this.addressBooks[idx] = response;
+      }
+      return response;
+    },
+
+    async deleteAddressBook(id: number) {
+      const api = useApi();
+      await api(`/api/v1/addressbooks/${id}`, {
+        method: 'DELETE',
+        body: { confirmation: 'DELETE' },
+      });
+      this.addressBooks = this.addressBooks.filter((ab: AddressBook) => ab.ID !== id);
+      this.selectedAddressBookIds.delete(id);
+      this.contacts = this.contacts.filter((c: Contact) => c.addressbook_id !== String(id));
+    },
+
     async deleteContact(addressBookId: number, contactId: string) {
       const api = useApi();
       await api(`/api/v1/addressbooks/${addressBookId}/contacts/${contactId}`, {
