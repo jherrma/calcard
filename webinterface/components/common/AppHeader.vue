@@ -123,6 +123,7 @@ const pageTitle = computed(() => {
     '/settings/connections': 'Connected Accounts',
     '/settings/admin': 'Admin Console',
     '/settings/danger': 'Danger Zone',
+    '/setup': 'Help & Setup',
   };
   // Check exact match first, then startsWith for nested routes
   if (titles[route.path]) return titles[route.path];
