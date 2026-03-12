@@ -136,3 +136,7 @@ cd server && docker-compose -f docker-compose.postgres.yml up     # PostgreSQL
 - `GET /api/v1/system/settings` — Returns `admin_configured`, `smtp_enabled`, `registration_enabled`
 - `GET /api/v1/auth/methods` — Returns available auth methods (local, OAuth providers, SAML)
 - Auth pages: login, register, setup (first admin), forgot-password, reset-password, verify, OAuth callback
+
+## Story Tracking
+
+After implementing a story, update `/STORIES.md` to mark it as **Done**. This file tracks the implementation status of all stories (backend, frontend, and continuation).

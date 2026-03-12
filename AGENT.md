@@ -92,8 +92,9 @@ cd server && docker-compose -f docker-compose.postgres.yml up --build     # Post
 
 ## Development Instructions
 
-1. **Follow the stories**: Implementation details are in `stories/backend/` and `stories/frontend/`. Stories are numbered sequentially — check which are already implemented by reviewing the commit history and existing code.
+1. **Follow the stories**: Implementation details are in `stories/backend/` and `stories/frontend/`. Stories are numbered sequentially — check `/STORIES.md` to see which stories are already implemented.
 2. **Check existing patterns**: Review existing code in similar areas before implementing new features. The calendar and contacts implementations share many patterns.
 3. **Propose alternatives**: If you encounter issues or have better solutions than proposed in the story, propose a new implementation approach.
 4. **Write tests**: Always write unit and integration tests to verify your implementation works correctly.
 5. **Check AGENT.md files**: Read the relevant AGENT.md before working in any sub-area of the codebase.
+6. **Update story tracker**: After implementing a story, update `/STORIES.md` to mark it as **Done**.
