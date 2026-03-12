@@ -121,6 +121,7 @@ const pageTitle = computed(() => {
     '/settings/caldav-credentials': 'CalDAV Credentials',
     '/settings/carddav-credentials': 'CardDAV Credentials',
     '/settings/connections': 'Connected Accounts',
+    '/settings/import-export': 'Import & Export',
     '/settings/admin': 'Admin Console',
     '/settings/danger': 'Danger Zone',
     '/setup': 'Help & Setup',
