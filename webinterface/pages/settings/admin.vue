@@ -27,7 +27,7 @@
         </li>
         <li class="flex items-center gap-2">
           <i class="pi pi-lock text-primary-500" />
-          OAuth/SAML provider management
+          OAuth provider management
         </li>
       </ul>
     </div>

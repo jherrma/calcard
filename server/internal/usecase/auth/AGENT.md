@@ -1,6 +1,6 @@
 # Auth Use Cases
 
-This directory contains the business logic for user authentication and authorization, including standard email/password flows, OAuth2/OIDC, and SAML 2.0 integration.
+This directory contains the business logic for user authentication and authorization, including standard email/password flows and OAuth2/OIDC integration.
 
 ## Core Components
 
@@ -43,11 +43,6 @@ The OAuth implementation follows the standard authorization code flow.
 - **ListLinkedProvidersUseCase** (`oauth_providers.go`):
   - Returns a list of OAuth providers linked to the current user's account.
   - Indicates whether the user has a password set, helping the frontend decide if "Unlink" should be enabled.
-
-### SAML 2.0 Authentication
-
-- **SAMLLoginUseCase** (`saml_login.go`): Processes SAML assertions after IdP redirect. Creates or links user accounts based on SAML attributes.
-- **SAMLMetadataUseCase** (`saml_metadata.go`): Generates SP metadata XML for IdP configuration.
 
 ### Utilities
 

@@ -12,7 +12,6 @@ The adapter layer is responsible for translating data between the application's 
   - **DTOs** (`dto/`): Data Transfer Objects for auth, user, contact, addressbook, event, and credentials.
   - **Middleware**: `auth_middleware.go` (JWT verification), `rate_limiter.go`.
   - **Responses**: `response.go` — `SuccessResponse()` wraps most responses in `{ "status": "ok", "data": ... }`. **Exception**: AddressBook and Contact handlers return raw JSON.
-  - **SAML** (`auth/saml_handler.go`): SAML SSO callback handler.
   - **Swagger**: `swagger_types.go` for API documentation type definitions.
 
 ### [repository/](repository/)
@@ -28,7 +27,6 @@ The adapter layer is responsible for translating data between the application's 
   - `caldav_credential_repo.go`, `carddav_credential_repo.go` — DAV credential storage.
   - `calendar_share_repo.go`, `addressbook_share_repo.go` — Sharing persistence.
   - `oauth_connection_repo.go` — OAuth provider link storage.
-  - `saml_session_repo.go` — SAML session storage.
   - `system_setting_repo.go` — System settings persistence.
 
 ### [auth/](auth/)
@@ -38,7 +36,6 @@ The adapter layer is responsible for translating data between the application's 
   - `jwt.go` — JWT token generation and validation.
   - `basic_auth.go` — HTTP Basic Auth for CalDAV/CardDAV client access (app passwords and DAV credentials).
   - `oauth.go` — OIDC/OAuth2 provider management using `go-oidc` and `golang.org/x/oauth2`.
-  - `saml.go` — SAML 2.0 service provider implementation.
 
 ### [middleware/](middleware/)
 

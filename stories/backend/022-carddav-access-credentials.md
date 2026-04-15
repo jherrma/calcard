@@ -4,7 +4,7 @@
 Implement CardDAV Access Credentials for Contact Sync
 
 ## Description
-As a user, I want to create dedicated credentials for CardDAV access so that I can sync contacts without using my main account password, especially when using OAuth/SAML authentication.
+As a user, I want to create dedicated credentials for CardDAV access so that I can sync contacts without using my main account password, especially when using OAuth authentication.
 
 ## Related Acceptance Criteria
 
@@ -324,7 +324,7 @@ func DAVAuthMiddleware(/* repos */) fiber.Handler {
 - [ ] Expired credentials are rejected
 - [ ] Revoked credentials are rejected
 - [ ] Last used timestamp and IP tracked
-- [ ] Works independently of OAuth/SAML auth
+- [ ] Works independently of OAuth auth
 - [ ] Auth priority: App Password > CalDAV/CardDAV Credential
 - [ ] Unit tests for credential validation
 - [ ] Integration tests for CardDAV auth flow

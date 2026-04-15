@@ -12,16 +12,14 @@ type SystemHandler struct {
 	cfg          *config.Config
 	userRepo     user.UserRepository
 	oauthManager authadapter.OAuthProviderManager
-	samlEnabled  bool
 }
 
 // NewSystemHandler creates a new SystemHandler
-func NewSystemHandler(cfg *config.Config, userRepo user.UserRepository, oauthManager authadapter.OAuthProviderManager, samlEnabled bool) *SystemHandler {
+func NewSystemHandler(cfg *config.Config, userRepo user.UserRepository, oauthManager authadapter.OAuthProviderManager) *SystemHandler {
 	return &SystemHandler{
 		cfg:          cfg,
 		userRepo:     userRepo,
 		oauthManager: oauthManager,
-		samlEnabled:  samlEnabled,
 	}
 }
 
@@ -55,15 +53,6 @@ func (h *SystemHandler) AuthMethods(c fiber.Ctx) error {
 				"url":  h.cfg.BaseURL + "/api/v1/auth/oauth/" + name,
 			})
 		}
-	}
-
-	if h.samlEnabled {
-		methods = append(methods, fiber.Map{
-			"id":   "saml",
-			"type": "saml",
-			"name": "SSO (SAML)",
-			"url":  h.cfg.BaseURL + "/api/v1/auth/saml/login",
-		})
 	}
 
 	return SuccessResponse(c, fiber.Map{

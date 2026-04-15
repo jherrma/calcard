@@ -131,7 +131,7 @@ What's covered:
 - CalDAV: PROPFIND principal → calendar home → collection, PUT / GET / PUT-update / DELETE of a VEVENT, cross-verification through the REST event list, and one `REPORT sync-collection`.
 - CardDAV: the same shape for a VCARD under `/dav/{username}/addressbooks/...`.
 
-SSO (OAuth/SAML) is intentionally out of scope for the integration suite.
+SSO (OAuth) is intentionally out of scope for the integration suite.
 
 See `server/integration/CLAUDE.md` for guidance on adding new integration tests (shared helpers, the email-vs-username DAV auth gotcha, how to get DAV credentials via app passwords, etc.).
 

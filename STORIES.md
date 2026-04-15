@@ -17,7 +17,6 @@ All backend stories are implemented.
 | 009 | User Profile Management                    | Done   |
 | 010 | App Passwords for DAV Clients              | Done   |
 | 011 | OAuth2/OIDC Authentication                 | Done   |
-| 012 | SAML Authentication                        | Done   |
 | 013 | Calendar Management                        | Done   |
 | 014 | CalDAV Protocol Implementation             | Done   |
 | 015 | WebDAV-Sync for Calendars                  | Done   |

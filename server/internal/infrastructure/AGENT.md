@@ -18,7 +18,7 @@ This directory contains the technical implementations and external library integ
 - **Purpose**: Manages the HTTP server lifecycle and request pipeline.
 - **Key Components**:
   - `server.go` — Configures the Fiber application instance, including custom WebDAV HTTP methods (PROPFIND, PROPPATCH, MKCOL, REPORT, MKCALENDAR, etc.).
-  - `routes.go` — Registers all API endpoints and injects handler dependencies. Initializes OAuth/SAML providers. This is the dependency injection root of the application.
+  - `routes.go` — Registers all API endpoints and injects handler dependencies. Initializes OAuth providers. This is the dependency injection root of the application.
   - `middleware.go` — Configures global HTTP middleware (CORS, Recovery, Request ID logging, security headers, rate limiting, TLS).
 
 ### [email/](email/)

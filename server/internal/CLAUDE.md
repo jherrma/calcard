@@ -20,7 +20,7 @@ This directory contains the core business logic and implementation details of th
 
 - **Purpose**: Implements the application-specific business rules.
 - **Subdirectories**:
-  - `auth/` — Login, register, verify, refresh, logout, password management, OAuth (initiate/callback/link/unlink), SAML login/metadata.
+  - `auth/` — Login, register, verify, refresh, logout, password management, OAuth (initiate/callback/link/unlink).
   - `calendar/` — CRUD, public sharing (enable, get status, regenerate token), export.
   - `event/` — CRUD, move between calendars.
   - `addressbook/` — CRUD, create contact, export.
@@ -35,9 +35,9 @@ This directory contains the core business logic and implementation details of th
 
 - **Purpose**: Translates data between the internal layers and the external world.
 - **Contents**:
-  - `http/` — REST handlers (auth, user, system, calendar, event, addressbook, contact, sharing, app password, credentials, import/export, docs, health), DTOs, middleware (auth, rate limiter), SAML handler.
+  - `http/` — REST handlers (auth, user, system, calendar, event, addressbook, contact, sharing, app password, credentials, import/export, docs, health), DTOs, middleware (auth, rate limiter).
   - `repository/` — GORM implementations for all domain repository interfaces (~16 repos).
-  - `auth/` — JWT, Basic Auth (for DAV clients), OAuth (OIDC), SAML.
+  - `auth/` — JWT, Basic Auth (for DAV clients), OAuth (OIDC).
   - `middleware/` — CORS, rate limiting, security headers.
   - `webdav/` — CalDAV/CardDAV protocol backends, WebDAV-Sync, handler dispatcher.
 - **Dependencies**: Depends on `domain` and `usecase`.

@@ -64,4 +64,4 @@ cd server && docker-compose -f docker-compose.postgres.yml up
 - **Backend**: Go 1.22+, Fiber v3, GORM
 - **Database**: SQLite (default), PostgreSQL (production)
 - **Protocols**: CalDAV (RFC 4791), CardDAV (RFC 6352), WebDAV-Sync
-- **Auth**: JWT, OAuth2/OIDC, SAML 2.0
+- **Auth**: JWT, OAuth2/OIDC

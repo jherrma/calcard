@@ -373,7 +373,7 @@ func (h *CalendarHandler) Create(c fiber.Ctx) error {
 
 ### Authentication Section
 - JWT Bearer token authentication
-- How to obtain tokens (login, OAuth, SAML)
+- How to obtain tokens (login, OAuth)
 - Token refresh flow
 - Logout and session management
 

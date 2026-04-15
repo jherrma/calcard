@@ -4,7 +4,7 @@
 Implement CalDAV Access Credentials for Calendar Sync
 
 ## Description
-As a user, I want to create dedicated credentials for CalDAV access so that I can share calendar URLs or sync calendars without using my main account password, especially when using OAuth/SAML authentication.
+As a user, I want to create dedicated credentials for CalDAV access so that I can share calendar URLs or sync calendars without using my main account password, especially when using OAuth authentication.
 
 ## Related Acceptance Criteria
 
@@ -276,6 +276,6 @@ caldav.Delete("/:calendar/:event", RequireWritePermission(), handler.DeleteEvent
 - [ ] Expired credentials are rejected
 - [ ] Revoked credentials are rejected
 - [ ] Last used timestamp and IP tracked
-- [ ] Works independently of OAuth/SAML auth
+- [ ] Works independently of OAuth auth
 - [ ] Unit tests for credential validation
 - [ ] Integration tests for CalDAV auth flow

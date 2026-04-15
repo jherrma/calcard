@@ -5,7 +5,7 @@ CalCard is a high-performance CalDAV and CardDAV server written in Go. It provid
 ## Features
 
 - **Standard Protocols**: Full support for CalDAV and CardDAV.
-- **Modern Authentication**: JWT-based auth, OAuth2/OIDC support (Google, Microsoft, 3rd Partyp), and SAML 2.0.
+- **Modern Authentication**: JWT-based auth and OAuth2/OIDC support (Google, Microsoft, 3rd Party).
 - **Sharing**: Calendar and Address Book sharing between users.
 - **Public Calendars**: Ability to publish calendars via unique URLs.
 - **Security Focused**: Built-in TLS support, Rate Limiting, CORS, and Security Headers.

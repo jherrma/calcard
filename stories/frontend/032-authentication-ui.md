@@ -15,7 +15,7 @@ As a user, I want to login, register, and manage my authentication so that I can
 | UM-1.1.1 | Users can create an account with email and password                                 |
 | AU-2.1.1 | Users can login with email and password                                             |
 | AU-2.1.5 | Users can manually logout                                                           |
-| AU-2.2.1 | Users can login via OAuth/SAML                                                      |
+| AU-2.2.1 | Users can login via OAuth                                                           |
 | UM-1.3.6 | The system settings endpoint provides information if an admin is already configured |
 | UM-1.3.7 | Initial setup allows creating the first admin account without authentication        |
 

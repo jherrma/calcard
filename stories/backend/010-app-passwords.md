@@ -4,7 +4,7 @@
 Implement App-Specific Passwords for CalDAV/CardDAV Client Authentication
 
 ## Description
-As a user, I want to create app-specific passwords so that I can authenticate DAV clients (like DAVx5) without using my main account password, especially when using OAuth/SAML authentication.
+As a user, I want to create app-specific passwords so that I can authenticate DAV clients (like DAVx5) without using my main account password, especially when using OAuth authentication.
 
 ## Related Acceptance Criteria
 

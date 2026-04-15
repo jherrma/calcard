@@ -49,7 +49,6 @@ JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", 
 |------|-----------|
 | Auth | Login, register, verify, refresh, logout, forgot/reset password |
 | OAuth | Initiate, callback, link/unlink providers |
-| SAML | Login, metadata |
 | System | Settings (admin configured, SMTP enabled, registration enabled), auth methods |
 | User | Get/update profile, delete account |
 | Calendars | CRUD, public sharing, export |
@@ -75,7 +74,7 @@ Each `internal/` subdirectory has its own AGENT.md with detailed file listings:
 - `internal/AGENT.md` — Architecture overview and request flow
 - `internal/domain/AGENT.md` — Domain models and interfaces
 - `internal/usecase/AGENT.md` — Business logic (auth, calendar, event, contact, sharing, import/export)
-- `internal/usecase/auth/AGENT.md` — Authentication use cases (local, OAuth, SAML)
+- `internal/usecase/auth/AGENT.md` — Authentication use cases (local, OAuth)
 - `internal/adapter/AGENT.md` — HTTP handlers, repositories, auth implementations, WebDAV
 - `internal/infrastructure/AGENT.md` — Database, server, email, logging
 - `integration/CLAUDE.md` — End-to-end integration test suite: how it boots the real server in-process, what each test file covers, and how to add new tests

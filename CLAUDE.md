@@ -96,7 +96,7 @@ cd server && docker-compose -f docker-compose.postgres.yml up     # PostgreSQL
 - **Backend**: Go 1.22+, Fiber v3, GORM
 - **Database**: SQLite (default), PostgreSQL (production)
 - **Protocols**: CalDAV (RFC 4791), CardDAV (RFC 6352), WebDAV-Sync
-- **Auth**: JWT, OAuth2/OIDC, SAML 2.0
+- **Auth**: JWT, OAuth2/OIDC
 - **Frontend**: Nuxt 3 (SPA mode), Vue 3 Composition API, TypeScript (strict)
 - **UI**: PrimeVue 4.x (Material preset), Tailwind CSS 3, PrimeIcons
 - **Frontend Libraries**: Pinia (state), VueUse, Vuelidate, FullCalendar
@@ -137,7 +137,7 @@ cd server && docker-compose -f docker-compose.postgres.yml up     # PostgreSQL
 ### Key Endpoints
 
 - `GET /api/v1/system/settings` — Returns `admin_configured`, `smtp_enabled`, `registration_enabled`
-- `GET /api/v1/auth/methods` — Returns available auth methods (local, OAuth providers, SAML)
+- `GET /api/v1/auth/methods` — Returns available auth methods (local, OAuth providers)
 - Auth pages: login, register, setup (first admin), forgot-password, reset-password, verify, OAuth callback
 
 ## Story Tracking

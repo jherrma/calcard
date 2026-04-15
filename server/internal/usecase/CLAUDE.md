@@ -20,7 +20,6 @@ Authentication and authorization logic. See [auth/AGENT.md](auth/AGENT.md) for d
 - `login.go`, `register.go`, `verify.go`, `refresh.go`, `logout.go` — Standard email/password auth flows.
 - `change_password.go`, `forgot_password.go`, `reset_password.go` — Password management.
 - `oauth_initiate.go`, `oauth_callback.go`, `oauth_link.go`, `oauth_providers.go` — OAuth2/OIDC flows.
-- `saml_login.go`, `saml_metadata.go` — SAML 2.0 SSO.
 - `email_service.go` — Email service interface for auth-related emails.
 - `username_util.go` — Username generation utilities.
 

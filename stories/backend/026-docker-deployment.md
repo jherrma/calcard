@@ -219,10 +219,6 @@ CALDAV_JWT_SECRET=your-secure-random-string-at-least-32-chars
 # CALDAV_OAUTH_MICROSOFT_CLIENT_ID=
 # CALDAV_OAUTH_MICROSOFT_CLIENT_SECRET=
 
-# SAML (optional)
-# CALDAV_SAML_ENABLED=false
-# CALDAV_SAML_IDP_METADATA_URL=
-
 # Email (optional - required for password reset)
 # CALDAV_SMTP_HOST=smtp.example.com
 # CALDAV_SMTP_PORT=587
