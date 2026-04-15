@@ -18,10 +18,12 @@ func NewCreateUseCase(addrBookUC *addressbook.CreateContactUseCase) *CreateUseCa
 }
 
 func (uc *CreateUseCase) Execute(ctx context.Context, userID uint, addressBookID uint, input *contact.Contact) (*contact.Contact, error) {
-	// 1. Convert to vCard
-	// Ensure we generate a UID if not present so ToVCard includes it.
-	if input.ID == "" {
-		input.ID = uuid.New().String()
+	// 1. Convert to vCard. ToVCard uses input.UID (not input.ID) for the
+	//    vCard's UID property, so we seed that explicitly — otherwise the
+	//    downstream addressbook use case has to inject a UID and re-encode
+	//    the vCard on every REST create.
+	if input.UID == "" {
+		input.UID = uuid.New().String()
 	}
 
 	vcardData, err := ToVCard(input)

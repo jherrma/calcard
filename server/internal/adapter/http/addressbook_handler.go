@@ -14,13 +14,12 @@ import (
 var _ = domainaddressbook.AddressBook{}
 
 type AddressBookHandler struct {
-	createUC        *addressbook.CreateUseCase
-	listUC          *addressbook.ListUseCase
-	getUC           *addressbook.GetUseCase
-	updateUC        *addressbook.UpdateUseCase
-	deleteUC        *addressbook.DeleteUseCase
-	exportUC        *addressbook.ExportUseCase
-	createContactUC *addressbook.CreateContactUseCase
+	createUC *addressbook.CreateUseCase
+	listUC   *addressbook.ListUseCase
+	getUC    *addressbook.GetUseCase
+	updateUC *addressbook.UpdateUseCase
+	deleteUC *addressbook.DeleteUseCase
+	exportUC *addressbook.ExportUseCase
 }
 
 func NewAddressBookHandler(
@@ -30,16 +29,14 @@ func NewAddressBookHandler(
 	updateUC *addressbook.UpdateUseCase,
 	deleteUC *addressbook.DeleteUseCase,
 	exportUC *addressbook.ExportUseCase,
-	createContactUC *addressbook.CreateContactUseCase,
 ) *AddressBookHandler {
 	return &AddressBookHandler{
-		createUC:        createUC,
-		listUC:          listUC,
-		getUC:           getUC,
-		updateUC:        updateUC,
-		deleteUC:        deleteUC,
-		exportUC:        exportUC,
-		createContactUC: createContactUC,
+		createUC: createUC,
+		listUC:   listUC,
+		getUC:    getUC,
+		updateUC: updateUC,
+		deleteUC: deleteUC,
+		exportUC: exportUC,
 	}
 }
 
@@ -259,52 +256,4 @@ func (h *AddressBookHandler) Export(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/vcard")
 	c.Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	return c.Send(data)
-}
-
-// CreateContact godoc
-// @Summary      Create contact
-// @Description  Create a new contact in address book
-// @Tags         Contacts
-// @Accept       json
-// @Produce      json
-// @Param        id       path      integer                   true  "Address Book ID"
-// @Param        request  body      dto.CreateContactRequest  true  "Contact VCard"
-// @Success      201      {object}  object                    "Ref: domain.AddressObject"
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      401      {object}  ErrorResponseBody
-// @Failure      500      {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{id}/contacts [post]
-func (h *AddressBookHandler) CreateContact(c fiber.Ctx) error {
-	userID, err := GetUserIDFromContext(c)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
-	}
-
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_id"})
-	}
-
-	var req dto.CreateContactRequest
-	if err := c.Bind().Body(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_request"})
-	}
-
-	if req.VCardData == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "vcard_data_required"})
-	}
-
-	input := addressbook.CreateContactInput{
-		AddressBookID: uint(id),
-		UserID:        userID,
-		VCardData:     req.VCardData,
-	}
-
-	obj, err := h.createContactUC.Execute(c.Context(), input)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	return c.Status(fiber.StatusCreated).JSON(obj)
 }

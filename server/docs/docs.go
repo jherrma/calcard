@@ -764,70 +764,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/addressbooks/{id}/contacts": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Create a new contact in address book",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Contacts"
-                ],
-                "summary": "Create contact",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Address Book ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Contact VCard",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Ref: domain.AddressObject",
-                        "schema": {
-                            "type": "object"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
-                        }
-                    }
-                }
-            }
-        },
         "/addressbooks/{id}/export": {
             "get": {
                 "security": [
@@ -2619,15 +2555,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest": {
-            "type": "object",
-            "properties": {
-                "vcard_data": {
-                    "type": "string",
-                    "example": "BEGIN:VCARD..."
-                }
-            }
-        },
         "github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateEventRequest": {
             "type": "object",
             "required": [
@@ -3371,6 +3298,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "username": {
+                    "description": "Default empty for migration",
                     "type": "string"
                 },
                 "uuid": {

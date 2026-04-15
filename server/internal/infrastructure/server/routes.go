@@ -275,6 +275,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
 	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)
 	abExportUC := addressbookusecase.NewExportUseCase(addressBookRepo)
+	// NOTE: addressbookusecase.CreateContactUseCase is still alive — it backs
+	// ContactHandler.Create through contactusecase.CreateUseCase (see below).
 	abCreateContactUC := addressbookusecase.NewCreateContactUseCase(addressBookRepo)
 
 	abHandler := http.NewAddressBookHandler(
@@ -284,7 +286,6 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		abUpdateUC,
 		abDeleteUC,
 		abExportUC,
-		abCreateContactUC,
 	)
 
 	abGroup := v1.Group("/addressbooks", http.Authenticate(jwtManager, userRepo))

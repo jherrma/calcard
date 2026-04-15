@@ -231,28 +231,41 @@ func addTypeParam(params vcard.Params, t string) {
 	params.Add(vcard.ParamType, t)
 }
 
-// FromAddressObject maps an AddressObject to a Contact using denormalized fields.
-// This is useful for list views where full vCard parsing is not required/too expensive.
+// FromAddressObject maps an AddressObject to a Contact by parsing the
+// canonical vCard blob. This is the same conversion single-contact GET uses
+// (see GetUseCase.Execute), so list and detail endpoints return identical
+// data — no more drift between "what you see in the list" and "what you see
+// on the detail page" caused by denormalized columns lagging behind the
+// vCard.
+//
+// Parse failures fall back to what can be read from the denormalized
+// columns so a broken vCard doesn't hide the row entirely from list views.
 func FromAddressObject(obj *addressbook.AddressObject) *contact.Contact {
-	c := &contact.Contact{
-		ID:            obj.UUID,
-		AddressBookID: fmt.Sprintf("%d", obj.AddressBookID),
-		UID:           obj.UID,
-		Etag:          obj.ETag,
-		FormattedName: obj.FormattedName,
-		FamilyName:    obj.FamilyName,
-		GivenName:     obj.GivenName,
-		Organization:  obj.Organization,
-		CreatedAt:     obj.CreatedAt,
-		UpdatedAt:     obj.UpdatedAt,
+	if obj == nil {
+		return nil
+	}
+	c, err := ToContact(obj.VCardData)
+	if err != nil || c == nil {
+		c = &contact.Contact{
+			UID:           obj.UID,
+			FormattedName: obj.FormattedName,
+			GivenName:     obj.GivenName,
+			FamilyName:    obj.FamilyName,
+			Organization:  obj.Organization,
+		}
+		if obj.Email != "" {
+			c.Emails = []contact.Email{{Value: obj.Email, Primary: true}}
+		}
+		if obj.Phone != "" {
+			c.Phones = []contact.Phone{{Value: obj.Phone, Primary: true}}
+		}
 	}
 
-	if obj.Email != "" {
-		c.Emails = []contact.Email{{Value: obj.Email, Primary: true}}
-	}
-	if obj.Phone != "" {
-		c.Phones = []contact.Phone{{Value: obj.Phone, Primary: true}}
-	}
-
+	// Apply the object-level fields that aren't part of the vCard itself.
+	c.ID = obj.UUID
+	c.AddressBookID = fmt.Sprintf("%d", obj.AddressBookID)
+	c.Etag = obj.ETag
+	c.CreatedAt = obj.CreatedAt
+	c.UpdatedAt = obj.UpdatedAt
 	return c
 }

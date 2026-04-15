@@ -92,12 +92,6 @@ definitions:
       username:
         type: string
     type: object
-  github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest:
-    properties:
-      vcard_data:
-        example: BEGIN:VCARD...
-        type: string
-    type: object
   github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateEventRequest:
     properties:
       all_day:
@@ -592,6 +586,7 @@ definitions:
       updatedAt:
         type: string
       username:
+        description: Default empty for migration
         type: string
       uuid:
         type: string
@@ -1231,47 +1226,6 @@ paths:
       summary: Update address book
       tags:
       - AddressBooks
-  /addressbooks/{id}/contacts:
-    post:
-      consumes:
-      - application/json
-      description: Create a new contact in address book
-      parameters:
-      - description: Address Book ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Contact VCard
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.CreateContactRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 'Ref: domain.AddressObject'
-          schema:
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
-      security:
-      - BearerAuth: []
-      summary: Create contact
-      tags:
-      - Contacts
   /addressbooks/{id}/export:
     get:
       description: Export address book as vCard

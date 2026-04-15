@@ -16,8 +16,3 @@ type UpdateAddressBookRequest struct {
 type DeleteAddressBookRequest struct {
 	Confirmation string `json:"confirmation"`
 }
-
-// CreateContactRequest represents the request body for creating a contact
-type CreateContactRequest struct {
-	VCardData string `json:"vcard_data" example:"BEGIN:VCARD..."`
-}

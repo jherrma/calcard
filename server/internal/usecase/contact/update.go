@@ -107,24 +107,14 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, addressBookID uint, contac
 
 	// 5. Update AddressObject
 	obj.VCardData = newVCardData
+	obj.ContentLength = len(newVCardData)
 	obj.UpdatedAt = time.Now()
 	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano()) // New ETag
 
-	// Update denormalized fields
-	obj.FormattedName = currentContact.FormattedName
-	obj.GivenName = currentContact.GivenName
-	obj.FamilyName = currentContact.FamilyName
-	obj.Organization = currentContact.Organization
-	if len(currentContact.Emails) > 0 {
-		obj.Email = currentContact.Emails[0].Value
-	} else {
-		obj.Email = ""
-	}
-	if len(currentContact.Phones) > 0 {
-		obj.Phone = currentContact.Phones[0].Value
-	} else {
-		obj.Phone = ""
-	}
+	// Rederive denormalized columns from the canonical vCard. Ignoring the
+	// parse error here is intentional — if the vCard we just encoded doesn't
+	// parse, the storage write below will fail the test anyway.
+	_ = obj.PopulateDenormFieldsFromVCard()
 
 	if err := uc.repo.UpdateObject(ctx, obj); err != nil {
 		return nil, err

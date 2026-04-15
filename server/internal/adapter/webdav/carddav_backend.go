@@ -330,14 +330,9 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 		existing.ETag = etag
 		existing.ContentLength = len(data)
 		existing.VCardVersion = version
-		existing.FormattedName = card.PreferredValue(vcard.FieldFormattedName)
-		existing.Email = card.PreferredValue(vcard.FieldEmail)
-		existing.Phone = card.PreferredValue(vcard.FieldTelephone)
-		existing.Organization = card.PreferredValue(vcard.FieldOrganization)
-		if name := card.Name(); name != nil {
-			existing.GivenName = name.GivenName
-			existing.FamilyName = name.FamilyName
-		}
+		// Rederive denormalized columns from the parsed card — single source
+		// of truth across every write path (REST create, DAV PUT, import).
+		addressbook.ExtractDenormFieldsFromCard(card, existing)
 		if err := b.addressBookRepo.UpdateObject(ctx, existing); err != nil {
 			return nil, err
 		}
@@ -352,15 +347,8 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 			VCardData:     data,
 			VCardVersion:  version,
 			ContentLength: len(data),
-			FormattedName: card.PreferredValue(vcard.FieldFormattedName),
-			Email:         card.PreferredValue(vcard.FieldEmail),
-			Phone:         card.PreferredValue(vcard.FieldTelephone),
-			Organization:  card.PreferredValue(vcard.FieldOrganization),
 		}
-		if name := card.Name(); name != nil {
-			newObj.GivenName = name.GivenName
-			newObj.FamilyName = name.FamilyName
-		}
+		addressbook.ExtractDenormFieldsFromCard(card, newObj)
 		if err := b.addressBookRepo.CreateObject(ctx, newObj); err != nil {
 			return nil, err
 		}

@@ -116,7 +116,6 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
 	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)
 	abExportUC := addressbookusecase.NewExportUseCase(addressBookRepo)
-	abCreateContactUC := addressbookusecase.NewCreateContactUseCase(addressBookRepo)
 
 	// Handlers
 	authHandler := NewAuthHandler(
@@ -156,7 +155,6 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		abUpdateUC,
 		abDeleteUC,
 		abExportUC,
-		abCreateContactUC,
 	)
 
 	appPwdHandler := NewAppPasswordHandler(
