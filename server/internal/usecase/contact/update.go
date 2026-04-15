@@ -119,20 +119,8 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, addressBookID uint, contac
 	if err := uc.repo.UpdateObject(ctx, obj); err != nil {
 		return nil, err
 	}
-
-	// 6. Update AddressBook CTag
-	ab, err := uc.repo.GetByID(ctx, addressBookID)
-	if err != nil {
-		return nil, err
-	}
-	if ab != nil {
-		ab.UpdateSyncTokens()
-		if err := uc.repo.Update(ctx, ab); err != nil {
-			// Log error but treat as non-fatal for the contact update?
-			// Ideally transactional.
-			fmt.Printf("failed to update address book ctag: %v\n", err)
-		}
-	}
+	// UpdateObject atomically advances the address book's sync_token / CTag
+	// and appends to the SyncChangeLog; no follow-up UpdateSyncTokens.
 
 	// 7. Return updated contact
 	// Map back to response format

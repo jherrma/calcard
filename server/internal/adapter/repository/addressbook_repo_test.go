@@ -18,7 +18,7 @@ func TestPhotoSeparation(t *testing.T) {
 	// Setup DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&addressbook.AddressBook{}, &addressbook.AddressObject{}, &addressbook.ContactPhoto{})
+	db.AutoMigrate(&addressbook.AddressBook{}, &addressbook.AddressObject{}, &addressbook.ContactPhoto{}, &addressbook.SyncChangeLog{})
 
 	repo := repository.NewAddressBookRepository(db)
 	ctx := context.Background()

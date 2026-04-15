@@ -18,7 +18,10 @@ func TestListObjectsPagination(t *testing.T) {
 	// Setup DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&addressbook.AddressBook{}, &addressbook.AddressObject{}, &addressbook.ContactPhoto{})
+	// CreateObject now records a SyncChangeLog entry and advances the
+	// AddressBook's sync_token in one transaction, so the log table must
+	// be migrated alongside the others.
+	db.AutoMigrate(&addressbook.AddressBook{}, &addressbook.AddressObject{}, &addressbook.ContactPhoto{}, &addressbook.SyncChangeLog{})
 
 	repo := repository.NewAddressBookRepository(db)
 	ctx := context.Background()

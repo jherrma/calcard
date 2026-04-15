@@ -30,9 +30,12 @@ func Authenticate(jwtManager user.TokenProvider, userRepo user.UserRepository) f
 			return UnauthorizedResponse(c, "invalid or expired token")
 		}
 
-		// Look up user to get uint ID
+		// Look up user to get uint ID. GetByUUID returns (nil, nil) for
+		// tokens whose subject has since been deleted — we must treat that
+		// as an auth failure rather than falling through and NPE-ing on
+		// u.ID below.
 		u, err := userRepo.GetByUUID(c.Context(), userUUID)
-		if err != nil {
+		if err != nil || u == nil {
 			return UnauthorizedResponse(c, "user not found")
 		}
 

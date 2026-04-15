@@ -77,13 +77,10 @@ func (uc *CreateContactUseCase) Execute(ctx context.Context, input CreateContact
 	if err := uc.repo.CreateObject(ctx, obj); err != nil {
 		return nil, err
 	}
+	// CreateObject atomically bumps the address book's sync_token / CTag
+	// and writes the matching SyncChangeLog entry — see
+	// AddressBookRepository.recordAddressBookChange. No second update here.
 
-	// 4. Bump the address book's sync token so DAV clients see the change.
-	ab.UpdateSyncTokens()
-	if err := uc.repo.Update(ctx, ab); err != nil {
-		// Non-fatal: the object was created. Log and move on.
-		fmt.Printf("failed to update address book ctag: %v\n", err)
-	}
-
+	_ = ab // kept in scope for potential future cache invalidation
 	return obj, nil
 }

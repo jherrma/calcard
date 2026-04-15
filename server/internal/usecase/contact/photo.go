@@ -64,14 +64,10 @@ func (uc *PhotoUseCase) Upload(ctx context.Context, addressBookID uint, contactU
 	obj.UpdatedAt = time.Now()
 	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano())
 
-	if err := uc.repo.UpdateObject(ctx, obj); err != nil {
-		return err
-	}
-
-	// 6. Update CTag
-	uc.updateCTag(ctx, addressBookID)
-
-	return nil
+	// UpdateObject bumps the address book's sync_token / CTag and logs the
+	// change atomically; no second CTag update needed.
+	_ = addressBookID // kept in signature for future caching hooks
+	return uc.repo.UpdateObject(ctx, obj)
 }
 
 func (uc *PhotoUseCase) Delete(ctx context.Context, addressBookID uint, contactUUID string) error {
@@ -99,19 +95,7 @@ func (uc *PhotoUseCase) Delete(ctx context.Context, addressBookID uint, contactU
 	obj.UpdatedAt = time.Now()
 	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano())
 
-	if err := uc.repo.UpdateObject(ctx, obj); err != nil {
-		return err
-	}
-
-	uc.updateCTag(ctx, addressBookID)
-
-	return nil
-}
-
-func (uc *PhotoUseCase) updateCTag(ctx context.Context, abID uint) {
-	ab, err := uc.repo.GetByID(ctx, abID)
-	if err == nil && ab != nil {
-		ab.UpdateSyncTokens()
-		_ = uc.repo.Update(ctx, ab)
-	}
+	// UpdateObject bumps the address book's sync_token / CTag and logs the
+	// change atomically; no second CTag update needed.
+	return uc.repo.UpdateObject(ctx, obj)
 }

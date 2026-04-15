@@ -355,9 +355,11 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 		obj = newObj
 	}
 
-	// Update address book sync tokens
-	ab.UpdateSyncTokens()
-	_ = b.addressBookRepo.Update(ctx, ab)
+	// AddressBook sync token / CTag are advanced atomically by CreateObject
+	// / UpdateObject through AddressBookRepository.recordAddressBookChange,
+	// so we deliberately do NOT call UpdateSyncTokens + Update here — that
+	// would generate a second, different token and desync the change log
+	// from the address book row.
 
 	return b.mapAddressObject(p, obj)
 }
@@ -374,15 +376,11 @@ func (b *CardDAVBackend) DeleteAddressObject(ctx context.Context, p string) erro
 		return err
 	}
 
+	// DeleteObjectByUUID records the change-log entry and advances the
+	// AddressBook sync token in one transaction — no manual post-delete
+	// UpdateSyncTokens call needed.
 	if err := b.addressBookRepo.DeleteObjectByUUID(ctx, obj.UUID); err != nil {
 		return err
-	}
-
-	// Update address book sync token
-	ab, err := b.addressBookRepo.GetByID(ctx, obj.AddressBookID)
-	if err == nil && ab != nil {
-		ab.UpdateSyncTokens()
-		_ = b.addressBookRepo.Update(ctx, ab)
 	}
 
 	return nil

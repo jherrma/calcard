@@ -278,7 +278,7 @@ func (r *AddressBookRepository) CreateObject(ctx context.Context, object *addres
 				return err
 			}
 		}
-		return nil
+		return r.recordAddressBookChange(tx, object.AddressBookID, object.Path, object.UID, "created")
 	})
 }
 
@@ -412,12 +412,52 @@ func (r *AddressBookRepository) UpdateObject(ctx context.Context, object *addres
 				return err
 			}
 		}
-		return nil
+		return r.recordAddressBookChange(tx, object.AddressBookID, object.Path, object.UID, "modified")
 	})
 }
 
 func (r *AddressBookRepository) DeleteObjectByUUID(ctx context.Context, uuid string) error {
-	return r.db.WithContext(ctx).Where("uuid = ?", uuid).Delete(&addressbook.AddressObject{}).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// Look up the object first so we still have its AddressBookID /
+		// Path / UID after the soft-delete — we need them for the change
+		// log entry below.
+		var obj addressbook.AddressObject
+		if err := tx.WithContext(ctx).Where("uuid = ?", uuid).First(&obj).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil // nothing to delete, nothing to log
+			}
+			return err
+		}
+		if err := tx.WithContext(ctx).Delete(&obj).Error; err != nil {
+			return err
+		}
+		return r.recordAddressBookChange(tx, obj.AddressBookID, obj.Path, obj.UID, "deleted")
+	})
+}
+
+// recordAddressBookChange advances the address book's sync token and writes
+// a matching entry to the sync change log, so subsequent sync-collection
+// REPORTs can compute the delta. Without this, the DAV sync-token returned
+// by the initial sync won't correspond to any SyncChangeLog row, and every
+// incremental sync is rejected with "valid-sync-token" 403 — forcing real
+// clients to re-download the entire collection on every refresh.
+func (r *AddressBookRepository) recordAddressBookChange(tx *gorm.DB, addressBookID uint, path, uid, changeType string) error {
+	newToken := addressbook.GenerateSyncToken()
+	if err := tx.Model(&addressbook.AddressBook{}).
+		Where("id = ?", addressBookID).
+		Updates(map[string]interface{}{
+			"sync_token": newToken,
+			"c_tag":      newToken,
+		}).Error; err != nil {
+		return err
+	}
+	return tx.Create(&addressbook.SyncChangeLog{
+		AddressBookID: addressBookID,
+		ResourcePath:  path,
+		ResourceUID:   uid,
+		ChangeType:    changeType,
+		SyncToken:     newToken,
+	}).Error
 }
 
 func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
