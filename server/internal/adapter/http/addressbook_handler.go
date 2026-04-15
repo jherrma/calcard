@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
@@ -74,6 +75,11 @@ func (h *AddressBookHandler) Create(c fiber.Ctx) error {
 
 	ab, err := h.createUC.Execute(c.Context(), input)
 	if err != nil {
+		// User-input validation failures map to 400; genuine repository
+		// errors keep 500 so real failures are still easy to spot in logs.
+		if errors.Is(err, addressbook.ErrNameRequired) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 

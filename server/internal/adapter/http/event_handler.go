@@ -6,16 +6,18 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/usecase/event"
 )
 
 type EventHandler struct {
-	listUC   *event.ListEventsUseCase
-	getUC    *event.GetEventUseCase
-	createUC *event.CreateEventUseCase
-	updateUC *event.UpdateEventUseCase
-	deleteUC *event.DeleteEventUseCase
-	moveUC   *event.MoveEventUseCase
+	listUC       *event.ListEventsUseCase
+	getUC        *event.GetEventUseCase
+	createUC     *event.CreateEventUseCase
+	updateUC     *event.UpdateEventUseCase
+	deleteUC     *event.DeleteEventUseCase
+	moveUC       *event.MoveEventUseCase
+	calendarRepo calendar.CalendarRepository
 }
 
 func NewEventHandler(
@@ -25,15 +27,39 @@ func NewEventHandler(
 	updateUC *event.UpdateEventUseCase,
 	deleteUC *event.DeleteEventUseCase,
 	moveUC *event.MoveEventUseCase,
+	calendarRepo calendar.CalendarRepository,
 ) *EventHandler {
 	return &EventHandler{
-		listUC:   listUC,
-		getUC:    getUC,
-		createUC: createUC,
-		updateUC: updateUC,
-		deleteUC: deleteUC,
-		moveUC:   moveUC,
+		listUC:       listUC,
+		getUC:        getUC,
+		createUC:     createUC,
+		updateUC:     updateUC,
+		deleteUC:     deleteUC,
+		moveUC:       moveUC,
+		calendarRepo: calendarRepo,
 	}
+}
+
+// ownsCalendar reports whether the authenticated user owns the calendar with
+// the given numeric id. Returns false on lookup errors or mismatched owner —
+// callers treat "not owned" exactly like "not found" (404) so existence
+// isn't leaked across users.
+func (h *EventHandler) ownsCalendar(c fiber.Ctx, calendarID uint) bool {
+	userID := c.Locals("user_id").(uint)
+	cal, err := h.calendarRepo.GetByID(c.Context(), calendarID)
+	return err == nil && cal != nil && cal.UserID == userID
+}
+
+// ownsEvent reports whether the authenticated user owns the calendar that
+// contains the event identified by eventUUID.
+func (h *EventHandler) ownsEvent(c fiber.Ctx, eventUUID string) bool {
+	userID := c.Locals("user_id").(uint)
+	obj, err := h.calendarRepo.GetCalendarObjectByUUID(c.Context(), eventUUID)
+	if err != nil || obj == nil {
+		return false
+	}
+	cal, err := h.calendarRepo.GetByID(c.Context(), obj.CalendarID)
+	return err == nil && cal != nil && cal.UserID == userID
 }
 
 // List godoc
@@ -52,6 +78,9 @@ func NewEventHandler(
 // @Router       /calendars/{calendar_id}/events [get]
 func (h *EventHandler) List(c fiber.Ctx) error {
 	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
+	if !h.ownsCalendar(c, uint(calendarID)) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
 	startStr := c.Query("start")
 	endStr := c.Query("end")
 	expandStr := c.Query("expand", "true")
@@ -113,6 +142,9 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id} [get]
 func (h *EventHandler) Get(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
+	if !h.ownsEvent(c, eventID) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
 	obj, err := h.getUC.Execute(c.Context(), eventID)
 	if err != nil {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
@@ -144,6 +176,9 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events [post]
 func (h *EventHandler) Create(c fiber.Ctx) error {
 	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
+	if !h.ownsCalendar(c, uint(calendarID)) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
 	var req dto.CreateEventRequest
 	if err := c.Bind().Body(&req); err != nil {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
@@ -197,6 +232,9 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id} [put]
 func (h *EventHandler) Update(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
+	if !h.ownsEvent(c, eventID) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
 	var req dto.UpdateEventRequest
 	if err := c.Bind().Body(&req); err != nil {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
@@ -250,6 +288,9 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id} [delete]
 func (h *EventHandler) Delete(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
+	if !h.ownsEvent(c, eventID) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
 	scope := c.Query("scope", "all")
 	recurrenceID := c.Query("recurrence_id")
 
@@ -276,12 +317,18 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id}/move [post]
 func (h *EventHandler) Move(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
+	if !h.ownsEvent(c, eventID) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
 	var req dto.MoveEventRequest
 	if err := c.Bind().Body(&req); err != nil {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
 	}
 
 	targetCalendarID, _ := strconv.Atoi(req.TargetCalendarID)
+	if !h.ownsCalendar(c, uint(targetCalendarID)) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
 	obj, err := h.moveUC.Execute(c.Context(), event.MoveEventInput{
 		EventUUID:        eventID,
 		TargetCalendarID: uint(targetCalendarID),

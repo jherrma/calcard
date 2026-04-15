@@ -225,7 +225,15 @@ func (b *CalDAVBackend) ListCalendarObjects(ctx context.Context, p string, req *
 }
 
 func (b *CalDAVBackend) QueryCalendarObjects(ctx context.Context, p string, query *caldav.CalendarQuery) ([]caldav.CalendarObject, error) {
-	return b.ListCalendarObjects(ctx, p, &query.CompRequest)
+	all, err := b.ListCalendarObjects(ctx, p, &query.CompRequest)
+	if err != nil {
+		return nil, err
+	}
+	// Apply the query's CompFilter (e.g. VEVENT time-range) so that clients
+	// like Apple Calendar / Thunderbird / DAVx5 only see the events that fall
+	// inside the window they requested. Without this, every calendar-query
+	// REPORT effectively behaves like an unfiltered list.
+	return caldav.Filter(query, all)
 }
 
 func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal *ical.Calendar, opts *caldav.PutCalendarObjectOptions) (*caldav.CalendarObject, error) {
@@ -264,6 +272,24 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 	}
 
 	existing, _ := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
+
+	// Honor If-Match / If-None-Match preconditions (RFC 4791 §5.3.4). Without
+	// these, two concurrent clients would silently overwrite each other.
+	if opts != nil {
+		if opts.IfNoneMatch.IsSet() && existing != nil {
+			// If-None-Match: * (or any) with an existing resource → 412.
+			return nil, webdav.NewHTTPError(http.StatusPreconditionFailed, nil)
+		}
+		if opts.IfMatch.IsSet() {
+			if existing == nil {
+				return nil, webdav.NewHTTPError(http.StatusPreconditionFailed, nil)
+			}
+			ok, _ := opts.IfMatch.MatchETag(existing.ETag)
+			if !ok {
+				return nil, webdav.NewHTTPError(http.StatusPreconditionFailed, nil)
+			}
+		}
+	}
 
 	// Extract metadata
 	summary := ""

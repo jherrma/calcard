@@ -98,6 +98,7 @@ func setupContactHandlerTest(t *testing.T) (*fiber.App, database.Database, *user
 		contactSearchUC,
 		contactMoveUC,
 		contactPhotoUC,
+		abRepo,
 	)
 
 	// Routes

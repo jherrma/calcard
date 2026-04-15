@@ -10,19 +10,21 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/contact"
 	contactuc "github.com/jherrma/caldav-server/internal/usecase/contact"
 )
 
 type ContactHandler struct {
-	createUC *contactuc.CreateUseCase
-	listUC   *contactuc.ListUseCase
-	getUC    *contactuc.GetUseCase
-	updateUC *contactuc.UpdateUseCase
-	deleteUC *contactuc.DeleteUseCase
-	searchUC *contactuc.SearchUseCase
-	moveUC   *contactuc.MoveUseCase
-	photoUC  *contactuc.PhotoUseCase
+	createUC        *contactuc.CreateUseCase
+	listUC          *contactuc.ListUseCase
+	getUC           *contactuc.GetUseCase
+	updateUC        *contactuc.UpdateUseCase
+	deleteUC        *contactuc.DeleteUseCase
+	searchUC        *contactuc.SearchUseCase
+	moveUC          *contactuc.MoveUseCase
+	photoUC         *contactuc.PhotoUseCase
+	addressBookRepo addressbook.Repository
 }
 
 func NewContactHandler(
@@ -34,17 +36,40 @@ func NewContactHandler(
 	searchUC *contactuc.SearchUseCase,
 	moveUC *contactuc.MoveUseCase,
 	photoUC *contactuc.PhotoUseCase,
+	addressBookRepo addressbook.Repository,
 ) *ContactHandler {
 	return &ContactHandler{
-		createUC: createUC,
-		listUC:   listUC,
-		getUC:    getUC,
-		updateUC: updateUC,
-		deleteUC: deleteUC,
-		searchUC: searchUC,
-		moveUC:   moveUC,
-		photoUC:  photoUC,
+		createUC:        createUC,
+		listUC:          listUC,
+		getUC:           getUC,
+		updateUC:        updateUC,
+		deleteUC:        deleteUC,
+		searchUC:        searchUC,
+		moveUC:          moveUC,
+		photoUC:         photoUC,
+		addressBookRepo: addressBookRepo,
 	}
+}
+
+// ownsAddressBook reports whether the authenticated user owns the given
+// addressbook id. Callers that need to reject the request should emit a
+// 404 (not 403) so existence isn't leaked across users.
+func (h *ContactHandler) ownsAddressBook(c fiber.Ctx, abID uint) bool {
+	userID := c.Locals("user_id").(uint)
+	ab, err := h.addressBookRepo.GetByID(c.Context(), abID)
+	return err == nil && ab != nil && ab.UserID == userID
+}
+
+// ownsContact reports whether the authenticated user owns the addressbook
+// that contains the contact identified by contactUUID.
+func (h *ContactHandler) ownsContact(c fiber.Ctx, contactUUID string) bool {
+	userID := c.Locals("user_id").(uint)
+	obj, err := h.addressBookRepo.GetObjectByUUID(c.Context(), contactUUID)
+	if err != nil || obj == nil {
+		return false
+	}
+	ab, err := h.addressBookRepo.GetByID(c.Context(), obj.AddressBookID)
+	return err == nil && ab != nil && ab.UserID == userID
 }
 
 // List godoc
@@ -66,6 +91,9 @@ func (h *ContactHandler) List(c fiber.Ctx) error {
 	abID, err := strconv.ParseUint(c.Params("addressbook_id"), 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
+	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	limit := 50
@@ -115,6 +143,9 @@ func (h *ContactHandler) Get(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
 	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
 	contactID := c.Params("contact_id")
 
 	res, err := h.getUC.Execute(c.Context(), uint(abID), contactID)
@@ -153,6 +184,9 @@ func (h *ContactHandler) Create(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
 	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
 
 	var input contact.Contact
 	if err := json.Unmarshal(c.Body(), &input); err != nil {
@@ -188,6 +222,9 @@ func (h *ContactHandler) Update(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
 	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
 	contactID := c.Params("contact_id")
 
 	var input contactuc.UpdateInput
@@ -221,6 +258,9 @@ func (h *ContactHandler) Delete(c fiber.Ctx) error {
 	abID, err := strconv.ParseUint(c.Params("addressbook_id"), 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
+	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 	contactID := c.Params("contact_id")
 
@@ -299,8 +339,9 @@ func (h *ContactHandler) Move(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 	contactID := c.Params("contact_id")
 
-	// We don't strictly need addressbook_id from URL but standard REST often includes it.
-	// We rely on object lookup.
+	if !h.ownsContact(c, contactID) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
 
 	var input dto.MoveContactRequest
 	if err := json.Unmarshal(c.Body(), &input); err != nil {
@@ -312,6 +353,10 @@ func (h *ContactHandler) Move(c fiber.Ctx) error {
 	targetID, err := strconv.ParseUint(input.TargetAddressBookID, 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid target addressbook ID (must be integer)"})
+	}
+
+	if !h.ownsAddressBook(c, uint(targetID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	res, err := h.moveUC.Execute(c.Context(), userID, contactID, uint(targetID))
@@ -341,6 +386,9 @@ func (h *ContactHandler) UploadPhoto(c fiber.Ctx) error {
 	abID, err := strconv.ParseUint(c.Params("addressbook_id"), 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
+	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 	contactID := c.Params("contact_id")
 
@@ -395,6 +443,9 @@ func (h *ContactHandler) DeletePhoto(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
 	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
 	contactID := c.Params("contact_id")
 
 	if err := h.photoUC.Delete(c.Context(), uint(abID), contactID); err != nil {
@@ -421,6 +472,9 @@ func (h *ContactHandler) ServePhoto(c fiber.Ctx) error {
 	abID, err := strconv.ParseUint(c.Params("addressbook_id"), 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid addressbook ID"})
+	}
+	if !h.ownsAddressBook(c, uint(abID)) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 	contactID := c.Params("contact_id")
 

@@ -321,6 +321,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		contactSearchUC,
 		contactMoveUC,
 		contactPhotoUC,
+		addressBookRepo,
 	)
 
 	// Contact Routes
@@ -366,6 +367,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		eventUpdateUC,
 		eventDeleteUC,
 		eventMoveUC,
+		calendarRepo,
 	)
 
 	eventGroup := calendarGroup.Group("/:calendar_id/events")

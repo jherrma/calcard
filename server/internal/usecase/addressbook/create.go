@@ -2,11 +2,16 @@ package addressbook
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 )
+
+// ErrNameRequired is returned by Create when the supplied name is empty.
+// Exported so handlers can distinguish user-input validation failures (400)
+// from genuine repository errors (500).
+var ErrNameRequired = errors.New("name is required")
 
 type CreateUseCase struct {
 	repo addressbook.Repository
@@ -24,7 +29,7 @@ type CreateInput struct {
 
 func (uc *CreateUseCase) Execute(ctx context.Context, input CreateInput) (*addressbook.AddressBook, error) {
 	if input.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, ErrNameRequired
 	}
 
 	ab := &addressbook.AddressBook{

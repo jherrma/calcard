@@ -78,7 +78,7 @@ func setupEventHandlerTest(t *testing.T) (*fiber.App, database.Database, *user.U
 	eventDeleteUC := eventusecase.NewDeleteEventUseCase(calendarRepo)
 	eventMoveUC := eventusecase.NewMoveEventUseCase(calendarRepo)
 
-	handler := NewEventHandler(eventListUC, eventGetUC, eventCreateUC, eventUpdateUC, eventDeleteUC, eventMoveUC)
+	handler := NewEventHandler(eventListUC, eventGetUC, eventCreateUC, eventUpdateUC, eventDeleteUC, eventMoveUC, calendarRepo)
 
 	v1 := app.Group("/api/v1")
 	calendars := v1.Group("/calendars", Authenticate(jwtManager, userRepo))

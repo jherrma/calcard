@@ -34,7 +34,7 @@ func (r *gormAddressBookShareRepo) GetByUUID(ctx context.Context, uuid string) (
 
 func (r *gormAddressBookShareRepo) ListByAddressBookID(ctx context.Context, addressBookID uint) ([]sharing.AddressBookShare, error) {
 	var shares []sharing.AddressBookShare
-	if err := r.db.WithContext(ctx).Where("addressbook_id = ?", addressBookID).Preload("SharedWith").Find(&shares).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("address_book_id = ?", addressBookID).Preload("SharedWith").Find(&shares).Error; err != nil {
 		return nil, err
 	}
 	return shares, nil
@@ -58,7 +58,7 @@ func (r *gormAddressBookShareRepo) Revoke(ctx context.Context, id uint) error {
 
 func (r *gormAddressBookShareRepo) GetByAddressBookAndUser(ctx context.Context, addressBookID, userID uint) (*sharing.AddressBookShare, error) {
 	var share sharing.AddressBookShare
-	if err := r.db.WithContext(ctx).Where("addressbook_id = ? AND shared_with_id = ?", addressBookID, userID).First(&share).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("address_book_id = ? AND shared_with_id = ?", addressBookID, userID).First(&share).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
