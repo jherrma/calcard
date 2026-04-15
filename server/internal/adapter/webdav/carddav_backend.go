@@ -165,7 +165,10 @@ func (b *CardDAVBackend) ListAddressObjects(ctx context.Context, p string, req *
 		return nil, err
 	}
 
-	objects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, 0, 0, "", "")
+	// limit=-1 cancels the LIMIT clause; GORM's Limit(0) would emit LIMIT 0
+	// and return zero rows, which would make every PROPFIND / lookup see an
+	// empty address book.
+	objects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +311,7 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 	etag := fmt.Sprintf("\"%s\"", addressbook.GenerateSyncToken())
 
 	// Check if object exists
-	existingObjects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, 0, 0, "", "")
+	existingObjects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +439,10 @@ func (b *CardDAVBackend) resolveAddressObject(ctx context.Context, u *user.User,
 		return nil, err
 	}
 
-	objects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, 0, 0, "", "")
+	// limit=-1 cancels the LIMIT clause; GORM's Limit(0) would emit LIMIT 0
+	// and return zero rows, which would make every PROPFIND / lookup see an
+	// empty address book.
+	objects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "", "")
 	if err != nil {
 		return nil, err
 	}

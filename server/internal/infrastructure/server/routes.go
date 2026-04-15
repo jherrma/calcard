@@ -150,10 +150,16 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	authGroup.Post("/register", authHandler.Register)
 	authGroup.Get("/verify", authHandler.Verify)
 
-	// Login with rate limiting
-	loginIPLimiter := http.NewIPRateLimiter(5, time.Minute)
-	loginEmailLimiter := http.NewEmailRateLimiter(10, time.Minute)
-	authGroup.Post("/login", http.ExtractEmailMiddleware(), loginIPLimiter, loginEmailLimiter, authHandler.Login)
+	// Login rate limiting — gated by the same RateLimit.Enabled flag that
+	// controls the global limiter, so integration tests (which set it false)
+	// don't trip IP-level limits when they log in repeatedly from 127.0.0.1.
+	if cfg.RateLimit.Enabled {
+		loginIPLimiter := http.NewIPRateLimiter(5, time.Minute)
+		loginEmailLimiter := http.NewEmailRateLimiter(10, time.Minute)
+		authGroup.Post("/login", http.ExtractEmailMiddleware(), loginIPLimiter, loginEmailLimiter, authHandler.Login)
+	} else {
+		authGroup.Post("/login", authHandler.Login)
+	}
 
 	authGroup.Post("/refresh", authHandler.Refresh)
 	authGroup.Post("/logout", authHandler.Logout)

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emersion/go-vcard"
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 )
@@ -90,13 +91,30 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 			}
 		}
 
-		// Create address object
+		// Pull the denormalized search fields out of the vCard so list views
+		// match what was exported. Parse failures leave the fields empty but
+		// are otherwise non-fatal — the vCard body itself is the source of
+		// truth and the individual GET endpoint re-parses it on read.
+		formattedName, givenName, familyName, email, phone, organization := extractVCardFields(vcardData)
+
+		// Create address object. The internal DB UUID must be unique and
+		// non-empty (the column has a unique index and NOT NULL) — otherwise
+		// the second row in a multi-contact import collides on uuid="".
 		obj := &addressbook.AddressObject{
+			UUID:          uuid.New().String(),
 			AddressBookID: addressBookID,
 			UID:           uid,
 			Path:          fmt.Sprintf("%s.vcf", uid),
 			ETag:          fmt.Sprintf("\"%d\"", time.Now().UnixNano()),
 			VCardData:     vcardData,
+			VCardVersion:  "3.0",
+			ContentLength: len(vcardData),
+			FormattedName: formattedName,
+			GivenName:     givenName,
+			FamilyName:    familyName,
+			Email:         email,
+			Phone:         phone,
+			Organization:  organization,
 		}
 
 		if err := uc.addressBookRepo.CreateObject(ctx, obj); err != nil {
@@ -196,4 +214,29 @@ func replaceVCardUID(data, newUID string) string {
 		}
 	}
 	return strings.Join(result, "\r\n")
+}
+
+// extractVCardFields pulls the denormalized search fields out of a vCard
+// string. It mirrors what addressbook.CreateContactUseCase does on the normal
+// create path so that imported contacts show up in list views the same way.
+func extractVCardFields(vcardData string) (fn, given, family, email, phone, org string) {
+	card, err := vcard.NewDecoder(strings.NewReader(vcardData)).Decode()
+	if err != nil {
+		return
+	}
+	fn = card.PreferredValue(vcard.FieldFormattedName)
+	if n := card.Get(vcard.FieldName); n != nil {
+		// N value is "Family;Given;Middle;Prefix;Suffix"
+		parts := strings.Split(n.Value, ";")
+		if len(parts) > 0 {
+			family = parts[0]
+		}
+		if len(parts) > 1 {
+			given = parts[1]
+		}
+	}
+	email = card.PreferredValue(vcard.FieldEmail)
+	phone = card.PreferredValue(vcard.FieldTelephone)
+	org = card.PreferredValue(vcard.FieldOrganization)
+	return
 }

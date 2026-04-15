@@ -20,6 +20,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 3 web interfa
 ├── server/                  # Go backend implementation
 │   ├── cmd/server/          # Application entrypoint
 │   ├── configs/             # Configuration examples
+│   ├── integration/         # End-to-end integration tests (build-tag `integration`)
 │   ├── internal/            # Internal packages
 │   │   ├── adapter/         # HTTP handlers, repositories, WebDAV
 │   │   ├── domain/          # Domain models and interfaces
@@ -61,6 +62,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 3 web interfa
 
 - `/CLAUDE.md` - Root level project overview
 - `/server/CLAUDE.md` - Server directory structure, startup sequence, API surface
+- `/server/integration/CLAUDE.md` - End-to-end integration test suite (how it boots the server, what it covers, how to add new tests)
 - `/server/internal/CLAUDE.md` - Backend architecture overview
 - `/server/internal/adapter/CLAUDE.md` - Adapter layer details
 - `/server/internal/domain/CLAUDE.md` - Domain layer details
@@ -76,7 +78,8 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 3 web interfa
 ```bash
 # Backend
 cd server && go build ./...
-cd server && go test ./...
+cd server && go test ./...                                 # unit / handler tests (fast)
+cd server && go test -tags=integration ./integration/...   # full end-to-end suite
 
 # Frontend
 cd webinterface && pnpm dev             # Dev server

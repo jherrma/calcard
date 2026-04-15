@@ -95,6 +95,46 @@ oauth:
 2.  Ensure your provider supports OpenID Connect discovery (`/.well-known/openid-configuration`).
 3.  Whitelist the callback URL: `http://localhost:8080/api/v1/auth/oauth/custom/callback`.
 
+## Testing
+
+### Unit and handler tests
+
+The default `go test` run covers the domain, use-case, and adapter layers, including handler-level tests that use Fiber's in-memory transport. It stays fast enough for a tight edit/test loop:
+
+```bash
+cd server
+go test ./...
+```
+
+### Integration tests
+
+A separate, end-to-end suite lives in `server/integration/`. It boots the real Fiber server in-process on a random localhost port via `server.New(cfg, db)` and exercises the live stack over a real TCP socket — REST, CalDAV, and CardDAV — with real GORM queries against a fresh SQLite DB in a temporary directory. Nothing is mocked.
+
+The suite is gated behind the `integration` build tag so the default `go test ./...` run stays quick.
+
+```bash
+cd server
+
+# Run the integration suite (in-process server, real HTTP, real sockets):
+go test -tags=integration ./integration/... -v
+
+# Same, with the race detector:
+go test -tags=integration -race ./integration/... -v
+```
+
+What's covered:
+
+- First-boot: `GET /system/settings` reports `admin_configured=false` on a pristine DB, then flips to `true` once the first user self-registers.
+- Auth: register (admin + a second self-registered user), login, refresh, change password, logout (and the token invalidation that goes with it).
+- REST CRUD: calendars, events (with recurrence payloads), address books, contacts — create, update, delete.
+- Full backup roundtrip: seed calendars + events + address books + contacts, download the ZIP from `GET /users/me/export`, delete the seeded collections, recreate empty ones, re-import each `.ics` / `.vcf`, and assert every UID / event summary / contact FN comes back.
+- CalDAV: PROPFIND principal → calendar home → collection, PUT / GET / PUT-update / DELETE of a VEVENT, cross-verification through the REST event list, and one `REPORT sync-collection`.
+- CardDAV: the same shape for a VCARD under `/dav/{username}/addressbooks/...`.
+
+SSO (OAuth/SAML) is intentionally out of scope for the integration suite.
+
+See `server/integration/CLAUDE.md` for guidance on adding new integration tests (shared helpers, the email-vs-username DAV auth gotcha, how to get DAV credentials via app passwords, etc.).
+
 ## Building for Release
 
 ### Prerequisites

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -87,4 +88,28 @@ func (s *Server) Run() error {
 
 	fmt.Println("Server exited cleanly")
 	return nil
+}
+
+// Start binds a TCP listener on addr and serves HTTP in a background goroutine.
+// It returns the actual bound address (useful when addr uses port 0) and any
+// bind error. Intended for tests and embedded use; production should call Run()
+// which handles signal-driven graceful shutdown. The returned address has the
+// form "host:port" and never includes a scheme.
+func (s *Server) Start(addr string) (string, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", err
+	}
+	go func() {
+		if err := s.app.Listener(ln, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
+			fmt.Printf("Server listener exited: %v\n", err)
+		}
+	}()
+	return ln.Addr().String(), nil
+}
+
+// Shutdown gracefully stops the server. Intended for tests; production code
+// should use Run() which installs its own signal-driven shutdown.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.app.ShutdownWithContext(ctx)
 }
