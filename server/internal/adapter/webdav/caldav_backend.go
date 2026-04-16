@@ -366,7 +366,18 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
+	// emersion/go-webdav dispatches every DELETE through this method,
+	// including DELETE on the calendar collection itself. Detect that
+	// case by path shape ("/dav/{user}/calendars/{cal}/" has no object
+	// segment) and delete the whole calendar. Only the owner may.
 	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 5 {
+		if perm != calendar.PermissionOwner {
+			return webdav.NewHTTPError(http.StatusForbidden, nil)
+		}
+		return b.calendarRepo.Delete(ctx, c.ID)
+	}
+
 	objPath := parts[4]
 
 	obj, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)

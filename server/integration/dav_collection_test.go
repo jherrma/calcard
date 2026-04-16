@@ -120,9 +120,109 @@ func TestDAVMkcolAddressBook(t *testing.T) {
 	assert.True(t, found, "DAV-created addressbook must be visible in REST /addressbooks list")
 }
 
+// TestDAVMkcalendar creates a calendar using the RFC 4791 MKCALENDAR method
+// (not generic MKCOL). emersion/go-webdav only dispatches MKCOL natively, so
+// our handler normalises MKCALENDAR to MKCOL before handing off — this test
+// guards that normalisation. Real clients that send MKCALENDAR include some
+// older Apple Calendar versions.
+func TestDAVMkcalendar(t *testing.T) {
+	email := "mkcalendar@example.test"
+	password := "mkcalSecret!123"
+	token, username := registerAndLoginFull(t, email, password, "Mkcalendar User")
+	_, appPass := createAppPassword(t, token, "mkcalendar-test")
+
+	slug := "mkcal-" + time.Now().Format("20060102t150405")
+	path := "/dav/" + username + "/calendars/" + slug + "/"
+
+	// RFC 4791 §5.3.1 — MKCALENDAR body is optional, but most clients send a
+	// prop-set with displayname. The server only needs the method itself to
+	// reach CreateCalendar; the body is parsed by emersion's MKCOL handler
+	// after we rewrite the method.
+	mkcalendar := `<?xml version="1.0" encoding="utf-8"?>
+<C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:set>
+    <D:prop>
+      <D:displayname>Mkcalendar Test</D:displayname>
+    </D:prop>
+  </D:set>
+</C:mkcalendar>`
+
+	status, _, body := davCall(t, "MKCALENDAR", path, email, appPass, mkcalendar,
+		map[string]string{"Content-Type": "application/xml; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusOK, http.StatusNoContent}, status,
+		"MKCALENDAR should succeed: %d %s", status, string(body))
+
+	// The new calendar must appear in the REST list by slug.
+	var wrap struct {
+		Calendars []struct {
+			Path string `json:"path"`
+		} `json:"calendars"`
+	}
+	code := doJSONRaw(t, http.MethodGet, "/calendars/", token, nil, &wrap)
+	require.Equal(t, http.StatusOK, code)
+	found := false
+	for _, c := range wrap.Calendars {
+		if c.Path == slug {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "MKCALENDAR-created calendar must be visible in REST /calendars list (slug %q)", slug)
+}
+
+// TestDAVDeleteCalendar deletes a calendar collection via CalDAV DELETE.
+// emersion/go-webdav routes every DELETE through its Backend.DeleteCalendarObject
+// hook, so our backend inspects the path shape ("/dav/{user}/calendars/{cal}/"
+// has no object segment) and calls CalendarRepository.Delete directly.
+// Without this, clients that support "Remove Calendar" in their UI (Apple
+// Calendar does) would silently fail.
+func TestDAVDeleteCalendar(t *testing.T) {
+	email := "dav-del-cal@example.test"
+	password := "delCalSecret!123"
+	token, username := registerAndLoginFull(t, email, password, "DAV Del Cal")
+	_, appPass := createAppPassword(t, token, "dav-del-cal-test")
+
+	// Create a disposable calendar via REST so we have a known path to delete;
+	// the user still has their default "Personal" calendar and won't trip any
+	// last-calendar protection.
+	calID, calUUID := createCalendar(t, token, "ToBeDeleted", "#ee3344")
+	// REST-created calendars use `{uuid}.ics` as their URL path slug.
+	calPath := calUUID + ".ics"
+	collection := "/dav/" + username + "/calendars/" + calPath + "/"
+
+	// Sanity: PROPFIND sees it before we delete.
+	status, _, body := davCall(t, "PROPFIND", collection, email, appPass,
+		propfindCalendarBody, depthHeader("0"))
+	require.Equalf(t, http.StatusMultiStatus, status,
+		"PROPFIND before delete: %s", string(body))
+
+	// DELETE the collection.
+	status, _, body = davCall(t, "DELETE", collection, email, appPass, "", nil)
+	require.Containsf(t, []int{http.StatusOK, http.StatusNoContent}, status,
+		"DELETE calendar collection: %d %s", status, string(body))
+
+	// REST list must no longer contain the deleted calendar (by id).
+	var wrap struct {
+		Calendars []struct {
+			ID uint `json:"id"`
+		} `json:"calendars"`
+	}
+	code := doJSONRaw(t, http.MethodGet, "/calendars/", token, nil, &wrap)
+	require.Equal(t, http.StatusOK, code)
+	for _, c := range wrap.Calendars {
+		assert.NotEqualf(t, calID, c.ID,
+			"deleted calendar (id=%d) must not remain in the REST list", calID)
+	}
+
+	// Follow-up PROPFIND should 404 — subsequent syncs by real clients will
+	// see the collection vanish, which is the expected behaviour.
+	status, _, _ = davCall(t, "PROPFIND", collection, email, appPass,
+		propfindCalendarBody, depthHeader("0"))
+	assert.Equalf(t, http.StatusNotFound, status,
+		"PROPFIND after delete must 404, got %d", status)
+}
+
 // TestDAVDeleteAddressBook deletes an addressbook collection via DAV DELETE.
-// The CalDAV side does not expose a DeleteCalendar hook in the emersion
-// library, so this test is CardDAV-only.
 func TestDAVDeleteAddressBook(t *testing.T) {
 	email := "dav-del-ab@example.test"
 	password := "delSecret!123"

@@ -111,7 +111,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 
 	// Address Book Use Cases
 	abCreateUC := addressbookusecase.NewCreateUseCase(addressBookRepo)
-	abListUC := addressbookusecase.NewListUseCase(addressBookRepo)
+	abListUC := addressbookusecase.NewListUseCase(addressBookRepo, nil)
 	abGetUC := addressbookusecase.NewGetUseCase(addressBookRepo)
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
 	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)

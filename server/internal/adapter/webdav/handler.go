@@ -155,6 +155,19 @@ func (h *Handler) Handler() fiber.Handler {
 		stdCtx := WithUser(c.Context(), u)
 		reqPath := c.Path()
 
+		// MKCALENDAR (RFC 4791 §5.3.1) — some clients send this
+		// instead of MKCOL for calendar creation. emersion/go-webdav
+		// only dispatches MKCOL, so normalise here: the caldav backend
+		// treats both identically (CreateCalendar). The MKCALENDAR body
+		// is mkcalendar-rooted XML that emersion's MKCOL parser can't
+		// read, so we drop the body — displayname can be set by the
+		// client via PROPPATCH after creation (Apple Calendar, DAVx5).
+		if c.Method() == "MKCALENDAR" {
+			c.Request().Header.SetMethod("MKCOL")
+			c.Request().SetBody(nil)
+			c.Request().Header.SetContentLength(0)
+		}
+
 		// Handle WebDAV-Sync REPORT for CalDAV
 		if c.Method() == "REPORT" && strings.Contains(reqPath, "/calendars/") {
 			var syncQuery SyncCollectionQuery

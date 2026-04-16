@@ -249,7 +249,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	// Address Book Routes (Protected)
 	abCreateUC := addressbookusecase.NewCreateUseCase(addressBookRepo)
-	abListUC := addressbookusecase.NewListUseCase(addressBookRepo)
+	abListUC := addressbookusecase.NewListUseCase(addressBookRepo, abShareRepo)
 	abGetUC := addressbookusecase.NewGetUseCase(addressBookRepo)
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
 	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)

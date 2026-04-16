@@ -377,8 +377,9 @@ func TestEventHandler(t *testing.T) {
 		}
 
 		// Day 1, 2 should be "Splittable Series"
-		// Day 3, 4, 5, 6, 7 should be "Shared Future" (new series has COUNT=5)
+		// Day 3, 4, 5 should be "Shared Future" (new series has COUNT=3 because
+		// the old master consumes 2 of the original COUNT=5)
 		assert.Equal(t, 2, dayCounts["Splittable Series"], "Should have 2 instances of original summary")
-		assert.Equal(t, 5, dayCounts["Shared Future"], "Should have 5 instances of new summary")
+		assert.Equal(t, 3, dayCounts["Shared Future"], "Should have 3 instances of new summary")
 	})
 }

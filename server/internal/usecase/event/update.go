@@ -3,11 +3,13 @@ package event
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-ical"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/teambition/rrule-go"
 )
 
 type UpdateEventInput struct {
@@ -138,20 +140,46 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			newMaster.Props.Set(p)
 		}
 		if originalRRule != "" {
-			newMaster.Props.Set(&ical.Prop{
-				Name:  ical.PropRecurrenceRule,
-				Value: originalRRule,
-			})
-			// Adjust RRULE for new master (remove UNTIL)
-			newRRule := newMaster.Props.Get(ical.PropRecurrenceRule)
-			parts := strings.Split(newRRule.Value, ";")
-			var filtered []string
-			for _, p := range parts {
-				if !strings.HasPrefix(p, "UNTIL=") {
-					filtered = append(filtered, p)
+			// Count how many instances the old (truncated) master produces
+			// so the new master's COUNT can be reduced accordingly.
+			oldMasterInstances := 0
+			if mStart, err := master.DateTimeStart(time.UTC); err == nil {
+				truncatedRule := master.Props.Get(ical.PropRecurrenceRule)
+				if truncatedRule != nil {
+					if r, err := rrule.StrToRRule(truncatedRule.Value); err == nil {
+						r.DTStart(mStart)
+						// Count instances up to a generous horizon.
+						oldMasterInstances = len(r.Between(
+							mStart.Add(-time.Second), splitTime, true))
+					}
 				}
 			}
-			newRRule.Value = strings.Join(filtered, ";")
+
+			// Build the new master's RRULE from the original, stripping
+			// UNTIL (the new series runs from splitTime forward) and
+			// adjusting COUNT so the total stays correct.
+			parts := strings.Split(originalRRule, ";")
+			var filtered []string
+			for _, p := range parts {
+				if strings.HasPrefix(p, "UNTIL=") {
+					continue
+				}
+				if strings.HasPrefix(p, "COUNT=") && oldMasterInstances > 0 {
+					if orig, err := strconv.Atoi(strings.TrimPrefix(p, "COUNT=")); err == nil {
+						remaining := orig - oldMasterInstances
+						if remaining < 1 {
+							remaining = 1
+						}
+						filtered = append(filtered, fmt.Sprintf("COUNT=%d", remaining))
+						continue
+					}
+				}
+				filtered = append(filtered, p)
+			}
+			newMaster.Props.Set(&ical.Prop{
+				Name:  ical.PropRecurrenceRule,
+				Value: strings.Join(filtered, ";"),
+			})
 		}
 
 		cal.Children = append(cal.Children, newMaster.Component)
