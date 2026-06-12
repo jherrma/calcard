@@ -1,12 +1,16 @@
 package http
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	authUseCase "github.com/jherrma/caldav-server/internal/usecase/auth"
 )
@@ -16,6 +20,7 @@ type OAuthHandler struct {
 	callbackUC *authUseCase.OAuthCallbackUseCase
 	unlinkUC   *authUseCase.UnlinkProviderUseCase
 	listUC     *authUseCase.ListLinkedProvidersUseCase
+	cfg        *config.Config
 }
 
 func NewOAuthHandler(
@@ -23,12 +28,14 @@ func NewOAuthHandler(
 	callbackUC *authUseCase.OAuthCallbackUseCase,
 	unlinkUC *authUseCase.UnlinkProviderUseCase,
 	listUC *authUseCase.ListLinkedProvidersUseCase,
+	cfg *config.Config,
 ) *OAuthHandler {
 	return &OAuthHandler{
 		initiateUC: initiateUC,
 		callbackUC: callbackUC,
 		unlinkUC:   unlinkUC,
 		listUC:     listUC,
+		cfg:        cfg,
 	}
 }
 
@@ -149,14 +156,17 @@ func (h *OAuthHandler) List(c fiber.Ctx) error {
 
 func (h *OAuthHandler) setContextCookie(c fiber.Ctx, data oauthContext) {
 	b, _ := json.Marshal(data)
-	enc := base64.URLEncoding.EncodeToString(b)
+	payload := base64.URLEncoding.EncodeToString(b)
+	// HMAC-sign so the Action/UserID the callback trusts can't be forged or
+	// tampered with (the cookie travels through the browser).
+	value := payload + "." + h.cookieMAC(payload)
 
 	c.Cookie(&fiber.Cookie{
 		Name:     "oauth_context",
-		Value:    enc,
+		Value:    value,
 		Expires:  time.Now().Add(10 * time.Minute),
 		HTTPOnly: true,
-		Secure:   false, // Set to true in production/config
+		Secure:   h.secureCookies(),
 		SameSite: "Lax",
 	})
 }
@@ -167,7 +177,12 @@ func (h *OAuthHandler) getContextCookie(c fiber.Ctx) (*oauthContext, error) {
 		return nil, http.ErrNoCookie
 	}
 
-	b, err := base64.URLEncoding.DecodeString(val)
+	payload, mac, ok := strings.Cut(val, ".")
+	if !ok || !hmac.Equal([]byte(mac), []byte(h.cookieMAC(payload))) {
+		return nil, http.ErrNoCookie
+	}
+
+	b, err := base64.URLEncoding.DecodeString(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -178,4 +193,18 @@ func (h *OAuthHandler) getContextCookie(c fiber.Ctx) (*oauthContext, error) {
 	}
 
 	return &data, nil
+}
+
+// cookieMAC computes the base64 HMAC-SHA256 of the cookie payload, keyed on the
+// JWT secret.
+func (h *OAuthHandler) cookieMAC(payload string) string {
+	mac := hmac.New(sha256.New, []byte(h.cfg.JWT.Secret))
+	mac.Write([]byte(payload))
+	return base64.URLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// secureCookies reports whether the Secure cookie flag should be set, i.e. when
+// the server is reached over HTTPS (TLS terminated here, or an https base URL).
+func (h *OAuthHandler) secureCookies() bool {
+	return h.cfg.TLS.Enabled || strings.HasPrefix(strings.ToLower(h.cfg.BaseURL), "https://")
 }

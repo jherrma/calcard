@@ -200,7 +200,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	unlinkUC := authusecase.NewUnlinkProviderUseCase(oauthRepo, userRepo)
 	listLinkedUC := authusecase.NewListLinkedProvidersUseCase(oauthRepo, userRepo)
 
-	oauthHandler := http.NewOAuthHandler(initiateOAuthUC, oauthCallbackUC, unlinkUC, listLinkedUC)
+	oauthHandler := http.NewOAuthHandler(initiateOAuthUC, oauthCallbackUC, unlinkUC, listLinkedUC, cfg)
 
 	oauthGroup := v1.Group("/auth/oauth")
 	oauthGroup.Get("/providers", http.Authenticate(jwtManager, userRepo), oauthHandler.List) // List linked providers (auth required)

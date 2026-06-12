@@ -15,6 +15,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestOAuthHandler_CookieMACTamperDetection(t *testing.T) {
+	_, _, cfg := setupTestApp(t)
+	cfg.JWT.Secret = "test-secret-for-mac"
+	h := &OAuthHandler{cfg: cfg}
+
+	payload := "eyJzdGF0ZSI6ImFiYyIsImFjdGlvbiI6ImxpbmsiLCJ1c2VyX2lkIjo0Mn0"
+	mac := h.cookieMAC(payload)
+
+	// Same payload reproduces the same MAC.
+	assert.Equal(t, mac, h.cookieMAC(payload), "MAC must be deterministic")
+
+	// A tampered payload (e.g. attacker swaps in a different user_id) yields a
+	// different MAC, so hmac.Equal in getContextCookie would reject it.
+	tampered := "eyJzdGF0ZSI6ImFiYyIsImFjdGlvbiI6ImxpbmsiLCJ1c2VyX2lkIjo5OX0"
+	assert.NotEqual(t, mac, h.cookieMAC(tampered), "tampered payload must not validate")
+}
+
 func TestOAuthHandler_Lifecycle(t *testing.T) {
 	app, db, cfg := setupTestApp(t)
 	userRepo := repository.NewUserRepository(db.DB())

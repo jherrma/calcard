@@ -169,6 +169,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		oauthCallbackUC,
 		oauthUnlinkUC,
 		oauthListUC,
+		cfg,
 	)
 
 	healthHandler := NewHealthHandler(db)
