@@ -54,7 +54,7 @@ func (uc *PhotoUseCase) Upload(ctx context.Context, addressBookID uint, contactU
 	currentContact.PhotoType = photoType
 
 	// 4. To VCard
-	newVCardData, err := ToVCard(currentContact)
+	newVCardData, err := PatchVCard(obj.VCardData, currentContact)
 	if err != nil {
 		return fmt.Errorf("failed to encode updated vcard: %w", err)
 	}
@@ -86,7 +86,7 @@ func (uc *PhotoUseCase) Delete(ctx context.Context, addressBookID uint, contactU
 
 	currentContact.Photo = ""
 
-	newVCardData, err := ToVCard(currentContact)
+	newVCardData, err := PatchVCard(obj.VCardData, currentContact)
 	if err != nil {
 		return fmt.Errorf("failed to encode updated vcard: %w", err)
 	}

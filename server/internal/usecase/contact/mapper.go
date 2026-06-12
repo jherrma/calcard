@@ -92,11 +92,41 @@ func ToContact(vcardData string) (*contact.Contact, error) {
 	return c, nil
 }
 
-// ToVCard converts a Contact struct to vCard string
-func ToVCard(c *contact.Contact) (string, error) {
-	card := make(vcard.Card)
-	card.SetValue(vcard.FieldVersion, "3.0")
-	card.SetValue(vcard.FieldUID, c.UID)
+// managedVCardFields are exactly the properties applyContactToCard writes.
+// PatchVCard clears these before re-writing them, so a web-UI edit refreshes
+// the managed values while leaving every other property (CATEGORIES, X-*,
+// IMPP, grouped props, …) untouched. VERSION and UID are deliberately NOT
+// listed: VERSION is set only when absent and UID only when the contact
+// carries one, so an existing card's identity is never clobbered.
+var managedVCardFields = []string{
+	vcard.FieldFormattedName,
+	vcard.FieldName,
+	vcard.FieldNickname,
+	vcard.FieldOrganization,
+	vcard.FieldTitle,
+	vcard.FieldBirthday,
+	vcard.FieldNote,
+	vcard.FieldEmail,
+	vcard.FieldTelephone,
+	vcard.FieldAddress,
+	vcard.FieldURL,
+	vcard.FieldPhoto,
+	vcard.FieldRevision,
+}
+
+// applyContactToCard writes the managed contact fields onto card, replacing any
+// existing managed values but preserving unmanaged properties already present.
+func applyContactToCard(card vcard.Card, c *contact.Contact) {
+	for _, f := range managedVCardFields {
+		delete(card, f)
+	}
+
+	if card.Value(vcard.FieldVersion) == "" {
+		card.SetValue(vcard.FieldVersion, "3.0")
+	}
+	if c.UID != "" {
+		card.SetValue(vcard.FieldUID, c.UID)
+	}
 	card.SetValue(vcard.FieldFormattedName, c.FormattedName)
 
 	// Name
@@ -198,10 +228,31 @@ func ToVCard(c *contact.Contact) (string, error) {
 
 	// Revision
 	card.SetValue(vcard.FieldRevision, time.Now().Format("20060102T150405Z"))
+}
 
+// ToVCard converts a Contact struct to a fresh vCard string (create path).
+func ToVCard(c *contact.Contact) (string, error) {
+	card := make(vcard.Card)
+	applyContactToCard(card, c)
+	return encodeCard(card)
+}
+
+// PatchVCard applies the managed fields of c onto an existing vCard blob,
+// preserving every unmanaged property (CATEGORIES, X-*, IMPP, grouped props,
+// custom params) that a web-UI edit would otherwise silently drop. Falls back
+// to a fresh ToVCard when the existing data can't be decoded.
+func PatchVCard(existingVCardData string, c *contact.Contact) (string, error) {
+	card, err := vcard.NewDecoder(strings.NewReader(existingVCardData)).Decode()
+	if err != nil {
+		return ToVCard(c)
+	}
+	applyContactToCard(card, c)
+	return encodeCard(card)
+}
+
+func encodeCard(card vcard.Card) (string, error) {
 	var buf bytes.Buffer
-	enc := vcard.NewEncoder(&buf)
-	if err := enc.Encode(card); err != nil {
+	if err := vcard.NewEncoder(&buf).Encode(card); err != nil {
 		return "", err
 	}
 	return buf.String(), nil

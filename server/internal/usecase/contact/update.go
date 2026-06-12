@@ -99,8 +99,9 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, addressBookID uint, contac
 		currentContact.URLs = *input.URLs
 	}
 
-	// 4. Serialize back to vCard
-	newVCardData, err := ToVCard(currentContact)
+	// 4. Serialize back to vCard, preserving any properties the web UI doesn't
+	// manage (CATEGORIES, X-*, IMPP, grouped props, …).
+	newVCardData, err := PatchVCard(obj.VCardData, currentContact)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode updated vcard: %w", err)
 	}
