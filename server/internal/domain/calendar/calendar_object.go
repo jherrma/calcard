@@ -22,7 +22,13 @@ type CalendarObject struct {
 	Location      string         `gorm:"size:500" json:"location"`     // Denormalized
 	StartTime     *time.Time     `gorm:"index" json:"start_time"`      // Denormalized
 	EndTime       *time.Time     `json:"end_time"`
-	IsAllDay      bool           `json:"is_all_day"`
+	// RecurrenceEndTime: instant after which a recurring series yields no more
+	// occurrences (last occurrence's end; far-future for unbounded). NULL for
+	// non-recurring objects. Maintained by PopulateDenormFieldsFromICal and used
+	// by ListEvents so recurring events remain visible in windows past their
+	// first occurrence. Not exposed in JSON.
+	RecurrenceEndTime *time.Time `json:"-"`
+	IsAllDay          bool       `json:"is_all_day"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
