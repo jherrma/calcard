@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,17 +128,6 @@ func (c *DatabaseConfig) IsPostgres() bool {
 	return c.Driver == "postgres"
 }
 
-// generateJWTSecret generates a secure random JWT secret
-func generateJWTSecret() (string, error) {
-	// Generate 32 random bytes (256 bits) which will be base64 encoded to ~43 characters
-	b := make([]byte, 32)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate random JWT secret: %w", err)
-	}
-	return base64.URLEncoding.EncodeToString(b), nil
-}
-
 // Load initialization the configuration from environment variables and an optional YAML file
 func Load(configPath string) (*Config, error) {
 	// 0. Load .env files if they exist
@@ -226,16 +213,10 @@ func Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse environment variables: %w", err)
 	}
 
-	// 3. Generate JWT secret if not provided
-	if cfg.JWT.Secret == "" {
-		secret, err := generateJWTSecret()
-		if err != nil {
-			return nil, err
-		}
-		cfg.JWT.Secret = secret
-		fmt.Fprintf(os.Stderr, "WARNING: No JWT secret provided. Generated a random secret for this session.\n")
-		fmt.Fprintf(os.Stderr, "         To persist this secret, set CALDAV_JWT_SECRET=%s\n", secret)
-	}
+	// An unset JWT secret is left empty here on purpose: JWTManager.EnsureSecret
+	// loads it from (or generates and persists it to) system_settings at startup,
+	// so it survives restarts. Generating one here would shadow that and mint a
+	// fresh secret every boot, invalidating all existing tokens.
 
 	// Auto-detect PostgreSQL mode
 	if cfg.Database.Host != "" {
@@ -256,14 +237,16 @@ func Load(configPath string) (*Config, error) {
 func (c *Config) Validate() error {
 	var errs []string
 
-	if c.JWT.Secret == "" {
-		errs = append(errs, "CALDAV_JWT_SECRET must be set (this should have been auto-generated)")
-	}
-	if c.JWT.Secret == "change-me-in-production" {
-		errs = append(errs, "CALDAV_JWT_SECRET must be set to a secure value (default value is insecure)")
-	}
-	if len(c.JWT.Secret) < 16 {
-		errs = append(errs, "CALDAV_JWT_SECRET must be at least 16 characters")
+	// An empty secret is allowed at validation time: JWTManager.EnsureSecret
+	// fills it from system_settings (loading or generating+persisting) during
+	// startup. Only reject an explicitly-provided secret that is insecure.
+	if c.JWT.Secret != "" {
+		if c.JWT.Secret == "change-me-in-production" {
+			errs = append(errs, "CALDAV_JWT_SECRET must be set to a secure value (default value is insecure)")
+		}
+		if len(c.JWT.Secret) < 16 {
+			errs = append(errs, "CALDAV_JWT_SECRET must be at least 16 characters")
+		}
 	}
 	if c.BaseURL == "" {
 		errs = append(errs, "CALDAV_BASE_URL must be set")

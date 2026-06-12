@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"time"
 
@@ -46,9 +47,11 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	emailService := email.NewEmailService(cfg.SMTP)
 	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
 
-	// Ensure JWT Secret
+	// Ensure JWT Secret. This loads the persisted secret from system_settings
+	// (or generates and persists one on first boot). It must succeed — running
+	// with an empty secret would sign every token with "" and accept forgeries.
 	if err := jwtManager.EnsureSecret(context.Background(), systemRepo); err != nil {
-		fmt.Printf("failed to ensure JWT secret: %v\n", err)
+		log.Fatalf("failed to ensure JWT secret: %v", err)
 	}
 
 	// Logging
