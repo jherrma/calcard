@@ -9,6 +9,7 @@ import (
 	"github.com/emersion/go-ical"
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/teambition/rrule-go"
 )
 
 type CreateEventInput struct {
@@ -32,6 +33,15 @@ func NewCreateEventUseCase(calendarRepo calendar.CalendarRepository) *CreateEven
 }
 
 func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInput) (*calendar.CalendarObject, error) {
+	if input.End.Before(input.Start) {
+		return nil, fmt.Errorf("%w: end time is before start time", ErrInvalidInput)
+	}
+	if input.RRule != "" {
+		if _, err := rrule.StrToRRule(input.RRule); err != nil {
+			return nil, fmt.Errorf("%w: invalid recurrence rule: %v", ErrInvalidInput, err)
+		}
+	}
+
 	eventUUID := uuid.New().String()
 	eventUID := fmt.Sprintf("%s@calcard.io", eventUUID)
 

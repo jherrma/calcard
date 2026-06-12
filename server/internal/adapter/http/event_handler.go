@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
@@ -200,6 +201,9 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 
 	obj, err := h.createUC.Execute(c.Context(), input)
 	if err != nil {
+		if errors.Is(err, event.ErrInvalidInput) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to create event")
 	}
 
@@ -260,6 +264,9 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 
 	obj, err := h.updateUC.Execute(c.Context(), input)
 	if err != nil {
+		if errors.Is(err, event.ErrInvalidInput) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update event")
 	}
 
@@ -295,6 +302,9 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 	recurrenceID := c.Query("recurrence_id")
 
 	if err := h.deleteUC.Execute(c.Context(), eventID, scope, recurrenceID); err != nil {
+		if errors.Is(err, event.ErrInvalidInput) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to delete event")
 	}
 
