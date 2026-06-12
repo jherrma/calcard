@@ -308,7 +308,7 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 		version = "3.0"
 	}
 
-	etag := fmt.Sprintf("\"%s\"", addressbook.GenerateSyncToken())
+	etag := addressbook.NewETag()
 
 	// Check if object exists
 	existingObjects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "", "")

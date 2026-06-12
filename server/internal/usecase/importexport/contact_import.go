@@ -98,7 +98,7 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 			AddressBookID: addressBookID,
 			UID:           uid,
 			Path:          fmt.Sprintf("%s.vcf", uid),
-			ETag:          fmt.Sprintf("\"%d\"", time.Now().UnixNano()),
+			ETag:          fmt.Sprintf("%d", time.Now().UnixNano()),
 			VCardData:     vcardData,
 			VCardVersion:  "3.0",
 			ContentLength: len(vcardData),

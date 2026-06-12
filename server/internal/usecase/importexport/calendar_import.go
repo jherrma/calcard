@@ -202,9 +202,10 @@ func extractComponentBlock(icalData, componentName string) string {
 	return icalData[startIdx : endIdx+len(endTag)+2] // +2 for \r\n
 }
 
-// generateETag generates a unique ETag
+// generateETag generates a unique ETag. Stored UNQUOTED — the transport layer
+// adds the surrounding quotes when serializing.
 func generateETag() string {
-	return fmt.Sprintf("\"%d\"", time.Now().UnixNano())
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 // extractEventTimes pulls DTSTART / DTEND out of a VEVENT/VTODO component and

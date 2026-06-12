@@ -34,6 +34,13 @@ func GenerateCTag() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
+// NewETag generates a new ETag value. The value is stored UNQUOTED; the
+// transport layer (go-webdav, and the hand-rolled sync REPORT) adds the
+// surrounding quotes when serializing. Never store a quoted ETag.
+func NewETag() string {
+	return GenerateSyncToken()
+}
+
 // UpdateSyncTokens updates both sync token and ctag
 func (ab *AddressBook) UpdateSyncTokens() {
 	ab.SyncToken = GenerateSyncToken()

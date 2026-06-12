@@ -318,7 +318,7 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		return nil, err
 	}
 	data := icalData.String()
-	etag := fmt.Sprintf("\"%s\"", calendar.GenerateSyncToken())
+	etag := calendar.NewETag()
 
 	var obj *calendar.CalendarObject
 	if existing != nil {
