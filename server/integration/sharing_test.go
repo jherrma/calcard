@@ -126,6 +126,15 @@ func TestCalendarSharing(t *testing.T) {
 	for _, c := range targetList.Calendars {
 		assert.NotEqualf(t, calUUID, c.UUID, "revoked calendar must disappear from target's list")
 	}
+
+	// --- Re-sharing the same (calendar, user) pair must work (H6) ---------
+	// Revoke soft-deleted the row before the fix, and the composite unique
+	// index (calendar_id, shared_with_id) then permanently blocked re-sharing.
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken, map[string]string{
+		"user_identifier": targetEmail,
+		"permission":      "read",
+	}, &createResp)
+	require.Equalf(t, http.StatusCreated, code, "must be able to re-share the same calendar with the same user after revoke")
 }
 
 // TestAddressBookSharing walks the same lifecycle for address books. The
