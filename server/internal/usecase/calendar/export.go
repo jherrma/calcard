@@ -45,15 +45,12 @@ func (uc *ExportCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		icalContent += fmt.Sprintf("X-WR-CALDESC:%s\r\n", cal.Description)
 	}
 
-	// Add all calendar objects (events/todos)
+	// Add all calendar objects (events/todos). obj.ICalData is now stored as a
+	// full VCALENDAR (import/PUT wrap it), so strip that wrapper and append only
+	// the VEVENT/VTODO block — otherwise we'd nest a VCALENDAR inside this one
+	// and produce an unparseable feed. The helper guarantees a trailing CRLF.
 	for _, obj := range objects {
-		// The ICalData field already contains the complete VEVENT or VTODO block
-		// Just append it to the calendar
-		icalContent += obj.ICalData
-		// Ensure proper line ending
-		if len(obj.ICalData) > 0 && obj.ICalData[len(obj.ICalData)-1] != '\n' {
-			icalContent += "\r\n"
-		}
+		icalContent += calendar.StripVCalendarWrapper(obj.ICalData)
 	}
 
 	icalContent += "END:VCALENDAR\r\n"

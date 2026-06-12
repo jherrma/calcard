@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-ical"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +52,13 @@ func TestCalendarExportEndpoint(t *testing.T) {
 	assert.Contains(t, body, "END:VCALENDAR")
 	assert.Contains(t, body, "UID:"+ev.UID, "feed must include the seeded event's UID")
 	assert.Contains(t, body, "SUMMARY:Exportable Event", "feed must include the seeded event's summary")
+
+	// H12: events are now stored as full VCALENDARs, so the exporter must strip
+	// each wrapper — the feed must carry exactly one VCALENDAR and decode.
+	assert.Equalf(t, 1, strings.Count(body, "BEGIN:VCALENDAR"),
+		"export must contain exactly one VCALENDAR wrapper, not nested ones:\n%s", body)
+	_, derr := ical.NewDecoder(strings.NewReader(body)).Decode()
+	assert.NoErrorf(t, derr, "exported feed must be a decodable VCALENDAR: %v", derr)
 }
 
 // TestDeleteLastCalendarGuard asserts the server refuses to delete the
