@@ -74,3 +74,32 @@ func TestAppPasswordRevocation(t *testing.T) {
 	status, _, _ = davCall(t, "PROPFIND", "/dav/", email, pass1, propfindPrincipalBody, depthHeader("0"))
 	assert.Equal(t, http.StatusMultiStatus, status, "keep-me: must still work after revoking the other credential")
 }
+
+// TestAppPasswordRevokeOwnership is the regression test for the IDOR in app
+// password revocation (H1): a user must not be able to revoke another user's
+// app password by its UUID.
+func TestAppPasswordRevokeOwnership(t *testing.T) {
+	aliceEmail := "ap-alice@example.test"
+	aliceToken := registerAndLogin(t, aliceEmail, "alicePass!123", "AP Alice")
+	_, alicePass := createAppPassword(t, aliceToken, "alice-cred")
+
+	// Find Alice's app password UUID.
+	var list struct {
+		AppPasswords []struct {
+			ID string `json:"id"`
+		} `json:"app_passwords"`
+	}
+	require.Equal(t, http.StatusOK, doJSON(t, http.MethodGet, "/app-passwords/", aliceToken, nil, &list))
+	require.Len(t, list.AppPasswords, 1)
+	aliceAPUUID := list.AppPasswords[0].ID
+
+	// Bob tries to revoke Alice's app password.
+	bobToken := registerAndLogin(t, "ap-bob@example.test", "bobPass!123", "AP Bob")
+	status, _ := restCall(t, http.MethodDelete, "/app-passwords/"+aliceAPUUID, bobToken, nil)
+	assert.Equalf(t, http.StatusNotFound, status,
+		"cross-user app password revoke must be rejected with 404, got %d", status)
+
+	// Alice's app password must still authenticate DAV — Bob's attempt was a no-op.
+	status, _, _ = davCall(t, "PROPFIND", "/dav/", aliceEmail, alicePass, propfindPrincipalBody, depthHeader("0"))
+	assert.Equal(t, http.StatusMultiStatus, status, "Alice's credential must survive Bob's revoke attempt")
+}

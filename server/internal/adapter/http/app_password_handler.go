@@ -1,6 +1,8 @@
 package http
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 	"github.com/jherrma/caldav-server/internal/config"
@@ -107,12 +109,15 @@ func (h *AppPasswordHandler) List(c fiber.Ctx) error {
 // Revoke (DELETE /api/v1/app-passwords/{id})
 func (h *AppPasswordHandler) Revoke(c fiber.Ctx) error {
 	appPwdUUID := c.Params("id")
-	userUUID, ok := c.Locals("user_uuid").(string)
+	userID, ok := c.Locals("user_id").(uint)
 	if !ok {
 		return UnauthorizedResponse(c, "Unauthorized")
 	}
 
-	if err := h.revokeUC.Execute(c.Context(), userUUID, appPwdUUID, c.IP(), c.Get("User-Agent")); err != nil {
+	if err := h.revokeUC.Execute(c.Context(), userID, appPwdUUID, c.IP(), c.Get("User-Agent")); err != nil {
+		if errors.Is(err, apppassword.ErrNotFound) {
+			return ErrorResponse(c, fiber.StatusNotFound, "App password not found")
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to revoke app password")
 	}
 
