@@ -228,9 +228,8 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	if input.Summary != nil {
-		if input.Scope == "all" {
-			obj.Summary = *input.Summary
-		}
+		// Denormalized obj.Summary is rederived by PopulateDenormFieldsFromICal
+		// after re-encoding; only the iCal property needs setting here.
 		targetEvent.Props.SetText(ical.PropSummary, *input.Summary)
 	}
 
@@ -272,22 +271,16 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	if input.Start != nil {
 		if t, err := time.Parse(time.RFC3339, *input.Start); err == nil {
 			effectiveStart = t
-			if input.Scope == "all" {
-				obj.StartTime = &effectiveStart
-			}
 		} else {
-			return nil, fmt.Errorf("invalid start time format: %w", err)
+			return nil, fmt.Errorf("%w: invalid start time format: %v", ErrInvalidInput, err)
 		}
 	}
 
 	if input.End != nil {
 		if t, err := time.Parse(time.RFC3339, *input.End); err == nil {
 			effectiveEnd = t
-			if input.Scope == "all" {
-				obj.EndTime = &effectiveEnd
-			}
 		} else {
-			return nil, fmt.Errorf("invalid end time format: %w", err)
+			return nil, fmt.Errorf("%w: invalid end time format: %v", ErrInvalidInput, err)
 		}
 	}
 
@@ -308,12 +301,19 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		targetEvent.Props.SetDateTime(ical.PropDateTimeEnd, effectiveEnd)
 	}
 
+	if effectiveEnd.Before(effectiveStart) {
+		return nil, fmt.Errorf("%w: end time is before start time", ErrInvalidInput)
+	}
+
 	if input.RRule != nil {
 		// RRULE usually only makes sense on the master event
 		if input.Scope == "all" {
 			if *input.RRule == "" {
 				targetEvent.Props.Del(ical.PropRecurrenceRule)
 			} else {
+				if _, err := rrule.StrToRRule(*input.RRule); err != nil {
+					return nil, fmt.Errorf("%w: invalid recurrence rule: %v", ErrInvalidInput, err)
+				}
 				targetEvent.Props.Set(&ical.Prop{
 					Name:  ical.PropRecurrenceRule,
 					Value: *input.RRule,
@@ -331,6 +331,12 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		return nil, fmt.Errorf("failed to encode iCalendar: %w", err)
 	}
 	obj.ICalData = sb.String()
+	// Rederive all denormalized columns (incl. recurrence_end_time) and bump the
+	// ETag so DAV clients re-fetch the edited event.
+	if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	obj.ETag = calendar.NewETag()
 
 	err = uc.calendarRepo.UpdateCalendarObject(ctx, obj)
 	if err != nil {

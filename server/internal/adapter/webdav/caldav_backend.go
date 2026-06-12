@@ -290,28 +290,6 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		}
 	}
 
-	// Extract metadata
-	summary := ""
-	var startTime, endTime *time.Time
-	for _, comp := range icalCal.Children {
-		if comp.Name == ical.CompEvent {
-			if prop := comp.Props.Get(ical.PropSummary); prop != nil {
-				summary = prop.Value
-			}
-			if prop := comp.Props.Get(ical.PropDateTimeStart); prop != nil {
-				if t, err := prop.DateTime(time.UTC); err == nil {
-					startTime = &t
-				}
-			}
-			if prop := comp.Props.Get(ical.PropDateTimeEnd); prop != nil {
-				if t, err := prop.DateTime(time.UTC); err == nil {
-					endTime = &t
-				}
-			}
-			break
-		}
-	}
-
 	var icalData strings.Builder
 	if err := ical.NewEncoder(&icalData).Encode(icalCal); err != nil {
 		return nil, err
@@ -323,27 +301,26 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 	if existing != nil {
 		existing.ICalData = data
 		existing.ETag = etag
-		existing.ContentLength = len(data)
-		existing.Summary = summary
-		existing.StartTime = startTime
-		existing.EndTime = endTime
+		// Rederive all denormalized columns (component type, times,
+		// recurrence_end_time, content length) from the stored data.
+		if err := existing.PopulateDenormFieldsFromICal(); err != nil {
+			return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
+		}
 		if err := b.calendarRepo.UpdateCalendarObject(ctx, existing); err != nil {
 			return nil, err
 		}
 		obj = existing
 	} else {
 		newObj := &calendar.CalendarObject{
-			UUID:          uuid.New().String(),
-			CalendarID:    c.ID,
-			Path:          objPath,
-			UID:           uid,
-			ETag:          etag,
-			ComponentType: "VEVENT",
-			ICalData:      data,
-			ContentLength: len(data),
-			Summary:       summary,
-			StartTime:     startTime,
-			EndTime:       endTime,
+			UUID:       uuid.New().String(),
+			CalendarID: c.ID,
+			Path:       objPath,
+			UID:        uid,
+			ETag:       etag,
+			ICalData:   data,
+		}
+		if err := newObj.PopulateDenormFieldsFromICal(); err != nil {
+			return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
 		}
 		if err := b.calendarRepo.CreateCalendarObject(ctx, newObj); err != nil {
 			return nil, err

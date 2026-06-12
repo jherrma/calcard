@@ -89,6 +89,12 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return fmt.Errorf("failed to encode iCalendar data: %w", err)
 		}
 		obj.ICalData = sb.String()
+		// Rederive denorm columns (recurrence_end_time shrinks when an UNTIL was
+		// written) and bump the ETag so DAV clients re-fetch.
+		if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+			return fmt.Errorf("failed to derive denormalized fields: %w", err)
+		}
+		obj.ETag = calendar.NewETag()
 
 		return uc.calendarRepo.UpdateCalendarObject(ctx, obj)
 	}
@@ -164,6 +170,12 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return fmt.Errorf("failed to encode iCalendar data: %w", err)
 		}
 		obj.ICalData = sb.String()
+		// Rederive denorm columns (recurrence_end_time shrinks when an UNTIL was
+		// written) and bump the ETag so DAV clients re-fetch.
+		if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+			return fmt.Errorf("failed to derive denormalized fields: %w", err)
+		}
+		obj.ETag = calendar.NewETag()
 
 		return uc.calendarRepo.UpdateCalendarObject(ctx, obj)
 	}

@@ -59,18 +59,17 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 	}
 
 	obj := &calendar.CalendarObject{
-		UUID:          eventUUID,
-		CalendarID:    input.CalendarID,
-		UID:           eventUID,
-		Path:          fmt.Sprintf("%s.ics", eventUUID),
-		ComponentType: "VEVENT",
-		Summary:       input.Summary,
-		Description:   input.Description,
-		Location:      input.Location,
-		StartTime:     &input.Start,
-		EndTime:       &input.End,
-		IsAllDay:      input.IsAllDay,
-		ICalData:      icalData,
+		UUID:       eventUUID,
+		CalendarID: input.CalendarID,
+		UID:        eventUID,
+		Path:       fmt.Sprintf("%s.ics", eventUUID),
+		ETag:       calendar.NewETag(),
+		ICalData:   icalData,
+	}
+	// Derive all denormalized columns (incl. recurrence_end_time, so recurring
+	// events stay visible past their first occurrence) from the stored data.
+	if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
 	err = uc.calendarRepo.CreateCalendarObject(ctx, obj)

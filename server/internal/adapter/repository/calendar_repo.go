@@ -203,9 +203,13 @@ func (r *CalendarRepository) GetCalendarObjectByUUID(ctx context.Context, uuid s
 // ListEvents retrieves calendar objects within a time range
 func (r *CalendarRepository) ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*calendar.CalendarObject, error) {
 	var objects []*calendar.CalendarObject
+	// For recurring masters, end_time holds only the FIRST occurrence's end;
+	// recurrence_end_time holds the last occurrence's end (far-future for
+	// unbounded series). COALESCE keeps recurring events visible in windows
+	// past their first occurrence while leaving non-recurring rows unchanged.
 	err := r.db.WithContext(ctx).
 		Where("calendar_id = ?", calendarID).
-		Where("start_time < ? AND end_time > ?", end, start).
+		Where("start_time < ? AND COALESCE(recurrence_end_time, end_time) > ?", end, start).
 		Order("start_time ASC, created_at ASC").
 		Find(&objects).Error
 	return objects, err
