@@ -309,6 +309,73 @@ func listEventsDetailed(t *testing.T, token string, calID uint, rangeQS string) 
 	return resp.Events
 }
 
+// TestThisAndFutureGarbageRecurrenceID is the regression test for M9: a
+// this_and_future update or delete with an unparseable recurrence_id must be
+// rejected with 400, not silently split the series at the zero time (which
+// wrote UNTIL=00010101… and erased every occurrence). It also confirms an
+// all-day this_and_future split still works.
+func TestThisAndFutureGarbageRecurrenceID(t *testing.T) {
+	email := "rrule-garbage@example.test"
+	password := "rruleSecret!123"
+	token := registerAndLogin(t, email, password, "Rrule Garbage User")
+
+	calID, _ := createCalendar(t, token, "Garbage Recurrence", "#334455")
+
+	start := time.Date(2034, 5, 1, 10, 0, 0, 0, time.UTC) // a Monday
+	var ev struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/events/", token, map[string]any{
+		"summary": "Weekly standup", "start": start.Format(time.RFC3339),
+		"end": start.Add(time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
+		"recurrence": map[string]any{"frequency": "WEEKLY", "count": 4},
+	}, &ev)
+	require.Equal(t, http.StatusCreated, code)
+
+	rangeQS := "?start=2034-04-01T00:00:00Z&end=2034-07-01T00:00:00Z&expand=true"
+	require.Len(t, listEvents(t, token, calID, rangeQS), 4)
+
+	// Garbage recurrence_id on a this_and_future update → 400.
+	status, raw := restCall(t, http.MethodPatch,
+		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=not-a-date", calID, ev.ID),
+		token, map[string]any{"summary": "Hijack"})
+	assert.Equalf(t, http.StatusBadRequest, status, "garbage recurrence_id update must be 400: %s", errorMessage(raw))
+
+	// Garbage recurrence_id on a this_and_future delete → 400.
+	status, raw = restCall(t, http.MethodDelete,
+		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=not-a-date", calID, ev.ID),
+		token, nil)
+	assert.Equalf(t, http.StatusBadRequest, status, "garbage recurrence_id delete must be 400: %s", errorMessage(raw))
+
+	// The series must be completely intact — nothing got wiped.
+	assert.Len(t, listEvents(t, token, calID, rangeQS), 4, "series must survive the rejected operations")
+
+	// An all-day weekly series can still be split via this_and_future.
+	allDayStart := time.Date(2034, 6, 5, 0, 0, 0, 0, time.UTC)
+	var allDay struct {
+		ID string `json:"id"`
+	}
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/events/", token, map[string]any{
+		"summary": "All day series", "start": allDayStart.Format(time.RFC3339),
+		"end": allDayStart.Add(24 * time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": true,
+		"recurrence": map[string]any{"frequency": "DAILY", "count": 4},
+	}, &allDay)
+	require.Equal(t, http.StatusCreated, code)
+
+	// This June window captures only the all-day series (the weekly one is in May).
+	adRange := "?start=2034-06-01T00:00:00Z&end=2034-06-30T00:00:00Z&expand=true"
+	require.Len(t, listEvents(t, token, calID, adRange), 4, "all-day series should produce 4 occurrences")
+
+	// Split the all-day series at the 3rd occurrence (June 7). The recurrence_id
+	// the list hands out is what a client passes back.
+	splitRID := allDayStart.Add(2 * 24 * time.Hour).UTC().Format("20060102T150405Z")
+	status, raw = restCall(t, http.MethodDelete,
+		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=%s", calID, allDay.ID, splitRID),
+		token, nil)
+	require.Equalf(t, http.StatusNoContent, status, "all-day this_and_future split must succeed: %s", errorMessage(raw))
+	assert.Len(t, listEvents(t, token, calID, adRange), 2, "all-day split must retain only the two occurrences before June 7")
+}
+
 // listEvents is a thin wrapper around GET /calendars/:id/events returning
 // the decoded events payload. Used by the recurrence tests to count the
 // remaining instances after a scoped delete.

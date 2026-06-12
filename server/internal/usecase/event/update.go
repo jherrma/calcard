@@ -115,11 +115,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			return nil, fmt.Errorf("master event not found for split")
 		}
 
-		// 2. Format split time for UNTIL (one second before split)
-		splitTime, err := time.Parse("20060102T150405Z", input.RecurrenceID)
+		// 2. Format split time for UNTIL (one second before split). Fail loudly
+		// on an unparseable RECURRENCE-ID rather than splitting at the zero time
+		// (which would write UNTIL=0001-… and wipe the series). The helper also
+		// accepts the VALUE=DATE form, so all-day splits work.
+		splitTime, err := calendar.ParseRecurrenceIDString(input.RecurrenceID)
 		if err != nil {
-			// Try without Z if necessary, but DTO uses Z
-			splitTime, _ = time.Parse("20060102T150405", input.RecurrenceID)
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		untilTime := splitTime.Add(-time.Second)
 		untilStr := untilTime.UTC().Format("20060102T150405Z")

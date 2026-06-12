@@ -138,10 +138,13 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return uc.calendarRepo.DeleteCalendarObject(ctx, obj)
 		}
 
-		// 3. Format split time for UNTIL (one second before split)
-		splitTime, _ := time.Parse("20060102T150405Z", recurrenceID)
-		if splitTime.IsZero() {
-			splitTime, _ = time.Parse("20060102T150405", recurrenceID)
+		// 3. Format split time for UNTIL (one second before split). Fail loudly
+		// on an unparseable RECURRENCE-ID rather than terminating at the zero
+		// time (which would write UNTIL=0001-… and wipe the series). The helper
+		// also accepts the VALUE=DATE form, so all-day splits work.
+		splitTime, err := calendar.ParseRecurrenceIDString(recurrenceID)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		untilTime := splitTime.Add(-time.Second)
 		untilStr := untilTime.UTC().Format("20060102T150405Z")
