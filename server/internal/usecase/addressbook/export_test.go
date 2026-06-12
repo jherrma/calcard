@@ -68,7 +68,7 @@ func (m *mockRepo) QueryObjects(ctx context.Context, addressBookID uint, query *
 func (m *mockRepo) GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*addressbook.SyncChangeLog, error) {
 	return nil, nil
 }
-func (m *mockRepo) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
+func (m *mockRepo) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType string) error {
 	return nil
 }
 func (m *mockRepo) CountContactsByUserID(ctx context.Context, userID uint) (int64, error) {

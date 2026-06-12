@@ -98,6 +98,9 @@ func (m *mockCalendarRepo) DeleteCalendarObject(ctx context.Context, obj *calend
 func (m *mockCalendarRepo) GetChangesSinceToken(ctx context.Context, cid uint, t string) ([]*calendar.SyncChangeLog, error) {
 	return nil, nil
 }
+func (m *mockCalendarRepo) RecordChange(ctx context.Context, cid uint, path, uid, changeType string) error {
+	return nil
+}
 func (m *mockCalendarRepo) ListEvents(ctx context.Context, cid uint, s, e time.Time) ([]*calendar.CalendarObject, error) {
 	return nil, nil
 }

@@ -40,5 +40,5 @@ type Repository interface {
 
 	// Sync-related methods for WebDAV-Sync (RFC 6578)
 	GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*SyncChangeLog, error)
-	RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error
+	RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType string) error
 }

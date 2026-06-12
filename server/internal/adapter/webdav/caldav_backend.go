@@ -161,8 +161,7 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 		Timezone:            "UTC",
 		SupportedComponents: "VEVENT,VTODO",
 	}
-	c.UpdateSyncTokens()
-
+	// SyncToken/CTag are minted by Create together with a change-log anchor row.
 	return b.calendarRepo.Create(ctx, c)
 }
 

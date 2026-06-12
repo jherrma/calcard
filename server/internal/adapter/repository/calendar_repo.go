@@ -20,9 +20,27 @@ func NewCalendarRepository(db *gorm.DB) *CalendarRepository {
 	return &CalendarRepository{db: db}
 }
 
-// Create creates a new calendar
+// Create creates a new calendar. It mints the collection's initial sync token
+// and writes a matching "collection" anchor row to the change log in the same
+// transaction, so the token handed out by the very first sync-collection REPORT
+// corresponds to a real change-log row. Without this anchor, the next
+// incremental sync would be rejected with 403 valid-sync-token, forcing an
+// endless full-resync loop on fresh calendars.
 func (r *CalendarRepository) Create(ctx context.Context, cal *calendar.Calendar) error {
-	return r.db.WithContext(ctx).Create(cal).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		token := calendar.GenerateSyncToken()
+		cal.SyncToken = token
+		cal.CTag = token
+		if err := tx.Create(cal).Error; err != nil {
+			return err
+		}
+		return tx.Create(&calendar.SyncChangeLog{
+			CalendarID:   cal.ID,
+			ResourcePath: "",
+			ChangeType:   "collection",
+			SyncToken:    token,
+		}).Error
+	})
 }
 
 // GetByID retrieves a calendar by its ID
@@ -148,7 +166,10 @@ func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, obj *cale
 // GetChangesSinceToken retrieves all changes to a calendar since a given sync token
 func (r *CalendarRepository) GetChangesSinceToken(ctx context.Context, calendarID uint, token string) ([]*calendar.SyncChangeLog, error) {
 	var changes []*calendar.SyncChangeLog
-	query := r.db.WithContext(ctx).Where("calendar_id = ?", calendarID)
+	// "collection" anchor rows exist only to give freshly minted tokens a valid
+	// change-log entry; they never represent a resource change, so exclude them
+	// from the delta itself.
+	query := r.db.WithContext(ctx).Where("calendar_id = ?", calendarID).Where("change_type <> ?", "collection")
 	if token != "" {
 		// Find the ID of the sync change log entry with the given token
 		var lastChange calendar.SyncChangeLog
@@ -188,6 +209,17 @@ func (r *CalendarRepository) ListEvents(ctx context.Context, calendarID uint, st
 		Order("start_time ASC, created_at ASC").
 		Find(&objects).Error
 	return objects, err
+}
+
+// RecordChange advances the calendar's sync token and writes a matching
+// change-log row, atomically. Used by mutations that don't go through
+// Create/Update/DeleteCalendarObject — collection rename (change type
+// "collection") and the source side of a cross-calendar move (change type
+// "deleted").
+func (r *CalendarRepository) RecordChange(ctx context.Context, calendarID uint, path, uid, changeType string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return r.recordChange(tx, calendarID, path, uid, changeType)
+	})
 }
 
 func (r *CalendarRepository) recordChange(tx *gorm.DB, calendarID uint, path, uid, changeType string) error {

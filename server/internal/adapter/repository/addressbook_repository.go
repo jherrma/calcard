@@ -21,7 +21,24 @@ func NewAddressBookRepository(db *gorm.DB) addressbook.Repository {
 }
 
 func (r *AddressBookRepository) Create(ctx context.Context, ab *addressbook.AddressBook) error {
-	return r.db.WithContext(ctx).Create(ab).Error
+	// Mint the initial sync token and write a matching "collection" anchor row
+	// in the same transaction, so the first sync-collection REPORT hands out a
+	// token that corresponds to a real change-log row (avoids the 403
+	// valid-sync-token full-resync loop on fresh address books).
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		token := addressbook.GenerateSyncToken()
+		ab.SyncToken = token
+		ab.CTag = token
+		if err := tx.Create(ab).Error; err != nil {
+			return err
+		}
+		return tx.Create(&addressbook.SyncChangeLog{
+			AddressBookID: ab.ID,
+			ResourcePath:  "",
+			ChangeType:    "collection",
+			SyncToken:     token,
+		}).Error
+	})
 }
 
 func (r *AddressBookRepository) GetByID(ctx context.Context, id uint) (*addressbook.AddressBook, error) {
@@ -525,9 +542,10 @@ func (r *AddressBookRepository) GetChangesSinceToken(ctx context.Context, addres
 		return nil, err
 	}
 
-	// Get all changes after the token's timestamp
+	// Get all changes after the token's row. "collection" anchor rows are
+	// excluded — they exist only to validate freshly minted tokens.
 	if err := r.db.WithContext(ctx).
-		Where("address_book_id = ? AND created_at > ?", addressBookID, lastChange.CreatedAt).
+		Where("address_book_id = ? AND created_at > ? AND change_type <> ?", addressBookID, lastChange.CreatedAt, "collection").
 		Order("created_at ASC").
 		Find(&changes).Error; err != nil {
 		return nil, err
@@ -547,13 +565,12 @@ func (r *AddressBookRepository) CountContactsByUserID(ctx context.Context, userI
 	return count, err
 }
 
-// RecordChange records a sync change for an address object.
-func (r *AddressBookRepository) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
-	return r.db.WithContext(ctx).Create(&addressbook.SyncChangeLog{
-		AddressBookID: addressBookID,
-		ResourcePath:  path,
-		ResourceUID:   uid,
-		ChangeType:    changeType,
-		SyncToken:     token,
-	}).Error
+// RecordChange advances the address book sync token and writes a matching
+// change-log row atomically (for mutations outside the object CRUD methods):
+// collection rename (change type "collection") and the source side of a
+// cross-book contact move (change type "deleted").
+func (r *AddressBookRepository) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return r.recordAddressBookChange(tx, addressBookID, path, uid, changeType)
+	})
 }

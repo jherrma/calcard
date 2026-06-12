@@ -118,8 +118,7 @@ func (b *CardDAVBackend) CreateAddressBook(ctx context.Context, ab *carddav.Addr
 		Name:        ab.Name,
 		Description: ab.Description,
 	}
-	newAB.UpdateSyncTokens()
-
+	// SyncToken/CTag are minted by Create together with a change-log anchor row.
 	return b.addressBookRepo.Create(ctx, newAB)
 }
 

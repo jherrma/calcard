@@ -52,6 +52,10 @@ type CalendarRepository interface {
 	// GetChangesSinceToken retrieves all changes to a calendar since a given sync token
 	GetChangesSinceToken(ctx context.Context, calendarID uint, token string) ([]*SyncChangeLog, error)
 
+	// RecordChange advances the calendar sync token and writes a matching
+	// change-log row atomically (for mutations outside the object CRUD methods).
+	RecordChange(ctx context.Context, calendarID uint, path, uid, changeType string) error
+
 	// ListEvents retrieves calendar objects within a time range
 	ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*CalendarObject, error)
 
