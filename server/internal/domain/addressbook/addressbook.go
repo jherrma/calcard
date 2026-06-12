@@ -1,6 +1,7 @@
 package addressbook
 
 import (
+	"crypto/rand"
 	"fmt"
 	"time"
 
@@ -24,9 +25,13 @@ type AddressBook struct {
 	Contacts    []AddressObject `gorm:"foreignKey:AddressBookID"`
 }
 
-// GenerateSyncToken generates a new sync token
+// GenerateSyncToken generates a new sync token. Includes a crypto-random suffix
+// so two changes minted in the same nanosecond tick still get distinct tokens
+// (mirrors calendar.GenerateSyncToken).
 func GenerateSyncToken() string {
-	return fmt.Sprintf("data:,%d", time.Now().UnixNano())
+	randomBytes := make([]byte, 8)
+	_, _ = rand.Read(randomBytes)
+	return fmt.Sprintf("data:,%d-%x", time.Now().UnixNano(), randomBytes)
 }
 
 // GenerateCTag generates a new CTag

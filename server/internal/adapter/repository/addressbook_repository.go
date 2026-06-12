@@ -542,11 +542,13 @@ func (r *AddressBookRepository) GetChangesSinceToken(ctx context.Context, addres
 		return nil, err
 	}
 
-	// Get all changes after the token's row. "collection" anchor rows are
-	// excluded — they exist only to validate freshly minted tokens.
+	// Get all changes after the token's row, ordered by ID (not created_at):
+	// two rows written in the same timestamp tick would otherwise be skipped.
+	// "collection" anchor rows are excluded — they exist only to validate
+	// freshly minted tokens.
 	if err := r.db.WithContext(ctx).
-		Where("address_book_id = ? AND created_at > ? AND change_type <> ?", addressBookID, lastChange.CreatedAt, "collection").
-		Order("created_at ASC").
+		Where("address_book_id = ? AND id > ? AND change_type <> ?", addressBookID, lastChange.ID, "collection").
+		Order("id ASC").
 		Find(&changes).Error; err != nil {
 		return nil, err
 	}
