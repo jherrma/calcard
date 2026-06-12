@@ -80,17 +80,40 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		return nil, nil
 	}
 
-	// Group components: Masters vs Exceptions
-	var masters []ical.Event
-	exceptions := make(map[string]ical.Event)
+	// Group components: masters (no RECURRENCE-ID) vs exception overrides.
+	var masters, rawExceptions []ical.Event
 	for i := range allEvents {
-		rid := allEvents[i].Props.Get(ical.PropRecurrenceID)
-		if rid == nil {
+		if allEvents[i].Props.Get(ical.PropRecurrenceID) == nil {
 			masters = append(masters, allEvents[i])
 		} else {
-			// Normalize rid string for matching (usually UTC format is best)
-			exceptions[rid.Value] = allEvents[i]
+			rawExceptions = append(rawExceptions, allEvents[i])
 		}
+	}
+
+	// docLoc is the series' base timezone, taken from the first master's
+	// DTSTART (default UTC). A RECURRENCE-ID written without an explicit TZID
+	// is interpreted in this zone, matching how clients emit exception/split
+	// overrides.
+	docLoc := time.UTC
+	if len(masters) > 0 {
+		if dtstartProp := masters[0].Props.Get(ical.PropDateTimeStart); dtstartProp != nil {
+			if t, err := dtstartProp.DateTime(time.UTC); err == nil {
+				docLoc = t.Location()
+			}
+		}
+	}
+
+	// Key exceptions by their canonical UTC RECURRENCE-ID so TZID= / VALUE=DATE
+	// / floating forms all collapse to the same key the generated occurrences
+	// use. Fall back to the raw value when the property can't be parsed.
+	exceptions := make(map[string]ical.Event, len(rawExceptions))
+	for i := range rawExceptions {
+		rid := rawExceptions[i].Props.Get(ical.PropRecurrenceID)
+		key := rid.Value
+		if k, err := RecurrenceIDKeyFromProp(rid, docLoc); err == nil {
+			key = k
+		}
+		exceptions[key] = rawExceptions[i]
 	}
 
 	var instances []EventInstance
@@ -134,25 +157,12 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		}
 		rule.DTStart(mStart.In(loc))
 
-		// Collect EXDATES in UTC for this master
+		// Collect EXDATEs as canonical UTC keys for this master. EXDATEKeys
+		// understands comma-separated lists, TZID=, and VALUE=DATE forms.
 		exMap := make(map[string]bool)
 		for _, p := range master.Props["EXDATE"] {
-			for _, val := range strings.Split(p.Value, ",") {
-				val = strings.TrimSpace(val)
-				if val == "" {
-					continue
-				}
-				// Try to parse val to normalize to UTC RID format
-				var tEx time.Time
-				var pErr error
-				if strings.HasSuffix(val, "Z") {
-					tEx, pErr = time.Parse("20060102T150405Z", val)
-				} else {
-					tEx, pErr = time.ParseInLocation("20060102T150405", val, loc)
-				}
-				if pErr == nil {
-					exMap[tEx.UTC().Format("20060102T150405Z")] = true
-				}
+			for _, key := range EXDATEKeys(&p, loc) {
+				exMap[key] = true
 			}
 		}
 

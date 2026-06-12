@@ -55,28 +55,44 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return uc.calendarRepo.DeleteCalendarObject(ctx, obj)
 		}
 
-		// Add EXDATE to master if not already there
+		// Normalize the requested instance to a canonical UTC value/key so a
+		// TZID=/floating RECURRENCE-ID supplied by the client still matches.
+		parsed, err := calendar.ParseRecurrenceIDString(recurrenceID)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		wantKey := parsed.UTC().Format(calendar.RecurrenceIDLayout)
+		docLoc := seriesLocation(cal.Events())
+
+		// Add EXDATE (canonical UTC) to master if not already present.
 		exists := false
 		for _, p := range master.Props["EXDATE"] {
-			if p.Value == recurrenceID {
-				exists = true
+			for _, k := range calendar.EXDATEKeys(&p, docLoc) {
+				if k == wantKey {
+					exists = true
+					break
+				}
+			}
+			if exists {
 				break
 			}
 		}
 		if !exists {
-			master.Props.Add(&ical.Prop{
-				Name:  "EXDATE",
-				Value: recurrenceID,
-			})
+			master.Props.Add(&ical.Prop{Name: "EXDATE", Value: wantKey})
 		}
 
-		// Also remove any exception VEVENT with this recurrenceID
+		// Also remove any exception VEVENT with this RECURRENCE-ID.
 		var newChildren []*ical.Component
 		for _, child := range cal.Children {
 			if child.Name == "VEVENT" {
-				rid := child.Props.Get("RECURRENCE-ID")
-				if rid != nil && rid.Value == recurrenceID {
-					continue // skip this exception
+				if rid := child.Props.Get("RECURRENCE-ID"); rid != nil {
+					key := rid.Value
+					if k, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc); err == nil {
+						key = k
+					}
+					if key == wantKey {
+						continue // skip this exception
+					}
 				}
 			}
 			newChildren = append(newChildren, child)
@@ -149,15 +165,15 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 		}
 
 		// 5. Cleanup future exceptions
+		docLoc := seriesLocation(cal.Events())
 		var newChildren []*ical.Component
 		for _, child := range cal.Children {
 			if child.Name == "VEVENT" {
-				rid := child.Props.Get("RECURRENCE-ID")
-				if rid != nil {
-					t, _ := time.Parse("20060102T150405Z", rid.Value)
-					if !t.Before(splitTime) {
-						continue // delete future exceptions
+				if rid := child.Props.Get("RECURRENCE-ID"); rid != nil {
+					if t, err := rid.DateTime(docLoc); err == nil && !t.UTC().Before(splitTime) {
+						continue // drop exceptions at/after the split
 					}
+					// On parse failure keep the component.
 				}
 			}
 			newChildren = append(newChildren, child)

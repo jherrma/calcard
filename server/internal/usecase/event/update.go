@@ -54,10 +54,26 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	allEvents := cal.Events()
 
 	if input.Scope == "this" && input.RecurrenceID != "" {
+		// Normalize the requested instance to a canonical UTC key so an
+		// exception stored with a TZID= or floating RECURRENCE-ID still matches.
+		occStart, err := calendar.ParseRecurrenceIDString(input.RecurrenceID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		wantKey := occStart.UTC().Format(calendar.RecurrenceIDLayout)
+		docLoc := seriesLocation(allEvents)
+
 		// Look for an existing exception with this RECURRENCE-ID
 		for i := range allEvents {
 			rid := allEvents[i].Props.Get(ical.PropRecurrenceID)
-			if rid != nil && rid.Value == input.RecurrenceID {
+			if rid == nil {
+				continue
+			}
+			key := rid.Value
+			if k, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc); err == nil {
+				key = k
+			}
+			if key == wantKey {
 				targetEvent = &allEvents[i]
 				break
 			}
@@ -202,17 +218,17 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 
 		// 5. Cleanup future exceptions that belonged to the old series
+		docLoc := seriesLocation(allEvents)
 		var newChildren []*ical.Component
 		for _, child := range cal.Children {
 			keep := true
 			if child.Name == "VEVENT" {
-				rid := child.Props.Get("RECURRENCE-ID")
-				if rid != nil {
-					t, err := time.Parse("20060102T150405Z", rid.Value)
-					err = nil // Force ignore parse error for cleanup
-					if err == nil && !t.Before(splitTime) {
-						keep = false // delete future exceptions
+				if rid := child.Props.Get(ical.PropRecurrenceID); rid != nil {
+					if t, err := rid.DateTime(docLoc); err == nil && !t.UTC().Before(splitTime) {
+						keep = false // drop exceptions at/after the split
 					}
+					// On parse failure keep the component — never silently
+					// drop an exception we can't read.
 				}
 				// Always keep masters (rid == nil) and past exceptions
 			}
@@ -344,4 +360,22 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	return obj, nil
+}
+
+// seriesLocation returns the base timezone of a recurring series — the
+// location of the first master's DTSTART — defaulting to UTC. RECURRENCE-ID /
+// EXDATE values written without an explicit TZID are interpreted in this zone.
+func seriesLocation(events []ical.Event) *time.Location {
+	for i := range events {
+		if events[i].Props.Get(ical.PropRecurrenceID) != nil {
+			continue
+		}
+		if p := events[i].Props.Get(ical.PropDateTimeStart); p != nil {
+			if t, err := p.DateTime(time.UTC); err == nil {
+				return t.Location()
+			}
+		}
+		break
+	}
+	return time.UTC
 }
