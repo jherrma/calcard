@@ -97,6 +97,23 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			if p := master.Props.Get(ical.PropLocation); p != nil {
 				event.Props.Set(p)
 			}
+			// Default the exception's DTSTART/DTEND to its own occurrence time
+			// (RECURRENCE-ID + the master's duration) so a summary-only edit
+			// keeps this instance in place instead of snapping to the series'
+			// first occurrence. input.Start/End (handled below) still override.
+			occDuration := time.Hour
+			if mStart, err := master.DateTimeStart(time.UTC); err == nil {
+				if mEnd, err := master.DateTimeEnd(time.UTC); err == nil && mEnd.After(mStart) {
+					occDuration = mEnd.Sub(mStart)
+				}
+			}
+			if obj.IsAllDay {
+				event.Props.SetDate(ical.PropDateTimeStart, occStart)
+				event.Props.SetDate(ical.PropDateTimeEnd, occStart.Add(occDuration))
+			} else {
+				event.Props.SetDateTime(ical.PropDateTimeStart, occStart)
+				event.Props.SetDateTime(ical.PropDateTimeEnd, occStart.Add(occDuration))
+			}
 			cal.Children = append(cal.Children, event.Component)
 			targetEvent = event
 		}

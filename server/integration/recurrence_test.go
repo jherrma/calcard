@@ -210,6 +210,28 @@ func TestRecurringEventUpdateThis(t *testing.T) {
 		"exactly one occurrence should carry the edited summary (got %d)", editedSummaries)
 	assert.Equalf(t, count-1, originalSummaries,
 		"remaining %d occurrences should keep the original summary (got %d)", count-1, originalSummaries)
+
+	// M10: a summary-only edit of occurrence 2 must keep that instance's OWN
+	// start time. Before the fix the new exception had no DTSTART, so it
+	// snapped to the series' first-occurrence time.
+	var detail struct {
+		Events []struct {
+			RecurrenceID string    `json:"recurrence_id"`
+			Start        time.Time `json:"start"`
+		} `json:"events"`
+	}
+	code = doJSONRaw(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/events/"+rangeQS, token, nil, &detail)
+	require.Equal(t, http.StatusOK, code)
+	wantStart := start.Add(7 * 24 * time.Hour) // occurrence 2's real start
+	var checkedStart bool
+	for _, inst := range detail.Events {
+		if inst.RecurrenceID == targetRID {
+			assert.Truef(t, inst.Start.Equal(wantStart),
+				"edited occurrence must keep its own start %s, got %s", wantStart, inst.Start)
+			checkedStart = true
+		}
+	}
+	require.True(t, checkedStart, "edited occurrence should be present in the list")
 }
 
 // TestRecurringEventUpdateThisAndFuture splits a weekly series at occurrence 3
