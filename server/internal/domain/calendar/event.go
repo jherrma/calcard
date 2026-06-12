@@ -128,6 +128,9 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		}
 		mEnd, _ := master.DateTimeEnd(time.UTC)
 		mDuration := mEnd.Sub(mStart)
+		if mDuration < 0 {
+			mDuration = 0
+		}
 
 		// Determine the base timezone
 		loc := time.UTC
@@ -166,8 +169,11 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 			}
 		}
 
-		// Generate within range: rule.Between works best in series timezone
-		for _, dt := range rule.Between(start.In(loc), end.In(loc), true) {
+		// Generate within range: rule.Between works best in series timezone.
+		// Widen the lower bound by the event duration so an occurrence that
+		// STARTED before the window but is still running inside it is produced;
+		// the overlap filter below discards any that don't actually intersect.
+		for _, dt := range rule.Between(start.Add(-mDuration).In(loc), end.In(loc), true) {
 			dtUTC := dt.UTC()
 			rid := dtUTC.Format("20060102T150405Z")
 
@@ -194,7 +200,14 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 				}
 				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, master, &exc))
 			} else {
-				instances = append(instances, ToEventInstance(obj, dt, dt.Add(mDuration), rid, master, nil))
+				// Keep only occurrences that actually overlap [start, end): the
+				// widened lower bound can surface beats that ended before the
+				// window opened.
+				occEnd := dt.Add(mDuration)
+				if !dt.Before(end) || !occEnd.After(start) {
+					continue
+				}
+				instances = append(instances, ToEventInstance(obj, dt, occEnd, rid, master, nil))
 			}
 		}
 	}

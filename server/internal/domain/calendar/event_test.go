@@ -120,3 +120,43 @@ func TestExpandRecurringEventTZIDMatching(t *testing.T) {
 		assert.Len(t, instances, 3, "a 5-day series minus a 2-value EXDATE must yield 3 days")
 	})
 }
+
+// TestExpandRecurringEventWindowWidening is the regression test for M11: the
+// expansion window is widened by the event's duration so a long occurrence
+// that started before the window but is still running inside it is produced,
+// while occurrences that don't actually overlap (incl. zero-duration at the
+// exact window start) are filtered out.
+func TestExpandRecurringEventWindowWidening(t *testing.T) {
+	t.Run("multi-day occurrence visible when window starts mid-occurrence", func(t *testing.T) {
+		obj := &CalendarObject{
+			UUID:    "wide-uuid",
+			Summary: "Conference",
+			ICalData: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:wide-uid\r\n" +
+				"DTSTART:20240101T000000Z\r\nDTEND:20240104T000000Z\r\n" + // 3-day event
+				"RRULE:FREQ=WEEKLY;COUNT=3\r\nSUMMARY:Conference\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+		}
+		// Window sits entirely inside the first occurrence (Jan 1–4), on day 2.
+		start := time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)
+		end := time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)
+		instances, err := ExpandRecurringEvent(obj, start, end)
+		require.NoError(t, err)
+		require.Len(t, instances, 1, "a multi-day occurrence must be visible when the window opens mid-occurrence")
+		assert.Equal(t, "20240101T000000Z", instances[0].RecurrenceID)
+	})
+
+	t.Run("zero-duration occurrence exactly at window start is excluded", func(t *testing.T) {
+		obj := &CalendarObject{
+			UUID:    "zero-uuid",
+			Summary: "Ping",
+			ICalData: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:zero-uid\r\n" +
+				"DTSTART:20240102T090000Z\r\nDTEND:20240102T090000Z\r\n" + // zero duration
+				"RRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Ping\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+		}
+		// Window opens exactly at the Jan 2 occurrence's instant.
+		start := time.Date(2024, 1, 2, 9, 0, 0, 0, time.UTC)
+		end := time.Date(2024, 1, 2, 10, 0, 0, 0, time.UTC)
+		instances, err := ExpandRecurringEvent(obj, start, end)
+		require.NoError(t, err)
+		assert.Len(t, instances, 0, "a zero-duration occurrence exactly at the window start must be excluded")
+	})
+}
