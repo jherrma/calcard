@@ -63,17 +63,20 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 		// Extract FN for error reporting
 		fn := extractVCardFN(vcardData)
 
-		// Check for existing contact by UID
-		existing, _ := uc.addressBookRepo.GetObjectByUUID(ctx, uid)
+		// Check for an existing contact with the same vCard UID in this book.
+		// Look up by vCard UID (GetObjectByUID), not the internal DB UUID —
+		// they are different identifiers, so the old GetObjectByUUID(uid) never
+		// matched and every re-import duplicated.
+		existing, _ := uc.addressBookRepo.GetObjectByUID(ctx, addressBookID, uid)
 
-		if existing != nil && existing.AddressBookID == addressBookID {
+		if existing != nil {
 			switch opts.DuplicateHandling {
 			case "skip":
 				result.Skipped++
 				continue
 			case "replace":
-				// Delete existing object
-				if err := uc.addressBookRepo.DeleteObjectByUUID(ctx, uid); err != nil {
+				// Delete by the existing object's internal UUID, not the vCard UID.
+				if err := uc.addressBookRepo.DeleteObjectByUUID(ctx, existing.UUID); err != nil {
 					result.Failed++
 					result.Errors = append(result.Errors, ImportError{
 						Index:   i,
