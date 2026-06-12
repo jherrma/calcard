@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"strings"
 
+	gowebdav "github.com/emersion/go-webdav"
 	"github.com/emersion/go-webdav/caldav"
 	"github.com/emersion/go-webdav/carddav"
 	"github.com/gofiber/fiber/v3"
@@ -198,6 +200,32 @@ func (h *Handler) Handler() fiber.Handler {
 			c.Request().Header.SetMethod("MKCOL")
 			c.Request().SetBody(nil)
 			c.Request().Header.SetContentLength(0)
+		}
+
+		// Combined principal discovery (RFC 6764). emersion/go-webdav's
+		// per-protocol handlers each only advertise their own home set, so a
+		// PROPFIND/OPTIONS on the root ("/dav/") or the principal
+		// ("/dav/{user}/") routed to the caldav handler would hide the
+		// addressbook home set (and vice versa). Serve both home sets from one
+		// principal response instead. A dedicated single-protocol credential
+		// (dav_protocol set by Authenticate) only sees its own home set.
+		discoveryParts := strings.Split(strings.Trim(reqPath, "/"), "/")
+		if len(discoveryParts) <= 2 && (c.Method() == "PROPFIND" || c.Method() == "OPTIONS") {
+			opts := &gowebdav.ServePrincipalOptions{
+				CurrentUserPrincipalPath: fmt.Sprintf("/dav/%s/", u.Username),
+			}
+			proto, _ := c.Locals("dav_protocol").(string)
+			if proto != "carddav" {
+				opts.HomeSets = append(opts.HomeSets, caldav.NewCalendarHomeSet(fmt.Sprintf("/dav/%s/calendars/", u.Username)))
+				opts.Capabilities = append(opts.Capabilities, caldav.CapabilityCalendar)
+			}
+			if proto != "caldav" {
+				opts.HomeSets = append(opts.HomeSets, carddav.NewAddressBookHomeSet(fmt.Sprintf("/dav/%s/addressbooks/", u.Username)))
+				opts.Capabilities = append(opts.Capabilities, carddav.CapabilityAddressBook)
+			}
+			return adaptor.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gowebdav.ServePrincipal(w, r.WithContext(stdCtx), opts)
+			}))(c)
 		}
 
 		// Handle WebDAV-Sync REPORT for CalDAV
