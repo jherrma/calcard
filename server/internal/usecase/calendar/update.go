@@ -67,11 +67,16 @@ func (uc *UpdateCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		cal.Timezone = *req.Timezone
 	}
 
-	// Update sync tokens
-	cal.UpdateSyncTokens()
-
 	if err := uc.repo.Update(ctx, cal); err != nil {
 		return nil, fmt.Errorf("failed to update calendar: %w", err)
+	}
+
+	// Advance the sync token through RecordChange so it's backed by a
+	// change-log anchor row (collection-level change). Calling UpdateSyncTokens
+	// here would mint a token that no change-log row references, which the next
+	// incremental sync rejects with 403 valid-sync-token.
+	if err := uc.repo.RecordChange(ctx, cal.ID, "", "", "collection"); err != nil {
+		return nil, fmt.Errorf("failed to record calendar change: %w", err)
 	}
 
 	return cal, nil

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"time"
 
 	ical "github.com/emersion/go-ical"
 	"github.com/google/uuid"
@@ -166,9 +165,10 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		result.Imported++
 	}
 
-	// Update calendar CTag
-	cal.CTag = fmt.Sprintf("ctag-%d", time.Now().UnixNano())
-	_ = uc.calendarRepo.Update(ctx, cal)
+	// Each CreateCalendarObject already advanced the calendar's sync_token/ctag
+	// (and wrote a change-log row) inside its transaction. Do NOT re-Save the
+	// stale `cal` struct here — that would clobber those tokens with the
+	// pre-import values and desync the change log from the calendar row.
 
 	return result, nil
 }

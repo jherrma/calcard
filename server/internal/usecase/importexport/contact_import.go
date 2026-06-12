@@ -122,9 +122,10 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 		result.Imported++
 	}
 
-	// Update address book CTag
-	ab.CTag = fmt.Sprintf("ctag-%d", time.Now().UnixNano())
-	_ = uc.addressBookRepo.Update(ctx, ab)
+	// Each CreateObject already advanced the address book's sync_token/ctag (and
+	// wrote a change-log row) inside its transaction. Do NOT re-Save the stale
+	// `ab` struct here — that would clobber those tokens and desync the change
+	// log from the address book row.
 
 	return result, nil
 }
