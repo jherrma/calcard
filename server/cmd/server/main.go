@@ -78,6 +78,10 @@ func main() {
 				fmt.Printf("Migration failed: %v\n", err)
 				os.Exit(1)
 			}
+			if err := database.RunDataMigrations(db.DB()); err != nil {
+				fmt.Printf("Data migration failed: %v\n", err)
+				os.Exit(1)
+			}
 			fmt.Println("Migrations completed successfully")
 			return
 		}
@@ -88,6 +92,10 @@ func main() {
 		fmt.Println("Auto-migrating database...")
 		if err := db.Migrate(database.Models()...); err != nil {
 			fmt.Printf("Auto-migration failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := database.RunDataMigrations(db.DB()); err != nil {
+			fmt.Printf("Data migration failed: %v\n", err)
 			os.Exit(1)
 		}
 	}
