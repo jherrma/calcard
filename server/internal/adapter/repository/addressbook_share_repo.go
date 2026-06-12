@@ -59,6 +59,12 @@ func (r *gormAddressBookShareRepo) Revoke(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Unscoped().Delete(&sharing.AddressBookShare{}, id).Error
 }
 
+func (r *gormAddressBookShareRepo) DeleteByAddressBookID(ctx context.Context, addressBookID uint) error {
+	// Hard-delete (Unscoped) so revoked rows don't linger under the composite
+	// unique index — same rationale as Revoke.
+	return r.db.WithContext(ctx).Unscoped().Where("address_book_id = ?", addressBookID).Delete(&sharing.AddressBookShare{}).Error
+}
+
 func (r *gormAddressBookShareRepo) GetByAddressBookAndUser(ctx context.Context, addressBookID, userID uint) (*sharing.AddressBookShare, error) {
 	var share sharing.AddressBookShare
 	if err := r.db.WithContext(ctx).Where("address_book_id = ? AND shared_with_id = ?", addressBookID, userID).First(&share).Error; err != nil {

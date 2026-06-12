@@ -51,6 +51,10 @@ func (m *mockShareRepo) GetByCalendarAndUser(ctx context.Context, calendarID, us
 	}
 	return args.Get(0).(*sharing.CalendarShare), args.Error(1)
 }
+func (m *mockShareRepo) DeleteByCalendarID(ctx context.Context, calendarID uint) error {
+	args := m.Called(ctx, calendarID)
+	return args.Error(0)
+}
 
 type mockCalendarRepo struct {
 	mock.Mock

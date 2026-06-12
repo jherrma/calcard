@@ -481,6 +481,113 @@ func shareAB(t *testing.T, ownerToken string, abID uint, targetEmail, permission
 	require.Equalf(t, http.StatusCreated, code, "share addressbook (%s)", permission)
 }
 
+// calendarVisibleTo reports whether the given calendar UUID appears in the
+// user's REST calendar list (owned or shared).
+func calendarVisibleTo(t *testing.T, token, calUUID string) bool {
+	t.Helper()
+	var list struct {
+		Calendars []struct {
+			UUID string `json:"uuid"`
+		} `json:"calendars"`
+	}
+	code := doJSONRaw(t, http.MethodGet, "/calendars/", token, nil, &list)
+	require.Equal(t, http.StatusOK, code)
+	for _, c := range list.Calendars {
+		if c.UUID == calUUID {
+			return true
+		}
+	}
+	return false
+}
+
+// addressBookVisibleTo reports whether the given address book id appears in
+// the user's REST address book list (owned or shared).
+func addressBookVisibleTo(t *testing.T, token string, abID uint) bool {
+	t.Helper()
+	var list struct {
+		AddressBooks []struct {
+			ID uint `json:"ID"`
+		} `json:"addressbooks"`
+	}
+	code := doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &list)
+	require.Equal(t, http.StatusOK, code)
+	for _, ab := range list.AddressBooks {
+		if ab.ID == abID {
+			return true
+		}
+	}
+	return false
+}
+
+// TestCalendarDeleteRevokesShares is the regression test for the ghost-share
+// fix (TODO 4.3): deleting a shared calendar must revoke its shares so the
+// sharee's list no longer shows a blank ghost entry, and a fresh share to the
+// same user still works afterwards.
+func TestCalendarDeleteRevokesShares(t *testing.T) {
+	ownerEmail := "ghost-cal-owner@example.test"
+	shareeEmail := "ghost-cal-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken := registerAndLogin(t, ownerEmail, password, "Ghost Cal Owner")
+	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Ghost Cal Sharee")
+
+	// Owner needs more than one calendar (the last one can't be deleted).
+	calID, calUUID := createCalendar(t, ownerToken, "Doomed Calendar", "#abcdef")
+	createCalendar(t, ownerToken, "Keeper Calendar", "#fedcba")
+
+	var shareResp struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": shareeEmail, "permission": "read"}, &shareResp)
+	require.Equal(t, http.StatusCreated, code)
+	require.True(t, calendarVisibleTo(t, shareeToken, calUUID), "sharee should see the shared calendar")
+
+	// Owner deletes the shared calendar.
+	status, raw := restCall(t, http.MethodDelete, "/calendars/"+calUUID, ownerToken,
+		map[string]string{"confirmation": "DELETE"})
+	require.Equalf(t, http.StatusNoContent, status, "delete calendar: %s", errorMessage(raw))
+
+	// The sharee's list must not carry a ghost entry for the deleted calendar.
+	assert.False(t, calendarVisibleTo(t, shareeToken, calUUID),
+		"deleted calendar must not linger as a ghost in the sharee's list")
+
+	// And a new calendar can still be shared with the same user.
+	newCalID, newUUID := createCalendar(t, ownerToken, "Fresh Calendar", "#0a0a0a")
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(newCalID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": shareeEmail, "permission": "read"}, &shareResp)
+	require.Equal(t, http.StatusCreated, code, "must be able to share a new calendar with the same user")
+	assert.True(t, calendarVisibleTo(t, shareeToken, newUUID), "sharee should see the freshly shared calendar")
+}
+
+// TestAddressBookDeleteRevokesShares is the address-book analogue of the
+// ghost-share fix.
+func TestAddressBookDeleteRevokesShares(t *testing.T) {
+	ownerEmail := "ghost-ab-owner@example.test"
+	shareeEmail := "ghost-ab-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken := registerAndLogin(t, ownerEmail, password, "Ghost AB Owner")
+	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Ghost AB Sharee")
+
+	abID := createAddressBook(t, ownerToken, "Doomed Directory")
+	shareAB(t, ownerToken, abID, shareeEmail, "read")
+	require.True(t, addressBookVisibleTo(t, shareeToken, abID), "sharee should see the shared address book")
+
+	// Owner deletes the shared address book.
+	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(abID), ownerToken,
+		map[string]string{"confirmation": "DELETE"})
+	require.Equalf(t, http.StatusNoContent, status, "delete address book: %s", errorMessage(raw))
+
+	assert.False(t, addressBookVisibleTo(t, shareeToken, abID),
+		"deleted address book must not linger as a ghost in the sharee's list")
+
+	// A new address book can still be shared with the same user.
+	newABID := createAddressBook(t, ownerToken, "Fresh Directory")
+	shareAB(t, ownerToken, newABID, shareeEmail, "read")
+	assert.True(t, addressBookVisibleTo(t, shareeToken, newABID), "sharee should see the freshly shared address book")
+}
+
 // TestSharedCalendarEventPermissions is the regression test for H7 (REST part):
 // the event endpoints must honor share permissions, not just ownership. A
 // stranger gets 404 (no existence leak); a read-write sharee can list/create

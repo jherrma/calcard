@@ -59,6 +59,12 @@ func (r *gormCalendarShareRepo) Revoke(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Unscoped().Delete(&sharing.CalendarShare{}, id).Error
 }
 
+func (r *gormCalendarShareRepo) DeleteByCalendarID(ctx context.Context, calendarID uint) error {
+	// Hard-delete (Unscoped) so revoked rows don't linger under the composite
+	// unique index — same rationale as Revoke.
+	return r.db.WithContext(ctx).Unscoped().Where("calendar_id = ?", calendarID).Delete(&sharing.CalendarShare{}).Error
+}
+
 func (r *gormCalendarShareRepo) GetByCalendarAndUser(ctx context.Context, calendarID, userID uint) (*sharing.CalendarShare, error) {
 	var share sharing.CalendarShare
 	if err := r.db.WithContext(ctx).Where("calendar_id = ? AND shared_with_id = ?", calendarID, userID).First(&share).Error; err != nil {

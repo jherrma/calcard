@@ -106,7 +106,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo, calShareRepo)
 	calendarGetUC := calendarusecase.NewGetCalendarUseCase(calendarRepo)
 	calendarUpdateUC := calendarusecase.NewUpdateCalendarUseCase(calendarRepo)
-	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo)
+	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo, calShareRepo)
 	calendarExportUC := calendarusecase.NewExportCalendarUseCase(calendarRepo)
 
 	// Address Book Use Cases
@@ -114,7 +114,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	abListUC := addressbookusecase.NewListUseCase(addressBookRepo, nil)
 	abGetUC := addressbookusecase.NewGetUseCase(addressBookRepo)
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
-	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)
+	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo, nil)
 	abExportUC := addressbookusecase.NewExportUseCase(addressBookRepo)
 
 	// Handlers

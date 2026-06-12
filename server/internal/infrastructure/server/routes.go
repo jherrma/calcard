@@ -214,7 +214,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo, shareRepo)
 	calendarGetUC := calendarusecase.NewGetCalendarUseCase(calendarRepo)
 	calendarUpdateUC := calendarusecase.NewUpdateCalendarUseCase(calendarRepo)
-	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo)
+	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo, shareRepo)
 	calendarExportUC := calendarusecase.NewExportCalendarUseCase(calendarRepo)
 
 	calendarHandler := http.NewCalendarHandler(
@@ -252,7 +252,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abListUC := addressbookusecase.NewListUseCase(addressBookRepo, abShareRepo)
 	abGetUC := addressbookusecase.NewGetUseCase(addressBookRepo)
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
-	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)
+	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo, abShareRepo)
 	abExportUC := addressbookusecase.NewExportUseCase(addressBookRepo)
 	// NOTE: addressbookusecase.CreateContactUseCase is still alive — it backs
 	// ContactHandler.Create through contactusecase.CreateUseCase (see below).
