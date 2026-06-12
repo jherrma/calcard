@@ -87,6 +87,13 @@ func TestDedicatedCalDAVCredential(t *testing.T) {
 	assert.Equalf(t, http.StatusForbidden, status,
 		"read-only CalDAV credential must NOT accept PUT (got %d, body: %s)", status, string(body))
 
+	// --- Protocol binding (M13): a CalDAV credential must not be usable on
+	// addressbook paths ---------------------------------------------------
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/",
+		credUser, rawPass, propfindPrincipalBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status,
+		"CalDAV credential must be forbidden on addressbook paths (got %d)", status)
+
 	// --- Revoke ---------------------------------------------------------
 	status, raw := restCall(t, http.MethodDelete, "/caldav-credentials/"+created.ID, token, nil)
 	require.Equalf(t, http.StatusNoContent, status, "revoke: %s", errorMessage(raw))

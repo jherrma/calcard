@@ -90,6 +90,15 @@ func (h *Handler) Authenticate() fiber.Handler {
 					if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 						u = nil
 					}
+				} else if scope := requiredScopeForPath(c.Path()); scope != "" && !ap.HasScope(scope) {
+					// App password authenticated but lacks the scope required for
+					// this protocol (e.g. a caldav-only password used against an
+					// addressbook path). Reject — the scope restriction shown in
+					// the UI must be enforced.
+					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+						"error":   "forbidden",
+						"message": "This app password is not valid for this protocol",
+					})
 				}
 				if u != nil {
 					c.Locals("can_write", true) // Direct user/app password always has write access
@@ -106,6 +115,7 @@ func (h *Handler) Authenticate() fiber.Handler {
 						if u != nil {
 							c.Locals("can_write", cred.CanWrite())
 							c.Locals("caldav_credential_id", cred.ID)
+							c.Locals("dav_protocol", "caldav")
 							go h.caldavCredRepo.UpdateLastUsed(context.Background(), cred.ID, c.IP())
 						}
 					}
@@ -120,6 +130,7 @@ func (h *Handler) Authenticate() fiber.Handler {
 							if u != nil {
 								c.Locals("can_write", cardCred.CanWrite())
 								c.Locals("carddav_credential_id", cardCred.ID)
+								c.Locals("dav_protocol", "carddav")
 								go h.carddavCredRepo.UpdateLastUsed(context.Background(), cardCred.ID, c.IP())
 							}
 						}
@@ -140,6 +151,18 @@ func (h *Handler) Authenticate() fiber.Handler {
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":   "forbidden",
 					"message": "This credential has read-only access",
+				})
+			}
+		}
+
+		// Bind dedicated CalDAV/CardDAV credentials to their own protocol's
+		// paths. Principal/root paths carry no required scope so discovery
+		// still works for either credential type.
+		if proto, ok := c.Locals("dav_protocol").(string); ok {
+			if required := requiredScopeForPath(c.Path()); required != "" && required != proto {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+					"error":   "forbidden",
+					"message": "This credential is not valid for this protocol",
 				})
 			}
 		}
@@ -197,6 +220,21 @@ func (h *Handler) Handler() fiber.Handler {
 		}
 
 		return adaptor.HTTPHandler(httpHandler)(c)
+	}
+}
+
+// requiredScopeForPath returns the app-password scope / dav protocol a DAV
+// request path requires: "caldav" for calendar paths, "carddav" for address
+// book paths, and "" for principal/root/discovery paths (which both protocols
+// must be able to reach).
+func requiredScopeForPath(path string) string {
+	switch {
+	case strings.Contains(path, "/calendars/"):
+		return "caldav"
+	case strings.Contains(path, "/addressbooks/"):
+		return "carddav"
+	default:
+		return ""
 	}
 }
 
