@@ -62,6 +62,9 @@ func (m *mockRepo) GetByUserAndPath(ctx context.Context, userID uint, path strin
 func (m *mockRepo) GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*addressbook.AddressObject, error) {
 	return nil, nil
 }
+func (m *mockRepo) GetObjectByUID(ctx context.Context, addressBookID uint, uid string) (*addressbook.AddressObject, error) {
+	return nil, nil
+}
 func (m *mockRepo) QueryObjects(ctx context.Context, addressBookID uint, query *addressbook.ObjectQuery) ([]addressbook.AddressObject, error) {
 	return nil, nil
 }

@@ -28,6 +28,7 @@ type Repository interface {
 	CreateObject(ctx context.Context, object *AddressObject) error
 	GetObjectByID(ctx context.Context, id uint) (*AddressObject, error)
 	GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*AddressObject, error)
+	GetObjectByUID(ctx context.Context, addressBookID uint, uid string) (*AddressObject, error)
 	ListObjects(ctx context.Context, addressBookID uint, limit, offset int, sort, order string) ([]AddressObject, int64, error)
 	QueryObjects(ctx context.Context, addressBookID uint, query *ObjectQuery) ([]AddressObject, error)
 	GetObjectByUUID(ctx context.Context, uuid string) (*AddressObject, error)

@@ -96,5 +96,6 @@ func (b *CardDAVBackend) resolveAddressBookFromPath(ctx context.Context, path st
 	if !ok {
 		return nil, fmt.Errorf("unauthorized")
 	}
-	return b.resolveAddressBook(ctx, u, path)
+	ab, _, err := b.resolveAddressBook(ctx, u, path)
+	return ab, err
 }

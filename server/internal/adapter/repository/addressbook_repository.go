@@ -101,6 +101,20 @@ func (r *AddressBookRepository) GetObjectByPath(ctx context.Context, addressBook
 	return &obj, nil
 }
 
+// GetObjectByUID looks up an address object by its vCard UID within a specific
+// address book (used for RFC 6352 no-uid-conflict detection on PUT). Returns
+// (nil, nil) when not found.
+func (r *AddressBookRepository) GetObjectByUID(ctx context.Context, addressBookID uint, uid string) (*addressbook.AddressObject, error) {
+	var obj addressbook.AddressObject
+	if err := r.db.WithContext(ctx).Where("address_book_id = ? AND uid = ?", addressBookID, uid).First(&obj).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &obj, nil
+}
+
 // QueryObjects performs database-level filtering based on CardDAV query parameters.
 // It maps vCard property names to database columns.
 func (r *AddressBookRepository) QueryObjects(ctx context.Context, addressBookID uint, query *addressbook.ObjectQuery) ([]addressbook.AddressObject, error) {

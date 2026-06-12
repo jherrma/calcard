@@ -379,3 +379,95 @@ func TestSharedCalendarCalDAVVisible(t *testing.T) {
 	assert.Truef(t, seen,
 		"event PUT by sharee must appear in owner's REST /events list (uid=%s)", newUID)
 }
+
+// TestSharedAddressBookCardDAVVisible is the regression test for the DAV half
+// of H7: a shared address book was listed in the home set but resolveAddressBook
+// only searched owned books, so every PROPFIND/GET/REPORT on it 404'd. After the
+// fix, a sharee can browse and (read-write) write to the shared book, and a
+// read-only sharee is forbidden from writing.
+func TestSharedAddressBookCardDAVVisible(t *testing.T) {
+	ownerEmail := "abdav-owner@example.test"
+	targetEmail := "abdav-target@example.test"
+	roEmail := "abdav-ro@example.test"
+	password := "abdavSecret!123"
+
+	ownerToken, ownerUsername := registerAndLoginFull(t, ownerEmail, password, "AB DAV Owner")
+	targetToken, targetUsername := registerAndLoginFull(t, targetEmail, password, "AB DAV Target")
+	roToken, roUsername := registerAndLoginFull(t, roEmail, password, "AB DAV ReadOnly")
+
+	abID := createAddressBook(t, ownerToken, "Shared DAV Book")
+
+	// Owner's address book path slug (a UUID) — needed to build the DAV URL.
+	abPath := addressBookPath(t, ownerToken, "Shared DAV Book")
+	require.NotEmpty(t, abPath)
+
+	// Seed a contact via the owner's CardDAV so there's something to read.
+	_, ownerAppPass := createAppPassword(t, ownerToken, "abdav-owner-cred")
+	ownerCollection := "/dav/" + ownerUsername + "/addressbooks/" + abPath + "/"
+	seedUID := "abdav-seed@x"
+	status, _, body := davCall(t, "PUT", ownerCollection+seedUID+".vcf", ownerEmail, ownerAppPass,
+		buildMinimalVCard(seedUID, "Seed Contact", "Seed", "Contact"),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "owner seed PUT: %s", string(body))
+
+	// Share read-write with target, read-only with the RO user.
+	shareAB(t, ownerToken, abID, targetEmail, "read-write")
+	shareAB(t, ownerToken, abID, roEmail, "read")
+
+	// Read-write sharee: PROPFIND the shared collection under their own DAV path
+	// (was 404 before the fix).
+	_, targetAppPass := createAppPassword(t, targetToken, "abdav-target-cred")
+	targetCollection := "/dav/" + targetUsername + "/addressbooks/" + abPath + "/"
+	status, _, body = davCall(t, "PROPFIND", targetCollection, targetEmail, targetAppPass,
+		propfindAddressBookBody, depthHeader("0"))
+	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND shared book: %s", string(body))
+
+	// Read-write sharee can GET the seeded contact.
+	status, _, body = davCall(t, "GET", targetCollection+seedUID+".vcf", targetEmail, targetAppPass, "", nil)
+	require.Equalf(t, http.StatusOK, status, "sharee GET seeded contact: %s", string(body))
+	assert.Contains(t, string(body), "Seed Contact")
+
+	// Read-write sharee can PUT a new contact.
+	newUID := "abdav-by-sharee@x"
+	status, _, body = davCall(t, "PUT", targetCollection+newUID+".vcf", targetEmail, targetAppPass,
+		buildMinimalVCard(newUID, "By Sharee", "By", "Sharee"),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status,
+		"read-write sharee PUT: %s", string(body))
+
+	// Read-only sharee may read but not delete.
+	_, roAppPass := createAppPassword(t, roToken, "abdav-ro-cred")
+	roCollection := "/dav/" + roUsername + "/addressbooks/" + abPath + "/"
+	status, _, _ = davCall(t, "PROPFIND", roCollection, roEmail, roAppPass, propfindAddressBookBody, depthHeader("0"))
+	require.Equal(t, http.StatusMultiStatus, status, "read-only sharee PROPFIND must work")
+	status, _, _ = davCall(t, "DELETE", roCollection+seedUID+".vcf", roEmail, roAppPass, "", nil)
+	assert.Equalf(t, http.StatusForbidden, status, "read-only sharee DELETE must be forbidden, got %d", status)
+}
+
+// addressBookPath returns the URL-path slug (UUID) of a named address book.
+func addressBookPath(t *testing.T, token, name string) string {
+	t.Helper()
+	var wrap struct {
+		AddressBooks []struct {
+			Name string `json:"Name"`
+			Path string `json:"Path"`
+		} `json:"addressbooks"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &wrap))
+	for _, ab := range wrap.AddressBooks {
+		if ab.Name == name {
+			return ab.Path
+		}
+	}
+	return ""
+}
+
+func shareAB(t *testing.T, ownerToken string, abID uint, targetEmail, permission string) {
+	t.Helper()
+	var resp struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+uintStr(abID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": targetEmail, "permission": permission}, &resp)
+	require.Equalf(t, http.StatusCreated, code, "share addressbook (%s)", permission)
+}
