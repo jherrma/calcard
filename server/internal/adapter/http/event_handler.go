@@ -72,6 +72,30 @@ func canWrite(p calendar.CalendarPermission) bool {
 	return p == calendar.PermissionOwner || p == calendar.PermissionReadWrite
 }
 
+// eventResponseFromObject builds an EventResponse from a stored calendar
+// object, nil-checking StartTime/EndTime (a VTODO may carry neither, and
+// dereferencing them paniced -> 500) and populating Description, Location and
+// IsRecurring, which the inline literals previously left blank.
+func eventResponseFromObject(obj *calendar.CalendarObject) dto.EventResponse {
+	resp := dto.EventResponse{
+		ID:          obj.UUID,
+		CalendarID:  obj.CalendarID,
+		UID:         obj.UID,
+		Summary:     obj.Summary,
+		Description: obj.Description,
+		Location:    obj.Location,
+		IsAllDay:    obj.IsAllDay,
+		IsRecurring: obj.RecurrenceEndTime != nil,
+	}
+	if obj.StartTime != nil {
+		resp.Start = *obj.StartTime
+	}
+	if obj.EndTime != nil {
+		resp.End = *obj.EndTime
+	}
+	return resp
+}
+
 // List godoc
 // @Summary      List events
 // @Description  Get events from calendar
@@ -160,15 +184,7 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
 
-	return c.JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.JSON(eventResponseFromObject(obj))
 }
 
 // Create godoc
@@ -220,15 +236,7 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to create event")
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.Status(fiber.StatusCreated).JSON(eventResponseFromObject(obj))
 }
 
 // Update godoc
@@ -287,15 +295,7 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update event")
 	}
 
-	return c.JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.JSON(eventResponseFromObject(obj))
 }
 
 // Delete godoc
@@ -376,13 +376,5 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to move event")
 	}
 
-	return c.JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.JSON(eventResponseFromObject(obj))
 }

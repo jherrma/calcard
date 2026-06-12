@@ -93,6 +93,44 @@ func setupEventHandlerTest(t *testing.T) (*fiber.App, database.Database, *user.U
 	return app, db, u, cal, token
 }
 
+// TestEventHandlerVTODONilTimes is the regression test for M19: a stored object
+// without DTSTART/DTEND (e.g. a VTODO synced over CalDAV) must serialize through
+// the REST Get handler without panicking on a nil time pointer (which returned
+// a 500). eventResponseFromObject now zero-values the missing times.
+func TestEventHandlerVTODONilTimes(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+
+	// Insert a timeless VTODO directly — REST Create always supplies times, so
+	// such an object can only arrive via CalDAV PUT in production.
+	obj := &calendar.CalendarObject{
+		UUID:          "vtodo-uuid",
+		CalendarID:    cal.ID,
+		UID:           "vtodo-uid",
+		Path:          "vtodo-uid.ics",
+		ComponentType: "VTODO",
+		Summary:       "Buy milk",
+		ETag:          "etag-vtodo",
+		ICalData:      "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:vtodo-uid\r\nSUMMARY:Buy milk\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+		// StartTime and EndTime intentionally nil.
+	}
+	require.NoError(t, db.DB().Create(obj).Error)
+
+	req, _ := http.NewRequest("GET", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events/"+obj.UUID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusOK, resp.StatusCode, "GET of a timeless VTODO must not 500")
+
+	var res dto.EventResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&res))
+	assert.Equal(t, "vtodo-uid", res.UID)
+	assert.Equal(t, "Buy milk", res.Summary)
+	assert.True(t, res.Start.IsZero(), "missing DTSTART must serialize as a zero time, not panic")
+	assert.True(t, res.End.IsZero(), "missing DTEND must serialize as a zero time, not panic")
+}
+
 func TestEventHandler(t *testing.T) {
 	app, db, _, cal, token := setupEventHandlerTest(t)
 	defer db.Close()
