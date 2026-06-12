@@ -171,7 +171,12 @@ func (b *CalDAVBackend) GetCalendarObject(ctx context.Context, p string, req *ca
 		return nil, err
 	}
 
+	// A request without an object segment ("/dav/{user}/calendars/{cal}/")
+	// targets the collection, not an object — there is no object to GET.
 	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 5 {
+		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	}
 	objPath := parts[4]
 
 	obj, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
@@ -246,7 +251,12 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		return nil, webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
+	// A PUT without an object segment ("/dav/{user}/calendars/{cal}/")
+	// targets the collection itself, which is not a writable resource.
 	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 5 {
+		return nil, webdav.NewHTTPError(http.StatusMethodNotAllowed, nil)
+	}
 	objPath := parts[4]
 
 	_, uid, err := caldav.ValidateCalendarObject(icalCal)
