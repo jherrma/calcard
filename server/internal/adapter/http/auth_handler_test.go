@@ -168,10 +168,13 @@ func TestAuthHandler_Verify(t *testing.T) {
 	err := userRepo.Create(context.Background(), u)
 	require.NoError(t, err)
 
-	// Create verification token
+	// Create verification token. Tokens are stored hashed (SHA-256 hex); the
+	// raw token "valid-token" is what the client presents in the URL.
+	rawToken := "valid-token"
+	tokenSum := sha256.Sum256([]byte(rawToken))
 	v := &user.EmailVerification{
 		UserID:    u.ID,
-		Token:     "valid-token",
+		Token:     hex.EncodeToString(tokenSum[:]),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	err = userRepo.CreateVerification(context.Background(), v)

@@ -15,6 +15,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// dummyBcryptHash is compared against on the unknown-user path so Basic-Auth
+// timing doesn't reveal whether an email is registered.
+var dummyBcryptHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password-for-constant-time-compare"), bcrypt.DefaultCost)
+
 type Handler struct {
 	caldavHandler   *caldav.Handler
 	carddavHandler  *carddav.Handler
@@ -84,6 +88,11 @@ func (h *Handler) Authenticate() fiber.Handler {
 
 			emailOrUsername, password := pair[0], pair[1]
 			u, _ = h.userRepo.GetByEmail(c.Context(), emailOrUsername)
+			if u == nil {
+				// Dummy compare so the unknown-user path costs roughly the same
+				// as a wrong-password path (anti-enumeration).
+				_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
+			}
 			if u != nil {
 				ap, _ := h.appPwdRepo.FindValidForUser(c.Context(), u.ID, password)
 				if ap == nil {

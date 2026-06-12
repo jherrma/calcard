@@ -2,7 +2,7 @@ package http
 
 import (
 	"errors"
-	"fmt"
+	"log"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
@@ -222,8 +222,8 @@ func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 	}
 
 	if err := h.forgotUC.Execute(c.Context(), usecaseReq); err != nil {
-		// Log error but return success to prevent enumeration
-		fmt.Printf("Forgot password failed: %v\n", err)
+		// Log error but return success to prevent enumeration.
+		log.Printf("forgot password failed: %v", err)
 	}
 
 	return SuccessResponse(c, "If an account with that email exists, a password reset link has been sent.")

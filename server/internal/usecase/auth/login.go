@@ -18,6 +18,11 @@ var (
 	ErrInactiveAccount    = errors.New("account is not active")
 )
 
+// dummyBcryptHash is compared against on the user-not-found path so login takes
+// roughly the same time whether or not the email exists, defeating timing-based
+// account enumeration. Generated once at init.
+var dummyBcryptHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password-for-constant-time-compare"), bcrypt.DefaultCost)
+
 // LoginUseCase handles user authentication
 type LoginUseCase struct {
 	userRepo   user.UserRepository
@@ -62,6 +67,9 @@ func (uc *LoginUseCase) Execute(ctx context.Context, email, password string, use
 		return nil, ErrInvalidCredentials
 	}
 	if u == nil {
+		// Perform a dummy bcrypt comparison so the not-found path takes a
+		// similar amount of time as the wrong-password path (anti-enumeration).
+		_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
 		uc.logger.LogLoginAttempt(ctx, email, ip, userAgent, false, "user_not_found")
 		return nil, ErrInvalidCredentials
 	}

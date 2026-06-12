@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -98,11 +99,12 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		return nil, "", err
 	}
 
-	// 6. Create verification record if needed
+	// 6. Create verification record if needed. Store only the hash; the raw
+	// token goes out in the email link.
 	if token != "" {
 		v := &user.EmailVerification{
 			UserID:    u.ID,
-			Token:     token,
+			Token:     hashVerificationToken(token),
 			ExpiresAt: time.Now().Add(24 * time.Hour),
 		}
 		if err := uc.repo.CreateVerification(ctx, v); err != nil {
@@ -113,14 +115,13 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		if uc.cfg.SMTP.Host != "" {
 			link := fmt.Sprintf("%s/api/v1/auth/verify?token=%s", uc.cfg.BaseURL, token)
 			if err := uc.emailService.SendActivationEmail(ctx, u.Email, link); err != nil {
-				// We log the error but don't fail registration, as the user is already created
-				// and the token is in the DB. They might be able to retry or get support.
-				// In a real app, you might want to handle this differently. TODO
-				fmt.Printf("failed to send activation email: %v\n", err)
+				// Log the failure without the token-bearing link; the user is
+				// already created and can request a resend.
+				log.Printf("failed to send activation email to user %d: %v", u.ID, err)
 			}
 		} else {
-			// Log the link (mock email)
-			fmt.Printf("[MOCK EMAIL] Verification link: %s/api/v1/auth/verify?token=%s\n", uc.cfg.BaseURL, token)
+			// SMTP not configured: don't print the token-bearing link to logs.
+			log.Printf("activation email suppressed (SMTP not configured) for user %d", u.ID)
 		}
 	}
 
