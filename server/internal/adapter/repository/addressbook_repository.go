@@ -98,6 +98,9 @@ func (r *AddressBookRepository) GetObjectByPath(ctx context.Context, addressBook
 		}
 		return nil, err
 	}
+	if err := r.hydrateObjects(ctx, []*addressbook.AddressObject{&obj}); err != nil {
+		return nil, err
+	}
 	return &obj, nil
 }
 
@@ -133,6 +136,10 @@ func (r *AddressBookRepository) QueryObjects(ctx context.Context, addressBookID 
 	}
 
 	if err := db.Find(&objs).Error; err != nil {
+		return nil, err
+	}
+
+	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
 		return nil, err
 	}
 
@@ -284,6 +291,41 @@ func (r *AddressBookRepository) injectPhoto(vcardData string, photoData string, 
 	return buf.String(), nil
 }
 
+// hydrateObjects re-injects each object's stored PHOTO into its vCard body and
+// recomputes ContentLength, using a single photo query for the whole batch.
+// Every DAV read path must call this so served vCards include photos and the
+// Content-Length header matches the body (otherwise clients hang or delete the
+// photo on the next sync). Mutates the objects in place.
+func (r *AddressBookRepository) hydrateObjects(ctx context.Context, objs []*addressbook.AddressObject) error {
+	if len(objs) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(objs))
+	for _, o := range objs {
+		ids = append(ids, o.ID)
+	}
+	var photos []addressbook.ContactPhoto
+	if err := r.db.WithContext(ctx).Where("address_object_id IN ?", ids).Find(&photos).Error; err != nil {
+		return err
+	}
+	byObj := make(map[uint]addressbook.ContactPhoto, len(photos))
+	for _, p := range photos {
+		byObj[p.AddressObjectID] = p
+	}
+	for _, o := range objs {
+		if p, ok := byObj[o.ID]; ok && p.PhotoData != "" {
+			full, err := r.injectPhoto(o.VCardData, p.PhotoData, p.PhotoType)
+			if err != nil {
+				return fmt.Errorf("failed to inject photo: %w", err)
+			}
+			o.VCardData = full
+		}
+		// Always fix ContentLength to match the (possibly photo-injected) body.
+		o.ContentLength = len(o.VCardData)
+	}
+	return nil
+}
+
 func (r *AddressBookRepository) CreateObject(ctx context.Context, object *addressbook.AddressObject) error {
 	// Extract photo from vCardData
 	strippedVCard, photoData, photoType, err := r.extractPhoto(object.VCardData)
@@ -293,6 +335,7 @@ func (r *AddressBookRepository) CreateObject(ctx context.Context, object *addres
 
 	// Use stripped data for main object
 	object.VCardData = strippedVCard
+	object.ContentLength = len(strippedVCard)
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.WithContext(ctx).Create(object).Error; err != nil {
@@ -319,6 +362,9 @@ func (r *AddressBookRepository) GetObjectByID(ctx context.Context, id uint) (*ad
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
+		return nil, err
+	}
+	if err := r.hydrateObjects(ctx, []*addressbook.AddressObject{&obj}); err != nil {
 		return nil, err
 	}
 	return &obj, nil
@@ -362,7 +408,24 @@ func (r *AddressBookRepository) ListObjects(ctx context.Context, addressBookID u
 		return nil, 0, err
 	}
 
+	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
+		return nil, 0, err
+	}
+
 	return objs, total, nil
+}
+
+// hydrateObjectSlice is the value-slice convenience wrapper around
+// hydrateObjects (mutates the slice elements in place).
+func (r *AddressBookRepository) hydrateObjectSlice(ctx context.Context, objs []addressbook.AddressObject) error {
+	if len(objs) == 0 {
+		return nil
+	}
+	ptrs := make([]*addressbook.AddressObject, len(objs))
+	for i := range objs {
+		ptrs[i] = &objs[i]
+	}
+	return r.hydrateObjects(ctx, ptrs)
 }
 
 func (r *AddressBookRepository) GetObjectByUUID(ctx context.Context, uuid string) (*addressbook.AddressObject, error) {
@@ -373,25 +436,9 @@ func (r *AddressBookRepository) GetObjectByUUID(ctx context.Context, uuid string
 		}
 		return nil, err
 	}
-
-	// Fetch Photo
-	var photo addressbook.ContactPhoto
-	if err := r.db.WithContext(ctx).Where("address_object_id = ?", obj.ID).First(&photo).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
-		// No photo found, proceed
+	if err := r.hydrateObjects(ctx, []*addressbook.AddressObject{&obj}); err != nil {
+		return nil, err
 	}
-
-	// Inject Photo if exists
-	if photo.PhotoData != "" {
-		fullVCard, err := r.injectPhoto(obj.VCardData, photo.PhotoData, photo.PhotoType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to inject photo: %w", err)
-		}
-		obj.VCardData = fullVCard
-	}
-
 	return &obj, nil
 }
 
@@ -404,6 +451,7 @@ func (r *AddressBookRepository) UpdateObject(ctx context.Context, object *addres
 
 	// Use stripped data for main object
 	object.VCardData = strippedVCard
+	object.ContentLength = len(strippedVCard)
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.WithContext(ctx).Save(object).Error; err != nil {
@@ -510,6 +558,9 @@ func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, 
 		Find(&objs).Error
 
 	if err != nil {
+		return nil, err
+	}
+	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
 		return nil, err
 	}
 	return objs, nil

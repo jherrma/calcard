@@ -3,10 +3,13 @@
 package integration_test
 
 import (
+	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -124,4 +127,96 @@ func rawCall2(t *testing.T, method, fullURL, bearerToken string, body any, heade
 	respBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, resp.Header, respBody
+}
+
+// TestCardDAVPhotoRoundTrip is the regression test for H5: photos must survive
+// a CardDAV GET → PUT round-trip (previously the GET served a photo-stripped
+// vCard, and re-PUTting it deleted the stored photo). Also checks Content-Length
+// matches the served body.
+func TestCardDAVPhotoRoundTrip(t *testing.T) {
+	email := "photo-rt@example.test"
+	token, username := registerAndLoginFull(t, email, "photoSecret!123", "Photo RT")
+	_, appPass := createAppPassword(t, token, "photo-rt")
+
+	abPath := addressBookPath(t, token, "Contacts")
+	require.NotEmpty(t, abPath)
+	collection := "/dav/" + username + "/addressbooks/" + abPath + "/"
+
+	icon := readAsset(t, "user-icon.jpg")
+	b64 := base64.StdEncoding.EncodeToString(icon)
+	uid := "photo-rt-uid"
+	path := collection + uid + ".vcf"
+	vcardWithPhoto := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:" + uid + "\r\nFN:Photo Person\r\nN:Person;Photo;;;\r\n" +
+		"PHOTO;ENCODING=b;TYPE=JPEG:" + b64 + "\r\nEND:VCARD\r\n"
+
+	// PUT the contact with an embedded photo.
+	status, _, body := davCall(t, "PUT", path, email, appPass, vcardWithPhoto,
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "PUT: %s", string(body))
+
+	// GET it back: the body must include the PHOTO, and Content-Length must
+	// match the actual body length.
+	status, hdrs, getBody := davCall(t, "GET", path, email, appPass, "", nil)
+	require.Equalf(t, http.StatusOK, status, "GET: %s", string(getBody))
+	assert.Contains(t, string(getBody), "PHOTO", "served vCard must include the photo")
+	if cl := hdrs.Get("Content-Length"); cl != "" {
+		assert.Equalf(t, len(getBody), mustAtoi(t, cl),
+			"Content-Length (%s) must match body length (%d)", cl, len(getBody))
+	}
+
+	// Re-PUT the exact body we got back (what a syncing client does).
+	status, _, body = davCall(t, "PUT", path, email, appPass, string(getBody),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "re-PUT: %s", string(body))
+
+	// The photo must still be served via REST (proves it wasn't deleted).
+	abID := addressBookID(t, token, "Contacts")
+	var listResp struct {
+		Contacts []struct {
+			ID string `json:"id"`
+		} `json:"Contacts"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
+		"/addressbooks/"+uintStr(abID)+"/contacts", token, nil, &listResp))
+	require.NotEmpty(t, listResp.Contacts)
+	contactID := listResp.Contacts[0].ID
+
+	// Single-contact GET advertises a photo_url when a photo is present.
+	var single struct {
+		PhotoURL string `json:"photo_url"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
+		fmt.Sprintf("/addressbooks/%d/contacts/%s", abID, contactID), token, nil, &single))
+	require.NotEmptyf(t, single.PhotoURL, "photo must survive the GET→PUT round-trip")
+
+	// And the photo endpoint returns the JPEG bytes.
+	status, photoBytes := rawCall(t, http.MethodGet, baseURL+"/api/v1/addressbooks/"+uintStr(abID)+"/contacts/"+contactID+"/photo", token, nil, nil)
+	require.Equal(t, http.StatusOK, status)
+	require.GreaterOrEqual(t, len(photoBytes), 3)
+	assert.Equal(t, []byte{0xFF, 0xD8, 0xFF}, photoBytes[:3], "round-tripped photo must still be a JPEG")
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	require.NoError(t, err)
+	return n
+}
+
+// addressBookID returns the numeric ID of a named address book.
+func addressBookID(t *testing.T, token, name string) uint {
+	t.Helper()
+	var wrap struct {
+		AddressBooks []struct {
+			ID   uint   `json:"ID"`
+			Name string `json:"Name"`
+		} `json:"addressbooks"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &wrap))
+	for _, ab := range wrap.AddressBooks {
+		if ab.Name == name {
+			return ab.ID
+		}
+	}
+	return 0
 }

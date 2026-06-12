@@ -369,6 +369,12 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 	// would generate a second, different token and desync the change log
 	// from the address book row.
 
+	// CreateObject/UpdateObject strip the PHOTO into a side table and leave
+	// obj.VCardData stripped. Restore the full body (with photo) so the object
+	// we return matches what a subsequent GET will serve.
+	obj.VCardData = data
+	obj.ContentLength = len(data)
+
 	return b.mapAddressObject(p, obj)
 }
 
