@@ -194,6 +194,52 @@ END:VCALENDAR`
 		assert.Equal(t, "HTTP/1.1 404 Not Found", ms.Responses[0].Status)
 	})
 
+	t.Run("Initial Sync Synthesizes Current State", func(t *testing.T) {
+		// At this point item1 was created, modified, and deleted. A fresh
+		// initial sync (empty token) must report only current members once
+		// each — NOT replay the raw change log (which would include item1's
+		// create/modify rows and a 404 for the deleted item). Create item2 so
+		// there's exactly one live member to find.
+		icalData := `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CalCard//EN
+BEGIN:VEVENT
+UID:sync-event-2
+DTSTAMP:20240123T090000Z
+DTSTART:20240123T090000Z
+DTEND:20240123T100000Z
+SUMMARY:Sync Event 2
+END:VEVENT
+END:VCALENDAR`
+		req, _ := http.NewRequest("PUT", "/dav/syncuser/calendars/sync-test/item2.ics", bytes.NewReader([]byte(icalData)))
+		req.Header.Set("Authorization", authHeader)
+		req.Header.Set("Content-Type", "text/calendar")
+		_, _ = app.Test(req)
+
+		body := `<?xml version="1.0" encoding="utf-8" ?>
+<D:sync-collection xmlns:D="DAV:">
+  <D:sync-token/>
+  <D:sync-level>1</D:sync-level>
+  <D:prop><D:getetag/></D:prop>
+</D:sync-collection>`
+		req, _ = http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
+		req.Header.Set("Authorization", authHeader)
+		req.Header.Set("Content-Type", "application/xml")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, 207, resp.StatusCode)
+
+		var ms SyncMultiStatus
+		require.NoError(t, xml.NewDecoder(resp.Body).Decode(&ms))
+		// Exactly one live member, reported as present (not 404), and no
+		// duplicate/stale entries for the deleted item1.
+		assert.Equal(t, 1, len(ms.Responses), "initial sync must report current members once each")
+		for _, r := range ms.Responses {
+			assert.Contains(t, r.Href, "item2.ics")
+			assert.NotContains(t, r.Status, "404", "initial sync must not emit 404 removals")
+		}
+	})
+
 	t.Run("Invalid Token", func(t *testing.T) {
 		body := `<?xml version="1.0" encoding="utf-8" ?>
 <D:sync-collection xmlns:D="DAV:">

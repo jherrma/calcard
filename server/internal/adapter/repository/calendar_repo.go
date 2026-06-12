@@ -166,11 +166,36 @@ func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, obj *cale
 // GetChangesSinceToken retrieves all changes to a calendar since a given sync token
 func (r *CalendarRepository) GetChangesSinceToken(ctx context.Context, calendarID uint, token string) ([]*calendar.SyncChangeLog, error) {
 	var changes []*calendar.SyncChangeLog
+
+	if token == "" {
+		// Initial sync (RFC 6578 §3.3): report the current members once each,
+		// synthesized from live objects — NOT a replay of the raw change log
+		// (which would duplicate hrefs and emit 404s for long-gone resources).
+		var objs []*calendar.CalendarObject
+		if err := r.db.WithContext(ctx).Where("calendar_id = ?", calendarID).Find(&objs).Error; err != nil {
+			return nil, err
+		}
+		var cal calendar.Calendar
+		if err := r.db.WithContext(ctx).First(&cal, calendarID).Error; err != nil {
+			return nil, err
+		}
+		for _, obj := range objs {
+			changes = append(changes, &calendar.SyncChangeLog{
+				CalendarID:   calendarID,
+				ResourcePath: obj.Path,
+				ResourceUID:  obj.UID,
+				ChangeType:   "created",
+				SyncToken:    cal.SyncToken,
+			})
+		}
+		return changes, nil
+	}
+
 	// "collection" anchor rows exist only to give freshly minted tokens a valid
 	// change-log entry; they never represent a resource change, so exclude them
 	// from the delta itself.
 	query := r.db.WithContext(ctx).Where("calendar_id = ?", calendarID).Where("change_type <> ?", "collection")
-	if token != "" {
+	{
 		// Find the ID of the sync change log entry with the given token
 		var lastChange calendar.SyncChangeLog
 		err := r.db.WithContext(ctx).Where("calendar_id = ? AND sync_token = ?", calendarID, token).First(&lastChange).Error
