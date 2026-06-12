@@ -109,6 +109,13 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 		}
 
 		if u != nil {
+			// Auto-linking an OAuth identity onto an existing local account by
+			// email is an account-takeover vector unless the provider asserts
+			// the email is verified. Require it; otherwise the user must sign in
+			// with their password and link the provider explicitly from settings.
+			if !userInfo.EmailVerified {
+				return nil, fmt.Errorf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", providerName, providerName)
+			}
 			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo, token.AccessToken, token.RefreshToken, token.Expiry); err != nil {
 				return nil, err
 			}
