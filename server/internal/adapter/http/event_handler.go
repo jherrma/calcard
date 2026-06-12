@@ -41,26 +41,35 @@ func NewEventHandler(
 	}
 }
 
-// ownsCalendar reports whether the authenticated user owns the calendar with
-// the given numeric id. Returns false on lookup errors or mismatched owner —
-// callers treat "not owned" exactly like "not found" (404) so existence
-// isn't leaked across users.
-func (h *EventHandler) ownsCalendar(c fiber.Ctx, calendarID uint) bool {
+// calendarPermission returns the authenticated user's effective permission on
+// the calendar with the given numeric id. GetUserPermission already resolves
+// ownership (PermissionOwner) and shares (PermissionRead / PermissionReadWrite),
+// and returns PermissionNone when the calendar is missing or unshared — which
+// callers treat exactly like "not found" (404) so existence isn't leaked.
+func (h *EventHandler) calendarPermission(c fiber.Ctx, calendarID uint) calendar.CalendarPermission {
 	userID := c.Locals("user_id").(uint)
-	cal, err := h.calendarRepo.GetByID(c.Context(), calendarID)
-	return err == nil && cal != nil && cal.UserID == userID
+	perm, err := h.calendarRepo.GetUserPermission(c.Context(), calendarID, userID)
+	if err != nil {
+		return calendar.PermissionNone
+	}
+	return perm
 }
 
-// ownsEvent reports whether the authenticated user owns the calendar that
-// contains the event identified by eventUUID.
-func (h *EventHandler) ownsEvent(c fiber.Ctx, eventUUID string) bool {
-	userID := c.Locals("user_id").(uint)
+// eventPermission returns the user's permission on the calendar that contains
+// the event identified by eventUUID (PermissionNone when the event doesn't
+// exist or the calendar is neither owned nor shared with the user).
+func (h *EventHandler) eventPermission(c fiber.Ctx, eventUUID string) calendar.CalendarPermission {
 	obj, err := h.calendarRepo.GetCalendarObjectByUUID(c.Context(), eventUUID)
 	if err != nil || obj == nil {
-		return false
+		return calendar.PermissionNone
 	}
-	cal, err := h.calendarRepo.GetByID(c.Context(), obj.CalendarID)
-	return err == nil && cal != nil && cal.UserID == userID
+	return h.calendarPermission(c, obj.CalendarID)
+}
+
+// canWrite reports whether a permission grants write access (owner or
+// read-write). Read access is any permission other than PermissionNone.
+func canWrite(p calendar.CalendarPermission) bool {
+	return p == calendar.PermissionOwner || p == calendar.PermissionReadWrite
 }
 
 // List godoc
@@ -79,7 +88,7 @@ func (h *EventHandler) ownsEvent(c fiber.Ctx, eventUUID string) bool {
 // @Router       /calendars/{calendar_id}/events [get]
 func (h *EventHandler) List(c fiber.Ctx) error {
 	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
-	if !h.ownsCalendar(c, uint(calendarID)) {
+	if h.calendarPermission(c, uint(calendarID)) == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
 	startStr := c.Query("start")
@@ -143,7 +152,7 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id} [get]
 func (h *EventHandler) Get(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	if h.eventPermission(c, eventID) == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
 	obj, err := h.getUC.Execute(c.Context(), eventID)
@@ -177,8 +186,12 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events [post]
 func (h *EventHandler) Create(c fiber.Ctx) error {
 	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
-	if !h.ownsCalendar(c, uint(calendarID)) {
+	perm := h.calendarPermission(c, uint(calendarID))
+	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	if !canWrite(perm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
 	}
 	var req dto.CreateEventRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -236,8 +249,12 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id} [put]
 func (h *EventHandler) Update(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	perm := h.eventPermission(c, eventID)
+	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
+	if !canWrite(perm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
 	}
 	var req dto.UpdateEventRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -295,8 +312,12 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id} [delete]
 func (h *EventHandler) Delete(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	perm := h.eventPermission(c, eventID)
+	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
+	if !canWrite(perm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
 	}
 	scope := c.Query("scope", "all")
 	recurrenceID := c.Query("recurrence_id")
@@ -327,8 +348,12 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id}/move [post]
 func (h *EventHandler) Move(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	srcPerm := h.eventPermission(c, eventID)
+	if srcPerm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
+	if !canWrite(srcPerm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to the source calendar")
 	}
 	var req dto.MoveEventRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -336,8 +361,12 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 	}
 
 	targetCalendarID, _ := strconv.Atoi(req.TargetCalendarID)
-	if !h.ownsCalendar(c, uint(targetCalendarID)) {
+	targetPerm := h.calendarPermission(c, uint(targetCalendarID))
+	if targetPerm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	if !canWrite(targetPerm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to the target calendar")
 	}
 	obj, err := h.moveUC.Execute(c.Context(), event.MoveEventInput{
 		EventUUID:        eventID,

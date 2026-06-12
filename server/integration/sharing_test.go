@@ -480,3 +480,95 @@ func shareAB(t *testing.T, ownerToken string, abID uint, targetEmail, permission
 		map[string]string{"user_identifier": targetEmail, "permission": permission}, &resp)
 	require.Equalf(t, http.StatusCreated, code, "share addressbook (%s)", permission)
 }
+
+// TestSharedCalendarEventPermissions is the regression test for H7 (REST part):
+// the event endpoints must honor share permissions, not just ownership. A
+// stranger gets 404 (no existence leak); a read-write sharee can list/create
+// events on the shared calendar (previously every event call 404'd because the
+// gate only checked ownership); a read-only sharee can list but every write is
+// rejected with 403.
+func TestSharedCalendarEventPermissions(t *testing.T) {
+	ownerEmail := "evt-share-owner@example.test"
+	shareeEmail := "evt-share-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken := registerAndLogin(t, ownerEmail, password, "Evt Owner")
+	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Evt Sharee")
+
+	calID, _ := createCalendar(t, ownerToken, "Team Calendar", "#123456")
+	eventsPath := "/calendars/" + uintStr(calID) + "/events/"
+	rangeQS := "?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z&expand=false"
+	start := time.Date(2032, 3, 1, 9, 0, 0, 0, time.UTC)
+
+	// Owner seeds an event.
+	var seed struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, eventsPath, ownerToken, map[string]any{
+		"summary": "Owner Event", "start": start.Format(time.RFC3339),
+		"end": start.Add(time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
+	}, &seed)
+	require.Equal(t, http.StatusCreated, code)
+
+	// --- Before any share: the sharee can't see the calendar's events -----
+	status, _ := restCall(t, http.MethodGet, eventsPath+rangeQS, shareeToken, nil)
+	require.Equal(t, http.StatusNotFound, status, "stranger must get 404 listing a calendar they can't see")
+
+	// --- Owner shares read-write ------------------------------------------
+	var shareResp struct {
+		ID string `json:"id"`
+	}
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": shareeEmail, "permission": "read-write"}, &shareResp)
+	require.Equal(t, http.StatusCreated, code)
+	shareUUID := shareResp.ID
+
+	// Read-write sharee can list events (404 before the fix).
+	var shareeList struct {
+		Events []struct {
+			ID string `json:"id"`
+		} `json:"events"`
+	}
+	code = doJSONRaw(t, http.MethodGet, eventsPath+rangeQS, shareeToken, nil, &shareeList)
+	require.Equal(t, http.StatusOK, code, "read-write sharee must be able to list events")
+	require.NotEmpty(t, shareeList.Events)
+
+	// ...and create one the owner then sees.
+	var created struct {
+		ID string `json:"id"`
+	}
+	code = doJSONRaw(t, http.MethodPost, eventsPath, shareeToken, map[string]any{
+		"summary": "Sharee Event", "start": start.Add(48 * time.Hour).Format(time.RFC3339),
+		"end": start.Add(49 * time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
+	}, &created)
+	require.Equal(t, http.StatusCreated, code, "read-write sharee must be able to create events")
+	require.GreaterOrEqual(t, len(collectEventUIDs(t, ownerToken, calID, rangeQS)), 2,
+		"owner must see the event the sharee created")
+
+	// --- Owner downgrades the share to read-only --------------------------
+	var updated struct {
+		Permission string `json:"permission"`
+	}
+	code = doJSONRaw(t, http.MethodPatch, "/calendars/"+uintStr(calID)+"/shares/"+shareUUID, ownerToken,
+		map[string]string{"permission": "read"}, &updated)
+	require.Equal(t, http.StatusOK, code)
+
+	// Read-only sharee can still list...
+	code = doJSONRaw(t, http.MethodGet, eventsPath+rangeQS, shareeToken, nil, &shareeList)
+	require.Equal(t, http.StatusOK, code, "read-only sharee can still list events")
+	require.NotEmpty(t, shareeList.Events)
+	evID := shareeList.Events[0].ID
+
+	// ...but every write is now 403, not a silent success and not a 404.
+	status, _ = restCall(t, http.MethodPost, eventsPath, shareeToken, map[string]any{
+		"summary": "Nope", "start": start.Format(time.RFC3339),
+		"end": start.Add(time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
+	})
+	assert.Equal(t, http.StatusForbidden, status, "read-only sharee create must be 403")
+
+	status, _ = restCall(t, http.MethodPatch, eventsPath+evID, shareeToken, map[string]any{"summary": "Hijack"})
+	assert.Equal(t, http.StatusForbidden, status, "read-only sharee update must be 403")
+
+	status, _ = restCall(t, http.MethodDelete, eventsPath+evID, shareeToken, nil)
+	assert.Equal(t, http.StatusForbidden, status, "read-only sharee delete must be 403")
+}
