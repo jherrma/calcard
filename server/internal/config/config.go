@@ -178,7 +178,7 @@ func Load(configPath string) (*Config, error) {
 			Enabled:          false,
 			AllowedOrigins:   []string{"*"},
 			ExposeHeaders:    []string{"ETag", "DAV", "Allow", "Link"},
-			AllowCredentials: true,
+			AllowCredentials: false,
 			MaxAge:           86400,
 		},
 		Security: SecurityConfig{
@@ -250,6 +250,18 @@ func (c *Config) Validate() error {
 	}
 	if c.BaseURL == "" {
 		errs = append(errs, "CALDAV_BASE_URL must be set")
+	}
+
+	// Fiber's CORS middleware panics when credentials are allowed together with
+	// a wildcard origin. Reject that combination here with a clear message
+	// instead of crashing at startup (M15).
+	if c.CORS.Enabled && c.CORS.AllowCredentials {
+		for _, o := range c.CORS.AllowedOrigins {
+			if o == "*" {
+				errs = append(errs, `CORS cannot combine AllowCredentials with a wildcard origin "*"; set explicit CALDAV_CORS_ALLOWED_ORIGINS`)
+				break
+			}
+		}
 	}
 
 	if c.TLS.Enabled {
