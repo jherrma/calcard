@@ -114,8 +114,19 @@ func (c *DatabaseConfig) DSN(dataDir string) string {
 	if c.IsSQLite() {
 		return filepath.Join(dataDir, "caldav.db")
 	}
+	// Quote each value per libpq rules so values with spaces, quotes or
+	// backslashes don't break the key=value DSN.
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode)
+		quoteDSNValue(c.Host), quoteDSNValue(c.Port), quoteDSNValue(c.User),
+		quoteDSNValue(c.Password), quoteDSNValue(c.Name), quoteDSNValue(c.SSLMode))
+}
+
+// quoteDSNValue wraps a libpq key=value DSN value in single quotes, escaping
+// backslashes and single quotes.
+func quoteDSNValue(v string) string {
+	v = strings.ReplaceAll(v, "\\", "\\\\")
+	v = strings.ReplaceAll(v, "'", "\\'")
+	return "'" + v + "'"
 }
 
 // IsSQLite returns true if the driver is sqlite
