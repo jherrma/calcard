@@ -251,6 +251,17 @@ func (r *CalendarRepository) RecordChange(ctx context.Context, calendarID uint, 
 	})
 }
 
+// recordChange advances the collection's sync token and appends a changelog row
+// inside tx.
+//
+// Known limitation (M20): under PostgreSQL, concurrent transactions can commit
+// changelog rows out of monotonic ID order. A client running a sync REPORT in
+// the window between two such commits can permanently miss the lower-ID change,
+// because its next sync starts from the higher token it already observed. This
+// is not mitigated here. A full fix would serialize changelog appends per
+// collection (e.g. a Postgres advisory lock keyed on calendarID, or
+// SELECT ... FOR UPDATE on the calendar row before inserting). SQLite is
+// unaffected because writes are serialized.
 func (r *CalendarRepository) recordChange(tx *gorm.DB, calendarID uint, path, uid, changeType string) error {
 	newToken := calendar.GenerateSyncToken()
 
