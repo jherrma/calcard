@@ -37,6 +37,22 @@ func (uc *ExportUseCase) Execute(ctx context.Context, id uint, userID uint) ([]b
 		sb.WriteString("\n")
 	}
 
-	filename := fmt.Sprintf("%s.vcf", ab.Name)
+	filename := fmt.Sprintf("%s.vcf", sanitizeFilename(ab.Name))
 	return []byte(sb.String()), filename, nil
+}
+
+// sanitizeFilename removes characters unsafe for filenames. Mirrors the helper
+// in usecase/calendar/export.go (different package, so duplicated).
+func sanitizeFilename(name string) string {
+	replacer := map[rune]rune{
+		'/': '-', '\\': '-', ':': '-', '*': '-', '?': '-',
+		'"': '-', '<': '-', '>': '-', '|': '-',
+	}
+	result := []rune(name)
+	for i, r := range result {
+		if replacement, ok := replacer[r]; ok {
+			result[i] = replacement
+		}
+	}
+	return string(result)
 }
