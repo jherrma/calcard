@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -114,19 +116,22 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// The browser arrived here via a provider redirect, so we must redirect back
+	// to the SPA — returning JSON would dead-end on a raw JSON page (H16). Tokens
+	// go in the URL *fragment* (after '#'), which browsers never send to the
+	// server and which is kept out of most access logs.
+	base := strings.TrimRight(h.cfg.BaseURL, "/")
+
 	if ctxData.Action == "link" {
-		// Redirect to settings?
-		// AC says: "Redirect to settings page" for linking.
-		// But definition of done says "Users can link...".
-		// Story: "Redirect to settings page".
-		// If I return JSON, frontend can handle it.
-		// But if initiate was a redirect, the browser is here.
-		// Detailed AC: "Redirect to settings page".
-		return c.Redirect().To("/settings/auth") // Assuming frontend route
+		return c.Redirect().To(fmt.Sprintf("%s/settings/auth#linked=%s", base, url.QueryEscape(provider)))
 	}
 
-	// Login
-	return c.Status(http.StatusCreated).JSON(result)
+	// Login: hand the freshly minted tokens to the SPA callback page.
+	frag := url.Values{}
+	frag.Set("access_token", result.AccessToken)
+	frag.Set("refresh_token", result.RefreshToken)
+	frag.Set("expires_at", fmt.Sprintf("%d", result.ExpiresAt.Unix()))
+	return c.Redirect().To(fmt.Sprintf("%s/auth/oauth/callback#%s", base, frag.Encode()))
 }
 
 func (h *OAuthHandler) Unlink(c fiber.Ctx) error {
