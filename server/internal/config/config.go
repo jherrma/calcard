@@ -274,9 +274,13 @@ func (c *Config) Validate() error {
 	}
 
 	// Fiber's CORS middleware panics when credentials are allowed together with
-	// a wildcard origin. Reject that combination here with a clear message
-	// instead of crashing at startup (M15).
+	// a wildcard origin. Fiber treats BOTH a literal "*" origin AND an empty
+	// origin list as "allow all", so reject either combination here with a clear
+	// message instead of crashing at startup (M15).
 	if c.CORS.Enabled && c.CORS.AllowCredentials {
+		if len(c.CORS.AllowedOrigins) == 0 {
+			errs = append(errs, "CORS cannot combine AllowCredentials with an empty origin list (Fiber treats it as a wildcard); set explicit CALDAV_CORS_ALLOWED_ORIGINS")
+		}
 		for _, o := range c.CORS.AllowedOrigins {
 			if o == "*" {
 				errs = append(errs, `CORS cannot combine AllowCredentials with a wildcard origin "*"; set explicit CALDAV_CORS_ALLOWED_ORIGINS`)
