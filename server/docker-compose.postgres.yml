@@ -11,10 +11,10 @@ services:
       - CALDAV_DB_HOST=postgres
       - CALDAV_DB_PORT=5432
       - CALDAV_DB_USER=caldav
-      - CALDAV_DB_PASSWORD=${POSTGRES_PASSWORD:-caldav_secret}
+      - CALDAV_DB_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in your .env}
       - CALDAV_DB_NAME=caldav
       - CALDAV_DB_SSLMODE=disable
-      - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-change-me-in-production}
+      - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-}
       - CALDAV_BASE_URL=${CALDAV_BASE_URL:-http://localhost:8080}
     depends_on:
       postgres:
@@ -25,7 +25,7 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=caldav
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-caldav_secret}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in your .env}
       - POSTGRES_DB=caldav
     volumes:
       - postgres_data:/var/lib/postgresql/data
