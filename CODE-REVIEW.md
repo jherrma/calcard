@@ -30,7 +30,7 @@ point at the commit that addresses each item (`git show <hash>`).
 | H13 | Fixed | `dfac4c7` |
 | H14 | Fixed | `c7dd0cb` |
 | H15 | Fixed | `926c965` |
-| H16 | Fixed | `8ab22f2` |
+| H16 | Fixed | `8ab22f2`, `fe3a5fe` (also redirect error paths to the SPA) |
 | M1 | Fixed | `02488e5` |
 | M2 | Fixed | `c7ab882` |
 | M3 | Fixed | `00d5b61` |
@@ -45,10 +45,10 @@ point at the commit that addresses each item (`git show <hash>`).
 | M12 | Fixed | `5392e7e` |
 | M13 | Fixed | `4c2a63f` |
 | M14 | Fixed | `40d7116` |
-| M15 | Fixed | `e3b53ce` |
-| M16 | Fixed | `d8a4382` |
+| M15 | Fixed | `e3b53ce`, `ddf0d4d` (also reject empty origin list + credentials) |
+| M16 | Fixed | `d8a4382`, `41057ef` (also neutralize `.env.example` default) |
 | M17 | Fixed | `63c435d` |
-| M18 | Fixed | `f871eb2` |
+| M18 | Fixed | `f871eb2`, `0c986a2` (also honor documented `--config` / `CALDAV_CONFIG_PATH`) |
 | M19 | Fixed | `08e4263` |
 | M20 | **Documented, not mitigated** | `dde95e7` — see Known limitations |
 | Low: login timing enumeration | Fixed | `86b4b3c` |
@@ -63,8 +63,8 @@ point at the commit that addresses each item (`git show <hash>`).
 | Low: Postgres DSN naive `Sprintf` | Fixed | `3bc9f5c` |
 | Low: `CalDAVCredential` registered twice | Fixed | `a508da5` |
 | Low: LIKE wildcards unescaped | Fixed | `c1d2fd0` |
-| Low: export filename unsanitized | Fixed | `33e307b` |
-| Low: `X-WR-CALNAME`/`CALDESC` written raw | Fixed (escaping) | `8623bdb` — 75-octet line folding still not implemented |
+| Low: export filename unsanitized | Fixed | `33e307b`, `6604d0b` (also public feed `Content-Disposition`) |
+| Low: `X-WR-CALNAME`/`CALDESC` written raw | Fixed (escaping) | `8623bdb`, `64a41f5` (also backup export + public feed) — 75-octet line folding still not implemented |
 | Low: missing `start`/`end` → 400 | **Deferred** | — see Known limitations |
 | Low: no event time/RRULE validation on REST create | Fixed | `2a55e3e` |
 | Low: refresh timers never cancelled (frontend) | Fixed | `926c965` |
@@ -88,6 +88,25 @@ point at the commit that addresses each item (`git show <hash>`).
 - **Out of scope (pre-agreed):** refresh-token rotation + reuse detection, and
   changelog pruning (the M5 *replay* bug is fixed; unbounded changelog growth is
   a separate maintenance task).
+
+### Follow-up considerations (surfaced by an adversarial review of the fixes)
+
+These were intentionally left unchanged because they are product/scope decisions
+rather than clear defects — flagged here so the team can decide:
+
+- **OAuth sign-up bypasses the registration toggle.** `CALDAV_REGISTRATION_DISABLED`
+  gates the local `/auth/register` handler, but `oauth_callback.go` still
+  provisions a brand-new account on first OAuth login. If "registration disabled"
+  is meant to block *all* new accounts, OAuth auto-provisioning needs the same
+  guard; if SSO provisioning is intentionally independent, no change is needed.
+- **`import_handler.go` keeps its own 10 MB upload cap** independent of
+  `Security.MaxRequestSize`. Raising `MaxRequestSize` does not raise the import
+  limit. This is arguably an intentional per-feature limit, not the M-level
+  "server ignores config" bug, so it was left as-is.
+- **Frontend `register.vue` doesn't pre-check `registration_enabled`** — the
+  backend correctly 403s, and `login.vue` hides the register link, but a user who
+  navigates directly to `/auth/register` only learns it's disabled on submit. A
+  UX gap, not a security hole.
 
 ---
 
