@@ -130,9 +130,11 @@ func (c *DatabaseConfig) IsPostgres() bool {
 
 // Load initialization the configuration from environment variables and an optional YAML file
 func Load(configPath string) (*Config, error) {
-	// 0. Load .env files if they exist
-	// We ignore errors because .env files are optional
-	_ = godotenv.Load(".env", ".env.local")
+	// 0. Load .env files if they exist. Load each separately and ignore its
+	// error individually — godotenv.Load(".env", ".env.local") stops at the
+	// first missing file, so a missing .env used to block .env.local entirely.
+	_ = godotenv.Load(".env")
+	_ = godotenv.Load(".env.local")
 
 	// Set hardcoded defaults
 	cfg := &Config{
