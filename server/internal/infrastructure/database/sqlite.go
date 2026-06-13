@@ -23,7 +23,11 @@ func NewSQLite(cfg *config.Config) (Database, error) {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	dsn := cfg.Database.DSN(cfg.DataDir)
+	// Append SQLite PRAGMAs as DSN query parameters so they apply to EVERY
+	// pooled connection (mattn/go-sqlite3 runs them on each connect). Setting
+	// them once via Exec only configured a single connection — H13.
+	dsn := cfg.Database.DSN(cfg.DataDir) +
+		"?_busy_timeout=5000&_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL"
 	dbLogger := logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
 		SlowThreshold:             200 * time.Millisecond,
 		LogLevel:                  logger.Warn,
@@ -34,25 +38,6 @@ func NewSQLite(cfg *config.Config) (Database, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to sqlite: %w", err)
-	}
-
-	// Apply SQLite pragmas
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
-	}
-
-	pragmas := []string{
-		"PRAGMA journal_mode=WAL;",
-		"PRAGMA foreign_keys=ON;",
-		"PRAGMA busy_timeout=5000;",
-		"PRAGMA synchronous=NORMAL;",
-	}
-
-	for _, pragma := range pragmas {
-		if _, err := sqlDB.Exec(pragma); err != nil {
-			return nil, fmt.Errorf("failed to apply pragma %s: %w", pragma, err)
-		}
 	}
 
 	return &sqliteDB{db: db}, nil
