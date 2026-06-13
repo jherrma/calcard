@@ -130,12 +130,14 @@ func buildICalendarExport(cal *calendar.Calendar, objects []*calendar.CalendarOb
 	sb.WriteString("VERSION:2.0\r\n")
 	sb.WriteString("PRODID:-//CalDAV Server//EN\r\n")
 	sb.WriteString("CALSCALE:GREGORIAN\r\n")
-	sb.WriteString(fmt.Sprintf("X-WR-CALNAME:%s\r\n", cal.Name))
+	// Escape calendar-supplied text per RFC 5545 so a name/description with
+	// ';', ',', '\' or newlines can't corrupt the feed inside the backup ZIP.
+	sb.WriteString(fmt.Sprintf("X-WR-CALNAME:%s\r\n", escapeICalText(cal.Name)))
 	if cal.Timezone != "" {
-		sb.WriteString(fmt.Sprintf("X-WR-TIMEZONE:%s\r\n", cal.Timezone))
+		sb.WriteString(fmt.Sprintf("X-WR-TIMEZONE:%s\r\n", escapeICalText(cal.Timezone)))
 	}
 	if cal.Description != "" {
-		sb.WriteString(fmt.Sprintf("X-WR-CALDESC:%s\r\n", cal.Description))
+		sb.WriteString(fmt.Sprintf("X-WR-CALDESC:%s\r\n", escapeICalText(cal.Description)))
 	}
 
 	for _, obj := range objects {
@@ -174,4 +176,13 @@ func sanitizeFilename(name string) string {
 		}
 	}
 	return string(result)
+}
+
+// escapeICalText escapes a string per RFC 5545 text rules for property values.
+func escapeICalText(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, ";", "\\;")
+	s = strings.ReplaceAll(s, ",", "\\,")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	return s
 }

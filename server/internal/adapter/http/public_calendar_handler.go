@@ -75,7 +75,7 @@ func (h *PublicCalendarHandler) generateICalFeed(cal *calendar.Calendar, events 
 	b.WriteString("METHOD:PUBLISH\r\n")
 	b.WriteString(fmt.Sprintf("X-WR-CALNAME:%s\r\n", escapeICalText(cal.Name)))
 	if cal.Timezone != "" {
-		b.WriteString(fmt.Sprintf("X-WR-TIMEZONE:%s\r\n", cal.Timezone))
+		b.WriteString(fmt.Sprintf("X-WR-TIMEZONE:%s\r\n", escapeICalText(cal.Timezone)))
 	}
 
 	// Add events - extract VEVENT/VTODO from stored iCalendar data
