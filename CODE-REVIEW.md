@@ -6,6 +6,91 @@ Severity legend: **Critical** = core feature broken or remote code execution; **
 
 ---
 
+## Fix status — branch `fix/code-review-findings`
+
+All findings below were remediated on this branch unless marked otherwise. Hashes
+point at the commit that addresses each item (`git show <hash>`).
+
+| Finding | Status | Commit |
+|---------|--------|--------|
+| C1 | Fixed | `d1e543e` |
+| C2 | Fixed | `9f4949d` |
+| H1 | Fixed | `a5e7a52` |
+| H2 | Fixed | `1971c95` |
+| H3 | Fixed | `4c2a63f` |
+| H4 | Fixed | `c8871fe` |
+| H5 | Fixed | `5c19ce5` |
+| H6 | Fixed | `2b7b37e` |
+| H7 | Fixed | `43410dd` (REST), `5392e7e` (DAV), `0b46ea9` (ghost shares) |
+| H8 | Fixed | `52ea282` (mint), `cd40198` (call sites) |
+| H9 | Fixed | `5392e7e` |
+| H10 | Fixed | `d1e543e` |
+| H11 | Fixed | `d72d79b` |
+| H12 | Fixed | `88340bb` |
+| H13 | Fixed | `dfac4c7` |
+| H14 | Fixed | `c7dd0cb` |
+| H15 | Fixed | `926c965` |
+| H16 | Fixed | `8ab22f2` |
+| M1 | Fixed | `02488e5` |
+| M2 | Fixed | `c7ab882` |
+| M3 | Fixed | `00d5b61` |
+| M4 | Fixed | `878a97b` |
+| M5 | Fixed (replay/404) | `c3925ed` — changelog *pruning* remains out of scope |
+| M6 | Fixed | `3e33512` |
+| M7 | **Open** | not addressed — see Known limitations |
+| M8 | Fixed | `59e35a6` |
+| M9 | Fixed | `5391928` |
+| M10 | Fixed | `877711d` |
+| M11 | Fixed | `528fe52` |
+| M12 | Fixed | `5392e7e` |
+| M13 | Fixed | `4c2a63f` |
+| M14 | Fixed | `40d7116` |
+| M15 | Fixed | `e3b53ce` |
+| M16 | Fixed | `d8a4382` |
+| M17 | Fixed | `63c435d` |
+| M18 | Fixed | `f871eb2` |
+| M19 | Fixed | `08e4263` |
+| M20 | **Documented, not mitigated** | `dde95e7` — see Known limitations |
+| Low: login timing enumeration | Fixed | `86b4b3c` |
+| Low: email-verification tokens in plaintext | Fixed | `86b4b3c` |
+| Low: refresh tokens never rotated | **Out of scope** | — |
+| Low: tokens/links printed to stdout | Fixed | `86b4b3c` |
+| Low: no pagination cap | Fixed | `86b4b3c` |
+| Low: `registration_enabled` hardcoded | Fixed | `1a45e0f` |
+| Low: DAV docs path containment | Fixed | `9a17ca7` |
+| Low: `.env.local` not loaded when `.env` absent | Fixed | `27f7d5a` |
+| Low: `MaxRequestSize`/`RequestTimeout` ignored | Fixed | `da3212e` |
+| Low: Postgres DSN naive `Sprintf` | Fixed | `3bc9f5c` |
+| Low: `CalDAVCredential` registered twice | Fixed | `a508da5` |
+| Low: LIKE wildcards unescaped | Fixed | `c1d2fd0` |
+| Low: export filename unsanitized | Fixed | `33e307b` |
+| Low: `X-WR-CALNAME`/`CALDESC` written raw | Fixed (escaping) | `8623bdb` — 75-octet line folding still not implemented |
+| Low: missing `start`/`end` → 400 | **Deferred** | — see Known limitations |
+| Low: no event time/RRULE validation on REST create | Fixed | `2a55e3e` |
+| Low: refresh timers never cancelled (frontend) | Fixed | `926c965` |
+
+### Known limitations (intentionally not fixed in this pass)
+
+- **M20 — changelog commit-order race (Postgres).** Documented inline in
+  `recordChange` (`calendar_repo.go`, commit `dde95e7`) but not mitigated. A full
+  fix would serialize changelog appends per collection (advisory lock keyed on
+  `calendarID`, or `SELECT … FOR UPDATE` on the calendar row). SQLite is
+  unaffected because writes are serialized.
+- **Missing `start`/`end` → 400 (Low).** Deferred. At least four integration
+  tests list events with no range and expect 200 (`authz_test.go`,
+  `calendar_export_test.go`, `backup_test.go`, `flow_test.go`), and "list all
+  events" is a legitimate call. The handler already returns 400 for a
+  *present-but-unparseable* value, which covers the real foot-gun. Making the
+  params mandatory is a separate change that must also update those tests.
+- **M7 — raw `Joins` bypass the joined table's soft-delete scope.** Not addressed
+  on this branch; contacts of soft-deleted address books can still surface in
+  global search / counts (`addressbook_repository.go`). Tracked for a follow-up.
+- **Out of scope (pre-agreed):** refresh-token rotation + reuse detection, and
+  changelog pruning (the M5 *replay* bug is fixed; unbounded changelog growth is
+  a separate maintenance task).
+
+---
+
 ## Critical
 
 ### C1. Recurring events vanish from the REST event listing after their first occurrence
