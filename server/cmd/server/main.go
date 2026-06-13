@@ -49,8 +49,9 @@ import (
 )
 
 func main() {
-	// 1. Load configuration
-	cfg, err := config.Load("")
+	// 1. Load configuration. CALDAV_CONFIG_FILE may point at a YAML config;
+	// empty means env-and-defaults only (M18).
+	cfg, err := config.Load(os.Getenv("CALDAV_CONFIG_FILE"))
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
