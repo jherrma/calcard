@@ -55,6 +55,9 @@ func NewAuthHandler(
 // @Failure      409      {object}  ErrorResponseBody  "Email already registered"
 // @Router       /auth/register [post]
 func (h *AuthHandler) Register(c fiber.Ctx) error {
+	if h.config.Registration.Disabled {
+		return ErrorResponse(c, fiber.StatusForbidden, "registration is disabled")
+	}
 	var req dto.RegisterRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")

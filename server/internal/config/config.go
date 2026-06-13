@@ -14,18 +14,19 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Server    ServerConfig    `yaml:"server"`
-	Database  DatabaseConfig  `yaml:"database"`
-	DataDir   string          `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
-	LogLevel  string          `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
-	BaseURL   string          `yaml:"base_url" env:"CALDAV_BASE_URL"`
-	SMTP      SMTPConfig      `yaml:"smtp"`
-	JWT       JWTConfig       `yaml:"jwt"`
-	RateLimit RateLimitConfig `yaml:"rate_limit"`
-	OAuth     OAuthConfig     `yaml:"oauth"`
-	TLS       TLSConfig       `yaml:"tls"`
-	CORS      CORSConfig      `yaml:"cors"`
-	Security  SecurityConfig  `yaml:"security"`
+	Server       ServerConfig       `yaml:"server"`
+	Database     DatabaseConfig     `yaml:"database"`
+	DataDir      string             `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
+	LogLevel     string             `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
+	BaseURL      string             `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	SMTP         SMTPConfig         `yaml:"smtp"`
+	JWT          JWTConfig          `yaml:"jwt"`
+	RateLimit    RateLimitConfig    `yaml:"rate_limit"`
+	OAuth        OAuthConfig        `yaml:"oauth"`
+	TLS          TLSConfig          `yaml:"tls"`
+	CORS         CORSConfig         `yaml:"cors"`
+	Security     SecurityConfig     `yaml:"security"`
+	Registration RegistrationConfig `yaml:"registration"`
 }
 
 // ServerConfig contains server-specific settings
@@ -107,6 +108,13 @@ type SecurityConfig struct {
 	HSTSMaxAge     int           `yaml:"hsts_max_age" env:"CALDAV_HSTS_MAX_AGE"`
 	MaxRequestSize int64         `yaml:"max_request_size" env:"CALDAV_MAX_REQUEST_SIZE"` // Bytes
 	RequestTimeout time.Duration `yaml:"request_timeout" env:"CALDAV_REQUEST_TIMEOUT"`
+}
+
+// RegistrationConfig controls self-service account registration. The zero value
+// (Disabled=false) keeps registration ENABLED so tests and directly-constructed
+// configs behave as before.
+type RegistrationConfig struct {
+	Disabled bool `yaml:"disabled" env:"CALDAV_REGISTRATION_DISABLED"`
 }
 
 // DSN returns the database connection string based on the driver

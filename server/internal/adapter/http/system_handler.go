@@ -30,7 +30,7 @@ func (h *SystemHandler) Settings(c fiber.Ctx) error {
 	return SuccessResponse(c, fiber.Map{
 		"admin_configured":     userCount > 0,
 		"smtp_enabled":         h.cfg.SMTP.Host != "",
-		"registration_enabled": true,
+		"registration_enabled": !h.cfg.Registration.Disabled,
 	})
 }
 
