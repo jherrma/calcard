@@ -57,7 +57,7 @@ func (h *PublicCalendarHandler) GetICalFeed(c fiber.Ctx) error {
 
 	// Set headers
 	c.Set("Content-Type", "text/calendar; charset=utf-8")
-	c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.ics"`, cal.Name))
+	c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.ics"`, sanitizeFilename(cal.Name)))
 	c.Set("Cache-Control", "public, max-age=300")
 	c.Set("ETag", currentETag)
 
@@ -97,6 +97,24 @@ func escapeICalText(s string) string {
 	s = strings.ReplaceAll(s, ",", "\\,")
 	s = strings.ReplaceAll(s, "\n", "\\n")
 	return s
+}
+
+// sanitizeFilename makes a calendar name safe for a Content-Disposition filename.
+// It maps filesystem-reserved characters to '-' and drops control characters
+// (CR/LF/NUL) that could otherwise enable HTTP response-header injection.
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			b.WriteRune('-')
+		case '\r', '\n', 0:
+			// drop control characters
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func extractVComponent(icalData string) string {
