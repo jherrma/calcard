@@ -172,22 +172,31 @@ func (r *AddressBookRepository) applyFilter(db *gorm.DB, filter addressbook.Obje
 		condition = "LOWER(" + column + ") = ?"
 		value = searchText
 	case "starts-with":
-		condition = "LOWER(" + column + ") LIKE ?"
-		value = searchText + "%"
+		condition = "LOWER(" + column + ") LIKE ? ESCAPE '\\'"
+		value = escapeLike(searchText) + "%"
 	case "ends-with":
-		condition = "LOWER(" + column + ") LIKE ?"
-		value = "%" + searchText
+		condition = "LOWER(" + column + ") LIKE ? ESCAPE '\\'"
+		value = "%" + escapeLike(searchText)
 	case "contains":
 		fallthrough
 	default:
-		condition = "LOWER(" + column + ") LIKE ?"
-		value = "%" + searchText + "%"
+		condition = "LOWER(" + column + ") LIKE ? ESCAPE '\\'"
+		value = "%" + escapeLike(searchText) + "%"
 	}
 
 	if filter.NegateCondition {
 		return db.Where("NOT ("+condition+")", value)
 	}
 	return db.Where(condition, value)
+}
+
+// escapeLike escapes LIKE wildcards so user input matches literally. Pair with
+// `ESCAPE '\'` in the query, and apply BEFORE adding the surrounding %.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
 }
 
 // propertyToColumn maps vCard property names to database columns.
@@ -541,7 +550,7 @@ func (r *AddressBookRepository) recordAddressBookChange(tx *gorm.DB, addressBook
 
 func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
 	var objs []addressbook.AddressObject
-	q := "%" + query + "%"
+	q := "%" + escapeLike(query) + "%"
 
 	// Join with AddressBooks to filter by UserID
 	// And filter by query on denormalized fields
@@ -553,7 +562,7 @@ func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, 
 		db = db.Where("address_objects.address_book_id = ?", *addressBookID)
 	}
 
-	err := db.Where("address_objects.formatted_name LIKE ? OR address_objects.email LIKE ? OR address_objects.phone LIKE ? OR address_objects.organization LIKE ? OR address_objects.given_name LIKE ? OR address_objects.family_name LIKE ?", q, q, q, q, q, q).
+	err := db.Where("address_objects.formatted_name LIKE ? ESCAPE '\\' OR address_objects.email LIKE ? ESCAPE '\\' OR address_objects.phone LIKE ? ESCAPE '\\' OR address_objects.organization LIKE ? ESCAPE '\\' OR address_objects.given_name LIKE ? ESCAPE '\\' OR address_objects.family_name LIKE ? ESCAPE '\\'", q, q, q, q, q, q).
 		Limit(limit).
 		Find(&objs).Error
 
