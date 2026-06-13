@@ -18,9 +18,15 @@ export const useApi = () => {
         response._data = response._data.data;
       }
     },
-    async onResponseError({ response }) {
-      if (response.status === 401 && authStore.isAuthenticated) {
-        // Try to refresh token or logout
+    async onResponseError({ request, response }) {
+      // Never refresh when the failing call IS the refresh endpoint — that
+      // re-entrancy is what caused the infinite refresh loop (H15).
+      const url = typeof request === "string" ? request : (request as Request).url;
+      if (
+        response.status === 401 &&
+        authStore.isAuthenticated &&
+        !url.includes("/auth/refresh")
+      ) {
         await authStore.refreshToken();
       }
     },
