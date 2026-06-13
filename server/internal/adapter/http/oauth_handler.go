@@ -91,10 +91,11 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 	code := c.Query("code")
 	state := c.Query("state")
 
-	// Validate state
+	// Validate state. The action is unknown at this point (cookie missing/bad),
+	// so send the browser to the login callback page with the error.
 	ctxData, err := h.getContextCookie(c)
 	if err != nil || ctxData.State != state {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid state parameter"})
+		return h.redirectOAuthError(c, "", "invalid state parameter")
 	}
 
 	// Clear cookie
@@ -111,9 +112,10 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 
 	result, err := h.callbackUC.Execute(c.Context(), provider, code, userAgent, ip, currentUser)
 	if err != nil {
-		// Handle specific errors for 409, etc.
-		// For now generic 500 or 400.
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		// The browser is here via a provider redirect, so redirect back to the
+		// SPA with a generic error rather than dead-ending on JSON or leaking the
+		// internal error detail (H16).
+		return h.redirectOAuthError(c, ctxData.Action, "authentication failed")
 	}
 
 	// The browser arrived here via a provider redirect, so we must redirect back
@@ -132,6 +134,21 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 	frag.Set("refresh_token", result.RefreshToken)
 	frag.Set("expires_at", fmt.Sprintf("%d", result.ExpiresAt.Unix()))
 	return c.Redirect().To(fmt.Sprintf("%s/auth/oauth/callback#%s", base, frag.Encode()))
+}
+
+// redirectOAuthError sends the browser back to the SPA with the error in the URL
+// fragment instead of dead-ending on a raw JSON page (H16). Link errors land on
+// the settings page; login (and unknown-action) errors land on the OAuth
+// callback page, which reads `error` from the fragment.
+func (h *OAuthHandler) redirectOAuthError(c fiber.Ctx, action, msg string) error {
+	base := strings.TrimRight(h.cfg.BaseURL, "/")
+	page := "/auth/oauth/callback"
+	if action == "link" {
+		page = "/settings/auth"
+	}
+	frag := url.Values{}
+	frag.Set("error", msg)
+	return c.Redirect().To(fmt.Sprintf("%s%s#%s", base, page, frag.Encode()))
 }
 
 func (h *OAuthHandler) Unlink(c fiber.Ctx) error {
