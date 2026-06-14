@@ -555,7 +555,11 @@ func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, 
 	// Join with AddressBooks to filter by UserID
 	// And filter by query on denormalized fields
 	db := r.db.WithContext(ctx).
-		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id").
+		// GORM auto-applies the soft-delete scope to the primary model
+		// (address_objects) but NOT to a raw-joined table, so without this
+		// `deleted_at IS NULL` the contacts of a soft-deleted address book would
+		// still surface here (M7). Soft delete does not cascade to the objects.
+		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
 		Where("address_books.user_id = ?", userID)
 
 	if addressBookID != nil {
@@ -635,7 +639,11 @@ func (r *AddressBookRepository) CountContactsByUserID(ctx context.Context, userI
 	var count int64
 	err := r.db.WithContext(ctx).
 		Model(&addressbook.AddressObject{}).
-		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id").
+		// GORM auto-applies the soft-delete scope to the primary model
+		// (address_objects) but NOT to a raw-joined table, so without this
+		// `deleted_at IS NULL` the contacts of a soft-deleted address book would
+		// still surface here (M7). Soft delete does not cascade to the objects.
+		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
 		Where("address_books.user_id = ?", userID).
 		Count(&count).Error
 	return count, err
