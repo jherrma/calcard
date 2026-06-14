@@ -37,7 +37,7 @@ point at the commit that addresses each item (`git show <hash>`).
 | M4 | Fixed | `878a97b` |
 | M5 | Fixed (replay/404) | `c3925ed` — changelog *pruning* remains out of scope |
 | M6 | Fixed | `3e33512` |
-| M7 | **Open** | not addressed — see Known limitations |
+| M7 | Fixed | `39f87fe` |
 | M8 | Fixed | `59e35a6` |
 | M9 | Fixed | `5391928` |
 | M10 | Fixed | `877711d` |
@@ -82,9 +82,6 @@ point at the commit that addresses each item (`git show <hash>`).
   events" is a legitimate call. The handler already returns 400 for a
   *present-but-unparseable* value, which covers the real foot-gun. Making the
   params mandatory is a separate change that must also update those tests.
-- **M7 — raw `Joins` bypass the joined table's soft-delete scope.** Not addressed
-  on this branch; contacts of soft-deleted address books can still surface in
-  global search / counts (`addressbook_repository.go`). Tracked for a follow-up.
 - **Out of scope (pre-agreed):** refresh-token rotation + reuse detection, and
   changelog pruning (the M5 *replay* bug is fixed; unbounded changelog growth is
   a separate maintenance task).
