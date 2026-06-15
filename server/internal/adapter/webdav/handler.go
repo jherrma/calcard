@@ -150,6 +150,12 @@ func (h *Handler) Authenticate() fiber.Handler {
 			}
 		}
 
+		// A deactivated account must not authenticate via any DAV path (Bearer or
+		// Basic, primary password, app password, or dedicated DAV credential).
+		if u != nil && !u.IsActive {
+			u = nil
+		}
+
 		if u == nil {
 			c.Set("WWW-Authenticate", `Basic realm="CalDAV/CardDAV Server"`)
 			return c.SendStatus(fiber.StatusUnauthorized)

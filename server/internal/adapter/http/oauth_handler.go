@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -112,6 +113,11 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 
 	result, err := h.callbackUC.Execute(c.Context(), provider, code, userAgent, ip, currentUser)
 	if err != nil {
+		// First-time OAuth login while self-service registration is disabled:
+		// surface a clear, safe message (no internal detail) on the SPA.
+		if errors.Is(err, authUseCase.ErrRegistrationDisabled) {
+			return h.redirectOAuthError(c, ctxData.Action, "registration is disabled")
+		}
 		// The browser is here via a provider redirect, so redirect back to the
 		// SPA with a generic error rather than dead-ending on JSON or leaking the
 		// internal error detail (H16).
@@ -125,7 +131,7 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 	base := strings.TrimRight(h.cfg.BaseURL, "/")
 
 	if ctxData.Action == "link" {
-		return c.Redirect().To(fmt.Sprintf("%s/settings/auth#linked=%s", base, url.QueryEscape(provider)))
+		return c.Redirect().To(fmt.Sprintf("%s/settings/connections#linked=%s", base, url.QueryEscape(provider)))
 	}
 
 	// Login: hand the freshly minted tokens to the SPA callback page.
@@ -144,7 +150,7 @@ func (h *OAuthHandler) redirectOAuthError(c fiber.Ctx, action, msg string) error
 	base := strings.TrimRight(h.cfg.BaseURL, "/")
 	page := "/auth/oauth/callback"
 	if action == "link" {
-		page = "/settings/auth"
+		page = "/settings/connections"
 	}
 	frag := url.Values{}
 	frag.Set("error", msg)

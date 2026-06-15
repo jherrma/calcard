@@ -166,7 +166,7 @@ func TestOAuthCallbackUseCase_Execute_LoginExistingUser(t *testing.T) {
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
 	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "test@example.com"}
-	existingUser := &user.User{ID: 1, UUID: "uuid1", Email: userInfo.Email}
+	existingUser := &user.User{ID: 1, UUID: "uuid1", Email: userInfo.Email, IsActive: true}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
 	provider.On("Exchange", ctx, code).Return(token, nil)
@@ -280,7 +280,7 @@ func TestOAuthCallbackUseCase_Execute_LinkByEmailVerifiedSucceeds(t *testing.T) 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
 	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "owner@example.com", EmailVerified: true}
-	existingUser := &user.User{ID: 7, UUID: "owner-uuid", Email: userInfo.Email}
+	existingUser := &user.User{ID: 7, UUID: "owner-uuid", Email: userInfo.Email, IsActive: true}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
 	provider.On("Exchange", ctx, code).Return(token, nil)

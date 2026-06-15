@@ -46,6 +46,12 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, refreshToken string) (*Re
 		return nil, ErrInvalidRefreshToken
 	}
 
+	// A deactivated account must not be able to mint fresh access tokens from a
+	// still-valid refresh token. GetByHash preloads the associated User.
+	if !t.User.IsActive {
+		return nil, ErrInactiveAccount
+	}
+
 	accessToken, expiresAt, err := uc.jwtManager.GenerateAccessToken(t.User.UUID, t.User.Email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)

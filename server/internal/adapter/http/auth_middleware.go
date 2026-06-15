@@ -38,6 +38,9 @@ func Authenticate(jwtManager user.TokenProvider, userRepo user.UserRepository) f
 		if err != nil || u == nil {
 			return UnauthorizedResponse(c, "user not found")
 		}
+		if !u.IsActive {
+			return UnauthorizedResponse(c, "account is not active")
+		}
 
 		// Store user info in context
 		c.Locals("user_uuid", userUUID)

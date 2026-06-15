@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +12,12 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"golang.org/x/oauth2"
 )
+
+// ErrRegistrationDisabled is returned when an OAuth login would have to
+// provision a brand-new account (no existing OAuth link and no matching local
+// account) but self-service registration is disabled. Existing-user OAuth
+// logins are unaffected.
+var ErrRegistrationDisabled = errors.New("registration is disabled")
 
 // OAuthCallbackUseCase handles the OAuth callback and user login/creation
 type OAuthCallbackUseCase struct {
@@ -120,6 +127,13 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 				return nil, err
 			}
 		} else {
+			// First-time OAuth login would have to provision a new account.
+			// Honor the same kill-switch as local registration
+			// (config.Registration.Disabled / auth_handler.go) so OAuth can't be
+			// used to bypass it. Existing-user logins never reach this branch.
+			if uc.config.Registration.Disabled {
+				return nil, ErrRegistrationDisabled
+			}
 			u, err = uc.createUser(ctx, userInfo)
 			if err != nil {
 				return nil, err
@@ -128,6 +142,14 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 				return nil, err
 			}
 		}
+	}
+
+	// Deactivated accounts must not be able to obtain tokens via OAuth. New
+	// users created above are always active, so this only rejects an existing
+	// (resolved) user whose account has been deactivated. The handler maps this
+	// error to a generic OAuth error redirect.
+	if !u.IsActive {
+		return nil, ErrInactiveAccount
 	}
 
 	// Generate JWTs
