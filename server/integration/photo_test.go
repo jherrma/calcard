@@ -159,10 +159,10 @@ func TestCardDAVPhotoRoundTrip(t *testing.T) {
 	status, hdrs, getBody := davCall(t, "GET", path, email, appPass, "", nil)
 	require.Equalf(t, http.StatusOK, status, "GET: %s", string(getBody))
 	assert.Contains(t, string(getBody), "PHOTO", "served vCard must include the photo")
-	if cl := hdrs.Get("Content-Length"); cl != "" {
-		assert.Equalf(t, len(getBody), mustAtoi(t, cl),
-			"Content-Length (%s) must match body length (%d)", cl, len(getBody))
-	}
+	cl := hdrs.Get("Content-Length")
+	require.NotEmpty(t, cl, "GET response must set a Content-Length header")
+	assert.Equalf(t, len(getBody), mustAtoi(t, cl),
+		"Content-Length (%s) must match body length (%d)", cl, len(getBody))
 
 	// Re-PUT the exact body we got back (what a syncing client does).
 	status, _, body = davCall(t, "PUT", path, email, appPass, string(getBody),
