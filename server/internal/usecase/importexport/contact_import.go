@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
@@ -101,7 +100,7 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 			AddressBookID: addressBookID,
 			UID:           uid,
 			Path:          fmt.Sprintf("%s.vcf", uid),
-			ETag:          fmt.Sprintf("%d", time.Now().UnixNano()),
+			ETag:          addressbook.NewETag(),
 			VCardData:     vcardData,
 			VCardVersion:  "3.0",
 			ContentLength: len(vcardData),
@@ -165,7 +164,7 @@ func normalizeLineEndings(data string) string {
 func extractVCardUID(data string) string {
 	for _, line := range strings.Split(data, "\r\n") {
 		if strings.HasPrefix(strings.ToUpper(line), "UID:") {
-			return strings.TrimPrefix(line, "UID:")
+			return line[len("UID:"):]
 		}
 	}
 	return ""
@@ -175,7 +174,7 @@ func extractVCardUID(data string) string {
 func extractVCardFN(data string) string {
 	for _, line := range strings.Split(data, "\r\n") {
 		if strings.HasPrefix(strings.ToUpper(line), "FN:") {
-			return strings.TrimPrefix(line, "FN:")
+			return line[len("FN:"):]
 		}
 	}
 	return ""

@@ -62,7 +62,7 @@ func (uc *PhotoUseCase) Upload(ctx context.Context, addressBookID uint, contactU
 	// 5. Update Object
 	obj.VCardData = newVCardData
 	obj.UpdatedAt = time.Now()
-	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano())
+	obj.ETag = addressbook.NewETag()
 
 	// UpdateObject bumps the address book's sync_token / CTag and logs the
 	// change atomically; no second CTag update needed.
@@ -93,7 +93,7 @@ func (uc *PhotoUseCase) Delete(ctx context.Context, addressBookID uint, contactU
 
 	obj.VCardData = newVCardData
 	obj.UpdatedAt = time.Now()
-	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano())
+	obj.ETag = addressbook.NewETag()
 
 	// UpdateObject bumps the address book's sync_token / CTag and logs the
 	// change atomically; no second CTag update needed.

@@ -110,7 +110,7 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, addressBookID uint, contac
 	obj.VCardData = newVCardData
 	obj.ContentLength = len(newVCardData)
 	obj.UpdatedAt = time.Now()
-	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano()) // New ETag
+	obj.ETag = addressbook.NewETag() // New ETag
 
 	// Rederive denormalized columns from the canonical vCard. Ignoring the
 	// parse error here is intentional — if the vCard we just encoded doesn't
