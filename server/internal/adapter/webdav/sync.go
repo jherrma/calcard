@@ -40,7 +40,7 @@ func (h *Handler) handleSyncReport(c fiber.Ctx, ctx context.Context, query *Sync
 			// For created/modified, we need to fetch properties if requested
 			// For now, let's at least return the ETag if available
 			obj, err := backend.GetCalendarObjectByPath(ctx, change.CalendarID, change.ResourcePath)
-			if err == nil {
+			if err == nil && obj != nil {
 				// Format propstat based on requested props in query.Prop
 				// Simplified: return ETag and Status OK
 				resp.PropStat = []PropStat{

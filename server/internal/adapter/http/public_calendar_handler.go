@@ -95,6 +95,7 @@ func escapeICalText(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, ";", "\\;")
 	s = strings.ReplaceAll(s, ",", "\\,")
+	s = strings.ReplaceAll(s, "\r", "")
 	s = strings.ReplaceAll(s, "\n", "\\n")
 	return s
 }
