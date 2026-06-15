@@ -96,6 +96,10 @@ export const useAuthStore = defineStore("auth", {
           const response = await api<RefreshResponse>("/api/v1/auth/refresh", {
             method: "POST",
             body: { refresh_token: refreshCookie.value },
+            // The refresh request must never be auto-retried (it must not trigger
+            // another refresh); the onResponseError guard skips it, and this
+            // disables ofetch's own retry for it too.
+            retry: false,
           });
 
           this.accessToken = response.access_token;
