@@ -195,7 +195,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 					tEnd, _ = excEndProp.DateTime(time.UTC)
 				}
 
-				if tStart.After(end) || tEnd.Before(start) {
+				if !tStart.Before(end) || !tEnd.After(start) {
 					continue
 				}
 				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, master, &exc))
@@ -225,7 +225,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		if !found {
 			tStart, _ := e.DateTimeStart(time.UTC)
 			tEnd, _ := e.DateTimeEnd(time.UTC)
-			if (tStart.Before(end) || tStart.Equal(end)) && (tEnd.After(start) || tEnd.Equal(start)) {
+			if tStart.Before(end) && tEnd.After(start) {
 				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, nil, &e))
 			}
 		}

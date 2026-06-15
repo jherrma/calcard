@@ -86,12 +86,17 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 		for _, child := range cal.Children {
 			if child.Name == "VEVENT" {
 				if rid := child.Props.Get("RECURRENCE-ID"); rid != nil {
-					key := rid.Value
-					if k, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc); err == nil {
-						key = k
+					key, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc)
+					if err != nil {
+						// Can't read this exception's RECURRENCE-ID, so we
+						// can't confidently target it — keep it rather than
+						// silently drop an exception we can't match (mirrors
+						// the this_and_future cleanup below).
+						newChildren = append(newChildren, child)
+						continue
 					}
 					if key == wantKey {
-						continue // skip this exception
+						continue // skip (remove) this exception
 					}
 				}
 			}

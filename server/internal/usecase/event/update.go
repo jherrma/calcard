@@ -69,9 +69,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			if rid == nil {
 				continue
 			}
-			key := rid.Value
-			if k, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc); err == nil {
-				key = k
+			key, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc)
+			if err != nil {
+				// Can't read this exception's RECURRENCE-ID, so we can't
+				// confidently match it to the requested instance — skip
+				// it rather than pretend the raw value is canonical. A new
+				// canonical exception is created below if none matches.
+				continue
 			}
 			if key == wantKey {
 				targetEvent = &allEvents[i]
