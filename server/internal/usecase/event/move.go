@@ -27,21 +27,18 @@ func (uc *MoveEventUseCase) Execute(ctx context.Context, input MoveEventInput) (
 
 	// Capture the source calendar identity before reassigning, so we can tell
 	// the source calendar's sync clients the event left.
-	sourceID, srcPath, srcUID := obj.CalendarID, obj.Path, obj.UID
-
-	obj.CalendarID = input.TargetCalendarID
-	// UpdateCalendarObject records a "modified" change on the TARGET calendar.
-	err = uc.calendarRepo.UpdateCalendarObject(ctx, obj)
-	if err != nil {
-		return nil, err
+	sourceID := obj.CalendarID
+	if sourceID == input.TargetCalendarID {
+		// Already in the target calendar; nothing to move.
+		return obj, nil
 	}
 
-	// Record a "deleted" change on the source calendar so clients syncing it
-	// drop the stale copy instead of keeping it forever.
-	if sourceID != input.TargetCalendarID {
-		if err := uc.calendarRepo.RecordChange(ctx, sourceID, srcPath, srcUID, "deleted"); err != nil {
-			return nil, err
-		}
+	obj.CalendarID = input.TargetCalendarID
+	// MoveCalendarObject atomically records a "modified" change on the TARGET
+	// calendar and a "deleted" change on the SOURCE calendar in one
+	// transaction, so a partial failure can't leave a permanent sync ghost.
+	if err := uc.calendarRepo.MoveCalendarObject(ctx, obj, sourceID); err != nil {
+		return nil, err
 	}
 
 	return obj, nil

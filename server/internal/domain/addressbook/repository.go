@@ -33,6 +33,12 @@ type Repository interface {
 	QueryObjects(ctx context.Context, addressBookID uint, query *ObjectQuery) ([]AddressObject, error)
 	GetObjectByUUID(ctx context.Context, uuid string) (*AddressObject, error)
 	UpdateObject(ctx context.Context, object *AddressObject) error
+	// MoveObject reassigns an object to a new address book (object.AddressBookID
+	// must already be set to the target) and, atomically in a single
+	// transaction, records a "modified" change on the target book and a
+	// "deleted" change on the source book so both collections' sync clients
+	// converge. Used by the cross-book contact move use case.
+	MoveObject(ctx context.Context, object *AddressObject, sourceAddressBookID uint) error
 	DeleteObjectByUUID(ctx context.Context, uuid string) error
 	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
 

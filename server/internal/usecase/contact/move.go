@@ -50,24 +50,15 @@ func (uc *MoveUseCase) Execute(ctx context.Context, userID uint, contactUUID str
 		return nil, fmt.Errorf("target address book not found or access denied")
 	}
 
-	// 3. Move object. Capture the path/UID before reassigning so we can record
-	// a "deleted" entry on the source book.
-	srcPath, srcUID := obj.Path, obj.UID
+	// 3. Move object. MoveObject atomically records a "modified" change on the
+	// TARGET book and a "deleted" change on the SOURCE book in one transaction,
+	// so a partial failure can't leave a permanent sync ghost on the source.
 	obj.AddressBookID = targetAddressBookID
 	obj.UpdatedAt = time.Now()
 	obj.ETag = addressbook.NewETag()
 
-	// UpdateObject records a "modified" change on the TARGET book (the object's
-	// AddressBookID now points there) and advances the target token.
-	if err := uc.repo.UpdateObject(ctx, obj); err != nil {
+	if err := uc.repo.MoveObject(ctx, obj, sourceID); err != nil {
 		return nil, fmt.Errorf("failed to move contact: %w", err)
-	}
-
-	// The source book must see the contact leave: record a "deleted" change
-	// (which also advances the source token via RecordChange), otherwise a
-	// syncing client keeps the stale copy forever.
-	if err := uc.repo.RecordChange(ctx, sourceID, srcPath, srcUID, "deleted"); err != nil {
-		return nil, fmt.Errorf("failed to record source change: %w", err)
 	}
 
 	return FromAddressObject(obj), nil

@@ -153,6 +153,26 @@ func (r *CalendarRepository) UpdateCalendarObject(ctx context.Context, obj *cale
 	})
 }
 
+// MoveCalendarObject reassigns an object to a new calendar and records both the
+// target "modified" change and the source "deleted" change in a single
+// transaction. obj.CalendarID must already point at the target calendar.
+// Doing both sync-log writes atomically with the reassign prevents the
+// permanent sync ghost that occurs if the source "deleted" change is lost
+// after the reassign has already committed.
+func (r *CalendarRepository) MoveCalendarObject(ctx context.Context, obj *calendar.CalendarObject, sourceCalendarID uint) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(obj).Error; err != nil {
+			return err
+		}
+		// Target collection sees the object arrive.
+		if err := r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "modified"); err != nil {
+			return err
+		}
+		// Source collection sees the object leave.
+		return r.recordChange(tx, sourceCalendarID, obj.Path, obj.UID, "deleted")
+	})
+}
+
 // DeleteCalendarObject deletes a calendar object
 func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -220,6 +240,20 @@ func (r *CalendarRepository) GetCalendarObjectByUUID(ctx context.Context, uuid s
 	var obj calendar.CalendarObject
 	err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&obj).Error
 	if err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+// GetCalendarObjectByUID looks up a calendar object by its iCalendar UID within
+// a specific calendar (used for RFC 4791 no-uid-conflict detection on PUT).
+// Returns (nil, nil) when not found.
+func (r *CalendarRepository) GetCalendarObjectByUID(ctx context.Context, calendarID uint, uid string) (*calendar.CalendarObject, error) {
+	var obj calendar.CalendarObject
+	if err := r.db.WithContext(ctx).Where("calendar_id = ? AND uid = ?", calendarID, uid).First(&obj).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &obj, nil

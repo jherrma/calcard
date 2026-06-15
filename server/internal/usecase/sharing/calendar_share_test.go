@@ -96,6 +96,9 @@ func (m *mockCalendarRepo) CreateCalendarObject(ctx context.Context, obj *calend
 func (m *mockCalendarRepo) UpdateCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return nil
 }
+func (m *mockCalendarRepo) MoveCalendarObject(ctx context.Context, obj *calendar.CalendarObject, sourceCalendarID uint) error {
+	return nil
+}
 func (m *mockCalendarRepo) DeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return nil
 }
@@ -109,6 +112,9 @@ func (m *mockCalendarRepo) ListEvents(ctx context.Context, cid uint, s, e time.T
 	return nil, nil
 }
 func (m *mockCalendarRepo) GetCalendarObjectByUUID(ctx context.Context, u string) (*calendar.CalendarObject, error) {
+	return nil, nil
+}
+func (m *mockCalendarRepo) GetCalendarObjectByUID(ctx context.Context, cid uint, u string) (*calendar.CalendarObject, error) {
 	return nil, nil
 }
 func (m *mockCalendarRepo) GetUserPermission(ctx context.Context, cid, uid uint) (calendar.CalendarPermission, error) {

@@ -79,6 +79,11 @@ func (b *CalDAVBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, e
 		res = append(res, *b.mapCalendar(u.Username, c, calendar.PermissionOwner))
 	}
 	for _, s := range shared {
+		// Defense in depth: skip a share whose calendar no longer exists
+		// (zero-valued preload) so it never surfaces as a blank ghost entry.
+		if s.Calendar.ID == 0 {
+			continue
+		}
 		perm := calendar.PermissionRead
 		if s.Permission == "read-write" {
 			perm = calendar.PermissionReadWrite
@@ -300,6 +305,12 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		}
 	}
 
+	// no-uid-conflict (RFC 4791 §5.3.2): a different resource in this calendar
+	// must not already own this UID.
+	if other, _ := b.calendarRepo.GetCalendarObjectByUID(ctx, c.ID, uid); other != nil && other.Path != objPath {
+		return nil, caldav.NewPreconditionError(caldav.PreconditionNoUIDConflict)
+	}
+
 	var icalData strings.Builder
 	if err := ical.NewEncoder(&icalData).Encode(icalCal); err != nil {
 		return nil, err
@@ -361,7 +372,15 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 		if perm != calendar.PermissionOwner {
 			return webdav.NewHTTPError(http.StatusForbidden, nil)
 		}
-		return b.calendarRepo.Delete(ctx, c.ID)
+		if err := b.calendarRepo.Delete(ctx, c.ID); err != nil {
+			return err
+		}
+		// Revoke every share of this calendar so it doesn't linger as a ghost
+		// entry in the sharees' calendar lists (mirrors the REST delete path).
+		if err := b.shareRepo.DeleteByCalendarID(ctx, c.ID); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	objPath := parts[4]

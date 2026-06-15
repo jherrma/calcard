@@ -46,6 +46,13 @@ type CalendarRepository interface {
 	// UpdateCalendarObject updates an existing calendar object
 	UpdateCalendarObject(ctx context.Context, obj *CalendarObject) error
 
+	// MoveCalendarObject reassigns an object to a new calendar (obj.CalendarID
+	// must already be set to the target) and, atomically in a single
+	// transaction, records a "modified" change on the target calendar and a
+	// "deleted" change on the source calendar so both collections' sync
+	// clients converge. Used by the cross-calendar move use case.
+	MoveCalendarObject(ctx context.Context, obj *CalendarObject, sourceCalendarID uint) error
+
 	// DeleteCalendarObject deletes a calendar object
 	DeleteCalendarObject(ctx context.Context, obj *CalendarObject) error
 
@@ -61,6 +68,11 @@ type CalendarRepository interface {
 
 	// GetCalendarObjectByUUID retrieves a calendar object by UUID
 	GetCalendarObjectByUUID(ctx context.Context, uuid string) (*CalendarObject, error)
+
+	// GetCalendarObjectByUID retrieves a calendar object by calendar ID and
+	// iCalendar UID (used for RFC 4791 no-uid-conflict detection on PUT).
+	// Returns (nil, nil) when no matching object exists.
+	GetCalendarObjectByUID(ctx context.Context, calendarID uint, uid string) (*CalendarObject, error)
 
 	// GetUserPermission determines a user's permission for a calendar
 	GetUserPermission(ctx context.Context, calendarID, userID uint) (CalendarPermission, error)

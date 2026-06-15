@@ -52,6 +52,9 @@ func (m *mockRepo) GetObjectByUUID(ctx context.Context, uuid string) (*addressbo
 func (m *mockRepo) UpdateObject(ctx context.Context, object *addressbook.AddressObject) error {
 	return nil
 }
+func (m *mockRepo) MoveObject(ctx context.Context, object *addressbook.AddressObject, sourceAddressBookID uint) error {
+	return nil
+}
 func (m *mockRepo) DeleteObjectByUUID(ctx context.Context, uuid string) error { return nil }
 func (m *mockRepo) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
 	return nil, nil

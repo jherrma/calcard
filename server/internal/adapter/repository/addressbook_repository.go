@@ -504,6 +504,28 @@ func (r *AddressBookRepository) UpdateObject(ctx context.Context, object *addres
 	})
 }
 
+// MoveObject reassigns an object to a new address book and records both the
+// target "modified" change and the source "deleted" change in a single
+// transaction. object.AddressBookID must already point at the target book.
+// A move does not alter the vCard, and the ContactPhoto row keys on
+// AddressObjectID (the object's unchanged primary key), so no photo
+// re-extraction is required here. Doing both sync-log writes atomically with
+// the reassign prevents the permanent sync ghost that occurs if the source
+// "deleted" change is lost after the reassign has already committed.
+func (r *AddressBookRepository) MoveObject(ctx context.Context, object *addressbook.AddressObject, sourceAddressBookID uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.WithContext(ctx).Save(object).Error; err != nil {
+			return err
+		}
+		// Target book sees the object arrive.
+		if err := r.recordAddressBookChange(tx, object.AddressBookID, object.Path, object.UID, "modified"); err != nil {
+			return err
+		}
+		// Source book sees the object leave.
+		return r.recordAddressBookChange(tx, sourceAddressBookID, object.Path, object.UID, "deleted")
+	})
+}
+
 func (r *AddressBookRepository) DeleteObjectByUUID(ctx context.Context, uuid string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		// Look up the object first so we still have its AddressBookID /
