@@ -467,38 +467,9 @@ func (r *AddressBookRepository) UpdateObject(ctx context.Context, object *addres
 			return err
 		}
 
-		// Handle Photo
-		if photoData != "" {
-			// Upsert photo
-			var photo addressbook.ContactPhoto
-			// Check if exists
-			err := tx.WithContext(ctx).Where("address_object_id = ?", object.ID).First(&photo).Error
-			if err != nil {
-				if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return err
-				}
-				// Create new
-				photo = addressbook.ContactPhoto{
-					AddressObjectID: object.ID,
-					PhotoData:       photoData,
-					PhotoType:       photoType,
-				}
-				if err := tx.WithContext(ctx).Create(&photo).Error; err != nil {
-					return err
-				}
-			} else {
-				// Update existing
-				photo.PhotoData = photoData
-				photo.PhotoType = photoType
-				if err := tx.WithContext(ctx).Save(&photo).Error; err != nil {
-					return err
-				}
-			}
-		} else {
-			// If vCard has no photo, ensure no photo record exists.
-			if err := tx.WithContext(ctx).Where("address_object_id = ?", object.ID).Delete(&addressbook.ContactPhoto{}).Error; err != nil {
-				return err
-			}
+		// Upsert (or clear) the PHOTO side-table row to match the vCard.
+		if err := r.upsertPhoto(ctx, tx, object.ID, photoData, photoType); err != nil {
+			return err
 		}
 		return r.recordAddressBookChange(tx, object.AddressBookID, object.Path, object.UID, "modified")
 	})
@@ -507,14 +478,29 @@ func (r *AddressBookRepository) UpdateObject(ctx context.Context, object *addres
 // MoveObject reassigns an object to a new address book and records both the
 // target "modified" change and the source "deleted" change in a single
 // transaction. object.AddressBookID must already point at the target book.
-// A move does not alter the vCard, and the ContactPhoto row keys on
-// AddressObjectID (the object's unchanged primary key), so no photo
-// re-extraction is required here. Doing both sync-log writes atomically with
-// the reassign prevents the permanent sync ghost that occurs if the source
-// "deleted" change is lost after the reassign has already committed.
+//
+// The caller (MoveUseCase) loads the object via GetObjectByUUID, which
+// *hydrates* the stored PHOTO back into VCardData. If we saved that body
+// verbatim the PHOTO would live inline in address_objects AND in the
+// contact_photos side table, so every later read would inject a second copy
+// (and each further move would add another). We therefore re-strip the photo
+// the same way CreateObject/UpdateObject do before persisting. Doing the
+// strip, the reassign, and both sync-log writes atomically also prevents the
+// permanent sync ghost that occurs if the source "deleted" change is lost
+// after the reassign has already committed.
 func (r *AddressBookRepository) MoveObject(ctx context.Context, object *addressbook.AddressObject, sourceAddressBookID uint) error {
+	strippedVCard, photoData, photoType, err := r.extractPhoto(object.VCardData)
+	if err != nil {
+		return fmt.Errorf("failed to process vcard: %w", err)
+	}
+	object.VCardData = strippedVCard
+	object.ContentLength = len(strippedVCard)
+
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.WithContext(ctx).Save(object).Error; err != nil {
+			return err
+		}
+		if err := r.upsertPhoto(ctx, tx, object.ID, photoData, photoType); err != nil {
 			return err
 		}
 		// Target book sees the object arrive.
@@ -524,6 +510,33 @@ func (r *AddressBookRepository) MoveObject(ctx context.Context, object *addressb
 		// Source book sees the object leave.
 		return r.recordAddressBookChange(tx, sourceAddressBookID, object.Path, object.UID, "deleted")
 	})
+}
+
+// upsertPhoto persists the extracted PHOTO for an address object: it inserts or
+// updates the contact_photos row when photoData is non-empty, and deletes any
+// existing row when the vCard carries no photo. Callers pass the values
+// returned by extractPhoto after saving the stripped object.
+func (r *AddressBookRepository) upsertPhoto(ctx context.Context, tx *gorm.DB, objectID uint, photoData, photoType string) error {
+	if photoData == "" {
+		// vCard has no photo; ensure no stale photo record survives.
+		return tx.WithContext(ctx).Where("address_object_id = ?", objectID).Delete(&addressbook.ContactPhoto{}).Error
+	}
+	var photo addressbook.ContactPhoto
+	err := tx.WithContext(ctx).Where("address_object_id = ?", objectID).First(&photo).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		photo = addressbook.ContactPhoto{
+			AddressObjectID: objectID,
+			PhotoData:       photoData,
+			PhotoType:       photoType,
+		}
+		return tx.WithContext(ctx).Create(&photo).Error
+	}
+	photo.PhotoData = photoData
+	photo.PhotoType = photoType
+	return tx.WithContext(ctx).Save(&photo).Error
 }
 
 func (r *AddressBookRepository) DeleteObjectByUUID(ctx context.Context, uuid string) error {
@@ -539,6 +552,15 @@ func (r *AddressBookRepository) DeleteObjectByUUID(ctx context.Context, uuid str
 			return err
 		}
 		if err := tx.WithContext(ctx).Delete(&obj).Error; err != nil {
+			return err
+		}
+		// Drop the PHOTO side-table row too. The address object is soft-deleted
+		// (AddressObject has a DeletedAt), so without this the contact_photos row
+		// — keyed on the object's primary key — is orphaned forever, retaining
+		// the deleted contact's (often large, base64) photo blob. Every other
+		// write path (Create/Update/Move) keeps this side table in lockstep with
+		// the object inside its transaction; delete must do the same.
+		if err := r.upsertPhoto(ctx, tx, obj.ID, "", ""); err != nil {
 			return err
 		}
 		return r.recordAddressBookChange(tx, obj.AddressBookID, obj.Path, obj.UID, "deleted")

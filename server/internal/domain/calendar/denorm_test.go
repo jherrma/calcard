@@ -84,6 +84,66 @@ func TestPopulateDenormFields_AllDay(t *testing.T) {
 	}
 }
 
+func TestPopulateDenormFields_DurationNoDtend(t *testing.T) {
+	// DTSTART + DURATION, no DTEND: end must resolve to start+duration.
+	o := &CalendarObject{ICalData: wrap("BEGIN:VEVENT\r\nUID:a@x\r\nDTSTART:20260101T100000Z\r\nDURATION:PT1H30M\r\nEND:VEVENT")}
+	if err := o.PopulateDenormFieldsFromICal(); err != nil {
+		t.Fatal(err)
+	}
+	if o.EndTime == nil {
+		t.Fatal("EndTime must be derived from DURATION, got nil")
+	}
+	want := time.Date(2026, 1, 1, 11, 30, 0, 0, time.UTC)
+	if !o.EndTime.Equal(want) {
+		t.Errorf("EndTime = %v, want %v", o.EndTime, want)
+	}
+}
+
+func TestPopulateDenormFields_AllDayDefaultEnd(t *testing.T) {
+	// All-day DTSTART;VALUE=DATE with DTEND omitted: RFC 5545 default is +1 day.
+	o := &CalendarObject{ICalData: wrap("BEGIN:VEVENT\r\nUID:a@x\r\nDTSTART;VALUE=DATE:20260101\r\nEND:VEVENT")}
+	if err := o.PopulateDenormFieldsFromICal(); err != nil {
+		t.Fatal(err)
+	}
+	if o.EndTime == nil {
+		t.Fatal("EndTime must default to +1 day for all-day DTSTART, got nil")
+	}
+	want := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	if !o.EndTime.Equal(want) {
+		t.Errorf("EndTime = %v, want %v", o.EndTime, want)
+	}
+}
+
+func TestPopulateDenormFields_VTodoDueOnly(t *testing.T) {
+	// A VTODO carrying only DUE (no DTSTART/DTEND) must expose an EndTime so the
+	// REST listing window does not drop it.
+	o := &CalendarObject{ICalData: wrap("BEGIN:VTODO\r\nUID:t@x\r\nSUMMARY:Task\r\nDUE:20260101T170000Z\r\nEND:VTODO")}
+	if err := o.PopulateDenormFieldsFromICal(); err != nil {
+		t.Fatal(err)
+	}
+	if o.EndTime == nil {
+		t.Fatal("EndTime must fall back to VTODO DUE, got nil")
+	}
+	want := time.Date(2026, 1, 1, 17, 0, 0, 0, time.UTC)
+	if !o.EndTime.Equal(want) {
+		t.Errorf("EndTime = %v, want %v", o.EndTime, want)
+	}
+}
+
+func TestPopulateDenormFields_CountRecurringWithDuration(t *testing.T) {
+	// Bounded COUNT series using DURATION (no DTEND): the final occurrence's
+	// tail must be included in RecurrenceEndTime.
+	o := &CalendarObject{ICalData: wrap("BEGIN:VEVENT\r\nUID:a@x\r\nDTSTART:20260101T100000Z\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=5\r\nEND:VEVENT")}
+	if err := o.PopulateDenormFieldsFromICal(); err != nil {
+		t.Fatal(err)
+	}
+	// 5 daily occurrences: last starts 2026-01-05T10, +1h duration = 11:00.
+	want := time.Date(2026, 1, 5, 11, 0, 0, 0, time.UTC)
+	if o.RecurrenceEndTime == nil || !o.RecurrenceEndTime.Equal(want) {
+		t.Errorf("RecurrenceEndTime = %v, want %v", o.RecurrenceEndTime, want)
+	}
+}
+
 func TestPopulateDenormFields_BareComponentErrors(t *testing.T) {
 	o := &CalendarObject{ICalData: "BEGIN:VEVENT\r\nUID:a@x\r\nEND:VEVENT\r\n"}
 	if err := o.PopulateDenormFieldsFromICal(); err == nil {

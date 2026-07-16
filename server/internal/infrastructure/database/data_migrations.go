@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"gorm.io/gorm"
 )
@@ -20,6 +21,72 @@ func RunDataMigrations(db *gorm.DB) error {
 	}
 	if err := backfillRecurrenceEnd(db); err != nil {
 		return fmt.Errorf("backfill recurrence_end_time: %w", err)
+	}
+	if err := backfillCollectionAnchors(db); err != nil {
+		return fmt.Errorf("backfill collection anchors: %w", err)
+	}
+	return nil
+}
+
+// backfillCollectionAnchors repairs collections created before the "collection"
+// anchor row was introduced. Calendar/AddressBook Create() now mints the
+// initial sync token together with a change_type="collection" changelog row so
+// the first incremental sync-collection REPORT can resolve that token to a real
+// row. Collections that predate this change carry a stored sync_token with no
+// matching changelog row: GetChangesSinceToken then returns ErrRecordNotFound
+// → 403 valid-sync-token → the client full-resyncs → the SAME unanchored token
+// is handed back → 403 again, forever, until an unrelated write happens to mint
+// an anchored token. For every calendar and address book with a non-empty
+// sync_token that has no changelog row referencing it, we insert the missing
+// anchor. The EXISTS guard makes this a no-op on re-run and skips collections
+// that already have any (anchor or change) row for their current token.
+func backfillCollectionAnchors(db *gorm.DB) error {
+	var cals []calendar.Calendar
+	if err := db.Where("sync_token <> ''").Find(&cals).Error; err != nil {
+		return err
+	}
+	for i := range cals {
+		var count int64
+		if err := db.Model(&calendar.SyncChangeLog{}).
+			Where("calendar_id = ? AND sync_token = ?", cals[i].ID, cals[i].SyncToken).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+		if err := db.Create(&calendar.SyncChangeLog{
+			CalendarID:   cals[i].ID,
+			ResourcePath: "",
+			ChangeType:   "collection",
+			SyncToken:    cals[i].SyncToken,
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	var books []addressbook.AddressBook
+	if err := db.Where("sync_token <> ''").Find(&books).Error; err != nil {
+		return err
+	}
+	for i := range books {
+		var count int64
+		if err := db.Model(&addressbook.SyncChangeLog{}).
+			Where("address_book_id = ? AND sync_token = ?", books[i].ID, books[i].SyncToken).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+		if err := db.Create(&addressbook.SyncChangeLog{
+			AddressBookID: books[i].ID,
+			ResourcePath:  "",
+			ChangeType:    "collection",
+			SyncToken:     books[i].SyncToken,
+		}).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }

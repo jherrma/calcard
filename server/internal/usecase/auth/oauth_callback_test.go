@@ -202,7 +202,7 @@ func TestOAuthCallbackUseCase_Execute_LinkNewUser(t *testing.T) {
 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
-	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "new@example.com", Name: "New User"}
+	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "new@example.com", Name: "New User", EmailVerified: true}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
 	provider.On("Exchange", ctx, code).Return(token, nil)
@@ -227,6 +227,42 @@ func TestOAuthCallbackUseCase_Execute_LinkNewUser(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result.User)
 	assert.Equal(t, userInfo.Email, result.User.Email)
+}
+
+func TestOAuthCallbackUseCase_Execute_CreateRequiresVerifiedEmail(t *testing.T) {
+	providerManager := new(mockOAuthProviderManager)
+	userRepo := new(mockUserRepo)
+	oauthRepo := new(mockOAuthRepo)
+	refreshTokenRepo := new(mockRefreshTokenRepo)
+	tokenProvider := new(mockTokenProvider)
+	cfg := &config.Config{JWT: config.JWTConfig{RefreshExpiry: time.Hour}}
+
+	uc := NewOAuthCallbackUseCase(providerManager, userRepo, oauthRepo, refreshTokenRepo, tokenProvider, cfg)
+
+	ctx := context.Background()
+	providerName := "google"
+	code := "auth_code"
+
+	provider := new(mockOAuthProvider)
+	token := &oauth2.Token{AccessToken: "access_token"}
+	// No existing OAuth link and no matching local account, so this would
+	// auto-provision. The provider asserts an email but does NOT mark it
+	// verified — provisioning must be refused (account-takeover vector).
+	userInfo := &authadapter.UserInfo{Subject: "attacker-sub", Email: "victim@example.com", Name: "Victim", EmailVerified: false}
+
+	providerManager.On("GetProvider", providerName).Return(provider, nil)
+	provider.On("Exchange", ctx, code).Return(token, nil)
+	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
+	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
+	userRepo.On("GetByEmail", ctx, userInfo.Email).Return(nil, nil)
+
+	_, err := uc.Execute(ctx, providerName, code, "ua", "127.0.0.1", nil)
+
+	assert.Error(t, err, "unverified-email auto-provisioning must be rejected")
+	assert.Contains(t, err.Error(), "not verified")
+	// No account may have been created and no provider connection linked.
+	userRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
 func TestOAuthCallbackUseCase_Execute_LinkByEmailRequiresVerified(t *testing.T) {

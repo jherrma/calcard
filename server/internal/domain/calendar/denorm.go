@@ -72,12 +72,10 @@ func (o *CalendarObject) PopulateDenormFieldsFromICal() error {
 				}
 			}
 		}
-		if p := c.Props.Get(ical.PropDateTimeEnd); p != nil {
-			if t, err := p.DateTime(time.UTC); err == nil {
-				if end == nil || t.After(*end) {
-					tt := t
-					end = &tt
-				}
+		if t, ok := componentEnd(c); ok {
+			if end == nil || t.After(*end) {
+				tt := t
+				end = &tt
 			}
 		}
 	}
@@ -115,11 +113,9 @@ func recurrenceEndTime(masters []*ical.Component) *time.Time {
 			continue
 		}
 		dur := time.Duration(0)
-		if endProp := c.Props.Get(ical.PropDateTimeEnd); endProp != nil {
-			if mEnd, err := endProp.DateTime(time.UTC); err == nil {
-				if d := mEnd.Sub(mStart); d > 0 {
-					dur = d
-				}
+		if mEnd, ok := componentEnd(c); ok {
+			if d := mEnd.Sub(mStart); d > 0 {
+				dur = d
 			}
 		}
 
@@ -153,6 +149,27 @@ func recurrenceEndTime(masters []*ical.Component) *time.Time {
 		}
 	}
 	return result
+}
+
+// componentEnd resolves the non-inclusive end instant of a VEVENT/VTODO using
+// go-ical's full RFC 5545 semantics: a literal DTEND, else DTSTART+DURATION,
+// else the one-day default for an all-day (VALUE=DATE) DTSTART. For a VTODO
+// that carries only DUE (no DTEND/DTSTART/DURATION) it falls back to DUE. The
+// bool is false when no end can be derived, so callers keep EndTime nil rather
+// than fabricating one.
+func componentEnd(c *ical.Component) (time.Time, bool) {
+	ev := &ical.Event{Component: c}
+	if t, err := ev.DateTimeEnd(time.UTC); err == nil && !t.IsZero() {
+		return t, true
+	}
+	if c.Name == ical.CompToDo {
+		if p := c.Props.Get(ical.PropDue); p != nil {
+			if t, err := p.DateTime(time.UTC); err == nil {
+				return t, true
+			}
+		}
+	}
+	return time.Time{}, false
 }
 
 func propValue(c *ical.Component, name string) string {

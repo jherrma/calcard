@@ -234,8 +234,13 @@ func (h *Handler) Handler() fiber.Handler {
 			}))(c)
 		}
 
+		// Decide the collection type once, by path segment, so REPORT dispatch
+		// and backend routing below can never disagree with the scope decision
+		// made in Authenticate (both go through davCollectionType).
+		collectionType := davCollectionType(reqPath)
+
 		// Handle WebDAV-Sync REPORT for CalDAV
-		if c.Method() == "REPORT" && strings.Contains(reqPath, "/calendars/") {
+		if c.Method() == "REPORT" && collectionType == "calendars" {
 			var syncQuery SyncCollectionQuery
 			if err := xml.Unmarshal(c.Body(), &syncQuery); err == nil && syncQuery.XMLName.Local == "sync-collection" {
 				return h.handleSyncReport(c, stdCtx, &syncQuery)
@@ -243,7 +248,7 @@ func (h *Handler) Handler() fiber.Handler {
 		}
 
 		// Handle WebDAV-Sync REPORT for CardDAV
-		if c.Method() == "REPORT" && strings.Contains(reqPath, "/addressbooks/") {
+		if c.Method() == "REPORT" && collectionType == "addressbooks" {
 			var syncQuery SyncCollectionQuery
 			if err := xml.Unmarshal(c.Body(), &syncQuery); err == nil && syncQuery.XMLName.Local == "sync-collection" {
 				return h.handleAddressBookSyncReport(c, stdCtx, &syncQuery)
@@ -252,7 +257,7 @@ func (h *Handler) Handler() fiber.Handler {
 
 		// Route to appropriate handler based on path
 		var httpHandler http.Handler
-		if strings.Contains(reqPath, "/addressbooks/") {
+		if collectionType == "addressbooks" {
 			httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				h.carddavHandler.ServeHTTP(w, r.WithContext(stdCtx))
 			})
@@ -266,15 +271,37 @@ func (h *Handler) Handler() fiber.Handler {
 	}
 }
 
+// davCollectionType returns the fixed collection-type segment of a DAV request
+// path — "calendars" or "addressbooks" — or "" for principal/root/discovery
+// paths. DAV paths are shaped "/dav/{user}/{calendars|addressbooks}/...", so
+// the type lives at segment index 2. Deciding by segment (rather than a
+// substring match anywhere in the path) is essential: a collection or username
+// literally named "calendars"/"addressbooks" must not flip the decision, and
+// scope selection must agree with backend routing.
+func davCollectionType(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 3 {
+		return ""
+	}
+	switch parts[2] {
+	case "calendars":
+		return "calendars"
+	case "addressbooks":
+		return "addressbooks"
+	default:
+		return ""
+	}
+}
+
 // requiredScopeForPath returns the app-password scope / dav protocol a DAV
 // request path requires: "caldav" for calendar paths, "carddav" for address
 // book paths, and "" for principal/root/discovery paths (which both protocols
 // must be able to reach).
 func requiredScopeForPath(path string) string {
-	switch {
-	case strings.Contains(path, "/calendars/"):
+	switch davCollectionType(path) {
+	case "calendars":
 		return "caldav"
-	case strings.Contains(path, "/addressbooks/"):
+	case "addressbooks":
 		return "carddav"
 	default:
 		return ""

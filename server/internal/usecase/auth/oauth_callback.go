@@ -127,6 +127,17 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 				return nil, err
 			}
 		} else {
+			// Provisioning a brand-new account keyed on the provider's email is
+			// an account-takeover vector unless the provider asserts the email is
+			// verified: an attacker could pre-emptively create an account for a
+			// victim's address (unverified), and a later genuinely-verified login
+			// by the victim would auto-link into the attacker-controlled account.
+			// Mirror the verified-email guard used on the link path above and
+			// refuse to auto-provision from an unverified email.
+			if !userInfo.EmailVerified {
+				return nil, fmt.Errorf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", providerName, providerName)
+			}
+
 			// First-time OAuth login would have to provision a new account.
 			// Honor the same kill-switch as local registration
 			// (config.Registration.Disabled / auth_handler.go) so OAuth can't be
