@@ -425,22 +425,20 @@ func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedSuccess(t *testing.T) {
 	token := &oauth2.Token{AccessToken: "new_access_token", RefreshToken: "new_refresh_token", Expiry: time.Now().Add(time.Hour)}
 	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "test@example.com"}
 	existingUser := &user.User{ID: 99} // Same ID as currentUser
-	existingConn := &user.OAuthConnection{ID: 1, UserID: 99, Provider: providerName, ProviderID: userInfo.Subject}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
 	provider.On("Exchange", ctx, code).Return(token, nil)
 	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(existingUser, nil)
-	oauthRepo.On("GetByProvider", ctx, currentUser.ID, providerName).Return(existingConn, nil)
-	oauthRepo.On("Update", ctx, mock.MatchedBy(func(c *user.OAuthConnection) bool {
-		return c.AccessToken == token.AccessToken && c.RefreshToken == token.RefreshToken
-	})).Return(nil)
 
 	result, err := uc.Execute(ctx, providerName, code, "", "", currentUser)
 
+	// Re-linking the same account is a no-op success: provider tokens are no
+	// longer persisted, so nothing is read or written on the connection row.
 	assert.NoError(t, err)
 	assert.Nil(t, result) // Success returns nil result for linking
-	oauthRepo.AssertExpectations(t)
+	oauthRepo.AssertNotCalled(t, "GetByProvider", mock.Anything, mock.Anything, mock.Anything)
+	oauthRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 // TestOAuthCallbackUseCase_Execute_LinkSecondAccountRejected covers the new
