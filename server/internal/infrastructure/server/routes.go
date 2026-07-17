@@ -101,7 +101,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	// OAuth Manager (initialized early for system handler)
 	oauthRepo := repository.NewOAuthConnectionRepository(db.DB())
-	oauthManager, err := authadapter.NewOAuthProviderManager(&cfg.OAuth)
+	oauthManager, err := authadapter.NewOAuthProviderManager(&cfg.OAuth, cfg.BaseURL)
 	if err != nil {
 		fmt.Printf("Failed to initialize OAuth provider manager: %v\n", err)
 	}

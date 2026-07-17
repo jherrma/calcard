@@ -27,6 +27,10 @@ jwt:
 # OAuth/OIDC providers. ${VAR} is NOT expanded here; either fill in literal
 # values or (recommended) set the CALDAV_OAUTH_* environment variables, which
 # override these fields.
+#
+# The redirect URI to register at your OAuth provider is:
+#   {base_url}/api/v1/auth/oauth/{google|microsoft|custom}/callback
+# base_url (CALDAV_BASE_URL) must therefore be the public URL of this server.
 oauth:
   google:
     client_id: ""      # or CALDAV_OAUTH_GOOGLE_CLIENT_ID
