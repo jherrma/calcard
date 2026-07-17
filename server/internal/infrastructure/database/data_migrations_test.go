@@ -36,11 +36,14 @@ func TestRunDataMigrations(t *testing.T) {
 	}
 	require.NoError(t, g.Create(bare).Error)
 
-	// Wrapped recurring row with NULL recurrence_end_time.
+	// Wrapped recurring row with NULL recurrence_end_time. It is ALREADY
+	// well-formed (single VCALENDAR wrapper) and carries a legitimately UNQUOTED
+	// ETag, so the migration must not double-wrap its body nor strip its ETag.
+	recICal := wrap("BEGIN:VEVENT\r\nUID:rec@x\r\nDTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEND:VEVENT")
 	rec := &calendar.CalendarObject{
 		UUID: "u-rec", CalendarID: 1, Path: "rec.ics", UID: "rec@x",
 		ETag:     "plain",
-		ICalData: wrap("BEGIN:VEVENT\r\nUID:rec@x\r\nDTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEND:VEVENT"),
+		ICalData: recICal,
 	}
 	require.NoError(t, g.Create(rec).Error)
 
@@ -64,6 +67,18 @@ func TestRunDataMigrations(t *testing.T) {
 	require.NoError(t, g.Where("uuid = ?", "u-rec").First(&gotRec).Error)
 	if gotRec.RecurrenceEndTime == nil {
 		t.Error("recurrence_end_time was not backfilled")
+	}
+	// Already-wrapped body must not be re-wrapped (exactly one VCALENDAR) and
+	// must be byte-for-byte unchanged.
+	if n := strings.Count(strings.ToUpper(gotRec.ICalData), "BEGIN:VCALENDAR"); n != 1 {
+		t.Errorf("already-wrapped row was re-wrapped: found %d BEGIN:VCALENDAR", n)
+	}
+	if gotRec.ICalData != recICal {
+		t.Errorf("already-wrapped ICalData must be unchanged by migration:\n got %q\nwant %q", gotRec.ICalData, recICal)
+	}
+	// A legitimately-unquoted ETag must survive the blanket quote-strip untouched.
+	if gotRec.ETag != "plain" {
+		t.Errorf("unquoted ETag must be preserved, got %q", gotRec.ETag)
 	}
 }
 

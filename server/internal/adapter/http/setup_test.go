@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"testing"
 	"time"
 
@@ -27,8 +26,7 @@ import (
 )
 
 func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) {
-	dataDir, err := os.MkdirTemp("", "calcard-test-*")
-	require.NoError(t, err)
+	dataDir := t.TempDir() // auto-removed at test end
 
 	cfg := &config.Config{
 		DataDir: dataDir,
@@ -229,9 +227,9 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	app.Get("/health", healthHandler.Liveness)
 	app.Get("/health/ready", healthHandler.Readiness)
 
-	// Cleanup
+	// Cleanup. The data dir is auto-removed by t.TempDir(); close the DB here so
+	// its file handle is released before that removal runs.
 	t.Cleanup(func() {
-		os.RemoveAll(dataDir)
 		sqlDB, err := db.DB().DB()
 		if err == nil {
 			sqlDB.Close()

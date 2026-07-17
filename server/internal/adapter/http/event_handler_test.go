@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -25,8 +24,7 @@ import (
 )
 
 func setupEventHandlerTest(t *testing.T) (*fiber.App, database.Database, *user.User, *calendar.Calendar, string) {
-	dataDir, err := os.MkdirTemp("", "event-test-*")
-	require.NoError(t, err)
+	dataDir := t.TempDir() // auto-removed at test end
 
 	cfg := &config.Config{
 		DataDir: dataDir,

@@ -125,3 +125,32 @@ func TestExportUseCase_Execute(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Jane Smith", card2.PreferredValue(vcard.FieldFormattedName))
 }
+
+// TestExportUseCase_SanitizesUnsafeFilename feeds sanitizeFilename an actually
+// dangerous name (path traversal + shell/FS metacharacters). The "MyContacts"
+// case above would pass even if the sanitizer were a no-op, so it never proved
+// anything; this case does.
+func TestExportUseCase_SanitizesUnsafeFilename(t *testing.T) {
+	repo := new(mockRepo)
+	uc := addressbookuc.NewExportUseCase(repo)
+	ctx := context.Background()
+
+	userID := uint(1)
+	abID := uint(11)
+	ab := &addressbook.AddressBook{ID: abID, UserID: userID, Name: `../../etc/passwd:a*b?"<>|`}
+
+	repo.On("GetByID", ctx, abID).Return(ab, nil)
+	repo.On("ListObjects", ctx, abID).Return([]addressbook.AddressObject{}, nil)
+
+	_, filename, err := uc.Execute(ctx, abID, userID)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	for _, bad := range []string{"/", `\`, ":", "*", "?", `"`, "<", ">", "|"} {
+		assert.NotContainsf(t, filename, bad, "sanitized filename %q must not contain %q", filename, bad)
+	}
+	assert.NotContains(t, filename, "../", "sanitized filename must not be a path-traversal string")
+	assert.NotContains(t, filename, `..\`, "sanitized filename must not be a path-traversal string")
+	assert.True(t, strings.HasSuffix(filename, ".vcf"), "expected .vcf extension, got %q", filename)
+}

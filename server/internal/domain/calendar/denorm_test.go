@@ -82,6 +82,28 @@ func TestPopulateDenormFields_AllDay(t *testing.T) {
 	if !o.IsAllDay {
 		t.Error("expected IsAllDay true for VALUE=DATE DTSTART")
 	}
+	// The explicit VALUE=DATE DTEND must resolve to midnight of that date.
+	if o.EndTime == nil {
+		t.Fatal("EndTime must be set for an all-day event with an explicit DTEND")
+	}
+	if want := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC); !o.EndTime.Equal(want) {
+		t.Errorf("EndTime = %v, want %v", o.EndTime, want)
+	}
+}
+
+func TestPopulateDenormFields_RDateOnly(t *testing.T) {
+	// An event whose recurrence is expressed only via RDATE (no RRULE) must not
+	// be treated as non-recurring: RecurrenceEndTime has to reach the latest
+	// RDATE (+duration) so later listing windows still surface it.
+	o := &CalendarObject{ICalData: wrap("BEGIN:VEVENT\r\nUID:a@x\r\nDTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z\r\nRDATE:20260115T100000Z,20260201T100000Z\r\nEND:VEVENT")}
+	if err := o.PopulateDenormFieldsFromICal(); err != nil {
+		t.Fatal(err)
+	}
+	// Latest RDATE 2026-02-01T10:00 + 1h duration = 11:00.
+	want := time.Date(2026, 2, 1, 11, 0, 0, 0, time.UTC)
+	if o.RecurrenceEndTime == nil || !o.RecurrenceEndTime.Equal(want) {
+		t.Errorf("RecurrenceEndTime = %v, want %v", o.RecurrenceEndTime, want)
+	}
 }
 
 func TestPopulateDenormFields_DurationNoDtend(t *testing.T) {
