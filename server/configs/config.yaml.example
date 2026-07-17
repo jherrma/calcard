@@ -44,6 +44,11 @@ oauth:
     # Microsoft account. For a single-tenant app registration, set your
     # tenant-specific issuer instead:
     # issuer: "https://login.microsoftonline.com/<tenant-id>/v2.0"
+    #
+    # Microsoft's userinfo endpoint never returns email_verified, so new-user
+    # sign-in and auto-linking via Microsoft require this opt-in. Only enable
+    # it for a provider you trust to return addresses its users control:
+    assume_email_verified: true   # or CALDAV_OAUTH_MICROSOFT_ASSUME_EMAIL_VERIFIED
 
   # Custom OIDC Provider (e.g. Keycloak, Auth0)
   custom:
