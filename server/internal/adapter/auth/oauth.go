@@ -35,6 +35,15 @@ type oidcProvider struct {
 
 // NewOIDCProvider creates a new OIDC-based OAuth provider
 func NewOIDCProvider(ctx context.Context, name string, conf config.OAuthProviderConfig, redirectURL string) (OAuthProvider, error) {
+	// Azure AD's multi-tenant endpoints ("common", "organizations",
+	// "consumers") return a templated issuer ({tenantid}) in their discovery
+	// document, which go-oidc's strict issuer-equality check always rejects.
+	// Skip that check for these endpoints only. This is safe here because
+	// identity comes from the /userinfo endpoint over TLS (see UserInfo below),
+	// not from ID-token validation against the issuer string.
+	if isAzureMultiTenantIssuer(conf.Issuer) {
+		ctx = oidc.InsecureIssuerURLContext(ctx, conf.Issuer)
+	}
 	provider, err := oidc.NewProvider(ctx, conf.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OIDC provider for %s: %w", name, err)
@@ -53,6 +62,20 @@ func NewOIDCProvider(ctx context.Context, name string, conf config.OAuthProvider
 		provider: provider,
 		config:   oauthConfig,
 	}, nil
+}
+
+// isAzureMultiTenantIssuer reports whether issuer is one of Azure AD's
+// multi-tenant endpoints, whose discovery document returns a templated issuer
+// ({tenantid}) that go-oidc's strict issuer-equality check would otherwise
+// reject. The strict check is kept for all other providers (Google, custom) as
+// a useful misconfiguration guard.
+func isAzureMultiTenantIssuer(issuer string) bool {
+	if !strings.Contains(issuer, "login.microsoftonline.com") {
+		return false
+	}
+	return strings.Contains(issuer, "/common/") ||
+		strings.Contains(issuer, "/organizations/") ||
+		strings.Contains(issuer, "/consumers/")
 }
 
 func (p *oidcProvider) Name() string {

@@ -36,6 +36,15 @@ oauth:
     client_id: ""      # or CALDAV_OAUTH_GOOGLE_CLIENT_ID
     client_secret: ""  # or CALDAV_OAUTH_GOOGLE_CLIENT_SECRET
 
+  microsoft:
+    client_id: ""      # or CALDAV_OAUTH_MICROSOFT_CLIENT_ID
+    client_secret: ""  # or CALDAV_OAUTH_MICROSOFT_CLIENT_SECRET
+    # Default issuer is the multi-tenant endpoint
+    # (https://login.microsoftonline.com/common/v2.0), which accepts any
+    # Microsoft account. For a single-tenant app registration, set your
+    # tenant-specific issuer instead:
+    # issuer: "https://login.microsoftonline.com/<tenant-id>/v2.0"
+
   # Custom OIDC Provider (e.g. Keycloak, Auth0)
   custom:
     client_id: ""      # or CALDAV_OAUTH_CUSTOM_CLIENT_ID

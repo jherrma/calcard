@@ -144,3 +144,30 @@ func TestNewOAuthProviderManager_LogsAndSkipsFailedProvider(t *testing.T) {
 		t.Errorf("log must not leak the client secret, got: %q", logged)
 	}
 }
+
+// TestIsAzureMultiTenantIssuer covers the predicate that decides when go-oidc's
+// strict issuer-equality check must be relaxed. Azure AD's multi-tenant
+// endpoints return a templated issuer, so the check has to be skipped for them
+// — but only for them; every other issuer keeps the strict guard.
+func TestIsAzureMultiTenantIssuer(t *testing.T) {
+	cases := []struct {
+		issuer string
+		want   bool
+	}{
+		{"https://login.microsoftonline.com/common/v2.0", true},
+		{"https://login.microsoftonline.com/organizations/v2.0", true},
+		{"https://login.microsoftonline.com/consumers/v2.0", true},
+		// Single-tenant (a real tenant GUID) reports a concrete issuer that
+		// matches, so the strict check must stay on.
+		{"https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0", false},
+		// Non-Microsoft providers must never be relaxed.
+		{"https://accounts.google.com", false},
+		{"https://keycloak.example.com/realms/myrealm", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isAzureMultiTenantIssuer(c.issuer); got != c.want {
+			t.Errorf("isAzureMultiTenantIssuer(%q) = %v, want %v", c.issuer, got, c.want)
+		}
+	}
+}
