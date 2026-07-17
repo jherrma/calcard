@@ -259,7 +259,7 @@ func TestOAuthCallbackUseCase_Execute_CreateRequiresVerifiedEmail(t *testing.T) 
 	_, err := uc.Execute(ctx, providerName, code, "ua", "127.0.0.1", nil)
 
 	assert.Error(t, err, "unverified-email auto-provisioning must be rejected")
-	assert.Contains(t, err.Error(), "not verified")
+	assert.ErrorIs(t, err, ErrEmailNotVerified)
 	// No account may have been created and no provider connection linked.
 	userRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
@@ -294,7 +294,7 @@ func TestOAuthCallbackUseCase_Execute_LinkByEmailRequiresVerified(t *testing.T) 
 	_, err := uc.Execute(ctx, providerName, code, "ua", "127.0.0.1", nil)
 
 	assert.Error(t, err, "unverified-email auto-link must be rejected")
-	assert.Contains(t, err.Error(), "not verified")
+	assert.ErrorIs(t, err, ErrEmailNotVerified)
 	// No OAuth connection must have been created.
 	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
@@ -403,7 +403,7 @@ func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedError(t *testing.T) {
 	_, err := uc.Execute(ctx, providerName, code, "", "", currentUser)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "already linked")
+	assert.ErrorIs(t, err, ErrProviderAlreadyLinked)
 }
 
 func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedSuccess(t *testing.T) {
