@@ -33,9 +33,35 @@ func TestContactImportDuplicateDetection(t *testing.T) {
 	assert.Equalf(t, 2, res.Skipped, "skip re-import must skip both: %+v", res)
 	assert.Equal(t, 2, contactCount(t, token, abID), "skip re-import must not duplicate")
 
-	// Re-import with replace: each existing contact is replaced, count unchanged.
-	res = importContacts(t, token, abID, "replace", []byte(vcf))
+	// Re-import with replace, MUTATING a field. Replace must both dedup by UID
+	// (count stays 2) AND actually overwrite — a replace path that silently
+	// no-ops (skips) would pass a count-only check identically to a correct
+	// overwrite, so assert the new FN is what the subsequent GET returns.
+	mutated := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:import-dup-1\r\nFN:Alice Renamed\r\nN:Example;Alice;;;\r\nEND:VCARD\r\n" +
+		"BEGIN:VCARD\r\nVERSION:3.0\r\nUID:import-dup-2\r\nFN:Bob Example\r\nN:Example;Bob;;;\r\nEND:VCARD\r\n"
+	res = importContacts(t, token, abID, "replace", []byte(mutated))
 	assert.Equal(t, 2, contactCount(t, token, abID), "replace re-import must not duplicate")
+
+	names := contactFormattedNames(t, token, abID)
+	assert.Contains(t, names, "Alice Renamed", "replace must overwrite the existing contact's FN")
+	assert.NotContains(t, names, "Alice Example", "the pre-replace FN must be gone")
+}
+
+// contactFormattedNames returns the formatted_name of every contact in a book.
+func contactFormattedNames(t *testing.T, token string, abID uint) []string {
+	t.Helper()
+	var resp struct {
+		Contacts []struct {
+			FormattedName string `json:"formatted_name"`
+		} `json:"Contacts"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
+		"/addressbooks/"+uintStr(abID)+"/contacts", token, nil, &resp))
+	names := make([]string, 0, len(resp.Contacts))
+	for _, c := range resp.Contacts {
+		names = append(names, c.FormattedName)
+	}
+	return names
 }
 
 type contactImportResult struct {

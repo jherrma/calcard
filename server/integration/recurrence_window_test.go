@@ -57,6 +57,33 @@ func TestRecurringEventVisibleInLaterWindow(t *testing.T) {
 	assert.Lenf(t, after, 0, "after terminating the series, later window must be empty (got %d)", len(after))
 }
 
+// TestNonDTENDEventsVisibleInWindow covers the gap the C1 window test above left
+// open: REST create always writes a DTEND, so it never exercises the denorm
+// paths that derive end_time when DTEND is absent. A DURATION-only event
+// (end = start+duration) and an all-day VALUE=DATE event with no DTEND
+// (end = start+1 day) must both derive a non-nil end_time; if that regressed to
+// nil they would vanish from the listing filter. They must be IMPORTED (not
+// REST-created) to reach that gap.
+func TestNonDTENDEventsVisibleInWindow(t *testing.T) {
+	token := registerAndLogin(t, "no-dtend-window@example.test", "rruleSecret!123", "NoDtend User")
+	calID, calUUID := createCalendar(t, token, "No DTEND Cal", "#0f0f0f")
+
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" +
+		// DURATION only, no DTEND.
+		"BEGIN:VEVENT\r\nUID:dur-1@x\r\nDTSTAMP:20340101T000000Z\r\nSUMMARY:Duration only\r\nDTSTART:20350601T100000Z\r\nDURATION:PT1H\r\nEND:VEVENT\r\n" +
+		// All-day VALUE=DATE, no DTEND (RFC 5545 default end = start + 1 day).
+		"BEGIN:VEVENT\r\nUID:allday-1@x\r\nDTSTAMP:20340101T000000Z\r\nSUMMARY:All day no dtend\r\nDTSTART;VALUE=DATE:20350602\r\nEND:VEVENT\r\n" +
+		"END:VCALENDAR\r\n"
+
+	status, raw := rawCall(t, http.MethodPost, baseURL+"/api/v1/calendars/"+calUUID+"/import",
+		token, []byte(ics), map[string]string{"Content-Type": "text/calendar"})
+	require.Equalf(t, http.StatusOK, status, "import: %s", errorMessage(raw))
+
+	rangeQS := "?start=2035-06-01T00:00:00Z&end=2035-06-04T00:00:00Z&expand=true"
+	got := listEvents(t, token, calID, rangeQS)
+	require.Lenf(t, got, 2, "both non-DTEND events must be listable in a covering window, got %d", len(got))
+}
+
 // TestRESTCreatedEventHasETag is the regression test for H10: REST-created and
 // REST-updated events must carry a non-empty, changing ETag visible to DAV
 // clients (verified by reading the ETag header on a DAV GET).

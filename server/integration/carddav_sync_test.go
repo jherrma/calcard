@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -146,7 +145,6 @@ func putVCard(t *testing.T, collection, basicUser, appPass, uid, fn, given, fami
 		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
 	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status,
 		"PUT %s: %s", path, string(body))
-	_ = time.Now
 }
 
 // TestCardDAVEtagPreconditions is the regression test for H9: CardDAV PUT now

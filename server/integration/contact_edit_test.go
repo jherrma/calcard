@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,6 +34,8 @@ func TestContactEditPreservesUnknownProps(t *testing.T) {
 		"CATEGORIES:Work,Important\r\n" +
 		"X-CUSTOM-FIELD:custom-value\r\n" +
 		"IMPP:xmpp:user@chat.example\r\n" +
+		"item1.URL:https://x.example\r\n" +
+		"item1.X-ABLabel:MyLabel\r\n" +
 		"END:VCARD\r\n"
 
 	status, _, body := davCall(t, "PUT", path, email, appPass, vcard,
@@ -61,8 +64,15 @@ func TestContactEditPreservesUnknownProps(t *testing.T) {
 	served := string(getBody)
 	assert.Contains(t, served, "FN:Renamed Person", "managed field must reflect the edit")
 	assert.NotContains(t, served, "Original Name", "old FN must be gone")
-	assert.Contains(t, served, "CATEGORIES:", "CATEGORIES must survive a web-UI edit")
-	assert.Contains(t, served, "Work", "CATEGORIES values must survive")
+	// Exact CATEGORIES form: the comma-list must survive as two categories, not
+	// collapse into a single escaped "Work\,Important" value.
+	assert.Contains(t, served, "CATEGORIES:Work,Important", "CATEGORIES comma-list must survive unchanged")
+	assert.NotContains(t, served, `Work\,Important`, "commas in a category list must not be escaped into one value")
 	assert.Contains(t, served, "X-CUSTOM-FIELD:custom-value", "X-CUSTOM-FIELD must survive a web-UI edit")
 	assert.Contains(t, served, "chat.example", "IMPP must survive a web-UI edit")
+	// The grouped item1.URL must keep its group so the paired item1.X-ABLabel is
+	// not orphaned (managed-field re-adds previously dropped the group).
+	upper := strings.ToUpper(served)
+	assert.Contains(t, upper, "ITEM1.URL:HTTPS://X.EXAMPLE", "grouped URL must keep its item1. group")
+	assert.Contains(t, upper, "ITEM1.X-ABLABEL", "grouped X-ABLabel must survive with its group")
 }

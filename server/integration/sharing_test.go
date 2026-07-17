@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,12 @@ func TestCalendarSharing(t *testing.T) {
 	rename := "Hijacked"
 	status, _ := restCall(t, http.MethodPatch, "/calendars/"+calUUID, targetToken,
 		map[string]*string{"name": &rename})
-	assert.NotEqual(t, http.StatusOK, status, "target user must NOT be able to rename owner's calendar before sharing")
+	// Assert the exact denial status, not just "!= 200": NotEqual(200) also
+	// passes on a 500, which would hide a broken authz path. UpdateCalendarUseCase
+	// rejects a non-owner with "access denied", which the handler maps to 400
+	// (the calendar-mutation endpoints answer 400 here, unlike the event
+	// endpoints' existence-hiding 404).
+	assert.Equal(t, http.StatusBadRequest, status, "target user must NOT be able to rename owner's calendar before sharing")
 
 	// Target should not see the calendar in their listing either.
 	targetIdx := listCalendarsIndex(t, targetToken)
@@ -586,6 +592,56 @@ func TestAddressBookDeleteRevokesShares(t *testing.T) {
 	newABID := createAddressBook(t, ownerToken, "Fresh Directory")
 	shareAB(t, ownerToken, newABID, shareeEmail, "read")
 	assert.True(t, addressBookVisibleTo(t, shareeToken, newABID), "sharee should see the freshly shared address book")
+}
+
+// TestAddressBookDAVDeleteRevokesShares is the DAV-path analogue of
+// TestAddressBookDeleteRevokesShares. That test deletes via REST, which always
+// revoked shares; the CardDAV collection-DELETE path is the one that previously
+// left the share dangling (and ListAddressBooks lacked the ghost guard). Delete
+// over DAV, then confirm the sharee's CardDAV home set no longer lists the book.
+func TestAddressBookDAVDeleteRevokesShares(t *testing.T) {
+	ownerEmail := "ghost-ab-dav-owner@example.test"
+	shareeEmail := "ghost-ab-dav-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken, ownerUsername := registerAndLoginFull(t, ownerEmail, password, "Ghost AB DAV Owner")
+	shareeToken, shareeUsername := registerAndLoginFull(t, shareeEmail, password, "Ghost AB DAV Sharee")
+	_, ownerAppPass := createAppPassword(t, ownerToken, "ghost-ab-dav-owner")
+	_, shareeAppPass := createAppPassword(t, shareeToken, "ghost-ab-dav-sharee")
+
+	abID := createAddressBook(t, ownerToken, "Doomed DAV Directory")
+	abPath := addressBookPath(t, ownerToken, "Doomed DAV Directory")
+	require.NotEmpty(t, abPath)
+
+	shareAB(t, ownerToken, abID, shareeEmail, "read")
+	require.True(t, addressBookVisibleTo(t, shareeToken, abID), "sharee should see the shared book pre-delete")
+
+	// Sanity: the shared book appears in the sharee's CardDAV home set first, so
+	// its later absence is meaningful.
+	shareeHome := "/dav/" + shareeUsername + "/addressbooks/"
+	propfind := `<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:displayname/></D:prop></D:propfind>`
+	pfHeaders := map[string]string{"Depth": "1", "Content-Type": "application/xml"}
+	status, _, body := davCall(t, "PROPFIND", shareeHome, shareeEmail, shareeAppPass, propfind, pfHeaders)
+	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND pre-delete: %s", string(body))
+	require.Truef(t, strings.Contains(string(body), abPath), "shared book must appear in sharee's home set before delete")
+
+	// Delete the book over DAV (CardDAVBackend.DeleteAddressBook).
+	status, _, body = davCall(t, "DELETE", "/dav/"+ownerUsername+"/addressbooks/"+abPath+"/",
+		ownerEmail, ownerAppPass, "", nil)
+	require.Containsf(t, []int{http.StatusNoContent, http.StatusOK}, status, "DAV DELETE addressbook: %s", string(body))
+
+	// The share must be revoked: no ghost in the sharee's CardDAV home set or
+	// their REST list.
+	status, _, body = davCall(t, "PROPFIND", shareeHome, shareeEmail, shareeAppPass, propfind, pfHeaders)
+	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND post-delete: %s", string(body))
+	assert.NotContainsf(t, string(body), abPath, "DAV-deleted book must not linger as a ghost in the sharee's home set")
+	assert.False(t, addressBookVisibleTo(t, shareeToken, abID),
+		"DAV-deleted book must not linger in the sharee's REST list")
+
+	// Re-sharing a fresh book with the same user still works.
+	newABID := createAddressBook(t, ownerToken, "Fresh DAV Directory")
+	shareAB(t, ownerToken, newABID, shareeEmail, "read")
+	assert.True(t, addressBookVisibleTo(t, shareeToken, newABID))
 }
 
 // TestSharedCalendarEventPermissions is the regression test for H7 (REST part):

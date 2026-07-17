@@ -3,8 +3,10 @@
 package integration_test
 
 import (
+	"encoding/xml"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +47,18 @@ func TestSyncTokenSurvivesRenameAndMove(t *testing.T) {
 	require.Equalf(t, http.StatusMultiStatus, status,
 		"incremental sync after rename must succeed, got %d", status)
 
+	// Capture the POST-rename token and sync with THAT token. The pre-rename
+	// token's changelog anchor always survives, so syncing with it can't prove
+	// the rename minted an anchored token — only a fresh post-rename token would
+	// regress to a 403 if RecordChange were swapped back for UpdateSyncTokens.
+	status, _, body = davCall(t, "REPORT", collection, email, appPass, syncCollectionBody, depthHeader("1"))
+	require.Equalf(t, http.StatusMultiStatus, status, "post-rename REPORT: %s", string(body))
+	postRenameTok := extractSyncToken(string(body))
+	require.NotEmpty(t, postRenameTok, "post-rename REPORT must return a sync token")
+	status = incrementalSync(t, collection, email, appPass, postRenameTok)
+	require.Equalf(t, http.StatusMultiStatus, status,
+		"incremental sync with the POST-rename token must succeed (not 403), got %d", status)
+
 	// Move an event out of this calendar; the source must report a deletion,
 	// not 403.
 	putEvent(t, collection, email, appPass, "move-src", "Moving", time.Date(2035, 5, 1, 9, 0, 0, 0, time.UTC))
@@ -67,7 +81,25 @@ func TestSyncTokenSurvivesRenameAndMove(t *testing.T) {
 	// report the moved resource as removed (404 inside the multistatus).
 	status, _, body = davCall(t, "REPORT", collection, email, appPass, incrementalSyncBody(preMoveToken), depthHeader("1"))
 	require.Equalf(t, http.StatusMultiStatus, status, "source sync after move: %s", string(body))
-	assert.Contains(t, string(body), "404", "source collection must report the moved event as removed")
+
+	// Scope the 404 to the moved resource's OWN <response> block rather than
+	// matching "404" anywhere in the multistatus (which could be an unrelated
+	// status, an ETag, or a timestamp fragment).
+	var ms struct {
+		Responses []struct {
+			Href   string `xml:"href"`
+			Status string `xml:"status"`
+		} `xml:"response"`
+	}
+	require.NoErrorf(t, xml.Unmarshal(body, &ms), "parse multistatus: %s", string(body))
+	var foundMoved bool
+	for _, r := range ms.Responses {
+		if strings.Contains(r.Href, "move-src.ics") {
+			foundMoved = true
+			assert.Containsf(t, r.Status, "404", "moved resource's response must report 404, got %q", r.Status)
+		}
+	}
+	assert.True(t, foundMoved, "source sync must include a response for the moved resource (move-src.ics)")
 }
 
 func incrementalSyncBody(tok string) string {

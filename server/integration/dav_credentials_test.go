@@ -172,6 +172,47 @@ func TestDedicatedCardDAVCredential(t *testing.T) {
 	assert.Contains(t, string(raw), contactUID,
 		"contact PUT via CardDAV credential should be visible to the owner")
 
+	// --- Protocol binding (M13), symmetric to the CalDAV test: a CardDAV
+	// credential must not be usable on calendar paths --------------------
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/calendars/",
+		credUser, rawPass, propfindCalendarHomeBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status,
+		"CardDAV credential must be forbidden on calendar paths (got %d)", status)
+
+	// Naming edge case: a calendar object path that merely contains the word
+	// "addressbooks" must still classify as a calendar path by its segment, so
+	// the CardDAV credential is refused (segment-based, not substring).
+	status, _, _ = davCall(t, "GET", "/dav/"+username+"/calendars/some-cal/addressbooks.ics",
+		credUser, rawPass, "", nil)
+	assert.Equalf(t, http.StatusForbidden, status,
+		"CardDAV credential must be refused on a calendar object path containing 'addressbooks' (got %d)", status)
+
+	// --- A read-only CardDAV credential must refuse writes --------------
+	roPass := "ReadOnlyCardPass_v3rY!S1x"
+	roUser := "ro-card-" + time.Now().Format("20060102t150405")
+	var roCreated struct {
+		ID string `json:"id"`
+	}
+	code = doJSONRaw(t, http.MethodPost, "/carddav-credentials/", token, map[string]any{
+		"name": "Read-only card sync", "username": roUser, "password": roPass, "permission": "read",
+	}, &roCreated)
+	require.Equalf(t, http.StatusCreated, code, "create read-only carddav credential: code %d", code)
+
+	// Read is allowed...
+	status, _, body = davCall(t, "PROPFIND", collection, roUser, roPass,
+		propfindAddressBookBody, depthHeader("0"))
+	require.Equalf(t, http.StatusMultiStatus, status,
+		"read-only carddav credential must authorize PROPFIND: %s", string(body))
+	// ...but PUT and DELETE are refused.
+	roVcard := buildMinimalVCard("ro-should-not-land", "RO NoWrite", "RO", "NoWrite")
+	status, _, body = davCall(t, "PUT", collection+"ro-should-not-land.vcf", roUser, roPass, roVcard,
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	assert.Equalf(t, http.StatusForbidden, status,
+		"read-only carddav credential must NOT accept PUT (got %d, body: %s)", status, string(body))
+	status, _, _ = davCall(t, "DELETE", contactPath, roUser, roPass, "", nil)
+	assert.Equalf(t, http.StatusForbidden, status,
+		"read-only carddav credential must NOT accept DELETE (got %d)", status)
+
 	// --- Revoke, then auth fails ----------------------------------------
 	status, raw = restCall(t, http.MethodDelete, "/carddav-credentials/"+created.ID, token, nil)
 	require.Equalf(t, http.StatusNoContent, status, "revoke: %s", errorMessage(raw))

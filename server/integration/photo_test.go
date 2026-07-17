@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,11 +75,11 @@ func TestContactPhoto(t *testing.T) {
 
 	status, _, body = rawCall2(t, http.MethodGet, baseURL+photoURL, token, nil, nil)
 	require.Equal(t, http.StatusOK, status)
-	// Bytes after re-upload should match the icon-2 file we sent in.
-	// (The server round-trips through base64 storage, so this also proves the
-	// decode path round-trips cleanly.)
-	assert.Equalf(t, len(icon2), len(body),
-		"fetched photo length should match uploaded icon 2 (was %d, got %d)", len(icon2), len(body))
+	// Bytes after re-upload must match the icon-2 file we sent in — assert the
+	// full bytes, not just the length. A stale-serving bug that returned the
+	// ORIGINAL image would pass a length check whenever the two files happened
+	// to be the same size. (Also proves the base64 decode path round-trips.)
+	assert.Equal(t, icon2, body, "fetched photo bytes must equal the replacement icon 2")
 
 	// --- Delete ----------------------------------------------------------
 
@@ -158,7 +159,8 @@ func TestCardDAVPhotoRoundTrip(t *testing.T) {
 	// match the actual body length.
 	status, hdrs, getBody := davCall(t, "GET", path, email, appPass, "", nil)
 	require.Equalf(t, http.StatusOK, status, "GET: %s", string(getBody))
-	assert.Contains(t, string(getBody), "PHOTO", "served vCard must include the photo")
+	assert.Equal(t, 1, countPhotoProps(string(getBody)),
+		"served vCard must include exactly one PHOTO property (a strip/re-inject asymmetry would duplicate it)")
 	cl := hdrs.Get("Content-Length")
 	require.NotEmpty(t, cl, "GET response must set a Content-Length header")
 	assert.Equalf(t, len(getBody), mustAtoi(t, cl),
@@ -194,6 +196,75 @@ func TestCardDAVPhotoRoundTrip(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 	require.GreaterOrEqual(t, len(photoBytes), 3)
 	assert.Equal(t, []byte{0xFF, 0xD8, 0xFF}, photoBytes[:3], "round-tripped photo must still be a JPEG")
+}
+
+// countPhotoProps counts PHOTO property occurrences in a serialized vCard by
+// their delimiter (";" for parameters, ":" for a bare value) so a base64 photo
+// value that happens to contain the letters "PHOTO" can't inflate the count.
+func countPhotoProps(vcardBody string) int {
+	return strings.Count(vcardBody, "PHOTO;") + strings.Count(vcardBody, "PHOTO:")
+}
+
+// TestContactPhotoStrippedOnMove is the regression test for the contact-move
+// photo-duplication bug: MoveUseCase loads the object via GetObjectByUUID (which
+// hydrates the PHOTO back into the body), so if the move re-saved that body
+// verbatim the photo would live inline AND in the side table, and every later
+// read would inject a second copy. After a REST move, the DAV-served vCard must
+// carry exactly one PHOTO.
+func TestContactPhotoStrippedOnMove(t *testing.T) {
+	email := "photo-move@example.test"
+	token, username := registerAndLoginFull(t, email, "photoSecret!123", "Photo Move")
+	_, appPass := createAppPassword(t, token, "photo-move")
+
+	srcPath := addressBookPath(t, token, "Contacts")
+	require.NotEmpty(t, srcPath)
+	srcID := addressBookID(t, token, "Contacts")
+	dstID := createAddressBook(t, token, "Archive")
+	dstPath := addressBookPath(t, token, "Archive")
+	require.NotEmpty(t, dstPath)
+
+	collection := "/dav/" + username + "/addressbooks/" + srcPath + "/"
+	icon := readAsset(t, "user-icon.jpg")
+	b64 := base64.StdEncoding.EncodeToString(icon)
+	uid := "photo-move-uid"
+	vcardWithPhoto := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:" + uid + "\r\nFN:Move Me\r\nN:Me;Move;;;\r\n" +
+		"PHOTO;ENCODING=b;TYPE=JPEG:" + b64 + "\r\nEND:VCARD\r\n"
+
+	status, _, body := davCall(t, "PUT", collection+uid+".vcf", email, appPass, vcardWithPhoto,
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "PUT: %s", string(body))
+
+	// Resolve the contact's REST id within the source book.
+	var listResp struct {
+		Contacts []struct {
+			ID  string `json:"id"`
+			UID string `json:"uid"`
+		} `json:"Contacts"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
+		"/addressbooks/"+uintStr(srcID)+"/contacts", token, nil, &listResp))
+	var contactID string
+	for _, c := range listResp.Contacts {
+		if c.UID == uid {
+			contactID = c.ID
+		}
+	}
+	require.NotEmpty(t, contactID, "seeded contact must appear in the source book")
+
+	// Move it to the target book via the dedicated REST move route.
+	movePath := "/addressbooks/" + uintStr(srcID) + "/contacts/" + contactID + "/move"
+	var moved struct {
+		UID string `json:"uid"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodPost, movePath, token,
+		map[string]string{"target_addressbook_id": uintStr(dstID)}, &moved))
+
+	// DAV-GET the moved object from the TARGET collection: exactly one PHOTO.
+	dstObj := "/dav/" + username + "/addressbooks/" + dstPath + "/" + uid + ".vcf"
+	status, _, served := davCall(t, "GET", dstObj, email, appPass, "", nil)
+	require.Equalf(t, http.StatusOK, status, "GET moved vCard: %s", string(served))
+	assert.Equal(t, 1, countPhotoProps(string(served)),
+		"moved contact must carry exactly one PHOTO property, not a duplicate")
 }
 
 func mustAtoi(t *testing.T, s string) int {

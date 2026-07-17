@@ -105,6 +105,45 @@ func TestAppPasswordScopeEnforcement(t *testing.T) {
 		propfindPrincipalBody, depthHeader("1"))
 	assert.Equalf(t, http.StatusForbidden, status,
 		"caldav-only app password must be forbidden on addressbook paths, got %d", status)
+
+	// (2) Reverse direction: a CardDAV-only password works on addressbook paths
+	// and is forbidden on calendar paths.
+	code = doJSON(t, http.MethodPost, "/app-passwords/", token, map[string]any{
+		"name": "carddav-only", "scopes": []string{"carddav"},
+	}, &resp)
+	require.Equal(t, http.StatusOK, code)
+	cardOnlyPass := resp.Credentials.Password
+
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/", email, cardOnlyPass,
+		propfindPrincipalBody, depthHeader("1"))
+	assert.Equal(t, http.StatusMultiStatus, status, "carddav-scoped password must work on addressbook paths")
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/calendars/", email, cardOnlyPass,
+		propfindCalendarHomeBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status,
+		"carddav-only app password must be forbidden on calendar paths, got %d", status)
+
+	// (3) An empty-scope password must be forbidden on BOTH protocol trees.
+	code = doJSON(t, http.MethodPost, "/app-passwords/", token, map[string]any{
+		"name": "no-scope", "scopes": []string{},
+	}, &resp)
+	require.Equal(t, http.StatusOK, code)
+	noScopePass := resp.Credentials.Password
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/calendars/", email, noScopePass,
+		propfindCalendarHomeBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status, "empty-scope password must be forbidden on calendar paths, got %d", status)
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/", email, noScopePass,
+		propfindPrincipalBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status, "empty-scope password must be forbidden on addressbook paths, got %d", status)
+
+	// (4) Naming edge case: an addressbook object path that merely contains the
+	// word "calendars" must still be classified by its collection-type segment
+	// (addressbooks), so the caldav-only credential is refused. A substring
+	// matcher keying on "calendars" anywhere in the path would wrongly allow it;
+	// this asserts the decision is made per path segment.
+	status, _, _ = davCall(t, "GET", "/dav/"+username+"/addressbooks/some-book/calendars.vcf",
+		email, calOnlyPass, "", nil)
+	assert.Equalf(t, http.StatusForbidden, status,
+		"caldav-only credential must be refused on an addressbook object path containing 'calendars', got %d", status)
 }
 
 // TestAppPasswordRevokeOwnership is the regression test for the IDOR in app
