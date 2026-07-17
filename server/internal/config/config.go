@@ -211,19 +211,26 @@ func Load(configPath string) (*Config, error) {
 		},
 	}
 
-	// 1. Load from YAML file if it exists
+	// 1. Load from YAML file. A non-empty configPath is always an explicitly
+	// requested file: resolveConfigPath in cmd/server only returns non-empty
+	// for the --config flag / CALDAV_CONFIG_PATH / CALDAV_CONFIG_FILE and
+	// returns "" for the implicit env-and-defaults case. An explicitly
+	// requested file that is missing or unreadable must be a fatal error
+	// rather than silently booting on defaults; only the implicit ("") case
+	// may be absent without error.
 	if configPath != "" {
-		if _, err := os.Stat(configPath); err == nil {
-			file, err := os.Open(configPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to open config file: %w", err)
-			}
-			defer file.Close()
+		if _, err := os.Stat(configPath); err != nil {
+			return nil, fmt.Errorf("config file %q was explicitly requested but cannot be read: %w", configPath, err)
+		}
+		file, err := os.Open(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open config file: %w", err)
+		}
+		defer file.Close()
 
-			decoder := yaml.NewDecoder(file)
-			if err := decoder.Decode(cfg); err != nil {
-				return nil, fmt.Errorf("failed to decode config file: %w", err)
-			}
+		decoder := yaml.NewDecoder(file)
+		if err := decoder.Decode(cfg); err != nil {
+			return nil, fmt.Errorf("failed to decode config file: %w", err)
 		}
 	}
 
