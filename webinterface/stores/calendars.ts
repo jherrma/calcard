@@ -220,7 +220,7 @@ export const useCalendarStore = defineStore('calendars', {
         body: data,
       });
       this.calendars.push(response);
-      this.visibleCalendarIds.add(response.id);
+      this.visibleCalendarIds.add(String(response.id));
       return response;
     },
 
