@@ -76,6 +76,11 @@ func (b *CardDAVBackend) ListAddressBooks(ctx context.Context) ([]carddav.Addres
 		res = append(res, *b.mapAddressBook(u.Username, &ab))
 	}
 	for _, s := range shared {
+		// Defense in depth: skip a share whose address book no longer exists
+		// (zero-valued preload) so it never surfaces as a blank ghost entry.
+		if s.AddressBook.ID == 0 {
+			continue
+		}
 		res = append(res, *b.mapAddressBook(u.Username, &s.AddressBook))
 	}
 
@@ -137,7 +142,18 @@ func (b *CardDAVBackend) DeleteAddressBook(ctx context.Context, p string) error 
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
-	return b.addressBookRepo.Delete(ctx, ab.ID)
+	if err := b.addressBookRepo.Delete(ctx, ab.ID); err != nil {
+		return err
+	}
+	// Revoke every share of this address book so it doesn't linger as a ghost
+	// entry in the sharees' address book lists (mirrors the REST delete and the
+	// CalDAV collection-delete path, which calls DeleteByCalendarID).
+	if b.shareRepo != nil {
+		if err := b.shareRepo.DeleteByAddressBookID(ctx, ab.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetAddressObject returns an address object (contact) by path.
@@ -282,6 +298,7 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 
 	// Extract UID and metadata
 	uid := card.Value(vcard.FieldUID)
+	incomingUID := uid
 	if uid == "" {
 		uid = uuid.New().String()
 		card.SetValue(vcard.FieldUID, uid)
@@ -324,6 +341,16 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 				return nil, webdav.NewHTTPError(http.StatusPreconditionFailed, nil)
 			}
 		}
+	}
+
+	// A PUT must not change an existing resource's UID. RFC 6352 binds the UID
+	// to the resource for its lifetime; silently accepting a different UID would
+	// leave the stored uid column, the no-uid-conflict lookup, and the sync log
+	// stale, letting a later resource legitimately reuse the old UID and produce
+	// two objects with the same UID. Reject rather than silently rename. A body
+	// that omits UID entirely falls through to the default-mint path above.
+	if existing != nil && incomingUID != "" && incomingUID != existing.UID {
+		return nil, carddav.NewPreconditionError(carddav.PreconditionNoUIDConflict)
 	}
 
 	// no-uid-conflict (RFC 6352 §6.3.2): a different resource in this book must

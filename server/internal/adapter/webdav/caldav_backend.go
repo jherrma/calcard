@@ -305,6 +305,15 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		}
 	}
 
+	// A PUT must not change an existing resource's UID. RFC 4791 binds the UID
+	// to the resource for its lifetime; silently accepting a different UID would
+	// leave the stored uid column, the no-uid-conflict lookup, and the sync log
+	// stale, letting a later resource legitimately reuse the old UID and produce
+	// two objects with the same UID. Reject rather than silently rename.
+	if existing != nil && existing.UID != uid {
+		return nil, caldav.NewPreconditionError(caldav.PreconditionNoUIDConflict)
+	}
+
 	// no-uid-conflict (RFC 4791 §5.3.2): a different resource in this calendar
 	// must not already own this UID.
 	if other, _ := b.calendarRepo.GetCalendarObjectByUID(ctx, c.ID, uid); other != nil && other.Path != objPath {

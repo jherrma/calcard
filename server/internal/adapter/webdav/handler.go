@@ -239,6 +239,34 @@ func (h *Handler) Handler() fiber.Handler {
 		// made in Authenticate (both go through davCollectionType).
 		collectionType := davCollectionType(reqPath)
 
+		// Enforce conditional DELETE (If-Match). emersion's caldav/carddav
+		// dispatch drops If-Match on DELETE, so a stale-ETag If-Match DELETE
+		// (sent by iOS/macOS) would otherwise delete unconditionally — the
+		// lost-update gap H9 closed for PUT. Resolve the target object's
+		// current ETag and reject with 412 when it doesn't match. A missing
+		// object falls through so the backend returns the normal 404; the
+		// precondition is only enforced when the object actually exists.
+		if c.Method() == "DELETE" {
+			if ifMatch := gowebdav.ConditionalMatch(c.Get("If-Match")); ifMatch.IsSet() {
+				var currentETag string
+				var found bool
+				if collectionType == "addressbooks" {
+					if obj, err := h.carddavHandler.Backend.GetAddressObject(stdCtx, reqPath, nil); err == nil && obj != nil {
+						currentETag, found = obj.ETag, true
+					}
+				} else {
+					if obj, err := h.caldavHandler.Backend.GetCalendarObject(stdCtx, reqPath, nil); err == nil && obj != nil {
+						currentETag, found = obj.ETag, true
+					}
+				}
+				if found {
+					if ok, _ := ifMatch.MatchETag(currentETag); !ok {
+						return c.SendStatus(fiber.StatusPreconditionFailed)
+					}
+				}
+			}
+		}
+
 		// Handle WebDAV-Sync REPORT for CalDAV
 		if c.Method() == "REPORT" && collectionType == "calendars" {
 			var syncQuery SyncCollectionQuery
