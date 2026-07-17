@@ -117,8 +117,26 @@ var managedVCardFields = []string{
 // applyContactToCard writes the managed contact fields onto card, replacing any
 // existing managed values but preserving unmanaged properties already present.
 func applyContactToCard(card vcard.Card, c *contact.Contact) {
+	// Clear the managed fields before re-writing them, but only the plain
+	// (ungrouped) instances. Grouped entries such as item1.URL are part of an
+	// Apple-style custom-label linkage (item1.URL + item1.X-ABLabel); deleting
+	// them here would orphan the X-ABLabel, so they are left untouched.
 	for _, f := range managedVCardFields {
-		delete(card, f)
+		fields := card[f]
+		if len(fields) == 0 {
+			continue
+		}
+		grouped := fields[:0:0]
+		for _, fld := range fields {
+			if fld.Group != "" {
+				grouped = append(grouped, fld)
+			}
+		}
+		if len(grouped) > 0 {
+			card[f] = grouped
+		} else {
+			delete(card, f)
+		}
 	}
 
 	if card.Value(vcard.FieldVersion) == "" {
@@ -255,7 +273,66 @@ func encodeCard(card vcard.Card) (string, error) {
 	if err := vcard.NewEncoder(&buf).Encode(card); err != nil {
 		return "", err
 	}
-	return buf.String(), nil
+	return restoreCommaLists(buf.String()), nil
+}
+
+// commaListFields are vCard properties whose value is a comma-separated list
+// (RFC 6350). go-vcard's encoder escapes every comma unconditionally, so a
+// preserved value such as CATEGORIES:Friends,VIP is emitted as
+// CATEGORIES:Friends\,VIP — which a strict client reads as a single category
+// literally named "Friends,VIP". restoreCommaLists un-escapes the list
+// separators for these properties after encoding.
+var commaListFields = map[string]bool{
+	vcard.FieldCategories: true,
+}
+
+// restoreCommaLists rewrites the encoded vCard so comma-list properties keep
+// their raw comma separators instead of the escaped form go-vcard emits. The
+// encoder writes one unfolded property per line, so a line-oriented pass is
+// safe here.
+func restoreCommaLists(vcardStr string) string {
+	lines := strings.Split(vcardStr, "\r\n")
+	for i, line := range lines {
+		colon := strings.IndexByte(line, ':')
+		if colon < 0 {
+			continue
+		}
+		// Property name is the token before the first ';' (params), with any
+		// group prefix ("item1.") stripped.
+		name := line[:colon]
+		if semi := strings.IndexByte(name, ';'); semi >= 0 {
+			name = name[:semi]
+		}
+		if dot := strings.IndexByte(name, '.'); dot >= 0 {
+			name = name[dot+1:]
+		}
+		if commaListFields[strings.ToUpper(name)] {
+			lines[i] = line[:colon+1] + unescapeSeparatorCommas(line[colon+1:])
+		}
+	}
+	return strings.Join(lines, "\r\n")
+}
+
+// unescapeSeparatorCommas turns escaped commas ("\,") back into raw list
+// separators while leaving other escape sequences (notably "\\" and "\n")
+// intact, so a literal backslash immediately before a separator survives.
+func unescapeSeparatorCommas(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			if s[i+1] == ',' {
+				b.WriteByte(',')
+			} else {
+				b.WriteByte(s[i])
+				b.WriteByte(s[i+1])
+			}
+			i++
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // Helpers

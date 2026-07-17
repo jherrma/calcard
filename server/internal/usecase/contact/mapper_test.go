@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/emersion/go-vcard"
 	"github.com/jherrma/caldav-server/internal/domain/contact"
 	"github.com/stretchr/testify/assert"
 )
@@ -109,12 +110,36 @@ func TestPatchVCard(t *testing.T) {
 	}
 	assert.Equal(t, 1, fnCount, "exactly one FN line expected")
 
-	// Unmanaged properties preserved (go-vcard re-escapes commas and upper-cases
-	// field names on re-encode, so match on the surviving substrings).
-	assert.Contains(t, result, "CATEGORIES:", "CATEGORIES must survive the edit")
-	assert.Contains(t, result, "VIP", "CATEGORIES values must survive the edit")
 	assert.Contains(t, result, "X-CUSTOM:keep-me", "X-CUSTOM must survive the edit")
 	assert.Contains(t, result, "chat.example", "IMPP must survive the edit")
-	assert.Contains(t, strings.ToUpper(result), "ITEM1.X-ABLABEL:HOMEPAGE", "grouped label must survive the edit")
-	assert.Contains(t, result, "https://example.com", "URL value must survive the edit")
+
+	// Bug (1): the comma-separated CATEGORIES list must survive as separate
+	// categories, not collapse into one literal "Friends\,VIP" value. Assert on
+	// the wire form directly — go-vcard's decoder un-escapes "\," to "," and its
+	// Categories() splits on every comma, so a decode-based check cannot tell the
+	// corrupted form apart from the correct one.
+	assert.Contains(t, result, "CATEGORIES:Friends,VIP", "CATEGORIES must keep raw list separators")
+	assert.NotContains(t, result, `Friends\,VIP`, "CATEGORIES must not escape the list separator")
+
+	// Bug (2): the grouped item1.URL must keep its group so the paired
+	// item1.X-ABLabel is not orphaned. Decode and assert the real structure.
+	card, err := vcard.NewDecoder(strings.NewReader(result)).Decode()
+	assert.NoError(t, err)
+
+	var groupedURL *vcard.Field
+	for _, f := range card[vcard.FieldURL] {
+		if f.Group == "item1" {
+			groupedURL = f
+			break
+		}
+	}
+	if assert.NotNil(t, groupedURL, "item1.URL must keep its group") {
+		assert.Equal(t, "https://example.com", groupedURL.Value)
+	}
+
+	label := card.Get("X-ABLABEL")
+	if assert.NotNil(t, label, "item1.X-ABLabel must survive the edit") {
+		assert.Equal(t, "item1", label.Group, "X-ABLabel must keep its group")
+		assert.Equal(t, "homepage", label.Value)
+	}
 }
