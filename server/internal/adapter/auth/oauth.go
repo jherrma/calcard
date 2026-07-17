@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jherrma/caldav-server/internal/config"
@@ -101,14 +102,24 @@ type oauthProviderManager struct {
 	providers map[string]OAuthProvider
 }
 
-// NewOAuthProviderManager creates a new OAuth provider manager
-func NewOAuthProviderManager(cfg *config.OAuthConfig) (OAuthProviderManager, error) {
+// NewOAuthProviderManager creates a new OAuth provider manager. baseURL is the
+// public origin of the deployment (cfg.BaseURL); OAuth redirect URIs are
+// derived from it, so it must be the externally reachable URL that the admin
+// registered at each provider.
+func NewOAuthProviderManager(cfg *config.OAuthConfig, baseURL string) (OAuthProviderManager, error) {
 	providers := make(map[string]OAuthProvider)
 	ctx := context.Background() // TODO: potentially pass context
 
+	// Trailing-slash trim matters: base_url "http://host:8080/" would otherwise
+	// yield "//api/..." and providers reject the mismatched redirect URI.
+	base := strings.TrimRight(baseURL, "/")
+	redirectFor := func(name string) string {
+		return base + "/api/v1/auth/oauth/" + name + "/callback"
+	}
+
 	// Initialize Google
 	if cfg.Google.ClientID != "" && cfg.Google.ClientSecret != "" {
-		p, err := NewOIDCProvider(ctx, "google", cfg.Google, "/api/v1/auth/oauth/google/callback") // Redirect URL needs to be constructed properly
+		p, err := NewOIDCProvider(ctx, "google", cfg.Google, redirectFor("google"))
 		if err == nil {
 			providers["google"] = p
 		}
@@ -116,7 +127,7 @@ func NewOAuthProviderManager(cfg *config.OAuthConfig) (OAuthProviderManager, err
 
 	// Initialize Microsoft
 	if cfg.Microsoft.ClientID != "" && cfg.Microsoft.ClientSecret != "" {
-		p, err := NewOIDCProvider(ctx, "microsoft", cfg.Microsoft, "/api/v1/auth/oauth/microsoft/callback")
+		p, err := NewOIDCProvider(ctx, "microsoft", cfg.Microsoft, redirectFor("microsoft"))
 		if err == nil {
 			providers["microsoft"] = p
 		}
@@ -124,7 +135,7 @@ func NewOAuthProviderManager(cfg *config.OAuthConfig) (OAuthProviderManager, err
 
 	// Initialize Custom
 	if cfg.Custom.ClientID != "" && cfg.Custom.ClientSecret != "" {
-		p, err := NewOIDCProvider(ctx, "custom", cfg.Custom, "/api/v1/auth/oauth/custom/callback")
+		p, err := NewOIDCProvider(ctx, "custom", cfg.Custom, redirectFor("custom"))
 		if err == nil {
 			providers["custom"] = p
 		}
