@@ -1,11 +1,13 @@
 package webdav
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	gowebdav "github.com/emersion/go-webdav"
@@ -13,6 +15,7 @@ import (
 	"github.com/emersion/go-webdav/carddav"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -295,7 +298,26 @@ func (h *Handler) Handler() fiber.Handler {
 			})
 		}
 
-		return adaptor.HTTPHandler(httpHandler)(c)
+		if err := adaptor.HTTPHandler(httpHandler)(c); err != nil {
+			return err
+		}
+
+		// emersion's CardDAV GET serializes the address object through go-vcard's
+		// encoder, which escapes commas in comma-list properties (CATEGORIES),
+		// collapsing "Work,Important" into one escaped value. Restore the list
+		// separators on a served single-vCard body — mirroring the same fix the
+		// REST edit path applies in PatchVCard. Content-Length is recomputed since
+		// the restored body is shorter.
+		if collectionType == "addressbooks" && c.Method() == fiber.MethodGet {
+			body := c.Response().Body()
+			if bytes.HasPrefix(bytes.TrimLeft(body, "\r\n \t"), []byte("BEGIN:VCARD")) {
+				if restored := addressbook.RestoreVCardCommaLists(string(body)); restored != string(body) {
+					c.Response().SetBodyString(restored)
+					c.Set(fiber.HeaderContentLength, strconv.Itoa(len(restored)))
+				}
+			}
+		}
+		return nil
 	}
 }
 
