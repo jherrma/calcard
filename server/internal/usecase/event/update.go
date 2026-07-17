@@ -88,10 +88,18 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			master := allEvents[0]
 			event := ical.NewEvent()
 			event.Props.SetText(ical.PropUID, obj.UID)
-			event.Props.Set(&ical.Prop{
-				Name:  ical.PropRecurrenceID,
-				Value: input.RecurrenceID,
-			})
+			// RFC 5545: RECURRENCE-ID's value type must match the series'
+			// DTSTART. An all-day (VALUE=DATE) series needs a VALUE=DATE
+			// RECURRENCE-ID; a UTC DATE-TIME here makes strict clients (Apple,
+			// DAVx5) ignore the exception.
+			if obj.IsAllDay {
+				event.Props.SetDate(ical.PropRecurrenceID, occStart)
+			} else {
+				event.Props.Set(&ical.Prop{
+					Name:  ical.PropRecurrenceID,
+					Value: input.RecurrenceID,
+				})
+			}
 			if p := master.Props.Get(ical.PropSummary); p != nil {
 				event.Props.Set(p)
 			}
@@ -145,7 +153,7 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		untilTime := splitTime.Add(-time.Second)
-		untilStr := untilTime.UTC().Format("20060102T150405Z")
+		untilStr := formatUntilBoundary(untilTime, obj.IsAllDay)
 
 		// 3. Update old master with UNTIL
 		rruleProp := master.Props.Get(ical.PropRecurrenceRule)
@@ -331,7 +339,10 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 	}
 
-	// Always set DTSTART and DTEND on targetEvent to ensure they match obj.IsAllDay format
+	// Always set DTSTART and DTEND on targetEvent to ensure they match obj.IsAllDay format.
+	// An event stored via DAV may carry DURATION instead of DTEND; DTEND and DURATION cannot
+	// coexist (go-ical's encoder rejects it), so drop any DURATION before writing DTEND.
+	targetEvent.Props.Del(ical.PropDuration)
 	if obj.IsAllDay {
 		targetEvent.Props.SetDate(ical.PropDateTimeStart, effectiveStart)
 		targetEvent.Props.SetDate(ical.PropDateTimeEnd, effectiveEnd)
@@ -383,6 +394,18 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	return obj, nil
+}
+
+// formatUntilBoundary formats an RRULE UNTIL value with the value type that
+// RFC 5545 requires: UNTIL must match the series' DTSTART type. An all-day
+// (VALUE=DATE) series gets a DATE UNTIL (20060102); a timed series gets a UTC
+// DATE-TIME (20060102T150405Z). A mismatched type makes strict clients (Apple,
+// DAVx5) reject the whole RRULE.
+func formatUntilBoundary(t time.Time, allDay bool) string {
+	if allDay {
+		return t.UTC().Format("20060102")
+	}
+	return t.UTC().Format("20060102T150405Z")
 }
 
 // seriesLocation returns the base timezone of a recurring series — the

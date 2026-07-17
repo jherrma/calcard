@@ -78,7 +78,17 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			}
 		}
 		if !exists {
-			master.Props.Add(&ical.Prop{Name: "EXDATE", Value: wantKey})
+			// RFC 5545: EXDATE's value type must match DTSTART. For an all-day
+			// (VALUE=DATE) series, write the EXDATE as a DATE so strict clients
+			// (Apple, DAVx5) actually suppress the excluded occurrence; a UTC
+			// DATE-TIME EXDATE against a DATE series is ignored.
+			if obj.IsAllDay {
+				exdate := ical.NewProp("EXDATE")
+				exdate.SetDate(parsed)
+				master.Props.Add(exdate)
+			} else {
+				master.Props.Add(&ical.Prop{Name: "EXDATE", Value: wantKey})
+			}
 		}
 
 		// Also remove any exception VEVENT with this RECURRENCE-ID.
@@ -152,7 +162,7 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		untilTime := splitTime.Add(-time.Second)
-		untilStr := untilTime.UTC().Format("20060102T150405Z")
+		untilStr := formatUntilBoundary(untilTime, obj.IsAllDay)
 
 		// 4. Update RRULE with UNTIL
 		rruleProp := master.Props.Get(ical.PropRecurrenceRule)
