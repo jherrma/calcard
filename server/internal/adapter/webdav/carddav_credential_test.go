@@ -71,7 +71,7 @@ func TestCardDAVCredentialIntegration(t *testing.T) {
 		req, _ := http.NewRequest("PROPFIND", "/dav/addressbooks/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		// Assuming root level might return 404 or MultiStatus depending on impl, but let's check basic auth success
 		// Ideally we check a valid path like /dav/addressbooks/testuser/
@@ -81,7 +81,7 @@ func TestCardDAVCredentialIntegration(t *testing.T) {
 		// 2. MKCOL (Write) logic check - ensuring we are authenticated as user
 		req, _ = http.NewRequest("MKCOL", "/dav/addressbooks/"+u.Username+"/test-rw/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err = app.Test(req)
+		resp, err = app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.NotEqual(t, fiber.StatusUnauthorized, resp.StatusCode)
 		// Note we don't assert Created because backend logic for MKCOL might fail if not fully set up in test
@@ -99,7 +99,7 @@ func TestCardDAVCredentialIntegration(t *testing.T) {
 		req, _ := http.NewRequest("PROPFIND", "/dav/addressbooks/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.NotEqual(t, fiber.StatusUnauthorized, resp.StatusCode)
 
@@ -113,14 +113,14 @@ END:VCARD`
 		req, _ = http.NewRequest("PUT", "/dav/addressbooks/"+u.Username+"/test-rw/ro.vcf", bytes.NewReader([]byte(vcardData)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/vcard")
-		resp, err = app.Test(req)
+		resp, err = app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 
 		// 3. DELETE (Write) - Forbidden
 		req, _ = http.NewRequest("DELETE", "/dav/addressbooks/"+u.Username+"/test-rw/rw.vcf", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err = app.Test(req)
+		resp, err = app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 	})
@@ -131,7 +131,7 @@ END:VCARD`
 		authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("rw-user:rw-pass"))
 		req, _ := http.NewRequest("GET", "/dav/addressbooks/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 	})
@@ -140,7 +140,7 @@ END:VCARD`
 		authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("ro-user:wrong-pass"))
 		req, _ := http.NewRequest("GET", "/dav/addressbooks/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 	})

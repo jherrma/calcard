@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
-	"os"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
@@ -22,9 +22,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) {
-	dataDir, err := os.MkdirTemp("", "caldav-test-*")
+// davTestTimeout relaxes app.Test's 1-second default. Under `go test -race` the
+// bcrypt-per-request cost pushes DAV requests past that default, so app.Test
+// returns (nil, err); callers that ignore the error then nil-deref the response
+// and crash the whole package test binary. Referenced by identifier from the
+// other webdav test files, so only this file needs the fiber/time imports.
+var davTestTimeout = fiber.TestConfig{Timeout: 10 * time.Second}
+
+// davDo runs req against the test app with the relaxed timeout and fails the
+// test cleanly (instead of panicking on a nil response) if app.Test errors.
+func davDo(t *testing.T, app *fiber.App, req *http.Request) *http.Response {
+	t.Helper()
+	resp, err := app.Test(req, davTestTimeout)
 	require.NoError(t, err)
+	return resp
+}
+
+func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) {
+	dataDir := t.TempDir() // auto-removed at test end
 
 	cfg := &config.Config{
 		DataDir: dataDir,
@@ -92,7 +107,7 @@ func TestCalDAV(t *testing.T) {
 	t.Run("OPTIONS /dav/", func(t *testing.T) {
 		req, _ := http.NewRequest("OPTIONS", "/dav/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 		assert.Contains(t, resp.Header.Get("DAV"), "calendar-access")
@@ -108,7 +123,7 @@ func TestCalDAV(t *testing.T) {
 		req, _ := http.NewRequest("PROPFIND", "/dav/testuser/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusMultiStatus, resp.StatusCode)
 	})
@@ -116,7 +131,7 @@ func TestCalDAV(t *testing.T) {
 	t.Run("MKCALENDAR /dav/testuser/calendars/work/", func(t *testing.T) {
 		req, _ := http.NewRequest("MKCOL", "/dav/testuser/calendars/work/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusCreated, resp.StatusCode)
 	})
@@ -136,7 +151,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("PUT", "/dav/testuser/calendars/work/event-1.ics", bytes.NewReader([]byte(icalData)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/calendar")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusCreated, resp.StatusCode)
 		assert.NotEmpty(t, resp.Header.Get("ETag"))
@@ -145,7 +160,7 @@ END:VCALENDAR`
 	t.Run("GET Event", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/dav/testuser/calendars/work/event-1.ics", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 		assert.Contains(t, resp.Header.Get("Content-Type"), "text/calendar")
@@ -154,7 +169,7 @@ END:VCALENDAR`
 	t.Run("DELETE Event", func(t *testing.T) {
 		req, _ := http.NewRequest("DELETE", "/dav/testuser/calendars/work/event-1.ics", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 	})
@@ -186,7 +201,7 @@ func TestConditionalDeleteIfMatch(t *testing.T) {
 	{
 		req, _ := http.NewRequest("MKCOL", "/dav/ifmatchuser/calendars/work/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		require.Equal(t, fiber.StatusCreated, resp.StatusCode)
 	}
@@ -209,7 +224,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("PUT", objURL, bytes.NewReader([]byte(icalData)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/calendar")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		require.Equal(t, fiber.StatusCreated, resp.StatusCode)
 		currentETag = resp.Header.Get("ETag")
@@ -220,14 +235,14 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("DELETE", objURL, nil)
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("If-Match", `"stale-etag-value"`)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusPreconditionFailed, resp.StatusCode)
 
 		// The object must still be there.
 		getReq, _ := http.NewRequest("GET", objURL, nil)
 		getReq.Header.Set("Authorization", authHeader)
-		getResp, err := app.Test(getReq)
+		getResp, err := app.Test(getReq, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusOK, getResp.StatusCode)
 	})
@@ -236,14 +251,14 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("DELETE", objURL, nil)
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("If-Match", currentETag)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 
 		// The object must now be gone.
 		getReq, _ := http.NewRequest("GET", objURL, nil)
 		getReq.Header.Set("Authorization", authHeader)
-		getResp, err := app.Test(getReq)
+		getResp, err := app.Test(getReq, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusNotFound, getResp.StatusCode)
 	})
@@ -337,7 +352,7 @@ func TestCalDAVPutRejectsUIDChange(t *testing.T) {
 	{
 		req, _ := http.NewRequest("MKCOL", "/dav/uidcaluser/calendars/work/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		require.Equal(t, fiber.StatusCreated, resp.StatusCode)
 	}
@@ -351,7 +366,7 @@ func TestCalDAVPutRejectsUIDChange(t *testing.T) {
 		req, _ := http.NewRequest("PUT", objURL, bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/calendar")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		return resp
 	}
@@ -369,7 +384,7 @@ func TestCalDAVPutRejectsUIDChange(t *testing.T) {
 	{
 		getReq, _ := http.NewRequest("GET", objURL, nil)
 		getReq.Header.Set("Authorization", authHeader)
-		getResp, err := app.Test(getReq)
+		getResp, err := app.Test(getReq, davTestTimeout)
 		require.NoError(t, err)
 		require.Equal(t, fiber.StatusOK, getResp.StatusCode)
 		data, _ := io.ReadAll(getResp.Body)
@@ -408,7 +423,7 @@ func TestCardDAVPutRejectsUIDChange(t *testing.T) {
 	{
 		req, _ := http.NewRequest("MKCOL", "/dav/uidcarduser/addressbooks/contacts/", nil)
 		req.Header.Set("Authorization", authHeader)
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		require.Equal(t, fiber.StatusCreated, resp.StatusCode)
 	}
@@ -420,7 +435,7 @@ func TestCardDAVPutRejectsUIDChange(t *testing.T) {
 		req, _ := http.NewRequest("PUT", objURL, bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/vcard")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		return resp
 	}
@@ -438,7 +453,7 @@ func TestCardDAVPutRejectsUIDChange(t *testing.T) {
 	{
 		getReq, _ := http.NewRequest("GET", objURL, nil)
 		getReq.Header.Set("Authorization", authHeader)
-		getResp, err := app.Test(getReq)
+		getResp, err := app.Test(getReq, davTestTimeout)
 		require.NoError(t, err)
 		require.Equal(t, fiber.StatusOK, getResp.StatusCode)
 		data, _ := io.ReadAll(getResp.Body)

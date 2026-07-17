@@ -63,7 +63,7 @@ func TestWebDAVSync(t *testing.T) {
 		req, _ := http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, 207, resp.StatusCode)
 
@@ -90,7 +90,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("PUT", "/dav/syncuser/calendars/sync-test/item1.ics", bytes.NewReader([]byte(icalData)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/calendar")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, 201, resp.StatusCode)
 	})
@@ -108,7 +108,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, 207, resp.StatusCode)
 
@@ -130,7 +130,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, _ := app.Test(req)
+		resp := davDo(t, app, req)
 		assert.Equal(t, 207, resp.StatusCode)
 
 		var ms SyncMultiStatus
@@ -154,7 +154,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("PUT", "/dav/syncuser/calendars/sync-test/item1.ics", bytes.NewReader([]byte(icalData)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/calendar")
-		app.Test(req)
+		davDo(t, app, req)
 
 		body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8" ?>
 <D:sync-collection xmlns:D="DAV:">
@@ -164,7 +164,7 @@ END:VCALENDAR`
 		req, _ = http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, _ := app.Test(req)
+		resp := davDo(t, app, req)
 
 		var ms SyncMultiStatus
 		xml.NewDecoder(resp.Body).Decode(&ms)
@@ -176,7 +176,7 @@ END:VCALENDAR`
 	t.Run("Incremental Sync (Deleted)", func(t *testing.T) {
 		req, _ := http.NewRequest("DELETE", "/dav/syncuser/calendars/sync-test/item1.ics", nil)
 		req.Header.Set("Authorization", authHeader)
-		app.Test(req)
+		davDo(t, app, req)
 
 		body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8" ?>
 <D:sync-collection xmlns:D="DAV:">
@@ -186,7 +186,7 @@ END:VCALENDAR`
 		req, _ = http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, _ := app.Test(req)
+		resp := davDo(t, app, req)
 
 		var ms SyncMultiStatus
 		xml.NewDecoder(resp.Body).Decode(&ms)
@@ -214,7 +214,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("PUT", "/dav/syncuser/calendars/sync-test/item2.ics", bytes.NewReader([]byte(icalData)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "text/calendar")
-		_, _ = app.Test(req)
+		davDo(t, app, req)
 
 		body := `<?xml version="1.0" encoding="utf-8" ?>
 <D:sync-collection xmlns:D="DAV:">
@@ -225,7 +225,7 @@ END:VCALENDAR`
 		req, _ = http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, 207, resp.StatusCode)
 
@@ -248,7 +248,7 @@ END:VCALENDAR`
 		req, _ := http.NewRequest("REPORT", "/dav/syncuser/calendars/sync-test/", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", authHeader)
 		req.Header.Set("Content-Type", "application/xml")
-		resp, _ := app.Test(req)
+		resp := davDo(t, app, req)
 		assert.Equal(t, 403, resp.StatusCode)
 	})
 }

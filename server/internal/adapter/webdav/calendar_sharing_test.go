@@ -149,7 +149,7 @@ func TestCalendarSharingIntegration(t *testing.T) {
 	reqBody := `{"user_identifier": "recipient@example.com", "permission": "read-write"}`
 	req := httptest.NewRequest("POST", "/api/test-sharing/"+fmt.Sprint(cal.ID)+"/shares", strings.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, davTestTimeout)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 
