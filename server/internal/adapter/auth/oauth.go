@@ -28,9 +28,10 @@ type UserInfo struct {
 }
 
 type oidcProvider struct {
-	name     string
-	provider *oidc.Provider
-	config   *oauth2.Config
+	name                string
+	provider            *oidc.Provider
+	config              *oauth2.Config
+	assumeEmailVerified bool
 }
 
 // NewOIDCProvider creates a new OIDC-based OAuth provider
@@ -58,9 +59,10 @@ func NewOIDCProvider(ctx context.Context, name string, conf config.OAuthProvider
 	}
 
 	return &oidcProvider{
-		name:     name,
-		provider: provider,
-		config:   oauthConfig,
+		name:                name,
+		provider:            provider,
+		config:              oauthConfig,
+		assumeEmailVerified: conf.AssumeEmailVerified,
 	}, nil
 }
 
@@ -108,10 +110,19 @@ func (p *oidcProvider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSou
 		claims.Name = ""
 	}
 
+	// Some providers (Microsoft's userinfo endpoint) never return an
+	// email_verified claim, so it unmarshals to false and blocks new-user
+	// sign-in and auto-linking. When the admin has explicitly opted in for this
+	// provider, treat a returned email as verified.
+	emailVerified := userInfo.EmailVerified
+	if p.assumeEmailVerified && userInfo.Email != "" {
+		emailVerified = true
+	}
+
 	return &UserInfo{
 		Subject:       userInfo.Subject,
 		Email:         userInfo.Email,
-		EmailVerified: userInfo.EmailVerified,
+		EmailVerified: emailVerified,
 		Name:          claims.Name,
 	}, nil
 }

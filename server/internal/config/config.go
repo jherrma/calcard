@@ -83,6 +83,12 @@ type OAuthProviderConfig struct {
 	ClientID     string `yaml:"client_id" env:"CLIENT_ID"`
 	ClientSecret string `yaml:"client_secret" env:"CLIENT_SECRET"`
 	Issuer       string `yaml:"issuer" env:"ISSUER"`
+	// AssumeEmailVerified treats any email this provider returns as verified.
+	// Needed for providers that never send the email_verified claim (e.g.
+	// Microsoft's userinfo endpoint). Only enable it for providers you trust to
+	// return addresses their users actually control. Defaults to false so the
+	// verified-email guard stays on for providers that do send the claim.
+	AssumeEmailVerified bool `yaml:"assume_email_verified" env:"ASSUME_EMAIL_VERIFIED"`
 }
 
 // TLSConfig contains TLS/SSL settings
