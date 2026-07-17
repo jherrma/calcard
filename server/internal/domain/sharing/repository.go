@@ -13,6 +13,9 @@ type CalendarShareRepository interface {
 	Update(ctx context.Context, share *CalendarShare) error
 	Revoke(ctx context.Context, id uint) error
 	GetByCalendarAndUser(ctx context.Context, calendarID, userID uint) (*CalendarShare, error)
+	// DeleteByCalendarID hard-deletes every share of a calendar. Called when
+	// the calendar itself is deleted so no ghost shares linger for the sharees.
+	DeleteByCalendarID(ctx context.Context, calendarID uint) error
 }
 
 // AddressBookShareRepository defines the interface for address book share persistence
@@ -24,4 +27,7 @@ type AddressBookShareRepository interface {
 	Update(ctx context.Context, share *AddressBookShare) error
 	Revoke(ctx context.Context, id uint) error
 	GetByAddressBookAndUser(ctx context.Context, addressBookID, userID uint) (*AddressBookShare, error)
+	// DeleteByAddressBookID hard-deletes every share of an address book. Called
+	// when the book itself is deleted so no ghost shares linger for the sharees.
+	DeleteByAddressBookID(ctx context.Context, addressBookID uint) error
 }

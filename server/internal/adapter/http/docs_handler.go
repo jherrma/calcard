@@ -3,6 +3,7 @@ package http
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/docs"
@@ -85,6 +86,18 @@ func (h *DocsHandler) ServeDAVDocs(c fiber.Ctx) error {
 	}
 
 	filePath := filepath.Join(davPath, path)
+
+	// filepath.Join cleans the path, so a traversal like "../../etc/passwd"
+	// resolves outside davPath. Reject anything that doesn't stay under it.
+	absDav, err := filepath.Abs(davPath)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).SendString("Documentation not found")
+	}
+	absFile, err := filepath.Abs(filePath)
+	if err != nil || (absFile != absDav && !strings.HasPrefix(absFile, absDav+string(os.PathSeparator))) {
+		return c.Status(fiber.StatusNotFound).SendString("Documentation not found")
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).SendString("Documentation not found")

@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,12 @@ func TestCalendarSharing(t *testing.T) {
 	rename := "Hijacked"
 	status, _ := restCall(t, http.MethodPatch, "/calendars/"+calUUID, targetToken,
 		map[string]*string{"name": &rename})
-	assert.NotEqual(t, http.StatusOK, status, "target user must NOT be able to rename owner's calendar before sharing")
+	// Assert the exact denial status, not just "!= 200": NotEqual(200) also
+	// passes on a 500, which would hide a broken authz path. UpdateCalendarUseCase
+	// rejects a non-owner with "access denied", which the handler maps to 400
+	// (the calendar-mutation endpoints answer 400 here, unlike the event
+	// endpoints' existence-hiding 404).
+	assert.Equal(t, http.StatusBadRequest, status, "target user must NOT be able to rename owner's calendar before sharing")
 
 	// Target should not see the calendar in their listing either.
 	targetIdx := listCalendarsIndex(t, targetToken)
@@ -126,6 +132,15 @@ func TestCalendarSharing(t *testing.T) {
 	for _, c := range targetList.Calendars {
 		assert.NotEqualf(t, calUUID, c.UUID, "revoked calendar must disappear from target's list")
 	}
+
+	// --- Re-sharing the same (calendar, user) pair must work (H6) ---------
+	// Revoke soft-deleted the row before the fix, and the composite unique
+	// index (calendar_id, shared_with_id) then permanently blocked re-sharing.
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken, map[string]string{
+		"user_identifier": targetEmail,
+		"permission":      "read",
+	}, &createResp)
+	require.Equalf(t, http.StatusCreated, code, "must be able to re-share the same calendar with the same user after revoke")
 }
 
 // TestAddressBookSharing walks the same lifecycle for address books. The
@@ -378,4 +393,345 @@ func TestSharedCalendarCalDAVVisible(t *testing.T) {
 	}
 	assert.Truef(t, seen,
 		"event PUT by sharee must appear in owner's REST /events list (uid=%s)", newUID)
+}
+
+// TestSharedAddressBookCardDAVVisible is the regression test for the DAV half
+// of H7: a shared address book was listed in the home set but resolveAddressBook
+// only searched owned books, so every PROPFIND/GET/REPORT on it 404'd. After the
+// fix, a sharee can browse and (read-write) write to the shared book, and a
+// read-only sharee is forbidden from writing.
+func TestSharedAddressBookCardDAVVisible(t *testing.T) {
+	ownerEmail := "abdav-owner@example.test"
+	targetEmail := "abdav-target@example.test"
+	roEmail := "abdav-ro@example.test"
+	password := "abdavSecret!123"
+
+	ownerToken, ownerUsername := registerAndLoginFull(t, ownerEmail, password, "AB DAV Owner")
+	targetToken, targetUsername := registerAndLoginFull(t, targetEmail, password, "AB DAV Target")
+	roToken, roUsername := registerAndLoginFull(t, roEmail, password, "AB DAV ReadOnly")
+
+	abID := createAddressBook(t, ownerToken, "Shared DAV Book")
+
+	// Owner's address book path slug (a UUID) — needed to build the DAV URL.
+	abPath := addressBookPath(t, ownerToken, "Shared DAV Book")
+	require.NotEmpty(t, abPath)
+
+	// Seed a contact via the owner's CardDAV so there's something to read.
+	_, ownerAppPass := createAppPassword(t, ownerToken, "abdav-owner-cred")
+	ownerCollection := "/dav/" + ownerUsername + "/addressbooks/" + abPath + "/"
+	seedUID := "abdav-seed@x"
+	status, _, body := davCall(t, "PUT", ownerCollection+seedUID+".vcf", ownerEmail, ownerAppPass,
+		buildMinimalVCard(seedUID, "Seed Contact", "Seed", "Contact"),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "owner seed PUT: %s", string(body))
+
+	// Share read-write with target, read-only with the RO user.
+	shareAB(t, ownerToken, abID, targetEmail, "read-write")
+	shareAB(t, ownerToken, abID, roEmail, "read")
+
+	// Read-write sharee: PROPFIND the shared collection under their own DAV path
+	// (was 404 before the fix).
+	_, targetAppPass := createAppPassword(t, targetToken, "abdav-target-cred")
+	targetCollection := "/dav/" + targetUsername + "/addressbooks/" + abPath + "/"
+	status, _, body = davCall(t, "PROPFIND", targetCollection, targetEmail, targetAppPass,
+		propfindAddressBookBody, depthHeader("0"))
+	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND shared book: %s", string(body))
+
+	// Read-write sharee can GET the seeded contact.
+	status, _, body = davCall(t, "GET", targetCollection+seedUID+".vcf", targetEmail, targetAppPass, "", nil)
+	require.Equalf(t, http.StatusOK, status, "sharee GET seeded contact: %s", string(body))
+	assert.Contains(t, string(body), "Seed Contact")
+
+	// Read-write sharee can PUT a new contact.
+	newUID := "abdav-by-sharee@x"
+	status, _, body = davCall(t, "PUT", targetCollection+newUID+".vcf", targetEmail, targetAppPass,
+		buildMinimalVCard(newUID, "By Sharee", "By", "Sharee"),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status,
+		"read-write sharee PUT: %s", string(body))
+
+	// Read-only sharee may read but not delete.
+	_, roAppPass := createAppPassword(t, roToken, "abdav-ro-cred")
+	roCollection := "/dav/" + roUsername + "/addressbooks/" + abPath + "/"
+	status, _, _ = davCall(t, "PROPFIND", roCollection, roEmail, roAppPass, propfindAddressBookBody, depthHeader("0"))
+	require.Equal(t, http.StatusMultiStatus, status, "read-only sharee PROPFIND must work")
+	status, _, _ = davCall(t, "DELETE", roCollection+seedUID+".vcf", roEmail, roAppPass, "", nil)
+	assert.Equalf(t, http.StatusForbidden, status, "read-only sharee DELETE must be forbidden, got %d", status)
+}
+
+// addressBookPath returns the URL-path slug (UUID) of a named address book.
+func addressBookPath(t *testing.T, token, name string) string {
+	t.Helper()
+	var wrap struct {
+		AddressBooks []struct {
+			Name string `json:"Name"`
+			Path string `json:"Path"`
+		} `json:"addressbooks"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &wrap))
+	for _, ab := range wrap.AddressBooks {
+		if ab.Name == name {
+			return ab.Path
+		}
+	}
+	return ""
+}
+
+func shareAB(t *testing.T, ownerToken string, abID uint, targetEmail, permission string) {
+	t.Helper()
+	var resp struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+uintStr(abID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": targetEmail, "permission": permission}, &resp)
+	require.Equalf(t, http.StatusCreated, code, "share addressbook (%s)", permission)
+}
+
+// calendarVisibleTo reports whether the given calendar UUID appears in the
+// user's REST calendar list (owned or shared).
+func calendarVisibleTo(t *testing.T, token, calUUID string) bool {
+	t.Helper()
+	var list struct {
+		Calendars []struct {
+			UUID string `json:"uuid"`
+		} `json:"calendars"`
+	}
+	code := doJSONRaw(t, http.MethodGet, "/calendars/", token, nil, &list)
+	require.Equal(t, http.StatusOK, code)
+	for _, c := range list.Calendars {
+		if c.UUID == calUUID {
+			return true
+		}
+	}
+	return false
+}
+
+// addressBookVisibleTo reports whether the given address book id appears in
+// the user's REST address book list (owned or shared).
+func addressBookVisibleTo(t *testing.T, token string, abID uint) bool {
+	t.Helper()
+	var list struct {
+		AddressBooks []struct {
+			ID uint `json:"ID"`
+		} `json:"addressbooks"`
+	}
+	code := doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &list)
+	require.Equal(t, http.StatusOK, code)
+	for _, ab := range list.AddressBooks {
+		if ab.ID == abID {
+			return true
+		}
+	}
+	return false
+}
+
+// TestCalendarDeleteRevokesShares is the regression test for the ghost-share
+// fix (TODO 4.3): deleting a shared calendar must revoke its shares so the
+// sharee's list no longer shows a blank ghost entry, and a fresh share to the
+// same user still works afterwards.
+func TestCalendarDeleteRevokesShares(t *testing.T) {
+	ownerEmail := "ghost-cal-owner@example.test"
+	shareeEmail := "ghost-cal-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken := registerAndLogin(t, ownerEmail, password, "Ghost Cal Owner")
+	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Ghost Cal Sharee")
+
+	// Owner needs more than one calendar (the last one can't be deleted).
+	calID, calUUID := createCalendar(t, ownerToken, "Doomed Calendar", "#abcdef")
+	createCalendar(t, ownerToken, "Keeper Calendar", "#fedcba")
+
+	var shareResp struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": shareeEmail, "permission": "read"}, &shareResp)
+	require.Equal(t, http.StatusCreated, code)
+	require.True(t, calendarVisibleTo(t, shareeToken, calUUID), "sharee should see the shared calendar")
+
+	// Owner deletes the shared calendar.
+	status, raw := restCall(t, http.MethodDelete, "/calendars/"+calUUID, ownerToken,
+		map[string]string{"confirmation": "DELETE"})
+	require.Equalf(t, http.StatusNoContent, status, "delete calendar: %s", errorMessage(raw))
+
+	// The sharee's list must not carry a ghost entry for the deleted calendar.
+	assert.False(t, calendarVisibleTo(t, shareeToken, calUUID),
+		"deleted calendar must not linger as a ghost in the sharee's list")
+
+	// And a new calendar can still be shared with the same user.
+	newCalID, newUUID := createCalendar(t, ownerToken, "Fresh Calendar", "#0a0a0a")
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(newCalID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": shareeEmail, "permission": "read"}, &shareResp)
+	require.Equal(t, http.StatusCreated, code, "must be able to share a new calendar with the same user")
+	assert.True(t, calendarVisibleTo(t, shareeToken, newUUID), "sharee should see the freshly shared calendar")
+}
+
+// TestAddressBookDeleteRevokesShares is the address-book analogue of the
+// ghost-share fix.
+func TestAddressBookDeleteRevokesShares(t *testing.T) {
+	ownerEmail := "ghost-ab-owner@example.test"
+	shareeEmail := "ghost-ab-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken := registerAndLogin(t, ownerEmail, password, "Ghost AB Owner")
+	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Ghost AB Sharee")
+
+	abID := createAddressBook(t, ownerToken, "Doomed Directory")
+	shareAB(t, ownerToken, abID, shareeEmail, "read")
+	require.True(t, addressBookVisibleTo(t, shareeToken, abID), "sharee should see the shared address book")
+
+	// Owner deletes the shared address book.
+	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(abID), ownerToken,
+		map[string]string{"confirmation": "DELETE"})
+	require.Equalf(t, http.StatusNoContent, status, "delete address book: %s", errorMessage(raw))
+
+	assert.False(t, addressBookVisibleTo(t, shareeToken, abID),
+		"deleted address book must not linger as a ghost in the sharee's list")
+
+	// A new address book can still be shared with the same user.
+	newABID := createAddressBook(t, ownerToken, "Fresh Directory")
+	shareAB(t, ownerToken, newABID, shareeEmail, "read")
+	assert.True(t, addressBookVisibleTo(t, shareeToken, newABID), "sharee should see the freshly shared address book")
+}
+
+// TestAddressBookDAVDeleteRevokesShares is the DAV-path analogue of
+// TestAddressBookDeleteRevokesShares. That test deletes via REST, which always
+// revoked shares; the CardDAV collection-DELETE path is the one that previously
+// left the share dangling (and ListAddressBooks lacked the ghost guard). Delete
+// over DAV, then confirm the sharee's CardDAV home set no longer lists the book.
+func TestAddressBookDAVDeleteRevokesShares(t *testing.T) {
+	ownerEmail := "ghost-ab-dav-owner@example.test"
+	shareeEmail := "ghost-ab-dav-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken, ownerUsername := registerAndLoginFull(t, ownerEmail, password, "Ghost AB DAV Owner")
+	shareeToken, shareeUsername := registerAndLoginFull(t, shareeEmail, password, "Ghost AB DAV Sharee")
+	_, ownerAppPass := createAppPassword(t, ownerToken, "ghost-ab-dav-owner")
+	_, shareeAppPass := createAppPassword(t, shareeToken, "ghost-ab-dav-sharee")
+
+	abID := createAddressBook(t, ownerToken, "Doomed DAV Directory")
+	abPath := addressBookPath(t, ownerToken, "Doomed DAV Directory")
+	require.NotEmpty(t, abPath)
+
+	shareAB(t, ownerToken, abID, shareeEmail, "read")
+	require.True(t, addressBookVisibleTo(t, shareeToken, abID), "sharee should see the shared book pre-delete")
+
+	// Sanity: the shared book appears in the sharee's CardDAV home set first, so
+	// its later absence is meaningful.
+	shareeHome := "/dav/" + shareeUsername + "/addressbooks/"
+	propfind := `<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:displayname/></D:prop></D:propfind>`
+	pfHeaders := map[string]string{"Depth": "1", "Content-Type": "application/xml"}
+	status, _, body := davCall(t, "PROPFIND", shareeHome, shareeEmail, shareeAppPass, propfind, pfHeaders)
+	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND pre-delete: %s", string(body))
+	require.Truef(t, strings.Contains(string(body), abPath), "shared book must appear in sharee's home set before delete")
+
+	// Delete the book over DAV (CardDAVBackend.DeleteAddressBook).
+	status, _, body = davCall(t, "DELETE", "/dav/"+ownerUsername+"/addressbooks/"+abPath+"/",
+		ownerEmail, ownerAppPass, "", nil)
+	require.Containsf(t, []int{http.StatusNoContent, http.StatusOK}, status, "DAV DELETE addressbook: %s", string(body))
+
+	// The share must be revoked: no ghost in the sharee's CardDAV home set or
+	// their REST list.
+	status, _, body = davCall(t, "PROPFIND", shareeHome, shareeEmail, shareeAppPass, propfind, pfHeaders)
+	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND post-delete: %s", string(body))
+	assert.NotContainsf(t, string(body), abPath, "DAV-deleted book must not linger as a ghost in the sharee's home set")
+	assert.False(t, addressBookVisibleTo(t, shareeToken, abID),
+		"DAV-deleted book must not linger in the sharee's REST list")
+
+	// Re-sharing a fresh book with the same user still works.
+	newABID := createAddressBook(t, ownerToken, "Fresh DAV Directory")
+	shareAB(t, ownerToken, newABID, shareeEmail, "read")
+	assert.True(t, addressBookVisibleTo(t, shareeToken, newABID))
+}
+
+// TestSharedCalendarEventPermissions is the regression test for H7 (REST part):
+// the event endpoints must honor share permissions, not just ownership. A
+// stranger gets 404 (no existence leak); a read-write sharee can list/create
+// events on the shared calendar (previously every event call 404'd because the
+// gate only checked ownership); a read-only sharee can list but every write is
+// rejected with 403.
+func TestSharedCalendarEventPermissions(t *testing.T) {
+	ownerEmail := "evt-share-owner@example.test"
+	shareeEmail := "evt-share-sharee@example.test"
+	password := "sharingSecret!123"
+
+	ownerToken := registerAndLogin(t, ownerEmail, password, "Evt Owner")
+	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Evt Sharee")
+
+	calID, _ := createCalendar(t, ownerToken, "Team Calendar", "#123456")
+	eventsPath := "/calendars/" + uintStr(calID) + "/events/"
+	rangeQS := "?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z&expand=false"
+	start := time.Date(2032, 3, 1, 9, 0, 0, 0, time.UTC)
+
+	// Owner seeds an event.
+	var seed struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, eventsPath, ownerToken, map[string]any{
+		"summary": "Owner Event", "start": start.Format(time.RFC3339),
+		"end": start.Add(time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
+	}, &seed)
+	require.Equal(t, http.StatusCreated, code)
+
+	// --- Before any share: the sharee can't see the calendar's events -----
+	status, _ := restCall(t, http.MethodGet, eventsPath+rangeQS, shareeToken, nil)
+	require.Equal(t, http.StatusNotFound, status, "stranger must get 404 listing a calendar they can't see")
+
+	// --- Owner shares read-write ------------------------------------------
+	var shareResp struct {
+		ID string `json:"id"`
+	}
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken,
+		map[string]string{"user_identifier": shareeEmail, "permission": "read-write"}, &shareResp)
+	require.Equal(t, http.StatusCreated, code)
+	shareUUID := shareResp.ID
+
+	// Read-write sharee can list events (404 before the fix).
+	var shareeList struct {
+		Events []struct {
+			ID string `json:"id"`
+		} `json:"events"`
+	}
+	code = doJSONRaw(t, http.MethodGet, eventsPath+rangeQS, shareeToken, nil, &shareeList)
+	require.Equal(t, http.StatusOK, code, "read-write sharee must be able to list events")
+	require.NotEmpty(t, shareeList.Events)
+
+	// ...and create one the owner then sees.
+	var created struct {
+		ID string `json:"id"`
+	}
+	code = doJSONRaw(t, http.MethodPost, eventsPath, shareeToken, map[string]any{
+		"summary": "Sharee Event", "start": start.Add(48 * time.Hour).Format(time.RFC3339),
+		"end": start.Add(49 * time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
+	}, &created)
+	require.Equal(t, http.StatusCreated, code, "read-write sharee must be able to create events")
+	require.GreaterOrEqual(t, len(collectEventUIDs(t, ownerToken, calID, rangeQS)), 2,
+		"owner must see the event the sharee created")
+
+	// --- Owner downgrades the share to read-only --------------------------
+	var updated struct {
+		Permission string `json:"permission"`
+	}
+	code = doJSONRaw(t, http.MethodPatch, "/calendars/"+uintStr(calID)+"/shares/"+shareUUID, ownerToken,
+		map[string]string{"permission": "read"}, &updated)
+	require.Equal(t, http.StatusOK, code)
+
+	// Read-only sharee can still list...
+	code = doJSONRaw(t, http.MethodGet, eventsPath+rangeQS, shareeToken, nil, &shareeList)
+	require.Equal(t, http.StatusOK, code, "read-only sharee can still list events")
+	require.NotEmpty(t, shareeList.Events)
+	evID := shareeList.Events[0].ID
+
+	// ...but every write is now 403, not a silent success and not a 404.
+	status, _ = restCall(t, http.MethodPost, eventsPath, shareeToken, map[string]any{
+		"summary": "Nope", "start": start.Format(time.RFC3339),
+		"end": start.Add(time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
+	})
+	assert.Equal(t, http.StatusForbidden, status, "read-only sharee create must be 403")
+
+	status, _ = restCall(t, http.MethodPatch, eventsPath+evID, shareeToken, map[string]any{"summary": "Hijack"})
+	assert.Equal(t, http.StatusForbidden, status, "read-only sharee update must be 403")
+
+	status, _ = restCall(t, http.MethodDelete, eventsPath+evID, shareeToken, nil)
+	assert.Equal(t, http.StatusForbidden, status, "read-only sharee delete must be 403")
 }

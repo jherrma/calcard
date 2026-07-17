@@ -54,7 +54,7 @@ func (uc *PhotoUseCase) Upload(ctx context.Context, addressBookID uint, contactU
 	currentContact.PhotoType = photoType
 
 	// 4. To VCard
-	newVCardData, err := ToVCard(currentContact)
+	newVCardData, err := PatchVCard(obj.VCardData, currentContact)
 	if err != nil {
 		return fmt.Errorf("failed to encode updated vcard: %w", err)
 	}
@@ -62,7 +62,7 @@ func (uc *PhotoUseCase) Upload(ctx context.Context, addressBookID uint, contactU
 	// 5. Update Object
 	obj.VCardData = newVCardData
 	obj.UpdatedAt = time.Now()
-	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano())
+	obj.ETag = addressbook.NewETag()
 
 	// UpdateObject bumps the address book's sync_token / CTag and logs the
 	// change atomically; no second CTag update needed.
@@ -86,14 +86,14 @@ func (uc *PhotoUseCase) Delete(ctx context.Context, addressBookID uint, contactU
 
 	currentContact.Photo = ""
 
-	newVCardData, err := ToVCard(currentContact)
+	newVCardData, err := PatchVCard(obj.VCardData, currentContact)
 	if err != nil {
 		return fmt.Errorf("failed to encode updated vcard: %w", err)
 	}
 
 	obj.VCardData = newVCardData
 	obj.UpdatedAt = time.Now()
-	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano())
+	obj.ETag = addressbook.NewETag()
 
 	// UpdateObject bumps the address book's sync_token / CTag and logs the
 	// change atomically; no second CTag update needed.

@@ -11,7 +11,10 @@ services:
       - CALDAV_SERVER_HOST=0.0.0.0
       - CALDAV_SERVER_PORT=8080
       - CALDAV_DATA_DIR=/data
-      - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-change-me-in-production}
+      # The app generates and persists a JWT secret on first start (H14), so no
+      # insecure default is needed. Set this only to pin a specific secret
+      # (e.g. across replicas behind a load balancer).
+      - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-}
       - CALDAV_BASE_URL=${CALDAV_BASE_URL:-http://localhost:8080}
     volumes:
       - caldav_data:/data

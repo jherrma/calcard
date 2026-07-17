@@ -76,6 +76,11 @@ func (b *CardDAVBackend) ListAddressBooks(ctx context.Context) ([]carddav.Addres
 		res = append(res, *b.mapAddressBook(u.Username, &ab))
 	}
 	for _, s := range shared {
+		// Defense in depth: skip a share whose address book no longer exists
+		// (zero-valued preload) so it never surfaces as a blank ghost entry.
+		if s.AddressBook.ID == 0 {
+			continue
+		}
 		res = append(res, *b.mapAddressBook(u.Username, &s.AddressBook))
 	}
 
@@ -89,7 +94,7 @@ func (b *CardDAVBackend) GetAddressBook(ctx context.Context, p string) (*carddav
 		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	ab, err := b.resolveAddressBook(ctx, u, p)
+	ab, _, err := b.resolveAddressBook(ctx, u, p)
 	if err != nil {
 		return nil, err
 	}
@@ -118,8 +123,7 @@ func (b *CardDAVBackend) CreateAddressBook(ctx context.Context, ab *carddav.Addr
 		Name:        ab.Name,
 		Description: ab.Description,
 	}
-	newAB.UpdateSyncTokens()
-
+	// SyncToken/CTag are minted by Create together with a change-log anchor row.
 	return b.addressBookRepo.Create(ctx, newAB)
 }
 
@@ -130,12 +134,26 @@ func (b *CardDAVBackend) DeleteAddressBook(ctx context.Context, p string) error 
 		return webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	ab, err := b.resolveAddressBook(ctx, u, p)
+	ab, perm, err := b.resolveAddressBook(ctx, u, p)
 	if err != nil {
 		return err
 	}
+	if perm != abPermOwner {
+		return webdav.NewHTTPError(http.StatusForbidden, nil)
+	}
 
-	return b.addressBookRepo.Delete(ctx, ab.ID)
+	if err := b.addressBookRepo.Delete(ctx, ab.ID); err != nil {
+		return err
+	}
+	// Revoke every share of this address book so it doesn't linger as a ghost
+	// entry in the sharees' address book lists (mirrors the REST delete and the
+	// CalDAV collection-delete path, which calls DeleteByCalendarID).
+	if b.shareRepo != nil {
+		if err := b.shareRepo.DeleteByAddressBookID(ctx, ab.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetAddressObject returns an address object (contact) by path.
@@ -145,7 +163,7 @@ func (b *CardDAVBackend) GetAddressObject(ctx context.Context, p string, req *ca
 		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	obj, err := b.resolveAddressObject(ctx, u, p)
+	obj, _, err := b.resolveAddressObject(ctx, u, p)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +178,7 @@ func (b *CardDAVBackend) ListAddressObjects(ctx context.Context, p string, req *
 		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	ab, err := b.resolveAddressBook(ctx, u, p)
+	ab, _, err := b.resolveAddressBook(ctx, u, p)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +210,7 @@ func (b *CardDAVBackend) QueryAddressObjects(ctx context.Context, p string, quer
 		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	ab, err := b.resolveAddressBook(ctx, u, p)
+	ab, _, err := b.resolveAddressBook(ctx, u, p)
 	if err != nil {
 		return nil, err
 	}
@@ -267,29 +285,20 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 	if len(parts) != 5 || parts[1] != u.Username || parts[2] != "addressbooks" {
 		return nil, webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
-
-	abPath := parts[3]
 	objPath := parts[4]
 
-	// Find the address book
-	books, err := b.addressBookRepo.ListByUserID(ctx, u.ID)
+	// Resolve the address book (owned or shared) and require write permission.
+	ab, perm, err := b.resolveAddressBook(ctx, u, p)
 	if err != nil {
 		return nil, err
 	}
-
-	var ab *addressbook.AddressBook
-	for _, book := range books {
-		if book.Path == abPath {
-			ab = &book
-			break
-		}
-	}
-	if ab == nil {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	if perm != abPermOwner && perm != abPermReadWrite {
+		return nil, webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
 	// Extract UID and metadata
 	uid := card.Value(vcard.FieldUID)
+	incomingUID := uid
 	if uid == "" {
 		uid = uuid.New().String()
 		card.SetValue(vcard.FieldUID, uid)
@@ -308,20 +317,50 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 		version = "3.0"
 	}
 
-	etag := fmt.Sprintf("\"%s\"", addressbook.GenerateSyncToken())
+	etag := addressbook.NewETag()
 
-	// Check if object exists
-	existingObjects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "", "")
+	// Look up an existing object at this exact path only (not by UID across
+	// paths — that silently clobbered unrelated contacts).
+	existing, err := b.addressBookRepo.GetObjectByPath(ctx, ab.ID, objPath)
 	if err != nil {
 		return nil, err
 	}
 
-	var existing *addressbook.AddressObject
-	for _, obj := range existingObjects {
-		if obj.Path == objPath || obj.UID == uid {
-			existing = &obj
-			break
+	// Honor If-Match / If-None-Match preconditions (RFC 6352 §6.3.2), matching
+	// the CalDAV behavior, to prevent silent lost updates / clobbering creates.
+	if opts != nil {
+		if opts.IfNoneMatch.IsSet() && existing != nil {
+			return nil, webdav.NewHTTPError(http.StatusPreconditionFailed, nil)
 		}
+		if opts.IfMatch.IsSet() {
+			if existing == nil {
+				return nil, webdav.NewHTTPError(http.StatusPreconditionFailed, nil)
+			}
+			ok, _ := opts.IfMatch.MatchETag(existing.ETag)
+			if !ok {
+				return nil, webdav.NewHTTPError(http.StatusPreconditionFailed, nil)
+			}
+		}
+	}
+
+	// A PUT must not change an existing resource's UID. RFC 6352 binds the UID
+	// to the resource for its lifetime; silently accepting a different UID would
+	// leave the stored uid column, the no-uid-conflict lookup, and the sync log
+	// stale, letting a later resource legitimately reuse the old UID and produce
+	// two objects with the same UID. Reject rather than silently rename. A body
+	// that omits UID entirely falls through to the default-mint path above.
+	if existing != nil && incomingUID != "" && incomingUID != existing.UID {
+		return nil, carddav.NewPreconditionError(carddav.PreconditionNoUIDConflict)
+	}
+
+	// no-uid-conflict (RFC 6352 §6.3.2): a different resource in this book must
+	// not already own this UID.
+	other, err := b.addressBookRepo.GetObjectByUID(ctx, ab.ID, uid)
+	if err != nil {
+		return nil, err
+	}
+	if other != nil && other.Path != objPath {
+		return nil, carddav.NewPreconditionError(carddav.PreconditionNoUIDConflict)
 	}
 
 	var obj *addressbook.AddressObject
@@ -361,6 +400,12 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 	// would generate a second, different token and desync the change log
 	// from the address book row.
 
+	// CreateObject/UpdateObject strip the PHOTO into a side table and leave
+	// obj.VCardData stripped. Restore the full body (with photo) so the object
+	// we return matches what a subsequent GET will serve.
+	obj.VCardData = data
+	obj.ContentLength = len(data)
+
 	return b.mapAddressObject(p, obj)
 }
 
@@ -371,9 +416,12 @@ func (b *CardDAVBackend) DeleteAddressObject(ctx context.Context, p string) erro
 		return webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	obj, err := b.resolveAddressObject(ctx, u, p)
+	obj, perm, err := b.resolveAddressObject(ctx, u, p)
 	if err != nil {
 		return err
+	}
+	if perm != abPermOwner && perm != abPermReadWrite {
+		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
 	// DeleteObjectByUUID records the change-log entry and advances the
@@ -386,69 +434,93 @@ func (b *CardDAVBackend) DeleteAddressObject(ctx context.Context, p string) erro
 	return nil
 }
 
-// resolveAddressBook parses a path and returns the corresponding address book.
-func (b *CardDAVBackend) resolveAddressBook(ctx context.Context, u *user.User, p string) (*addressbook.AddressBook, error) {
+// Address book permission levels returned by resolveAddressBook.
+const (
+	abPermOwner     = "owner"
+	abPermRead      = "read"
+	abPermReadWrite = "read-write"
+)
+
+// resolveAddressBook parses a path and returns the corresponding address book
+// along with the requesting user's permission ("owner", "read", or
+// "read-write"). It resolves both owned and shared-with-the-user books so
+// CardDAV sharing actually works.
+func (b *CardDAVBackend) resolveAddressBook(ctx context.Context, u *user.User, p string) (*addressbook.AddressBook, string, error) {
 	// Path: /dav/username/addressbooks/abname/
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	if len(parts) < 4 || parts[0] != "dav" || parts[1] != u.Username || parts[2] != "addressbooks" {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+		return nil, "", webdav.NewHTTPError(http.StatusNotFound, nil)
 	}
 
 	abPath := parts[3]
 	books, err := b.addressBookRepo.ListByUserID(ctx, u.ID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
+	// Owned books win on a path collision (same caveat as the calendar side).
 	for _, ab := range books {
 		if ab.Path == abPath {
-			return &ab, nil
+			ab := ab
+			return &ab, abPermOwner, nil
 		}
 	}
 
-	return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	// Fall back to address books shared with this user.
+	if b.shareRepo != nil {
+		shared, err := b.shareRepo.FindAddressBooksSharedWithUser(ctx, u.ID)
+		if err != nil {
+			return nil, "", err
+		}
+		for _, s := range shared {
+			if s.AddressBook.Path == abPath {
+				ab := s.AddressBook
+				return &ab, s.Permission, nil
+			}
+		}
+	}
+
+	return nil, "", webdav.NewHTTPError(http.StatusNotFound, nil)
 }
 
-// resolveAddressObject parses a path and returns the corresponding address object.
-func (b *CardDAVBackend) resolveAddressObject(ctx context.Context, u *user.User, p string) (*addressbook.AddressObject, error) {
+// resolveAddressObject parses a path and returns the corresponding address
+// object along with the requesting user's permission on its address book.
+func (b *CardDAVBackend) resolveAddressObject(ctx context.Context, u *user.User, p string) (*addressbook.AddressObject, string, error) {
 	// Path: /dav/username/addressbooks/abname/contact.vcf
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	if len(parts) != 5 || parts[0] != "dav" || parts[1] != u.Username || parts[2] != "addressbooks" {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+		return nil, "", webdav.NewHTTPError(http.StatusNotFound, nil)
 	}
 
-	abPath := parts[3]
 	objPath := parts[4]
 
-	ab, err := b.resolveAddressBook(ctx, u, p)
+	ab, perm, err := b.resolveAddressBook(ctx, u, p)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	// limit=-1 cancels the LIMIT clause; GORM's Limit(0) would emit LIMIT 0
-	// and return zero rows, which would make every PROPFIND / lookup see an
-	// empty address book.
-	objects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "", "")
-	if err != nil {
-		return nil, err
+	// Direct indexed lookup by path (the same call PutAddressObject uses),
+	// instead of listing the whole book and scanning. The list path now
+	// hydrates every PHOTO blob (H5), so a single-contact GET during a
+	// client's initial sync would otherwise become an O(N) photo read.
+	if obj, err := b.addressBookRepo.GetObjectByPath(ctx, ab.ID, objPath); err != nil {
+		return nil, "", err
+	} else if obj != nil {
+		return obj, perm, nil
 	}
 
-	for _, obj := range objects {
-		if obj.Path == objPath {
-			return &obj, nil
-		}
-	}
-
-	// Also check by UUID in case path is different
-	if strings.HasSuffix(abPath, ".vcf") {
-		objUUID := strings.TrimSuffix(abPath, ".vcf")
+	// Fall back to a UUID-named object path (<uuid>.vcf). Test objPath (not the
+	// address book segment) and scope strictly to the resolved book so a known
+	// UUID can't reach another tenant's contact.
+	if strings.HasSuffix(objPath, ".vcf") {
+		objUUID := strings.TrimSuffix(objPath, ".vcf")
 		obj, err := b.addressBookRepo.GetObjectByUUID(ctx, objUUID)
-		if err == nil && obj != nil {
-			return obj, nil
+		if err == nil && obj != nil && obj.AddressBookID == ab.ID {
+			return obj, perm, nil
 		}
 	}
 
-	return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	return nil, "", webdav.NewHTTPError(http.StatusNotFound, nil)
 }
 
 // mapAddressBook converts domain AddressBook to carddav.AddressBook.
@@ -488,7 +560,7 @@ func (b *CardDAVBackend) GetSyncChanges(ctx context.Context, addressBookPath, to
 		return nil, "", fmt.Errorf("unauthorized")
 	}
 
-	ab, err := b.resolveAddressBook(ctx, u, addressBookPath)
+	ab, _, err := b.resolveAddressBook(ctx, u, addressBookPath)
 	if err != nil {
 		return nil, "", err
 	}

@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -15,6 +16,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"gorm.io/gorm"
 )
 
 // CalDAVBackend implements caldav.Backend
@@ -79,6 +81,11 @@ func (b *CalDAVBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, e
 		res = append(res, *b.mapCalendar(u.Username, c, calendar.PermissionOwner))
 	}
 	for _, s := range shared {
+		// Defense in depth: skip a share whose calendar no longer exists
+		// (zero-valued preload) so it never surfaces as a blank ghost entry.
+		if s.Calendar.ID == 0 {
+			continue
+		}
 		perm := calendar.PermissionRead
 		if s.Permission == "read-write" {
 			perm = calendar.PermissionReadWrite
@@ -161,8 +168,7 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 		Timezone:            "UTC",
 		SupportedComponents: "VEVENT,VTODO",
 	}
-	c.UpdateSyncTokens()
-
+	// SyncToken/CTag are minted by Create together with a change-log anchor row.
 	return b.calendarRepo.Create(ctx, c)
 }
 
@@ -172,7 +178,12 @@ func (b *CalDAVBackend) GetCalendarObject(ctx context.Context, p string, req *ca
 		return nil, err
 	}
 
+	// A request without an object segment ("/dav/{user}/calendars/{cal}/")
+	// targets the collection, not an object — there is no object to GET.
 	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 5 {
+		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
+	}
 	objPath := parts[4]
 
 	obj, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
@@ -247,7 +258,12 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		return nil, webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
+	// A PUT without an object segment ("/dav/{user}/calendars/{cal}/")
+	// targets the collection itself, which is not a writable resource.
 	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 5 {
+		return nil, webdav.NewHTTPError(http.StatusMethodNotAllowed, nil)
+	}
 	objPath := parts[4]
 
 	_, uid, err := caldav.ValidateCalendarObject(icalCal)
@@ -271,7 +287,14 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		}
 	}
 
-	existing, _ := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
+	// A swallowed lookup error would make a transient DB failure look like a
+	// missing object, turning what should be an update into a create (and
+	// skipping the UID-change / no-uid-conflict checks below). Only a genuine
+	// "not found" means we should proceed as a create.
+	existing, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
 
 	// Honor If-Match / If-None-Match preconditions (RFC 4791 §5.3.4). Without
 	// these, two concurrent clients would silently overwrite each other.
@@ -291,26 +314,23 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		}
 	}
 
-	// Extract metadata
-	summary := ""
-	var startTime, endTime *time.Time
-	for _, comp := range icalCal.Children {
-		if comp.Name == ical.CompEvent {
-			if prop := comp.Props.Get(ical.PropSummary); prop != nil {
-				summary = prop.Value
-			}
-			if prop := comp.Props.Get(ical.PropDateTimeStart); prop != nil {
-				if t, err := prop.DateTime(time.UTC); err == nil {
-					startTime = &t
-				}
-			}
-			if prop := comp.Props.Get(ical.PropDateTimeEnd); prop != nil {
-				if t, err := prop.DateTime(time.UTC); err == nil {
-					endTime = &t
-				}
-			}
-			break
-		}
+	// A PUT must not change an existing resource's UID. RFC 4791 binds the UID
+	// to the resource for its lifetime; silently accepting a different UID would
+	// leave the stored uid column, the no-uid-conflict lookup, and the sync log
+	// stale, letting a later resource legitimately reuse the old UID and produce
+	// two objects with the same UID. Reject rather than silently rename.
+	if existing != nil && existing.UID != uid {
+		return nil, caldav.NewPreconditionError(caldav.PreconditionNoUIDConflict)
+	}
+
+	// no-uid-conflict (RFC 4791 §5.3.2): a different resource in this calendar
+	// must not already own this UID.
+	other, err := b.calendarRepo.GetCalendarObjectByUID(ctx, c.ID, uid)
+	if err != nil {
+		return nil, err
+	}
+	if other != nil && other.Path != objPath {
+		return nil, caldav.NewPreconditionError(caldav.PreconditionNoUIDConflict)
 	}
 
 	var icalData strings.Builder
@@ -318,33 +338,32 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		return nil, err
 	}
 	data := icalData.String()
-	etag := fmt.Sprintf("\"%s\"", calendar.GenerateSyncToken())
+	etag := calendar.NewETag()
 
 	var obj *calendar.CalendarObject
 	if existing != nil {
 		existing.ICalData = data
 		existing.ETag = etag
-		existing.ContentLength = len(data)
-		existing.Summary = summary
-		existing.StartTime = startTime
-		existing.EndTime = endTime
+		// Rederive all denormalized columns (component type, times,
+		// recurrence_end_time, content length) from the stored data.
+		if err := existing.PopulateDenormFieldsFromICal(); err != nil {
+			return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
+		}
 		if err := b.calendarRepo.UpdateCalendarObject(ctx, existing); err != nil {
 			return nil, err
 		}
 		obj = existing
 	} else {
 		newObj := &calendar.CalendarObject{
-			UUID:          uuid.New().String(),
-			CalendarID:    c.ID,
-			Path:          objPath,
-			UID:           uid,
-			ETag:          etag,
-			ComponentType: "VEVENT",
-			ICalData:      data,
-			ContentLength: len(data),
-			Summary:       summary,
-			StartTime:     startTime,
-			EndTime:       endTime,
+			UUID:       uuid.New().String(),
+			CalendarID: c.ID,
+			Path:       objPath,
+			UID:        uid,
+			ETag:       etag,
+			ICalData:   data,
+		}
+		if err := newObj.PopulateDenormFieldsFromICal(); err != nil {
+			return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
 		}
 		if err := b.calendarRepo.CreateCalendarObject(ctx, newObj); err != nil {
 			return nil, err
@@ -375,7 +394,15 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 		if perm != calendar.PermissionOwner {
 			return webdav.NewHTTPError(http.StatusForbidden, nil)
 		}
-		return b.calendarRepo.Delete(ctx, c.ID)
+		if err := b.calendarRepo.Delete(ctx, c.ID); err != nil {
+			return err
+		}
+		// Revoke every share of this calendar so it doesn't linger as a ghost
+		// entry in the sharees' calendar lists (mirrors the REST delete path).
+		if err := b.shareRepo.DeleteByCalendarID(ctx, c.ID); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	objPath := parts[4]

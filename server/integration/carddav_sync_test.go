@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -146,5 +145,45 @@ func putVCard(t *testing.T, collection, basicUser, appPass, uid, fn, given, fami
 		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
 	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status,
 		"PUT %s: %s", path, string(body))
-	_ = time.Now
+}
+
+// TestCardDAVEtagPreconditions is the regression test for H9: CardDAV PUT now
+// honors If-Match / If-None-Match and rejects cross-path UID conflicts.
+func TestCardDAVEtagPreconditions(t *testing.T) {
+	email := "carddav-etag@example.test"
+	token, username := registerAndLoginFull(t, email, "carddavSecret!123", "CardDAV Etag")
+	_, appPass := createAppPassword(t, token, "carddav-etag")
+
+	abPath := addressBookPath(t, token, "Contacts")
+	require.NotEmpty(t, abPath)
+	collection := "/dav/" + username + "/addressbooks/" + abPath + "/"
+
+	// Create a contact.
+	uid := "etag-uid-1"
+	path := collection + uid + ".vcf"
+	status, hdrs, body := davCall(t, "PUT", path, email, appPass,
+		buildMinimalVCard(uid, "Etag One", "Etag", "One"),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "create: %s", string(body))
+	etag := hdrs.Get("ETag")
+
+	// If-None-Match: * on an existing resource → 412.
+	status, _, _ = davCall(t, "PUT", path, email, appPass,
+		buildMinimalVCard(uid, "Clobber", "Clob", "Ber"),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8", "If-None-Match": "*"})
+	assert.Equalf(t, http.StatusPreconditionFailed, status, "If-None-Match:* on existing must be 412, got %d", status)
+
+	// Stale If-Match → 412.
+	if etag != "" {
+		status, _, _ = davCall(t, "PUT", path, email, appPass,
+			buildMinimalVCard(uid, "Stale", "Sta", "Le"),
+			map[string]string{"Content-Type": "text/vcard; charset=utf-8", "If-Match": `"bogus-stale-etag"`})
+		assert.Equalf(t, http.StatusPreconditionFailed, status, "stale If-Match must be 412, got %d", status)
+	}
+
+	// PUT to a NEW path reusing an existing UID → 409 no-uid-conflict.
+	status, _, _ = davCall(t, "PUT", collection+"different-path.vcf", email, appPass,
+		buildMinimalVCard(uid, "Dup UID", "Dup", "Uid"),
+		map[string]string{"Content-Type": "text/vcard; charset=utf-8"})
+	assert.Equalf(t, http.StatusConflict, status, "cross-path UID reuse must be 409, got %d", status)
 }

@@ -55,28 +55,59 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return uc.calendarRepo.DeleteCalendarObject(ctx, obj)
 		}
 
-		// Add EXDATE to master if not already there
+		// Normalize the requested instance to a canonical UTC value/key so a
+		// TZID=/floating RECURRENCE-ID supplied by the client still matches.
+		parsed, err := calendar.ParseRecurrenceIDString(recurrenceID)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		wantKey := parsed.UTC().Format(calendar.RecurrenceIDLayout)
+		docLoc := seriesLocation(cal.Events())
+
+		// Add EXDATE (canonical UTC) to master if not already present.
 		exists := false
 		for _, p := range master.Props["EXDATE"] {
-			if p.Value == recurrenceID {
-				exists = true
+			for _, k := range calendar.EXDATEKeys(&p, docLoc) {
+				if k == wantKey {
+					exists = true
+					break
+				}
+			}
+			if exists {
 				break
 			}
 		}
 		if !exists {
-			master.Props.Add(&ical.Prop{
-				Name:  "EXDATE",
-				Value: recurrenceID,
-			})
+			// RFC 5545: EXDATE's value type must match DTSTART. For an all-day
+			// (VALUE=DATE) series, write the EXDATE as a DATE so strict clients
+			// (Apple, DAVx5) actually suppress the excluded occurrence; a UTC
+			// DATE-TIME EXDATE against a DATE series is ignored.
+			if obj.IsAllDay {
+				exdate := ical.NewProp("EXDATE")
+				exdate.SetDate(parsed)
+				master.Props.Add(exdate)
+			} else {
+				master.Props.Add(&ical.Prop{Name: "EXDATE", Value: wantKey})
+			}
 		}
 
-		// Also remove any exception VEVENT with this recurrenceID
+		// Also remove any exception VEVENT with this RECURRENCE-ID.
 		var newChildren []*ical.Component
 		for _, child := range cal.Children {
 			if child.Name == "VEVENT" {
-				rid := child.Props.Get("RECURRENCE-ID")
-				if rid != nil && rid.Value == recurrenceID {
-					continue // skip this exception
+				if rid := child.Props.Get("RECURRENCE-ID"); rid != nil {
+					key, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc)
+					if err != nil {
+						// Can't read this exception's RECURRENCE-ID, so we
+						// can't confidently target it — keep it rather than
+						// silently drop an exception we can't match (mirrors
+						// the this_and_future cleanup below).
+						newChildren = append(newChildren, child)
+						continue
+					}
+					if key == wantKey {
+						continue // skip (remove) this exception
+					}
 				}
 			}
 			newChildren = append(newChildren, child)
@@ -89,6 +120,12 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return fmt.Errorf("failed to encode iCalendar data: %w", err)
 		}
 		obj.ICalData = sb.String()
+		// Rederive denorm columns (recurrence_end_time shrinks when an UNTIL was
+		// written) and bump the ETag so DAV clients re-fetch.
+		if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+			return fmt.Errorf("failed to derive denormalized fields: %w", err)
+		}
+		obj.ETag = calendar.NewETag()
 
 		return uc.calendarRepo.UpdateCalendarObject(ctx, obj)
 	}
@@ -116,13 +153,16 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return uc.calendarRepo.DeleteCalendarObject(ctx, obj)
 		}
 
-		// 3. Format split time for UNTIL (one second before split)
-		splitTime, _ := time.Parse("20060102T150405Z", recurrenceID)
-		if splitTime.IsZero() {
-			splitTime, _ = time.Parse("20060102T150405", recurrenceID)
+		// 3. Format split time for UNTIL (one second before split). Fail loudly
+		// on an unparseable RECURRENCE-ID rather than terminating at the zero
+		// time (which would write UNTIL=0001-… and wipe the series). The helper
+		// also accepts the VALUE=DATE form, so all-day splits work.
+		splitTime, err := calendar.ParseRecurrenceIDString(recurrenceID)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		untilTime := splitTime.Add(-time.Second)
-		untilStr := untilTime.UTC().Format("20060102T150405Z")
+		untilStr := formatUntilBoundary(untilTime, obj.IsAllDay)
 
 		// 4. Update RRULE with UNTIL
 		rruleProp := master.Props.Get(ical.PropRecurrenceRule)
@@ -143,15 +183,15 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 		}
 
 		// 5. Cleanup future exceptions
+		docLoc := seriesLocation(cal.Events())
 		var newChildren []*ical.Component
 		for _, child := range cal.Children {
 			if child.Name == "VEVENT" {
-				rid := child.Props.Get("RECURRENCE-ID")
-				if rid != nil {
-					t, _ := time.Parse("20060102T150405Z", rid.Value)
-					if !t.Before(splitTime) {
-						continue // delete future exceptions
+				if rid := child.Props.Get("RECURRENCE-ID"); rid != nil {
+					if t, err := rid.DateTime(docLoc); err == nil && !t.UTC().Before(splitTime) {
+						continue // drop exceptions at/after the split
 					}
+					// On parse failure keep the component.
 				}
 			}
 			newChildren = append(newChildren, child)
@@ -164,9 +204,18 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 			return fmt.Errorf("failed to encode iCalendar data: %w", err)
 		}
 		obj.ICalData = sb.String()
+		// Rederive denorm columns (recurrence_end_time shrinks when an UNTIL was
+		// written) and bump the ETag so DAV clients re-fetch.
+		if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+			return fmt.Errorf("failed to derive denormalized fields: %w", err)
+		}
+		obj.ETag = calendar.NewETag()
 
 		return uc.calendarRepo.UpdateCalendarObject(ctx, obj)
 	}
 
-	return fmt.Errorf("invalid scope or recurrence_id for deletion")
+	// A bad scope / recurrence_id combination is a client error (e.g. scope=this
+	// with no recurrence_id, or the swagger-documented-but-unsupported
+	// scope=future). Wrap ErrInvalidInput so the handler maps it to 400, not 500.
+	return fmt.Errorf("%w: invalid scope or recurrence_id for deletion", ErrInvalidInput)
 }

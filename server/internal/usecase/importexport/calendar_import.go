@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	ical "github.com/emersion/go-ical"
 	"github.com/google/uuid"
@@ -129,41 +127,28 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 			continue
 		}
 
-		// Extract just the VEVENT/VTODO block (remove VCALENDAR wrapper)
-		icalData := extractComponentBlock(buf.String(), child.Name)
-
-		// Extract denormalized fields the list/get endpoints rely on. These
-		// mirror the population done by event.CreateEventUseCase so that
-		// re-imported events are indistinguishable from freshly created ones.
-		description := ""
-		if p := child.Props.Get(ical.PropDescription); p != nil {
-			description = p.Value
-		}
-		location := ""
-		if p := child.Props.Get(ical.PropLocation); p != nil {
-			location = p.Value
-		}
-		componentType := child.Name // VEVENT or VTODO
-		startTime, endTime, isAllDay := extractEventTimes(child)
-
-		// Create calendar object. The internal DB UUID must be unique and
-		// non-empty (the column has a unique index and NOT NULL) — otherwise
-		// the second event in a multi-event import collides on uuid="".
+		// Store the full VCALENDAR (matching every other write path). The DB
+		// UUID must be unique/non-empty (unique index, NOT NULL) — otherwise the
+		// second event in a multi-event import collides on uuid="".
 		obj := &calendar.CalendarObject{
-			UUID:          uuid.New().String(),
-			CalendarID:    cal.ID,
-			UID:           uid,
-			Path:          fmt.Sprintf("%s.ics", uid),
-			ETag:          generateETag(),
-			ICalData:      icalData,
-			ComponentType: componentType,
-			ContentLength: len(icalData),
-			Summary:       summary,
-			Description:   description,
-			Location:      location,
-			StartTime:     startTime,
-			EndTime:       endTime,
-			IsAllDay:      isAllDay,
+			UUID:       uuid.New().String(),
+			CalendarID: cal.ID,
+			UID:        uid,
+			Path:       fmt.Sprintf("%s.ics", uid),
+			ETag:       calendar.NewETag(),
+			ICalData:   buf.String(),
+		}
+		// Derive all denormalized columns (component type, times, recurrence
+		// end, etc.) from the stored data — single source of truth.
+		if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportError{
+				Index:   result.Total - 1,
+				UID:     uid,
+				Summary: summary,
+				Error:   fmt.Sprintf("failed to parse: %v", err),
+			})
+			continue
 		}
 
 		if err := uc.calendarRepo.CreateCalendarObject(ctx, obj); err != nil {
@@ -180,55 +165,10 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		result.Imported++
 	}
 
-	// Update calendar CTag
-	cal.CTag = fmt.Sprintf("ctag-%d", time.Now().UnixNano())
-	_ = uc.calendarRepo.Update(ctx, cal)
+	// Each CreateCalendarObject already advanced the calendar's sync_token/ctag
+	// (and wrote a change-log row) inside its transaction. Do NOT re-Save the
+	// stale `cal` struct here — that would clobber those tokens with the
+	// pre-import values and desync the change log from the calendar row.
 
 	return result, nil
-}
-
-// extractComponentBlock extracts the VEVENT or VTODO block from full iCalendar
-func extractComponentBlock(icalData, componentName string) string {
-	startTag := "BEGIN:" + componentName
-	endTag := "END:" + componentName
-
-	startIdx := strings.Index(icalData, startTag)
-	endIdx := strings.LastIndex(icalData, endTag)
-
-	if startIdx == -1 || endIdx == -1 {
-		return icalData
-	}
-
-	return icalData[startIdx : endIdx+len(endTag)+2] // +2 for \r\n
-}
-
-// generateETag generates a unique ETag
-func generateETag() string {
-	return fmt.Sprintf("\"%d\"", time.Now().UnixNano())
-}
-
-// extractEventTimes pulls DTSTART / DTEND out of a VEVENT/VTODO component and
-// returns them as pointers along with the all-day flag. Any parse failure or
-// missing property returns (nil, nil, false) — the caller writes those as-is
-// and downstream list/query code already guards against nil times.
-func extractEventTimes(comp *ical.Component) (*time.Time, *time.Time, bool) {
-	var start, end *time.Time
-	allDay := false
-
-	if prop := comp.Props.Get(ical.PropDateTimeStart); prop != nil {
-		if t, err := prop.DateTime(time.UTC); err == nil {
-			tt := t
-			start = &tt
-			if v := prop.Params.Get(ical.ParamValue); v == "DATE" {
-				allDay = true
-			}
-		}
-	}
-	if prop := comp.Props.Get(ical.PropDateTimeEnd); prop != nil {
-		if t, err := prop.DateTime(time.UTC); err == nil {
-			tt := t
-			end = &tt
-		}
-	}
-	return start, end, allDay
 }

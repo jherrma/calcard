@@ -2,13 +2,32 @@ package http
 
 import (
 	"errors"
-	"fmt"
+	"log"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 	"github.com/jherrma/caldav-server/internal/config"
+	"github.com/jherrma/caldav-server/internal/domain/user"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 )
+
+// isSafeValidationError reports whether err is one of the domain email/password
+// validation sentinels whose message is safe (and useful) to return to the
+// client. Everything else — repository/driver errors in particular — must be
+// logged server-side and answered with a generic message.
+func isSafeValidationError(err error) bool {
+	switch {
+	case errors.Is(err, user.ErrInvalidEmail),
+		errors.Is(err, user.ErrPasswordTooShort),
+		errors.Is(err, user.ErrPasswordNoUpper),
+		errors.Is(err, user.ErrPasswordNoLower),
+		errors.Is(err, user.ErrPasswordNoDigit),
+		errors.Is(err, user.ErrPasswordNoSpecial):
+		return true
+	default:
+		return false
+	}
+}
 
 type AuthHandler struct {
 	registerUC *authusecase.RegisterUseCase
@@ -55,6 +74,9 @@ func NewAuthHandler(
 // @Failure      409      {object}  ErrorResponseBody  "Email already registered"
 // @Router       /auth/register [post]
 func (h *AuthHandler) Register(c fiber.Ctx) error {
+	if h.config.Registration.Disabled {
+		return ErrorResponse(c, fiber.StatusForbidden, "registration is disabled")
+	}
 	var req dto.RegisterRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
@@ -62,10 +84,18 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 
 	user, _, err := h.registerUC.Execute(c.Context(), req.Email, req.Password, req.DisplayName)
 	if err != nil {
-		if err == authusecase.ErrUserAlreadyExists {
+		if errors.Is(err, authusecase.ErrUserAlreadyExists) {
 			return ErrorResponse(c, fiber.StatusConflict, "Email already registered")
 		}
-		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		// Email/password validation sentinels carry safe, actionable messages
+		// (e.g. "password must be at least 8 characters"). Anything else is a
+		// repository/driver error whose verbatim text (GORM/SQL) must not leak
+		// to the client — log it server-side and return a generic message.
+		if isSafeValidationError(err) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
+		log.Printf("register failed: %v", err)
+		return ErrorResponse(c, fiber.StatusBadRequest, "registration failed")
 	}
 
 	return SuccessResponse(c, dto.RegisterResponse{
@@ -96,7 +126,12 @@ func (h *AuthHandler) Verify(c fiber.Ctx) error {
 	}
 
 	if err := h.verifyUC.Execute(c.Context(), token); err != nil {
-		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		if errors.Is(err, authusecase.ErrInvalidToken) {
+			return ErrorResponse(c, fiber.StatusBadRequest, "invalid or expired verification token")
+		}
+		// Underlying error is a repository/driver failure — don't leak it.
+		log.Printf("email verification failed: %v", err)
+		return ErrorResponse(c, fiber.StatusBadRequest, "verification failed")
 	}
 
 	return SuccessResponse(c, "Account verified successfully")
@@ -222,8 +257,8 @@ func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 	}
 
 	if err := h.forgotUC.Execute(c.Context(), usecaseReq); err != nil {
-		// Log error but return success to prevent enumeration
-		fmt.Printf("Forgot password failed: %v\n", err)
+		// Log error but return success to prevent enumeration.
+		log.Printf("forgot password failed: %v", err)
 	}
 
 	return SuccessResponse(c, "If an account with that email exists, a password reset link has been sent.")

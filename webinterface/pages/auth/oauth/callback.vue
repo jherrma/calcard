@@ -18,37 +18,46 @@
 </template>
 
 <script setup lang="ts">
-import type { LoginResponse } from '~/types/auth';
-
 definePageMeta({
   layout: "auth",
 });
 
-const route = useRoute();
 const authStore = useAuthStore();
 const error = ref("");
 
 onMounted(async () => {
-  const { access_token, refresh_token, expires_in, error: oauthError } = route.query;
+  // The backend redirects here with tokens in the URL *fragment* (after '#'),
+  // not the query string, so they never reach the server/access logs (H16).
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const params = new URLSearchParams(hash);
 
+  const oauthError = params.get("error");
   if (oauthError) {
-    error.value = oauthError as string;
+    error.value = oauthError;
     return;
   }
 
-  if (access_token && refresh_token) {
+  const accessToken = params.get("access_token");
+  const refreshToken = params.get("refresh_token");
+  const expiresAt = params.get("expires_at");
+
+  if (accessToken && refreshToken && expiresAt) {
     try {
-      // We manually set the auth state from the redirect parameters
       authStore.setAuth({
-        access_token: access_token as string,
-        refresh_token: refresh_token as string,
-        expires_at: Math.floor(Date.now() / 1000) + (Number(expires_in) || 3600),
-        token_type: 'Bearer',
-        user: {} as any // Will be fetched immediately
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at: Number(expiresAt),
+        token_type: "Bearer",
+        user: {} as any, // fetched immediately below
       });
 
+      // Strip the tokens out of the URL so they aren't left in history.
+      history.replaceState(null, "", window.location.pathname);
+
       await authStore.fetchUser();
-      navigateTo("/calendar");
+      navigateTo("/calendar", { replace: true });
     } catch (e: any) {
       error.value = "Failed to complete authentication. " + (e.message || "");
     }

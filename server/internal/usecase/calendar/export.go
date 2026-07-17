@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
@@ -37,24 +38,21 @@ func (uc *ExportCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		return "", "", fmt.Errorf("failed to fetch calendar objects: %w", err)
 	}
 
-	// Build iCalendar content
+	// Build iCalendar content. Escape calendar-supplied text per RFC 5545 so a
+	// name/description with ';', ',', '\' or newlines can't corrupt the feed.
 	icalContent := fmt.Sprintf("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//CalDAV Server//EN\r\nCALSCALE:GREGORIAN\r\nX-WR-CALNAME:%s\r\nX-WR-TIMEZONE:%s\r\n",
-		cal.Name, cal.Timezone)
+		escapeICalText(cal.Name), escapeICalText(cal.Timezone))
 
 	if cal.Description != "" {
-		icalContent += fmt.Sprintf("X-WR-CALDESC:%s\r\n", cal.Description)
+		icalContent += fmt.Sprintf("X-WR-CALDESC:%s\r\n", escapeICalText(cal.Description))
 	}
 
-	// Add all calendar objects (events/todos)
-	for _, obj := range objects {
-		// The ICalData field already contains the complete VEVENT or VTODO block
-		// Just append it to the calendar
-		icalContent += obj.ICalData
-		// Ensure proper line ending
-		if len(obj.ICalData) > 0 && obj.ICalData[len(obj.ICalData)-1] != '\n' {
-			icalContent += "\r\n"
-		}
-	}
+	// Add all calendar objects (events/todos). obj.ICalData is now stored as a
+	// full VCALENDAR (import/PUT wrap it), so strip that wrapper and append only
+	// the VEVENT/VTODO block — otherwise we'd nest a VCALENDAR inside this one
+	// and produce an unparseable feed. Per-object VTIMEZONEs are deduped by TZID
+	// and hoisted to the top so we don't emit N identical VTIMEZONE blocks.
+	icalContent += calendar.ConcatObjectsDedupVTimezones(objects)
 
 	icalContent += "END:VCALENDAR\r\n"
 
@@ -91,4 +89,14 @@ func sanitizeFilename(name string) string {
 // generateTimestamp returns current timestamp in iCalendar format
 func generateTimestamp() string {
 	return time.Now().UTC().Format("20060102T150405Z")
+}
+
+// escapeICalText escapes a string per RFC 5545 text rules for property values.
+func escapeICalText(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, ";", "\\;")
+	s = strings.ReplaceAll(s, ",", "\\,")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	return s
 }

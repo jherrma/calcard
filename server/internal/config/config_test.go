@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,6 +68,24 @@ data_dir: "/tmp/data"
 	cfg, err = Load(tmpfile.Name())
 	assert.NoError(t, err)
 	assert.Equal(t, "6060", cfg.Server.Port)
+}
+
+func TestLoadExplicitMissingConfigIsFatal(t *testing.T) {
+	os.Clearenv()
+
+	// A non-empty configPath is always explicitly requested (via --config /
+	// CALDAV_CONFIG_PATH / CALDAV_CONFIG_FILE). A missing explicit file must
+	// be a fatal error rather than silently booting on defaults.
+	missing := filepath.Join(t.TempDir(), "does-not-exist.yaml")
+	cfg, err := Load(missing)
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "explicitly requested")
+
+	// The implicit case ("") must still boot on defaults without error.
+	cfg, err = Load("")
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
 }
 
 func TestValidation(t *testing.T) {

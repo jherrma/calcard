@@ -72,8 +72,8 @@ func (uc *CreateCalendarUseCase) Execute(ctx context.Context, userID uint, req C
 		Color:               color,
 		Timezone:            timezone,
 		SupportedComponents: "VEVENT,VTODO",
-		SyncToken:           calendar.GenerateSyncToken(),
-		CTag:                calendar.GenerateCTag(),
+		// SyncToken/CTag are minted by the repository inside Create, together
+		// with a matching change-log anchor row.
 	}
 
 	if err := uc.repo.Create(ctx, cal); err != nil {

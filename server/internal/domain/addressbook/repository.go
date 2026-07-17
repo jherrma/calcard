@@ -24,14 +24,26 @@ type Repository interface {
 	GetByUserAndPath(ctx context.Context, userID uint, path string) (*AddressBook, error)
 	ListByUserID(ctx context.Context, userID uint) ([]AddressBook, error)
 	Update(ctx context.Context, addressBook *AddressBook) error
+	// UpdateMetadata persists an address-book rename (name/description only) and
+	// advances the sync token via a change-log anchor row, atomically in a single
+	// transaction. It updates only the named columns (never sync_token/c_tag from
+	// the possibly-stale passed struct) and mints a fresh token in the same tx.
+	UpdateMetadata(ctx context.Context, addressBook *AddressBook) error
 	Delete(ctx context.Context, id uint) error
 	CreateObject(ctx context.Context, object *AddressObject) error
 	GetObjectByID(ctx context.Context, id uint) (*AddressObject, error)
 	GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*AddressObject, error)
+	GetObjectByUID(ctx context.Context, addressBookID uint, uid string) (*AddressObject, error)
 	ListObjects(ctx context.Context, addressBookID uint, limit, offset int, sort, order string) ([]AddressObject, int64, error)
 	QueryObjects(ctx context.Context, addressBookID uint, query *ObjectQuery) ([]AddressObject, error)
 	GetObjectByUUID(ctx context.Context, uuid string) (*AddressObject, error)
 	UpdateObject(ctx context.Context, object *AddressObject) error
+	// MoveObject reassigns an object to a new address book (object.AddressBookID
+	// must already be set to the target) and, atomically in a single
+	// transaction, records a "modified" change on the target book and a
+	// "deleted" change on the source book so both collections' sync clients
+	// converge. Used by the cross-book contact move use case.
+	MoveObject(ctx context.Context, object *AddressObject, sourceAddressBookID uint) error
 	DeleteObjectByUUID(ctx context.Context, uuid string) error
 	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
 
@@ -40,5 +52,5 @@ type Repository interface {
 
 	// Sync-related methods for WebDAV-Sync (RFC 6578)
 	GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*SyncChangeLog, error)
-	RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error
+	RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType string) error
 }

@@ -28,11 +28,13 @@ func TestVerifyUseCase_Execute_Success(t *testing.T) {
 		User:      *u,
 	}
 
-	repo.On("GetVerificationByToken", ctx, token).Return(v, nil)
+	// The use case hashes the token before lookup/delete.
+	tokenHash := hashVerificationToken(token)
+	repo.On("GetVerificationByToken", ctx, tokenHash).Return(v, nil)
 	repo.On("Update", ctx, mock.MatchedBy(func(u *user.User) bool {
 		return u.IsActive == true && u.EmailVerified == true
 	})).Return(nil)
-	repo.On("DeleteVerification", ctx, token).Return(nil)
+	repo.On("DeleteVerification", ctx, tokenHash).Return(nil)
 
 	err := uc.Execute(ctx, token)
 
@@ -51,8 +53,9 @@ func TestVerifyUseCase_Execute_Expired(t *testing.T) {
 		ExpiresAt: time.Now().Add(-1 * time.Hour),
 	}
 
-	repo.On("GetVerificationByToken", ctx, token).Return(v, nil)
-	repo.On("DeleteVerification", ctx, token).Return(nil)
+	tokenHash := hashVerificationToken(token)
+	repo.On("GetVerificationByToken", ctx, tokenHash).Return(v, nil)
+	repo.On("DeleteVerification", ctx, tokenHash).Return(nil)
 
 	err := uc.Execute(ctx, token)
 

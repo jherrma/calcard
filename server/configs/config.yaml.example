@@ -5,30 +5,38 @@ server:
 base_url: https://caldav.example.com
 
 # Database configuration
-# Omit this section entirely to use SQLite (default)
+# Omit this section entirely to use SQLite (default).
+# NOTE: ${VAR} placeholders are NOT expanded by the config loader. Values here
+# are literal samples; set the corresponding CALDAV_* environment variables to
+# override any field (env vars always win over this file).
 database:
   host: postgres
   port: 5432
   user: caldav
-  password: ${CALDAV_DB_PASSWORD}  # Environment variable substitution
+  password: change-me  # override via CALDAV_DB_PASSWORD
   name: caldav
   ssl_mode: require
 
 jwt:
-  secret: ${CALDAV_JWT_SECRET}
+  # Leave unset to auto-generate and persist a secret on first boot, or set
+  # CALDAV_JWT_SECRET (min 16 chars). A value placed here is used verbatim.
+  secret: ""
   access_expiry: 15m
   refresh_expiry: 168h  # 7 days
 
+# OAuth/OIDC providers. ${VAR} is NOT expanded here; either fill in literal
+# values or (recommended) set the CALDAV_OAUTH_* environment variables, which
+# override these fields.
 oauth:
   google:
-    client_id: ${CALDAV_OAUTH_GOOGLE_CLIENT_ID}
-    client_secret: ${CALDAV_OAUTH_GOOGLE_CLIENT_SECRET}
-  
+    client_id: ""      # or CALDAV_OAUTH_GOOGLE_CLIENT_ID
+    client_secret: ""  # or CALDAV_OAUTH_GOOGLE_CLIENT_SECRET
+
   # Custom OIDC Provider (e.g. Keycloak, Auth0)
   custom:
-    client_id: ${CALDAV_OAUTH_CUSTOM_CLIENT_ID}
-    client_secret: ${CALDAV_OAUTH_CUSTOM_CLIENT_SECRET}
-    issuer: ${CALDAV_OAUTH_CUSTOM_ISSUER}
+    client_id: ""      # or CALDAV_OAUTH_CUSTOM_CLIENT_ID
+    client_secret: ""  # or CALDAV_OAUTH_CUSTOM_CLIENT_SECRET
+    issuer: ""         # or CALDAV_OAUTH_CUSTOM_ISSUER
 
 logging:
   level: info

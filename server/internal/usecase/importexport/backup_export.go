@@ -130,79 +130,26 @@ func buildICalendarExport(cal *calendar.Calendar, objects []*calendar.CalendarOb
 	sb.WriteString("VERSION:2.0\r\n")
 	sb.WriteString("PRODID:-//CalDAV Server//EN\r\n")
 	sb.WriteString("CALSCALE:GREGORIAN\r\n")
-	sb.WriteString(fmt.Sprintf("X-WR-CALNAME:%s\r\n", cal.Name))
+	// Escape calendar-supplied text per RFC 5545 so a name/description with
+	// ';', ',', '\' or newlines can't corrupt the feed inside the backup ZIP.
+	sb.WriteString(fmt.Sprintf("X-WR-CALNAME:%s\r\n", escapeICalText(cal.Name)))
 	if cal.Timezone != "" {
-		sb.WriteString(fmt.Sprintf("X-WR-TIMEZONE:%s\r\n", cal.Timezone))
+		sb.WriteString(fmt.Sprintf("X-WR-TIMEZONE:%s\r\n", escapeICalText(cal.Timezone)))
 	}
 	if cal.Description != "" {
-		sb.WriteString(fmt.Sprintf("X-WR-CALDESC:%s\r\n", cal.Description))
+		sb.WriteString(fmt.Sprintf("X-WR-CALDESC:%s\r\n", escapeICalText(cal.Description)))
 	}
 
-	for _, obj := range objects {
-		// Stored ICalData may already be wrapped in BEGIN:VCALENDAR (that's
-		// what event.CreateEventUseCase writes) or be a bare VEVENT block
-		// (that's what calendar_import.go writes). Strip any existing wrapper
-		// so we don't emit nested VCALENDARs, which no parser understands.
-		sb.WriteString(stripVCalendarWrapper(obj.ICalData))
-		if !strings.HasSuffix(obj.ICalData, "\n") {
-			sb.WriteString("\r\n")
-		}
-	}
+	// Stored ICalData may already be wrapped in BEGIN:VCALENDAR (that's what
+	// event.CreateEventUseCase writes) or be a bare VEVENT block (that's what
+	// calendar_import.go writes). Strip any existing wrapper so we don't emit
+	// nested VCALENDARs, which no parser understands, and dedup per-object
+	// VTIMEZONEs by TZID. The helper (via StripVCalendarWrapper) guarantees a
+	// trailing CRLF, so no manual newline fix-up is needed.
+	sb.WriteString(calendar.ConcatObjectsDedupVTimezones(objects))
 
 	sb.WriteString("END:VCALENDAR\r\n")
 	return sb.String()
-}
-
-// stripVCalendarWrapper removes any BEGIN:VCALENDAR / END:VCALENDAR and its
-// header properties (VERSION, PRODID, CALSCALE, X-WR-*) from the given iCal
-// payload, returning just the contained VEVENT/VTODO/VJOURNAL/VALARM blocks.
-// If the input is already a bare component (no VCALENDAR wrapper), it is
-// returned unchanged except for whitespace trimming.
-func stripVCalendarWrapper(data string) string {
-	// Normalize to \r\n so splitting is predictable.
-	data = strings.ReplaceAll(data, "\r\n", "\n")
-	lines := strings.Split(data, "\n")
-
-	var out []string
-	depth := 0            // how deep we are inside nested VCALENDARs
-	componentDepth := 0   // how deep we are inside VEVENT/VTODO/etc.
-	for _, line := range lines {
-		upper := strings.ToUpper(strings.TrimSpace(line))
-		switch {
-		case upper == "BEGIN:VCALENDAR":
-			depth++
-			continue
-		case upper == "END:VCALENDAR":
-			if depth > 0 {
-				depth--
-			}
-			continue
-		case depth > 0 && componentDepth == 0 && isVCalendarHeader(upper):
-			// Drop calendar-level header props that belong on the outer wrapper.
-			continue
-		}
-		if strings.HasPrefix(upper, "BEGIN:") && depth > 0 {
-			componentDepth++
-		}
-		if strings.HasPrefix(upper, "END:") && componentDepth > 0 {
-			componentDepth--
-		}
-		out = append(out, line)
-	}
-	result := strings.Join(out, "\r\n")
-	return strings.TrimSpace(result) + "\r\n"
-}
-
-func isVCalendarHeader(upperLine string) bool {
-	switch {
-	case strings.HasPrefix(upperLine, "VERSION:"),
-		strings.HasPrefix(upperLine, "PRODID:"),
-		strings.HasPrefix(upperLine, "CALSCALE:"),
-		strings.HasPrefix(upperLine, "METHOD:"),
-		strings.HasPrefix(upperLine, "X-WR-"):
-		return true
-	}
-	return false
 }
 
 // sanitizeFilename removes characters that are not safe for filenames
@@ -226,4 +173,14 @@ func sanitizeFilename(name string) string {
 		}
 	}
 	return string(result)
+}
+
+// escapeICalText escapes a string per RFC 5545 text rules for property values.
+func escapeICalText(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, ";", "\\;")
+	s = strings.ReplaceAll(s, ",", "\\,")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	return s
 }

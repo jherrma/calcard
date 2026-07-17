@@ -22,6 +22,13 @@ type CalendarRepository interface {
 	// Update updates an existing calendar
 	Update(ctx context.Context, calendar *Calendar) error
 
+	// UpdateMetadata persists a collection rename (name/description/color/
+	// timezone only) and advances the sync token via a change-log anchor row,
+	// atomically in a single transaction. It must NOT write sync_token/ctag from
+	// the passed struct (which may be stale relative to a concurrent object PUT);
+	// it updates only the named columns and mints a fresh token in the same tx.
+	UpdateMetadata(ctx context.Context, calendar *Calendar) error
+
 	// Delete deletes a calendar by ID
 	Delete(ctx context.Context, id uint) error
 
@@ -46,17 +53,33 @@ type CalendarRepository interface {
 	// UpdateCalendarObject updates an existing calendar object
 	UpdateCalendarObject(ctx context.Context, obj *CalendarObject) error
 
+	// MoveCalendarObject reassigns an object to a new calendar (obj.CalendarID
+	// must already be set to the target) and, atomically in a single
+	// transaction, records a "modified" change on the target calendar and a
+	// "deleted" change on the source calendar so both collections' sync
+	// clients converge. Used by the cross-calendar move use case.
+	MoveCalendarObject(ctx context.Context, obj *CalendarObject, sourceCalendarID uint) error
+
 	// DeleteCalendarObject deletes a calendar object
 	DeleteCalendarObject(ctx context.Context, obj *CalendarObject) error
 
 	// GetChangesSinceToken retrieves all changes to a calendar since a given sync token
 	GetChangesSinceToken(ctx context.Context, calendarID uint, token string) ([]*SyncChangeLog, error)
 
+	// RecordChange advances the calendar sync token and writes a matching
+	// change-log row atomically (for mutations outside the object CRUD methods).
+	RecordChange(ctx context.Context, calendarID uint, path, uid, changeType string) error
+
 	// ListEvents retrieves calendar objects within a time range
 	ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*CalendarObject, error)
 
 	// GetCalendarObjectByUUID retrieves a calendar object by UUID
 	GetCalendarObjectByUUID(ctx context.Context, uuid string) (*CalendarObject, error)
+
+	// GetCalendarObjectByUID retrieves a calendar object by calendar ID and
+	// iCalendar UID (used for RFC 4791 no-uid-conflict detection on PUT).
+	// Returns (nil, nil) when no matching object exists.
+	GetCalendarObjectByUID(ctx context.Context, calendarID uint, uid string) (*CalendarObject, error)
 
 	// GetUserPermission determines a user's permission for a calendar
 	GetUserPermission(ctx context.Context, calendarID, userID uint) (CalendarPermission, error)

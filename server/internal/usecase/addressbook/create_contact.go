@@ -65,7 +65,7 @@ func (uc *CreateContactUseCase) Execute(ctx context.Context, input CreateContact
 		UID:           uid,
 		VCardData:     input.VCardData,
 		VCardVersion:  "3.0",
-		ETag:          fmt.Sprintf("%d", time.Now().UnixNano()),
+		ETag:          addressbook.NewETag(),
 		ContentLength: len(input.VCardData),
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),

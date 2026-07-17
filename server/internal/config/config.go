@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,18 +14,19 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Server    ServerConfig    `yaml:"server"`
-	Database  DatabaseConfig  `yaml:"database"`
-	DataDir   string          `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
-	LogLevel  string          `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
-	BaseURL   string          `yaml:"base_url" env:"CALDAV_BASE_URL"`
-	SMTP      SMTPConfig      `yaml:"smtp"`
-	JWT       JWTConfig       `yaml:"jwt"`
-	RateLimit RateLimitConfig `yaml:"rate_limit"`
-	OAuth     OAuthConfig     `yaml:"oauth"`
-	TLS       TLSConfig       `yaml:"tls"`
-	CORS      CORSConfig      `yaml:"cors"`
-	Security  SecurityConfig  `yaml:"security"`
+	Server       ServerConfig       `yaml:"server"`
+	Database     DatabaseConfig     `yaml:"database"`
+	DataDir      string             `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
+	LogLevel     string             `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
+	BaseURL      string             `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	SMTP         SMTPConfig         `yaml:"smtp"`
+	JWT          JWTConfig          `yaml:"jwt"`
+	RateLimit    RateLimitConfig    `yaml:"rate_limit"`
+	OAuth        OAuthConfig        `yaml:"oauth"`
+	TLS          TLSConfig          `yaml:"tls"`
+	CORS         CORSConfig         `yaml:"cors"`
+	Security     SecurityConfig     `yaml:"security"`
+	Registration RegistrationConfig `yaml:"registration"`
 }
 
 // ServerConfig contains server-specific settings
@@ -111,13 +110,31 @@ type SecurityConfig struct {
 	RequestTimeout time.Duration `yaml:"request_timeout" env:"CALDAV_REQUEST_TIMEOUT"`
 }
 
+// RegistrationConfig controls self-service account registration. The zero value
+// (Disabled=false) keeps registration ENABLED so tests and directly-constructed
+// configs behave as before.
+type RegistrationConfig struct {
+	Disabled bool `yaml:"disabled" env:"CALDAV_REGISTRATION_DISABLED"`
+}
+
 // DSN returns the database connection string based on the driver
 func (c *DatabaseConfig) DSN(dataDir string) string {
 	if c.IsSQLite() {
 		return filepath.Join(dataDir, "caldav.db")
 	}
+	// Quote each value per libpq rules so values with spaces, quotes or
+	// backslashes don't break the key=value DSN.
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode)
+		quoteDSNValue(c.Host), quoteDSNValue(c.Port), quoteDSNValue(c.User),
+		quoteDSNValue(c.Password), quoteDSNValue(c.Name), quoteDSNValue(c.SSLMode))
+}
+
+// quoteDSNValue wraps a libpq key=value DSN value in single quotes, escaping
+// backslashes and single quotes.
+func quoteDSNValue(v string) string {
+	v = strings.ReplaceAll(v, "\\", "\\\\")
+	v = strings.ReplaceAll(v, "'", "\\'")
+	return "'" + v + "'"
 }
 
 // IsSQLite returns true if the driver is sqlite
@@ -130,22 +147,13 @@ func (c *DatabaseConfig) IsPostgres() bool {
 	return c.Driver == "postgres"
 }
 
-// generateJWTSecret generates a secure random JWT secret
-func generateJWTSecret() (string, error) {
-	// Generate 32 random bytes (256 bits) which will be base64 encoded to ~43 characters
-	b := make([]byte, 32)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate random JWT secret: %w", err)
-	}
-	return base64.URLEncoding.EncodeToString(b), nil
-}
-
 // Load initialization the configuration from environment variables and an optional YAML file
 func Load(configPath string) (*Config, error) {
-	// 0. Load .env files if they exist
-	// We ignore errors because .env files are optional
-	_ = godotenv.Load(".env", ".env.local")
+	// 0. Load .env files if they exist. Load each separately and ignore its
+	// error individually — godotenv.Load(".env", ".env.local") stops at the
+	// first missing file, so a missing .env used to block .env.local entirely.
+	_ = godotenv.Load(".env")
+	_ = godotenv.Load(".env.local")
 
 	// Set hardcoded defaults
 	cfg := &Config{
@@ -191,7 +199,7 @@ func Load(configPath string) (*Config, error) {
 			Enabled:          false,
 			AllowedOrigins:   []string{"*"},
 			ExposeHeaders:    []string{"ETag", "DAV", "Allow", "Link"},
-			AllowCredentials: true,
+			AllowCredentials: false,
 			MaxAge:           86400,
 		},
 		Security: SecurityConfig{
@@ -203,19 +211,26 @@ func Load(configPath string) (*Config, error) {
 		},
 	}
 
-	// 1. Load from YAML file if it exists
+	// 1. Load from YAML file. A non-empty configPath is always an explicitly
+	// requested file: resolveConfigPath in cmd/server only returns non-empty
+	// for the --config flag / CALDAV_CONFIG_PATH / CALDAV_CONFIG_FILE and
+	// returns "" for the implicit env-and-defaults case. An explicitly
+	// requested file that is missing or unreadable must be a fatal error
+	// rather than silently booting on defaults; only the implicit ("") case
+	// may be absent without error.
 	if configPath != "" {
-		if _, err := os.Stat(configPath); err == nil {
-			file, err := os.Open(configPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to open config file: %w", err)
-			}
-			defer file.Close()
+		if _, err := os.Stat(configPath); err != nil {
+			return nil, fmt.Errorf("config file %q was explicitly requested but cannot be read: %w", configPath, err)
+		}
+		file, err := os.Open(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open config file: %w", err)
+		}
+		defer file.Close()
 
-			decoder := yaml.NewDecoder(file)
-			if err := decoder.Decode(cfg); err != nil {
-				return nil, fmt.Errorf("failed to decode config file: %w", err)
-			}
+		decoder := yaml.NewDecoder(file)
+		if err := decoder.Decode(cfg); err != nil {
+			return nil, fmt.Errorf("failed to decode config file: %w", err)
 		}
 	}
 
@@ -226,16 +241,10 @@ func Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse environment variables: %w", err)
 	}
 
-	// 3. Generate JWT secret if not provided
-	if cfg.JWT.Secret == "" {
-		secret, err := generateJWTSecret()
-		if err != nil {
-			return nil, err
-		}
-		cfg.JWT.Secret = secret
-		fmt.Fprintf(os.Stderr, "WARNING: No JWT secret provided. Generated a random secret for this session.\n")
-		fmt.Fprintf(os.Stderr, "         To persist this secret, set CALDAV_JWT_SECRET=%s\n", secret)
-	}
+	// An unset JWT secret is left empty here on purpose: JWTManager.EnsureSecret
+	// loads it from (or generates and persists it to) system_settings at startup,
+	// so it survives restarts. Generating one here would shadow that and mint a
+	// fresh secret every boot, invalidating all existing tokens.
 
 	// Auto-detect PostgreSQL mode
 	if cfg.Database.Host != "" {
@@ -256,17 +265,35 @@ func Load(configPath string) (*Config, error) {
 func (c *Config) Validate() error {
 	var errs []string
 
-	if c.JWT.Secret == "" {
-		errs = append(errs, "CALDAV_JWT_SECRET must be set (this should have been auto-generated)")
-	}
-	if c.JWT.Secret == "change-me-in-production" {
-		errs = append(errs, "CALDAV_JWT_SECRET must be set to a secure value (default value is insecure)")
-	}
-	if len(c.JWT.Secret) < 16 {
-		errs = append(errs, "CALDAV_JWT_SECRET must be at least 16 characters")
+	// An empty secret is allowed at validation time: JWTManager.EnsureSecret
+	// fills it from system_settings (loading or generating+persisting) during
+	// startup. Only reject an explicitly-provided secret that is insecure.
+	if c.JWT.Secret != "" {
+		if c.JWT.Secret == "change-me-in-production" {
+			errs = append(errs, "CALDAV_JWT_SECRET must be set to a secure value (default value is insecure)")
+		}
+		if len(c.JWT.Secret) < 16 {
+			errs = append(errs, "CALDAV_JWT_SECRET must be at least 16 characters")
+		}
 	}
 	if c.BaseURL == "" {
 		errs = append(errs, "CALDAV_BASE_URL must be set")
+	}
+
+	// Fiber's CORS middleware panics when credentials are allowed together with
+	// a wildcard origin. Fiber treats BOTH a literal "*" origin AND an empty
+	// origin list as "allow all", so reject either combination here with a clear
+	// message instead of crashing at startup (M15).
+	if c.CORS.Enabled && c.CORS.AllowCredentials {
+		if len(c.CORS.AllowedOrigins) == 0 {
+			errs = append(errs, "CORS cannot combine AllowCredentials with an empty origin list (Fiber treats it as a wildcard); set explicit CALDAV_CORS_ALLOWED_ORIGINS")
+		}
+		for _, o := range c.CORS.AllowedOrigins {
+			if o == "*" {
+				errs = append(errs, `CORS cannot combine AllowCredentials with a wildcard origin "*"; set explicit CALDAV_CORS_ALLOWED_ORIGINS`)
+				break
+			}
+		}
 	}
 
 	if c.TLS.Enabled {

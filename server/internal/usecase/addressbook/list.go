@@ -66,6 +66,12 @@ func (uc *ListUseCase) Execute(ctx context.Context, userID uint) ([]*AddressBook
 
 	for _, s := range shares {
 		ab := s.AddressBook
+		// Defense in depth: skip a share whose address book no longer exists
+		// (zero-valued preload). DeleteByAddressBookID should prevent this,
+		// but a stale row must never surface as a blank ghost entry.
+		if ab.ID == 0 {
+			continue
+		}
 		result = append(result, &AddressBookListItem{
 			AddressBook: &ab,
 			Shared:      true,

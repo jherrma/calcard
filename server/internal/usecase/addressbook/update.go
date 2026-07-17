@@ -38,10 +38,12 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, input UpdateInput) (*addre
 		ab.Description = *input.Description
 	}
 
-	// Update CTag and SyncToken
-	ab.UpdateSyncTokens()
-
-	if err := uc.repo.Update(ctx, ab); err != nil {
+	// Persist the rename and advance the sync token (backed by a change-log
+	// anchor row) atomically in one transaction — see UpdateMetadata. Doing the
+	// Save and RecordChange separately let a concurrent object PUT's fresh token
+	// be overwritten by the stale one loaded above, and a RecordChange failure
+	// after the Save committed left the CTag un-bumped.
+	if err := uc.repo.UpdateMetadata(ctx, ab); err != nil {
 		return nil, err
 	}
 

@@ -25,9 +25,11 @@ bin/
 dist/
 .env
 
-# Binaries
-server
-main
+# Binaries (compiled output at the module root only). Anchored with a leading
+# slash so these don't also match package directories named "server" or "main"
+# such as internal/infrastructure/server/ or cmd/server/.
+/server
+/main
 
 # Configuration
 configs/config.yaml

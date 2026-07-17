@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,76 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOAuthHandler_CookieMACTamperDetection(t *testing.T) {
+	_, _, cfg := setupTestApp(t)
+	cfg.JWT.Secret = "test-secret-for-mac"
+	h := &OAuthHandler{cfg: cfg}
+
+	payload := "eyJzdGF0ZSI6ImFiYyIsImFjdGlvbiI6ImxpbmsiLCJ1c2VyX2lkIjo0Mn0"
+	mac := h.cookieMAC(payload)
+
+	// Same payload reproduces the same MAC.
+	assert.Equal(t, mac, h.cookieMAC(payload), "MAC must be deterministic")
+
+	// A tampered payload (e.g. attacker swaps in a different user_id) yields a
+	// different MAC, so hmac.Equal in getContextCookie would reject it.
+	tampered := "eyJzdGF0ZSI6ImFiYyIsImFjdGlvbiI6ImxpbmsiLCJ1c2VyX2lkIjo5OX0"
+	assert.NotEqual(t, mac, h.cookieMAC(tampered), "tampered payload must not validate")
+}
+
+// TestOAuthHandler_GetContextCookieValidatesMAC exercises the actual security
+// boundary (getContextCookie's hmac.Equal check, the M14 fix) rather than only
+// the cookieMAC helper: a correctly-signed cookie is accepted and its trusted
+// fields decoded, while a cookie whose payload was mutated after signing (the
+// MAC no longer matches) is rejected.
+func TestOAuthHandler_GetContextCookieValidatesMAC(t *testing.T) {
+	_, _, cfg := setupTestApp(t)
+	cfg.JWT.Secret = "test-secret-for-mac"
+	h := &OAuthHandler{cfg: cfg}
+
+	// Route that surfaces getContextCookie's outcome so we drive the real
+	// request path (c.Cookies + hmac.Equal), not the helper in isolation.
+	app := fiber.New()
+	app.Get("/probe", func(c fiber.Ctx) error {
+		data, err := h.getContextCookie(c)
+		if err != nil {
+			return c.SendStatus(fiber.StatusUnauthorized)
+		}
+		return c.JSON(fiber.Map{"user_id": data.UserID, "action": data.Action})
+	})
+
+	sign := func(ctx oauthContext) (payload, value string) {
+		b, _ := json.Marshal(ctx)
+		payload = base64.URLEncoding.EncodeToString(b)
+		return payload, payload + "." + h.cookieMAC(payload)
+	}
+
+	// A well-formed, correctly-signed cookie is ACCEPTED and its fields decoded.
+	validPayload, validValue := sign(oauthContext{State: "abc", Action: "link", UserID: 42})
+	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	req.AddCookie(&http.Cookie{Name: "oauth_context", Value: validValue})
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusOK, resp.StatusCode, "valid MAC must be accepted")
+	var decoded struct {
+		UserID uint   `json:"user_id"`
+		Action string `json:"action"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&decoded))
+	assert.Equal(t, uint(42), decoded.UserID)
+	assert.Equal(t, "link", decoded.Action)
+
+	// Mutate the payload (attacker swaps user_id 42 → 99) but keep the MAC of the
+	// ORIGINAL payload: hmac.Equal fails, so the cookie is rejected.
+	mutated, _ := json.Marshal(oauthContext{State: "abc", Action: "link", UserID: 99})
+	tamperedValue := base64.URLEncoding.EncodeToString(mutated) + "." + h.cookieMAC(validPayload)
+	req2 := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	req2.AddCookie(&http.Cookie{Name: "oauth_context", Value: tamperedValue})
+	resp2, err := app.Test(req2)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusUnauthorized, resp2.StatusCode, "tampered payload must be rejected")
+}
 
 func TestOAuthHandler_Lifecycle(t *testing.T) {
 	app, db, cfg := setupTestApp(t)

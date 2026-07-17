@@ -180,6 +180,34 @@ func TestMalformedInputs(t *testing.T) {
 	ghost := "/dav/" + username + "/calendars/" + personal.UUID + ".ics/this-never-existed.ics"
 	status, _, _ = davCall(t, "GET", ghost, email, appPass, "", nil)
 	assert.Equal(t, http.StatusNotFound, status, "GET of a nonexistent DAV event must 404")
+
+	// --- Collection-shaped CalDAV requests (M1: guard parts[4]) ----------
+	// A GET/PUT/REPORT addressed at the calendar collection itself (no object
+	// segment) used to index parts[4] out of range and 500. They must now fail
+	// cleanly as client errors, never a 5xx / panic.
+	collection := "/dav/" + username + "/calendars/" + personal.UUID + ".ics/"
+
+	status, _, body = davCall(t, "GET", collection, email, appPass, "", nil)
+	assert.Lessf(t, status, 500, "GET on a calendar collection must not 5xx (got %d, body: %s)", status, string(body))
+	assert.GreaterOrEqualf(t, status, 400, "GET on a calendar collection should be a client error (got %d)", status)
+
+	status, _, body = davCall(t, "PUT", collection, email, appPass,
+		"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n",
+		map[string]string{"Content-Type": "text/calendar; charset=utf-8"})
+	assert.Lessf(t, status, 500, "PUT on a calendar collection must not 5xx (got %d, body: %s)", status, string(body))
+	assert.GreaterOrEqualf(t, status, 400, "PUT on a calendar collection should be a client error (got %d)", status)
+
+	// A calendar-multiget REPORT whose href points at the collection rather than
+	// an object: the bad href must surface as a per-href status inside the 207
+	// multistatus (or a 4xx), never a 5xx from an out-of-range parts[4].
+	multiget := `<?xml version="1.0" encoding="utf-8"?>` +
+		`<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
+		`<D:prop><D:getetag/></D:prop>` +
+		`<D:href>` + collection + `</D:href>` +
+		`</C:calendar-multiget>`
+	status, _, body = davCall(t, "REPORT", collection, email, appPass, multiget,
+		map[string]string{"Content-Type": "application/xml; charset=utf-8", "Depth": "1"})
+	assert.Lessf(t, status, 500, "calendar-multiget with a collection href must not 5xx (got %d, body: %s)", status, string(body))
 }
 
 // rawCallWithHeaders is a convenience on top of `rawCall` that lets a test

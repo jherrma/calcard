@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"time"
 
@@ -46,9 +47,11 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	emailService := email.NewEmailService(cfg.SMTP)
 	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
 
-	// Ensure JWT Secret
+	// Ensure JWT Secret. This loads the persisted secret from system_settings
+	// (or generates and persists one on first boot). It must succeed — running
+	// with an empty secret would sign every token with "" and accept forgeries.
 	if err := jwtManager.EnsureSecret(context.Background(), systemRepo); err != nil {
-		fmt.Printf("failed to ensure JWT secret: %v\n", err)
+		log.Fatalf("failed to ensure JWT secret: %v", err)
 	}
 
 	// Logging
@@ -200,7 +203,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	unlinkUC := authusecase.NewUnlinkProviderUseCase(oauthRepo, userRepo)
 	listLinkedUC := authusecase.NewListLinkedProvidersUseCase(oauthRepo, userRepo)
 
-	oauthHandler := http.NewOAuthHandler(initiateOAuthUC, oauthCallbackUC, unlinkUC, listLinkedUC)
+	oauthHandler := http.NewOAuthHandler(initiateOAuthUC, oauthCallbackUC, unlinkUC, listLinkedUC, cfg)
 
 	oauthGroup := v1.Group("/auth/oauth")
 	oauthGroup.Get("/providers", http.Authenticate(jwtManager, userRepo), oauthHandler.List) // List linked providers (auth required)
@@ -214,7 +217,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo, shareRepo)
 	calendarGetUC := calendarusecase.NewGetCalendarUseCase(calendarRepo)
 	calendarUpdateUC := calendarusecase.NewUpdateCalendarUseCase(calendarRepo)
-	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo)
+	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo, shareRepo)
 	calendarExportUC := calendarusecase.NewExportCalendarUseCase(calendarRepo)
 
 	calendarHandler := http.NewCalendarHandler(
@@ -252,7 +255,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	abListUC := addressbookusecase.NewListUseCase(addressBookRepo, abShareRepo)
 	abGetUC := addressbookusecase.NewGetUseCase(addressBookRepo)
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
-	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)
+	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo, abShareRepo)
 	abExportUC := addressbookusecase.NewExportUseCase(addressBookRepo)
 	// NOTE: addressbookusecase.CreateContactUseCase is still alive — it backs
 	// ContactHandler.Create through contactusecase.CreateUseCase (see below).

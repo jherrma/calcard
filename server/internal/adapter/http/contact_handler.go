@@ -15,6 +15,10 @@ import (
 	contactuc "github.com/jherrma/caldav-server/internal/usecase/contact"
 )
 
+// maxPageLimit caps client-supplied pagination limits to avoid unbounded result
+// materialization (memory/CPU DoS).
+const maxPageLimit = 200
+
 type ContactHandler struct {
 	createUC        *contactuc.CreateUseCase
 	listUC          *contactuc.ListUseCase
@@ -102,9 +106,12 @@ func (h *ContactHandler) List(c fiber.Ctx) error {
 			limit = val
 		}
 	}
+	if limit > maxPageLimit {
+		limit = maxPageLimit
+	}
 	offset := 0
 	if o := c.Query("offset"); o != "" {
-		if val, err := strconv.Atoi(o); err == nil {
+		if val, err := strconv.Atoi(o); err == nil && val >= 0 {
 			offset = val
 		}
 	}
@@ -296,6 +303,9 @@ func (h *ContactHandler) Search(c fiber.Ctx) error {
 		if val, err := strconv.Atoi(l); err == nil {
 			limit = val
 		}
+	}
+	if limit > maxPageLimit {
+		limit = maxPageLimit
 	}
 
 	var abID *uint

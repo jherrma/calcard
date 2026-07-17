@@ -51,6 +51,10 @@ func (m *mockShareRepo) GetByCalendarAndUser(ctx context.Context, calendarID, us
 	}
 	return args.Get(0).(*sharing.CalendarShare), args.Error(1)
 }
+func (m *mockShareRepo) DeleteByCalendarID(ctx context.Context, calendarID uint) error {
+	args := m.Called(ctx, calendarID)
+	return args.Error(0)
+}
 
 type mockCalendarRepo struct {
 	mock.Mock
@@ -73,8 +77,9 @@ func (m *mockCalendarRepo) GetByUUID(ctx context.Context, u string) (*calendar.C
 func (m *mockCalendarRepo) ListByUserID(ctx context.Context, id uint) ([]*calendar.Calendar, error) {
 	return nil, nil
 }
-func (m *mockCalendarRepo) Update(ctx context.Context, c *calendar.Calendar) error    { return nil }
-func (m *mockCalendarRepo) Delete(ctx context.Context, id uint) error                 { return nil }
+func (m *mockCalendarRepo) Update(ctx context.Context, c *calendar.Calendar) error         { return nil }
+func (m *mockCalendarRepo) UpdateMetadata(ctx context.Context, c *calendar.Calendar) error { return nil }
+func (m *mockCalendarRepo) Delete(ctx context.Context, id uint) error                      { return nil }
 func (m *mockCalendarRepo) CountByUserID(ctx context.Context, id uint) (int64, error) { return 0, nil }
 func (m *mockCalendarRepo) GetEventCount(ctx context.Context, id uint) (int64, error) { return 0, nil }
 func (m *mockCalendarRepo) GetCalendarObjects(ctx context.Context, id uint) ([]*calendar.CalendarObject, error) {
@@ -92,16 +97,25 @@ func (m *mockCalendarRepo) CreateCalendarObject(ctx context.Context, obj *calend
 func (m *mockCalendarRepo) UpdateCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return nil
 }
+func (m *mockCalendarRepo) MoveCalendarObject(ctx context.Context, obj *calendar.CalendarObject, sourceCalendarID uint) error {
+	return nil
+}
 func (m *mockCalendarRepo) DeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return nil
 }
 func (m *mockCalendarRepo) GetChangesSinceToken(ctx context.Context, cid uint, t string) ([]*calendar.SyncChangeLog, error) {
 	return nil, nil
 }
+func (m *mockCalendarRepo) RecordChange(ctx context.Context, cid uint, path, uid, changeType string) error {
+	return nil
+}
 func (m *mockCalendarRepo) ListEvents(ctx context.Context, cid uint, s, e time.Time) ([]*calendar.CalendarObject, error) {
 	return nil, nil
 }
 func (m *mockCalendarRepo) GetCalendarObjectByUUID(ctx context.Context, u string) (*calendar.CalendarObject, error) {
+	return nil, nil
+}
+func (m *mockCalendarRepo) GetCalendarObjectByUID(ctx context.Context, cid uint, u string) (*calendar.CalendarObject, error) {
 	return nil, nil
 }
 func (m *mockCalendarRepo) GetUserPermission(ctx context.Context, cid, uid uint) (calendar.CalendarPermission, error) {

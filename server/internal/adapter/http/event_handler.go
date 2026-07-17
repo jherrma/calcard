@@ -1,9 +1,11 @@
 package http
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
+	gowebdav "github.com/emersion/go-webdav"
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
@@ -40,26 +42,82 @@ func NewEventHandler(
 	}
 }
 
-// ownsCalendar reports whether the authenticated user owns the calendar with
-// the given numeric id. Returns false on lookup errors or mismatched owner —
-// callers treat "not owned" exactly like "not found" (404) so existence
-// isn't leaked across users.
-func (h *EventHandler) ownsCalendar(c fiber.Ctx, calendarID uint) bool {
+// calendarPermission returns the authenticated user's effective permission on
+// the calendar with the given numeric id. GetUserPermission already resolves
+// ownership (PermissionOwner) and shares (PermissionRead / PermissionReadWrite),
+// and returns PermissionNone when the calendar is missing or unshared — which
+// callers treat exactly like "not found" (404) so existence isn't leaked.
+func (h *EventHandler) calendarPermission(c fiber.Ctx, calendarID uint) calendar.CalendarPermission {
 	userID := c.Locals("user_id").(uint)
-	cal, err := h.calendarRepo.GetByID(c.Context(), calendarID)
-	return err == nil && cal != nil && cal.UserID == userID
+	perm, err := h.calendarRepo.GetUserPermission(c.Context(), calendarID, userID)
+	if err != nil {
+		return calendar.PermissionNone
+	}
+	return perm
 }
 
-// ownsEvent reports whether the authenticated user owns the calendar that
-// contains the event identified by eventUUID.
-func (h *EventHandler) ownsEvent(c fiber.Ctx, eventUUID string) bool {
-	userID := c.Locals("user_id").(uint)
+// eventPermission returns the user's permission on the calendar that contains
+// the event identified by eventUUID (PermissionNone when the event doesn't
+// exist or the calendar is neither owned nor shared with the user).
+func (h *EventHandler) eventPermission(c fiber.Ctx, eventUUID string) calendar.CalendarPermission {
 	obj, err := h.calendarRepo.GetCalendarObjectByUUID(c.Context(), eventUUID)
 	if err != nil || obj == nil {
-		return false
+		return calendar.PermissionNone
 	}
-	cal, err := h.calendarRepo.GetByID(c.Context(), obj.CalendarID)
-	return err == nil && cal != nil && cal.UserID == userID
+	return h.calendarPermission(c, obj.CalendarID)
+}
+
+// canWrite reports whether a permission grants write access (owner or
+// read-write). Read access is any permission other than PermissionNone.
+func canWrite(p calendar.CalendarPermission) bool {
+	return p == calendar.PermissionOwner || p == calendar.PermissionReadWrite
+}
+
+// ifMatchOK enforces an optional If-Match precondition on REST writes, giving
+// the web UI the same optimistic-concurrency guard the DAV PUT/DELETE path has
+// (two concurrent sessions could otherwise silently clobber each other). It
+// reuses the DAV path's ConditionalMatch parser/comparer. When the client sends
+// no If-Match the write stays unconditional (legacy behavior). It returns
+// (true, nil) to proceed; on a mismatch it returns (false, <412 response>),
+// which the caller must return. A vanished object falls through so the usecase
+// still produces its normal not-found result.
+func (h *EventHandler) ifMatchOK(c fiber.Ctx, eventUUID string) (bool, error) {
+	match := gowebdav.ConditionalMatch(c.Get("If-Match"))
+	if !match.IsSet() {
+		return true, nil
+	}
+	obj, err := h.calendarRepo.GetCalendarObjectByUUID(c.Context(), eventUUID)
+	if err != nil || obj == nil {
+		return true, nil
+	}
+	if ok, _ := match.MatchETag(obj.ETag); !ok {
+		return false, ErrorResponse(c, fiber.StatusPreconditionFailed, "ETag precondition failed")
+	}
+	return true, nil
+}
+
+// eventResponseFromObject builds an EventResponse from a stored calendar
+// object, nil-checking StartTime/EndTime (a VTODO may carry neither, and
+// dereferencing them paniced -> 500) and populating Description, Location and
+// IsRecurring, which the inline literals previously left blank.
+func eventResponseFromObject(obj *calendar.CalendarObject) dto.EventResponse {
+	resp := dto.EventResponse{
+		ID:          obj.UUID,
+		CalendarID:  obj.CalendarID,
+		UID:         obj.UID,
+		Summary:     obj.Summary,
+		Description: obj.Description,
+		Location:    obj.Location,
+		IsAllDay:    obj.IsAllDay,
+		IsRecurring: obj.RecurrenceEndTime != nil,
+	}
+	if obj.StartTime != nil {
+		resp.Start = *obj.StartTime
+	}
+	if obj.EndTime != nil {
+		resp.End = *obj.EndTime
+	}
+	return resp
 }
 
 // List godoc
@@ -78,7 +136,7 @@ func (h *EventHandler) ownsEvent(c fiber.Ctx, eventUUID string) bool {
 // @Router       /calendars/{calendar_id}/events [get]
 func (h *EventHandler) List(c fiber.Ctx) error {
 	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
-	if !h.ownsCalendar(c, uint(calendarID)) {
+	if h.calendarPermission(c, uint(calendarID)) == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
 	startStr := c.Query("start")
@@ -142,7 +200,7 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id} [get]
 func (h *EventHandler) Get(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	if h.eventPermission(c, eventID) == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
 	obj, err := h.getUC.Execute(c.Context(), eventID)
@@ -150,15 +208,7 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
 
-	return c.JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.JSON(eventResponseFromObject(obj))
 }
 
 // Create godoc
@@ -176,8 +226,12 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events [post]
 func (h *EventHandler) Create(c fiber.Ctx) error {
 	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
-	if !h.ownsCalendar(c, uint(calendarID)) {
+	perm := h.calendarPermission(c, uint(calendarID))
+	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	if !canWrite(perm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
 	}
 	var req dto.CreateEventRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -200,18 +254,13 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 
 	obj, err := h.createUC.Execute(c.Context(), input)
 	if err != nil {
+		if errors.Is(err, event.ErrInvalidInput) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to create event")
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.Status(fiber.StatusCreated).JSON(eventResponseFromObject(obj))
 }
 
 // Update godoc
@@ -223,17 +272,26 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 // @Param        calendar_id    path      integer                 true   "Calendar ID"
 // @Param        event_id       path      string                  true   "Event UUID"
 // @Param        recurrence_id  query     string                  false  "Recurrence ID (for recurring events)"
-// @Param        scope          query     string                  false  "Update scope (this, all, future)"
+// @Param        scope          query     string                  false  "Update scope (this, all, this_and_future)"
 // @Param        event          body      dto.UpdateEventRequest  true   "Event updates"
+// @Param        If-Match       header    string                  false  "Optional ETag precondition; 412 on mismatch"
 // @Success      200            {object}  dto.EventResponse
 // @Failure      400            {object}  ErrorResponseBody
+// @Failure      412            {object}  ErrorResponseBody  "ETag precondition failed"
 // @Failure      500            {object}  ErrorResponseBody
 // @Security     BearerAuth
 // @Router       /calendars/{calendar_id}/events/{event_id} [put]
 func (h *EventHandler) Update(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	perm := h.eventPermission(c, eventID)
+	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
+	if !canWrite(perm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
+	}
+	if ok, resp := h.ifMatchOK(c, eventID); !ok {
+		return resp
 	}
 	var req dto.UpdateEventRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -260,18 +318,13 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 
 	obj, err := h.updateUC.Execute(c.Context(), input)
 	if err != nil {
+		if errors.Is(err, event.ErrInvalidInput) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update event")
 	}
 
-	return c.JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.JSON(eventResponseFromObject(obj))
 }
 
 // Delete godoc
@@ -280,21 +333,33 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 // @Tags         Events
 // @Param        calendar_id    path      integer  true   "Calendar ID"
 // @Param        event_id       path      string   true   "Event UUID"
-// @Param        scope          query     string   false  "Delete scope (this, all, future)"
+// @Param        scope          query     string   false  "Delete scope (this, all, this_and_future)"
 // @Param        recurrence_id  query     string   false  "Recurrence ID (for recurring events)"
+// @Param        If-Match       header    string   false  "Optional ETag precondition; 412 on mismatch"
 // @Success      204
+// @Failure      412  {object}  ErrorResponseBody  "ETag precondition failed"
 // @Failure      500  {object}  ErrorResponseBody
 // @Security     BearerAuth
 // @Router       /calendars/{calendar_id}/events/{event_id} [delete]
 func (h *EventHandler) Delete(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	perm := h.eventPermission(c, eventID)
+	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
+	if !canWrite(perm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
+	}
+	if ok, resp := h.ifMatchOK(c, eventID); !ok {
+		return resp
 	}
 	scope := c.Query("scope", "all")
 	recurrenceID := c.Query("recurrence_id")
 
 	if err := h.deleteUC.Execute(c.Context(), eventID, scope, recurrenceID); err != nil {
+		if errors.Is(err, event.ErrInvalidInput) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to delete event")
 	}
 
@@ -317,8 +382,12 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 // @Router       /calendars/{calendar_id}/events/{event_id}/move [post]
 func (h *EventHandler) Move(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if !h.ownsEvent(c, eventID) {
+	srcPerm := h.eventPermission(c, eventID)
+	if srcPerm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	}
+	if !canWrite(srcPerm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to the source calendar")
 	}
 	var req dto.MoveEventRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -326,8 +395,12 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 	}
 
 	targetCalendarID, _ := strconv.Atoi(req.TargetCalendarID)
-	if !h.ownsCalendar(c, uint(targetCalendarID)) {
+	targetPerm := h.calendarPermission(c, uint(targetCalendarID))
+	if targetPerm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	if !canWrite(targetPerm) {
+		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to the target calendar")
 	}
 	obj, err := h.moveUC.Execute(c.Context(), event.MoveEventInput{
 		EventUUID:        eventID,
@@ -337,13 +410,5 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to move event")
 	}
 
-	return c.JSON(dto.EventResponse{
-		ID:         obj.UUID,
-		CalendarID: obj.CalendarID,
-		UID:        obj.UID,
-		Summary:    obj.Summary,
-		Start:      *obj.StartTime,
-		End:        *obj.EndTime,
-		IsAllDay:   obj.IsAllDay,
-	})
+	return c.JSON(eventResponseFromObject(obj))
 }

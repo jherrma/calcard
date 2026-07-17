@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -27,8 +26,7 @@ import (
 )
 
 func setupContactHandlerTest(t *testing.T) (*fiber.App, database.Database, *user.User, *addressbook.AddressBook, string) {
-	dataDir, err := os.MkdirTemp("", "contact-test-*")
-	require.NoError(t, err)
+	dataDir := t.TempDir() // auto-removed at test end
 
 	cfg := &config.Config{
 		DataDir: dataDir,

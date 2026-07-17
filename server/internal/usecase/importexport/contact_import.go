@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
@@ -63,17 +62,20 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 		// Extract FN for error reporting
 		fn := extractVCardFN(vcardData)
 
-		// Check for existing contact by UID
-		existing, _ := uc.addressBookRepo.GetObjectByUUID(ctx, uid)
+		// Check for an existing contact with the same vCard UID in this book.
+		// Look up by vCard UID (GetObjectByUID), not the internal DB UUID —
+		// they are different identifiers, so the old GetObjectByUUID(uid) never
+		// matched and every re-import duplicated.
+		existing, _ := uc.addressBookRepo.GetObjectByUID(ctx, addressBookID, uid)
 
-		if existing != nil && existing.AddressBookID == addressBookID {
+		if existing != nil {
 			switch opts.DuplicateHandling {
 			case "skip":
 				result.Skipped++
 				continue
 			case "replace":
-				// Delete existing object
-				if err := uc.addressBookRepo.DeleteObjectByUUID(ctx, uid); err != nil {
+				// Delete by the existing object's internal UUID, not the vCard UID.
+				if err := uc.addressBookRepo.DeleteObjectByUUID(ctx, existing.UUID); err != nil {
 					result.Failed++
 					result.Errors = append(result.Errors, ImportError{
 						Index:   i,
@@ -98,7 +100,7 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 			AddressBookID: addressBookID,
 			UID:           uid,
 			Path:          fmt.Sprintf("%s.vcf", uid),
-			ETag:          fmt.Sprintf("\"%d\"", time.Now().UnixNano()),
+			ETag:          addressbook.NewETag(),
 			VCardData:     vcardData,
 			VCardVersion:  "3.0",
 			ContentLength: len(vcardData),
@@ -122,9 +124,10 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 		result.Imported++
 	}
 
-	// Update address book CTag
-	ab.CTag = fmt.Sprintf("ctag-%d", time.Now().UnixNano())
-	_ = uc.addressBookRepo.Update(ctx, ab)
+	// Each CreateObject already advanced the address book's sync_token/ctag (and
+	// wrote a change-log row) inside its transaction. Do NOT re-Save the stale
+	// `ab` struct here — that would clobber those tokens and desync the change
+	// log from the address book row.
 
 	return result, nil
 }
@@ -161,7 +164,7 @@ func normalizeLineEndings(data string) string {
 func extractVCardUID(data string) string {
 	for _, line := range strings.Split(data, "\r\n") {
 		if strings.HasPrefix(strings.ToUpper(line), "UID:") {
-			return strings.TrimPrefix(line, "UID:")
+			return line[len("UID:"):]
 		}
 	}
 	return ""
@@ -171,7 +174,7 @@ func extractVCardUID(data string) string {
 func extractVCardFN(data string) string {
 	for _, line := range strings.Split(data, "\r\n") {
 		if strings.HasPrefix(strings.ToUpper(line), "FN:") {
-			return strings.TrimPrefix(line, "FN:")
+			return line[len("FN:"):]
 		}
 	}
 	return ""

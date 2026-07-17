@@ -74,3 +74,103 @@ func TestAppPasswordRevocation(t *testing.T) {
 	status, _, _ = davCall(t, "PROPFIND", "/dav/", email, pass1, propfindPrincipalBody, depthHeader("0"))
 	assert.Equal(t, http.StatusMultiStatus, status, "keep-me: must still work after revoking the other credential")
 }
+
+// TestAppPasswordScopeEnforcement is the regression test for H3: an app
+// password's scopes (caldav/carddav) must be enforced on DAV requests, not just
+// displayed in the UI.
+func TestAppPasswordScopeEnforcement(t *testing.T) {
+	email := "ap-scope@example.test"
+	token, username := registerAndLoginFull(t, email, "scopePass!123", "AP Scope")
+
+	// Create a CalDAV-only app password.
+	var resp struct {
+		Credentials struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		} `json:"credentials"`
+	}
+	code := doJSON(t, http.MethodPost, "/app-passwords/", token, map[string]any{
+		"name": "caldav-only", "scopes": []string{"caldav"},
+	}, &resp)
+	require.Equal(t, http.StatusOK, code)
+	calOnlyPass := resp.Credentials.Password
+
+	// It must work against a calendar path...
+	status, _, _ := davCall(t, "PROPFIND", "/dav/"+username+"/calendars/", email, calOnlyPass,
+		propfindCalendarHomeBody, depthHeader("1"))
+	assert.Equal(t, http.StatusMultiStatus, status, "caldav-scoped password must work on calendar paths")
+
+	// ...but be rejected on an address book path.
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/", email, calOnlyPass,
+		propfindPrincipalBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status,
+		"caldav-only app password must be forbidden on addressbook paths, got %d", status)
+
+	// (2) Reverse direction: a CardDAV-only password works on addressbook paths
+	// and is forbidden on calendar paths.
+	code = doJSON(t, http.MethodPost, "/app-passwords/", token, map[string]any{
+		"name": "carddav-only", "scopes": []string{"carddav"},
+	}, &resp)
+	require.Equal(t, http.StatusOK, code)
+	cardOnlyPass := resp.Credentials.Password
+
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/", email, cardOnlyPass,
+		propfindPrincipalBody, depthHeader("1"))
+	assert.Equal(t, http.StatusMultiStatus, status, "carddav-scoped password must work on addressbook paths")
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/calendars/", email, cardOnlyPass,
+		propfindCalendarHomeBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status,
+		"carddav-only app password must be forbidden on calendar paths, got %d", status)
+
+	// (3) An empty-scope password must be forbidden on BOTH protocol trees.
+	code = doJSON(t, http.MethodPost, "/app-passwords/", token, map[string]any{
+		"name": "no-scope", "scopes": []string{},
+	}, &resp)
+	require.Equal(t, http.StatusOK, code)
+	noScopePass := resp.Credentials.Password
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/calendars/", email, noScopePass,
+		propfindCalendarHomeBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status, "empty-scope password must be forbidden on calendar paths, got %d", status)
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/", email, noScopePass,
+		propfindPrincipalBody, depthHeader("1"))
+	assert.Equalf(t, http.StatusForbidden, status, "empty-scope password must be forbidden on addressbook paths, got %d", status)
+
+	// (4) Naming edge case: an addressbook object path that merely contains the
+	// word "calendars" must still be classified by its collection-type segment
+	// (addressbooks), so the caldav-only credential is refused. A substring
+	// matcher keying on "calendars" anywhere in the path would wrongly allow it;
+	// this asserts the decision is made per path segment.
+	status, _, _ = davCall(t, "GET", "/dav/"+username+"/addressbooks/some-book/calendars.vcf",
+		email, calOnlyPass, "", nil)
+	assert.Equalf(t, http.StatusForbidden, status,
+		"caldav-only credential must be refused on an addressbook object path containing 'calendars', got %d", status)
+}
+
+// TestAppPasswordRevokeOwnership is the regression test for the IDOR in app
+// password revocation (H1): a user must not be able to revoke another user's
+// app password by its UUID.
+func TestAppPasswordRevokeOwnership(t *testing.T) {
+	aliceEmail := "ap-alice@example.test"
+	aliceToken := registerAndLogin(t, aliceEmail, "alicePass!123", "AP Alice")
+	_, alicePass := createAppPassword(t, aliceToken, "alice-cred")
+
+	// Find Alice's app password UUID.
+	var list struct {
+		AppPasswords []struct {
+			ID string `json:"id"`
+		} `json:"app_passwords"`
+	}
+	require.Equal(t, http.StatusOK, doJSON(t, http.MethodGet, "/app-passwords/", aliceToken, nil, &list))
+	require.Len(t, list.AppPasswords, 1)
+	aliceAPUUID := list.AppPasswords[0].ID
+
+	// Bob tries to revoke Alice's app password.
+	bobToken := registerAndLogin(t, "ap-bob@example.test", "bobPass!123", "AP Bob")
+	status, _ := restCall(t, http.MethodDelete, "/app-passwords/"+aliceAPUUID, bobToken, nil)
+	assert.Equalf(t, http.StatusNotFound, status,
+		"cross-user app password revoke must be rejected with 404, got %d", status)
+
+	// Alice's app password must still authenticate DAV — Bob's attempt was a no-op.
+	status, _, _ = davCall(t, "PROPFIND", "/dav/", aliceEmail, alicePass, propfindPrincipalBody, depthHeader("0"))
+	assert.Equal(t, http.StatusMultiStatus, status, "Alice's credential must survive Bob's revoke attempt")
+}

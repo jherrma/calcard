@@ -21,7 +21,24 @@ func NewAddressBookRepository(db *gorm.DB) addressbook.Repository {
 }
 
 func (r *AddressBookRepository) Create(ctx context.Context, ab *addressbook.AddressBook) error {
-	return r.db.WithContext(ctx).Create(ab).Error
+	// Mint the initial sync token and write a matching "collection" anchor row
+	// in the same transaction, so the first sync-collection REPORT hands out a
+	// token that corresponds to a real change-log row (avoids the 403
+	// valid-sync-token full-resync loop on fresh address books).
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		token := addressbook.GenerateSyncToken()
+		ab.SyncToken = token
+		ab.CTag = token
+		if err := tx.Create(ab).Error; err != nil {
+			return err
+		}
+		return tx.Create(&addressbook.SyncChangeLog{
+			AddressBookID: ab.ID,
+			ResourcePath:  "",
+			ChangeType:    "collection",
+			SyncToken:     token,
+		}).Error
+	})
 }
 
 func (r *AddressBookRepository) GetByID(ctx context.Context, id uint) (*addressbook.AddressBook, error) {
@@ -58,6 +75,24 @@ func (r *AddressBookRepository) Update(ctx context.Context, ab *addressbook.Addr
 	return r.db.WithContext(ctx).Save(ab).Error
 }
 
+// UpdateMetadata persists a rename and mints a new sync token atomically. It
+// updates only the metadata columns via Select (so a Save of the whole struct
+// can't write back the stale sync_token/c_tag the caller loaded at request
+// start, clobbering a token a concurrent object PUT just committed) and records
+// the collection change in the same transaction (so a mid-rename failure can't
+// leave the CTag un-bumped, hiding the new displayname from clients).
+func (r *AddressBookRepository) UpdateMetadata(ctx context.Context, ab *addressbook.AddressBook) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&addressbook.AddressBook{}).
+			Where("id = ?", ab.ID).
+			Select("name", "description").
+			Updates(ab).Error; err != nil {
+			return err
+		}
+		return r.recordAddressBookChange(tx, ab.ID, "", "", "collection")
+	})
+}
+
 func (r *AddressBookRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&addressbook.AddressBook{}, id).Error
 }
@@ -76,6 +111,23 @@ func (r *AddressBookRepository) GetByUserAndPath(ctx context.Context, userID uin
 func (r *AddressBookRepository) GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*addressbook.AddressObject, error) {
 	var obj addressbook.AddressObject
 	if err := r.db.WithContext(ctx).Where("address_book_id = ? AND path = ?", addressBookID, path).First(&obj).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if err := r.hydrateObjects(ctx, []*addressbook.AddressObject{&obj}); err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+// GetObjectByUID looks up an address object by its vCard UID within a specific
+// address book (used for RFC 6352 no-uid-conflict detection on PUT). Returns
+// (nil, nil) when not found.
+func (r *AddressBookRepository) GetObjectByUID(ctx context.Context, addressBookID uint, uid string) (*addressbook.AddressObject, error) {
+	var obj addressbook.AddressObject
+	if err := r.db.WithContext(ctx).Where("address_book_id = ? AND uid = ?", addressBookID, uid).First(&obj).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -102,6 +154,10 @@ func (r *AddressBookRepository) QueryObjects(ctx context.Context, addressBookID 
 	}
 
 	if err := db.Find(&objs).Error; err != nil {
+		return nil, err
+	}
+
+	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
 		return nil, err
 	}
 
@@ -134,22 +190,31 @@ func (r *AddressBookRepository) applyFilter(db *gorm.DB, filter addressbook.Obje
 		condition = "LOWER(" + column + ") = ?"
 		value = searchText
 	case "starts-with":
-		condition = "LOWER(" + column + ") LIKE ?"
-		value = searchText + "%"
+		condition = "LOWER(" + column + ") LIKE ? ESCAPE '\\'"
+		value = escapeLike(searchText) + "%"
 	case "ends-with":
-		condition = "LOWER(" + column + ") LIKE ?"
-		value = "%" + searchText
+		condition = "LOWER(" + column + ") LIKE ? ESCAPE '\\'"
+		value = "%" + escapeLike(searchText)
 	case "contains":
 		fallthrough
 	default:
-		condition = "LOWER(" + column + ") LIKE ?"
-		value = "%" + searchText + "%"
+		condition = "LOWER(" + column + ") LIKE ? ESCAPE '\\'"
+		value = "%" + escapeLike(searchText) + "%"
 	}
 
 	if filter.NegateCondition {
 		return db.Where("NOT ("+condition+")", value)
 	}
 	return db.Where(condition, value)
+}
+
+// escapeLike escapes LIKE wildcards so user input matches literally. Pair with
+// `ESCAPE '\'` in the query, and apply BEFORE adding the surrounding %.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
 }
 
 // propertyToColumn maps vCard property names to database columns.
@@ -253,6 +318,41 @@ func (r *AddressBookRepository) injectPhoto(vcardData string, photoData string, 
 	return buf.String(), nil
 }
 
+// hydrateObjects re-injects each object's stored PHOTO into its vCard body and
+// recomputes ContentLength, using a single photo query for the whole batch.
+// Every DAV read path must call this so served vCards include photos and the
+// Content-Length header matches the body (otherwise clients hang or delete the
+// photo on the next sync). Mutates the objects in place.
+func (r *AddressBookRepository) hydrateObjects(ctx context.Context, objs []*addressbook.AddressObject) error {
+	if len(objs) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(objs))
+	for _, o := range objs {
+		ids = append(ids, o.ID)
+	}
+	var photos []addressbook.ContactPhoto
+	if err := r.db.WithContext(ctx).Where("address_object_id IN ?", ids).Find(&photos).Error; err != nil {
+		return err
+	}
+	byObj := make(map[uint]addressbook.ContactPhoto, len(photos))
+	for _, p := range photos {
+		byObj[p.AddressObjectID] = p
+	}
+	for _, o := range objs {
+		if p, ok := byObj[o.ID]; ok && p.PhotoData != "" {
+			full, err := r.injectPhoto(o.VCardData, p.PhotoData, p.PhotoType)
+			if err != nil {
+				return fmt.Errorf("failed to inject photo: %w", err)
+			}
+			o.VCardData = full
+		}
+		// Always fix ContentLength to match the (possibly photo-injected) body.
+		o.ContentLength = len(o.VCardData)
+	}
+	return nil
+}
+
 func (r *AddressBookRepository) CreateObject(ctx context.Context, object *addressbook.AddressObject) error {
 	// Extract photo from vCardData
 	strippedVCard, photoData, photoType, err := r.extractPhoto(object.VCardData)
@@ -262,6 +362,7 @@ func (r *AddressBookRepository) CreateObject(ctx context.Context, object *addres
 
 	// Use stripped data for main object
 	object.VCardData = strippedVCard
+	object.ContentLength = len(strippedVCard)
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.WithContext(ctx).Create(object).Error; err != nil {
@@ -288,6 +389,9 @@ func (r *AddressBookRepository) GetObjectByID(ctx context.Context, id uint) (*ad
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
+		return nil, err
+	}
+	if err := r.hydrateObjects(ctx, []*addressbook.AddressObject{&obj}); err != nil {
 		return nil, err
 	}
 	return &obj, nil
@@ -331,7 +435,24 @@ func (r *AddressBookRepository) ListObjects(ctx context.Context, addressBookID u
 		return nil, 0, err
 	}
 
+	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
+		return nil, 0, err
+	}
+
 	return objs, total, nil
+}
+
+// hydrateObjectSlice is the value-slice convenience wrapper around
+// hydrateObjects (mutates the slice elements in place).
+func (r *AddressBookRepository) hydrateObjectSlice(ctx context.Context, objs []addressbook.AddressObject) error {
+	if len(objs) == 0 {
+		return nil
+	}
+	ptrs := make([]*addressbook.AddressObject, len(objs))
+	for i := range objs {
+		ptrs[i] = &objs[i]
+	}
+	return r.hydrateObjects(ctx, ptrs)
 }
 
 func (r *AddressBookRepository) GetObjectByUUID(ctx context.Context, uuid string) (*addressbook.AddressObject, error) {
@@ -342,25 +463,9 @@ func (r *AddressBookRepository) GetObjectByUUID(ctx context.Context, uuid string
 		}
 		return nil, err
 	}
-
-	// Fetch Photo
-	var photo addressbook.ContactPhoto
-	if err := r.db.WithContext(ctx).Where("address_object_id = ?", obj.ID).First(&photo).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
-		// No photo found, proceed
+	if err := r.hydrateObjects(ctx, []*addressbook.AddressObject{&obj}); err != nil {
+		return nil, err
 	}
-
-	// Inject Photo if exists
-	if photo.PhotoData != "" {
-		fullVCard, err := r.injectPhoto(obj.VCardData, photo.PhotoData, photo.PhotoType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to inject photo: %w", err)
-		}
-		obj.VCardData = fullVCard
-	}
-
 	return &obj, nil
 }
 
@@ -373,47 +478,83 @@ func (r *AddressBookRepository) UpdateObject(ctx context.Context, object *addres
 
 	// Use stripped data for main object
 	object.VCardData = strippedVCard
+	object.ContentLength = len(strippedVCard)
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.WithContext(ctx).Save(object).Error; err != nil {
 			return err
 		}
 
-		// Handle Photo
-		if photoData != "" {
-			// Upsert photo
-			var photo addressbook.ContactPhoto
-			// Check if exists
-			err := tx.WithContext(ctx).Where("address_object_id = ?", object.ID).First(&photo).Error
-			if err != nil {
-				if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return err
-				}
-				// Create new
-				photo = addressbook.ContactPhoto{
-					AddressObjectID: object.ID,
-					PhotoData:       photoData,
-					PhotoType:       photoType,
-				}
-				if err := tx.WithContext(ctx).Create(&photo).Error; err != nil {
-					return err
-				}
-			} else {
-				// Update existing
-				photo.PhotoData = photoData
-				photo.PhotoType = photoType
-				if err := tx.WithContext(ctx).Save(&photo).Error; err != nil {
-					return err
-				}
-			}
-		} else {
-			// If vCard has no photo, ensure no photo record exists.
-			if err := tx.WithContext(ctx).Where("address_object_id = ?", object.ID).Delete(&addressbook.ContactPhoto{}).Error; err != nil {
-				return err
-			}
+		// Upsert (or clear) the PHOTO side-table row to match the vCard.
+		if err := r.upsertPhoto(ctx, tx, object.ID, photoData, photoType); err != nil {
+			return err
 		}
 		return r.recordAddressBookChange(tx, object.AddressBookID, object.Path, object.UID, "modified")
 	})
+}
+
+// MoveObject reassigns an object to a new address book and records both the
+// target "modified" change and the source "deleted" change in a single
+// transaction. object.AddressBookID must already point at the target book.
+//
+// The caller (MoveUseCase) loads the object via GetObjectByUUID, which
+// *hydrates* the stored PHOTO back into VCardData. If we saved that body
+// verbatim the PHOTO would live inline in address_objects AND in the
+// contact_photos side table, so every later read would inject a second copy
+// (and each further move would add another). We therefore re-strip the photo
+// the same way CreateObject/UpdateObject do before persisting. Doing the
+// strip, the reassign, and both sync-log writes atomically also prevents the
+// permanent sync ghost that occurs if the source "deleted" change is lost
+// after the reassign has already committed.
+func (r *AddressBookRepository) MoveObject(ctx context.Context, object *addressbook.AddressObject, sourceAddressBookID uint) error {
+	strippedVCard, photoData, photoType, err := r.extractPhoto(object.VCardData)
+	if err != nil {
+		return fmt.Errorf("failed to process vcard: %w", err)
+	}
+	object.VCardData = strippedVCard
+	object.ContentLength = len(strippedVCard)
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.WithContext(ctx).Save(object).Error; err != nil {
+			return err
+		}
+		if err := r.upsertPhoto(ctx, tx, object.ID, photoData, photoType); err != nil {
+			return err
+		}
+		// Target book sees the object arrive.
+		if err := r.recordAddressBookChange(tx, object.AddressBookID, object.Path, object.UID, "modified"); err != nil {
+			return err
+		}
+		// Source book sees the object leave.
+		return r.recordAddressBookChange(tx, sourceAddressBookID, object.Path, object.UID, "deleted")
+	})
+}
+
+// upsertPhoto persists the extracted PHOTO for an address object: it inserts or
+// updates the contact_photos row when photoData is non-empty, and deletes any
+// existing row when the vCard carries no photo. Callers pass the values
+// returned by extractPhoto after saving the stripped object.
+func (r *AddressBookRepository) upsertPhoto(ctx context.Context, tx *gorm.DB, objectID uint, photoData, photoType string) error {
+	if photoData == "" {
+		// vCard has no photo; ensure no stale photo record survives.
+		return tx.WithContext(ctx).Where("address_object_id = ?", objectID).Delete(&addressbook.ContactPhoto{}).Error
+	}
+	var photo addressbook.ContactPhoto
+	err := tx.WithContext(ctx).Where("address_object_id = ?", objectID).First(&photo).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		photo = addressbook.ContactPhoto{
+			AddressObjectID: objectID,
+			PhotoData:       photoData,
+			PhotoType:       photoType,
+		}
+		return tx.WithContext(ctx).Create(&photo).Error
+	}
+	photo.PhotoData = photoData
+	photo.PhotoType = photoType
+	return tx.WithContext(ctx).Save(&photo).Error
 }
 
 func (r *AddressBookRepository) DeleteObjectByUUID(ctx context.Context, uuid string) error {
@@ -429,6 +570,15 @@ func (r *AddressBookRepository) DeleteObjectByUUID(ctx context.Context, uuid str
 			return err
 		}
 		if err := tx.WithContext(ctx).Delete(&obj).Error; err != nil {
+			return err
+		}
+		// Drop the PHOTO side-table row too. The address object is soft-deleted
+		// (AddressObject has a DeletedAt), so without this the contact_photos row
+		// — keyed on the object's primary key — is orphaned forever, retaining
+		// the deleted contact's (often large, base64) photo blob. Every other
+		// write path (Create/Update/Move) keeps this side table in lockstep with
+		// the object inside its transaction; delete must do the same.
+		if err := r.upsertPhoto(ctx, tx, obj.ID, "", ""); err != nil {
 			return err
 		}
 		return r.recordAddressBookChange(tx, obj.AddressBookID, obj.Path, obj.UID, "deleted")
@@ -462,23 +612,30 @@ func (r *AddressBookRepository) recordAddressBookChange(tx *gorm.DB, addressBook
 
 func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
 	var objs []addressbook.AddressObject
-	q := "%" + query + "%"
+	q := "%" + escapeLike(query) + "%"
 
 	// Join with AddressBooks to filter by UserID
 	// And filter by query on denormalized fields
 	db := r.db.WithContext(ctx).
-		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id").
+		// GORM auto-applies the soft-delete scope to the primary model
+		// (address_objects) but NOT to a raw-joined table, so without this
+		// `deleted_at IS NULL` the contacts of a soft-deleted address book would
+		// still surface here (M7). Soft delete does not cascade to the objects.
+		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
 		Where("address_books.user_id = ?", userID)
 
 	if addressBookID != nil {
 		db = db.Where("address_objects.address_book_id = ?", *addressBookID)
 	}
 
-	err := db.Where("address_objects.formatted_name LIKE ? OR address_objects.email LIKE ? OR address_objects.phone LIKE ? OR address_objects.organization LIKE ? OR address_objects.given_name LIKE ? OR address_objects.family_name LIKE ?", q, q, q, q, q, q).
+	err := db.Where("address_objects.formatted_name LIKE ? ESCAPE '\\' OR address_objects.email LIKE ? ESCAPE '\\' OR address_objects.phone LIKE ? ESCAPE '\\' OR address_objects.organization LIKE ? ESCAPE '\\' OR address_objects.given_name LIKE ? ESCAPE '\\' OR address_objects.family_name LIKE ? ESCAPE '\\'", q, q, q, q, q, q).
 		Limit(limit).
 		Find(&objs).Error
 
 	if err != nil {
+		return nil, err
+	}
+	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
 		return nil, err
 	}
 	return objs, nil
@@ -525,10 +682,13 @@ func (r *AddressBookRepository) GetChangesSinceToken(ctx context.Context, addres
 		return nil, err
 	}
 
-	// Get all changes after the token's timestamp
+	// Get all changes after the token's row, ordered by ID (not created_at):
+	// two rows written in the same timestamp tick would otherwise be skipped.
+	// "collection" anchor rows are excluded — they exist only to validate
+	// freshly minted tokens.
 	if err := r.db.WithContext(ctx).
-		Where("address_book_id = ? AND created_at > ?", addressBookID, lastChange.CreatedAt).
-		Order("created_at ASC").
+		Where("address_book_id = ? AND id > ? AND change_type <> ?", addressBookID, lastChange.ID, "collection").
+		Order("id ASC").
 		Find(&changes).Error; err != nil {
 		return nil, err
 	}
@@ -541,19 +701,22 @@ func (r *AddressBookRepository) CountContactsByUserID(ctx context.Context, userI
 	var count int64
 	err := r.db.WithContext(ctx).
 		Model(&addressbook.AddressObject{}).
-		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id").
+		// GORM auto-applies the soft-delete scope to the primary model
+		// (address_objects) but NOT to a raw-joined table, so without this
+		// `deleted_at IS NULL` the contacts of a soft-deleted address book would
+		// still surface here (M7). Soft delete does not cascade to the objects.
+		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
 		Where("address_books.user_id = ?", userID).
 		Count(&count).Error
 	return count, err
 }
 
-// RecordChange records a sync change for an address object.
-func (r *AddressBookRepository) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
-	return r.db.WithContext(ctx).Create(&addressbook.SyncChangeLog{
-		AddressBookID: addressBookID,
-		ResourcePath:  path,
-		ResourceUID:   uid,
-		ChangeType:    changeType,
-		SyncToken:     token,
-	}).Error
+// RecordChange advances the address book sync token and writes a matching
+// change-log row atomically (for mutations outside the object CRUD methods):
+// collection rename (change type "collection") and the source side of a
+// cross-book contact move (change type "deleted").
+func (r *AddressBookRepository) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return r.recordAddressBookChange(tx, addressBookID, path, uid, changeType)
+	})
 }

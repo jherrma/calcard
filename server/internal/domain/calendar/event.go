@@ -80,17 +80,40 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		return nil, nil
 	}
 
-	// Group components: Masters vs Exceptions
-	var masters []ical.Event
-	exceptions := make(map[string]ical.Event)
+	// Group components: masters (no RECURRENCE-ID) vs exception overrides.
+	var masters, rawExceptions []ical.Event
 	for i := range allEvents {
-		rid := allEvents[i].Props.Get(ical.PropRecurrenceID)
-		if rid == nil {
+		if allEvents[i].Props.Get(ical.PropRecurrenceID) == nil {
 			masters = append(masters, allEvents[i])
 		} else {
-			// Normalize rid string for matching (usually UTC format is best)
-			exceptions[rid.Value] = allEvents[i]
+			rawExceptions = append(rawExceptions, allEvents[i])
 		}
+	}
+
+	// docLoc is the series' base timezone, taken from the first master's
+	// DTSTART (default UTC). A RECURRENCE-ID written without an explicit TZID
+	// is interpreted in this zone, matching how clients emit exception/split
+	// overrides.
+	docLoc := time.UTC
+	if len(masters) > 0 {
+		if dtstartProp := masters[0].Props.Get(ical.PropDateTimeStart); dtstartProp != nil {
+			if t, err := dtstartProp.DateTime(time.UTC); err == nil {
+				docLoc = t.Location()
+			}
+		}
+	}
+
+	// Key exceptions by their canonical UTC RECURRENCE-ID so TZID= / VALUE=DATE
+	// / floating forms all collapse to the same key the generated occurrences
+	// use. Fall back to the raw value when the property can't be parsed.
+	exceptions := make(map[string]ical.Event, len(rawExceptions))
+	for i := range rawExceptions {
+		rid := rawExceptions[i].Props.Get(ical.PropRecurrenceID)
+		key := rid.Value
+		if k, err := RecurrenceIDKeyFromProp(rid, docLoc); err == nil {
+			key = k
+		}
+		exceptions[key] = rawExceptions[i]
 	}
 
 	var instances []EventInstance
@@ -105,6 +128,9 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		}
 		mEnd, _ := master.DateTimeEnd(time.UTC)
 		mDuration := mEnd.Sub(mStart)
+		if mDuration < 0 {
+			mDuration = 0
+		}
 
 		// Determine the base timezone
 		loc := time.UTC
@@ -134,30 +160,20 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		}
 		rule.DTStart(mStart.In(loc))
 
-		// Collect EXDATES in UTC for this master
+		// Collect EXDATEs as canonical UTC keys for this master. EXDATEKeys
+		// understands comma-separated lists, TZID=, and VALUE=DATE forms.
 		exMap := make(map[string]bool)
 		for _, p := range master.Props["EXDATE"] {
-			for _, val := range strings.Split(p.Value, ",") {
-				val = strings.TrimSpace(val)
-				if val == "" {
-					continue
-				}
-				// Try to parse val to normalize to UTC RID format
-				var tEx time.Time
-				var pErr error
-				if strings.HasSuffix(val, "Z") {
-					tEx, pErr = time.Parse("20060102T150405Z", val)
-				} else {
-					tEx, pErr = time.ParseInLocation("20060102T150405", val, loc)
-				}
-				if pErr == nil {
-					exMap[tEx.UTC().Format("20060102T150405Z")] = true
-				}
+			for _, key := range EXDATEKeys(&p, loc) {
+				exMap[key] = true
 			}
 		}
 
-		// Generate within range: rule.Between works best in series timezone
-		for _, dt := range rule.Between(start.In(loc), end.In(loc), true) {
+		// Generate within range: rule.Between works best in series timezone.
+		// Widen the lower bound by the event duration so an occurrence that
+		// STARTED before the window but is still running inside it is produced;
+		// the overlap filter below discards any that don't actually intersect.
+		for _, dt := range rule.Between(start.Add(-mDuration).In(loc), end.In(loc), true) {
 			dtUTC := dt.UTC()
 			rid := dtUTC.Format("20060102T150405Z")
 
@@ -179,12 +195,19 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 					tEnd, _ = excEndProp.DateTime(time.UTC)
 				}
 
-				if tStart.After(end) || tEnd.Before(start) {
+				if !tStart.Before(end) || !tEnd.After(start) {
 					continue
 				}
 				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, master, &exc))
 			} else {
-				instances = append(instances, ToEventInstance(obj, dt, dt.Add(mDuration), rid, master, nil))
+				// Keep only occurrences that actually overlap [start, end): the
+				// widened lower bound can surface beats that ended before the
+				// window opened.
+				occEnd := dt.Add(mDuration)
+				if !dt.Before(end) || !occEnd.After(start) {
+					continue
+				}
+				instances = append(instances, ToEventInstance(obj, dt, occEnd, rid, master, nil))
 			}
 		}
 	}
@@ -202,7 +225,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		if !found {
 			tStart, _ := e.DateTimeStart(time.UTC)
 			tEnd, _ := e.DateTimeEnd(time.UTC)
-			if (tStart.Before(end) || tStart.Equal(end)) && (tEnd.After(start) || tEnd.Equal(start)) {
+			if tStart.Before(end) && tEnd.After(start) {
 				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, nil, &e))
 			}
 		}

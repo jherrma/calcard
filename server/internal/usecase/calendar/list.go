@@ -63,6 +63,12 @@ func (uc *ListCalendarsUseCase) Execute(ctx context.Context, userID uint) ([]*Ca
 
 		for _, share := range shares {
 			cal := share.Calendar
+			// Defense in depth: skip a share whose calendar no longer exists
+			// (zero-valued preload). DeleteByCalendarID should prevent this,
+			// but a stale row must never surface as a blank ghost entry.
+			if cal.ID == 0 {
+				continue
+			}
 			eventCount, err := uc.repo.GetEventCount(ctx, cal.ID)
 			if err != nil {
 				eventCount = 0

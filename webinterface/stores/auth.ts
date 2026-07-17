@@ -6,6 +6,10 @@ interface AuthState {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isLoading: boolean;
+  // Single-flight guard so concurrent 401s share one refresh request (H15).
+  refreshPromise: Promise<void> | null;
+  // Handle for the scheduled refresh timer so it can be cancelled.
+  refreshTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export const useAuthStore = defineStore("auth", {
@@ -15,6 +19,8 @@ export const useAuthStore = defineStore("auth", {
     isAuthenticated: false,
     isAdmin: false,
     isLoading: true,
+    refreshPromise: null,
+    refreshTimer: null,
   }),
 
   actions: {
@@ -74,36 +80,62 @@ export const useAuthStore = defineStore("auth", {
     },
 
     async refreshToken() {
+      // If a refresh is already in flight, await the same one (single-flight).
+      if (this.refreshPromise) return this.refreshPromise;
+
       const refreshCookie = useCookie("refresh_token");
       if (!refreshCookie.value) {
         this.clearAuth();
+        navigateTo("/auth/login");
         return;
       }
 
-      try {
-        const api = useApi();
-        const response = await api<RefreshResponse>("/api/v1/auth/refresh", {
-          method: "POST",
-          body: { refresh_token: refreshCookie.value },
-        });
+      this.refreshPromise = (async () => {
+        try {
+          const api = useApi();
+          const response = await api<RefreshResponse>("/api/v1/auth/refresh", {
+            method: "POST",
+            body: { refresh_token: refreshCookie.value },
+            // The refresh request must never be auto-retried (it must not trigger
+            // another refresh); the onResponseError guard skips it, and this
+            // disables ofetch's own retry for it too.
+            retry: false,
+          });
 
-        this.accessToken = response.access_token;
-        this.scheduleTokenRefresh(response.expires_at);
-      } catch {
-        this.clearAuth();
-      }
+          this.accessToken = response.access_token;
+          this.scheduleTokenRefresh(response.expires_at);
+        } catch {
+          // Refresh failed (revoked/expired): drop auth and go to login instead
+          // of looping on more refresh attempts.
+          this.clearAuth();
+          navigateTo("/auth/login");
+        } finally {
+          this.refreshPromise = null;
+        }
+      })();
+
+      return this.refreshPromise;
     },
 
     scheduleTokenRefresh(expiresAt: number) {
+      // Cancel any previously scheduled refresh so timers don't pile up.
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = null;
+      }
       // Refresh 1 minute before expiration
       const now = Math.floor(Date.now() / 1000);
       const refreshTime = (expiresAt - now - 60) * 1000;
       if (refreshTime > 0) {
-        setTimeout(() => this.refreshToken(), refreshTime);
+        this.refreshTimer = setTimeout(() => this.refreshToken(), refreshTime);
       }
     },
 
     clearAuth() {
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = null;
+      }
       this.user = null;
       this.accessToken = null;
       this.isAuthenticated = false;

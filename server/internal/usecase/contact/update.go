@@ -99,8 +99,9 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, addressBookID uint, contac
 		currentContact.URLs = *input.URLs
 	}
 
-	// 4. Serialize back to vCard
-	newVCardData, err := ToVCard(currentContact)
+	// 4. Serialize back to vCard, preserving any properties the web UI doesn't
+	// manage (CATEGORIES, X-*, IMPP, grouped props, …).
+	newVCardData, err := PatchVCard(obj.VCardData, currentContact)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode updated vcard: %w", err)
 	}
@@ -109,7 +110,7 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, addressBookID uint, contac
 	obj.VCardData = newVCardData
 	obj.ContentLength = len(newVCardData)
 	obj.UpdatedAt = time.Now()
-	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano()) // New ETag
+	obj.ETag = addressbook.NewETag() // New ETag
 
 	// Rederive denormalized columns from the canonical vCard. Ignoring the
 	// parse error here is intentional — if the vCard we just encoded doesn't

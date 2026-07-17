@@ -54,24 +54,58 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	allEvents := cal.Events()
 
 	if input.Scope == "this" && input.RecurrenceID != "" {
+		// Normalize the requested instance to a canonical UTC key so an
+		// exception stored with a TZID= or floating RECURRENCE-ID still matches.
+		occStart, err := calendar.ParseRecurrenceIDString(input.RecurrenceID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		wantKey := occStart.UTC().Format(calendar.RecurrenceIDLayout)
+		docLoc := seriesLocation(allEvents)
+
 		// Look for an existing exception with this RECURRENCE-ID
 		for i := range allEvents {
 			rid := allEvents[i].Props.Get(ical.PropRecurrenceID)
-			if rid != nil && rid.Value == input.RecurrenceID {
+			if rid == nil {
+				continue
+			}
+			key, err := calendar.RecurrenceIDKeyFromProp(rid, docLoc)
+			if err != nil {
+				// Can't read this exception's RECURRENCE-ID, so we can't
+				// confidently match it to the requested instance — skip
+				// it rather than pretend the raw value is canonical. A new
+				// canonical exception is created below if none matches.
+				continue
+			}
+			if key == wantKey {
 				targetEvent = &allEvents[i]
 				break
 			}
 		}
 
 		if targetEvent == nil {
-			// Create a new exception component
-			master := allEvents[0]
+			// Create a new exception component, copying base props from the
+			// series master (scan for the RECURRENCE-ID-less component; an
+			// override may precede it). Fall back to the first component only
+			// when the object contains no true master.
+			master := masterEvent(allEvents)
+			if master == nil {
+				master = &allEvents[0]
+			}
 			event := ical.NewEvent()
 			event.Props.SetText(ical.PropUID, obj.UID)
-			event.Props.Set(&ical.Prop{
-				Name:  ical.PropRecurrenceID,
-				Value: input.RecurrenceID,
-			})
+			// RFC 5545: RECURRENCE-ID's value type must match the series'
+			// DTSTART. An all-day (VALUE=DATE) series needs a VALUE=DATE
+			// RECURRENCE-ID; a UTC DATE-TIME here makes strict clients (Apple,
+			// DAVx5) ignore the exception.
+			if obj.IsAllDay {
+				event.Props.SetDate(ical.PropRecurrenceID, occStart)
+			} else {
+				event.Props.Set(&ical.Prop{
+					Name:  ical.PropRecurrenceID,
+					Value: input.RecurrenceID,
+				})
+			}
 			if p := master.Props.Get(ical.PropSummary); p != nil {
 				event.Props.Set(p)
 			}
@@ -80,6 +114,23 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			}
 			if p := master.Props.Get(ical.PropLocation); p != nil {
 				event.Props.Set(p)
+			}
+			// Default the exception's DTSTART/DTEND to its own occurrence time
+			// (RECURRENCE-ID + the master's duration) so a summary-only edit
+			// keeps this instance in place instead of snapping to the series'
+			// first occurrence. input.Start/End (handled below) still override.
+			occDuration := time.Hour
+			if mStart, err := master.DateTimeStart(time.UTC); err == nil {
+				if mEnd, err := master.DateTimeEnd(time.UTC); err == nil && mEnd.After(mStart) {
+					occDuration = mEnd.Sub(mStart)
+				}
+			}
+			if obj.IsAllDay {
+				event.Props.SetDate(ical.PropDateTimeStart, occStart)
+				event.Props.SetDate(ical.PropDateTimeEnd, occStart.Add(occDuration))
+			} else {
+				event.Props.SetDateTime(ical.PropDateTimeStart, occStart)
+				event.Props.SetDateTime(ical.PropDateTimeEnd, occStart.Add(occDuration))
 			}
 			cal.Children = append(cal.Children, event.Component)
 			targetEvent = event
@@ -99,14 +150,16 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			return nil, fmt.Errorf("master event not found for split")
 		}
 
-		// 2. Format split time for UNTIL (one second before split)
-		splitTime, err := time.Parse("20060102T150405Z", input.RecurrenceID)
+		// 2. Format split time for UNTIL (one second before split). Fail loudly
+		// on an unparseable RECURRENCE-ID rather than splitting at the zero time
+		// (which would write UNTIL=0001-… and wipe the series). The helper also
+		// accepts the VALUE=DATE form, so all-day splits work.
+		splitTime, err := calendar.ParseRecurrenceIDString(input.RecurrenceID)
 		if err != nil {
-			// Try without Z if necessary, but DTO uses Z
-			splitTime, _ = time.Parse("20060102T150405", input.RecurrenceID)
+			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		untilTime := splitTime.Add(-time.Second)
-		untilStr := untilTime.UTC().Format("20060102T150405Z")
+		untilStr := formatUntilBoundary(untilTime, obj.IsAllDay)
 
 		// 3. Update old master with UNTIL
 		rruleProp := master.Props.Get(ical.PropRecurrenceRule)
@@ -202,17 +255,17 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 
 		// 5. Cleanup future exceptions that belonged to the old series
+		docLoc := seriesLocation(allEvents)
 		var newChildren []*ical.Component
 		for _, child := range cal.Children {
 			keep := true
 			if child.Name == "VEVENT" {
-				rid := child.Props.Get("RECURRENCE-ID")
-				if rid != nil {
-					t, err := time.Parse("20060102T150405Z", rid.Value)
-					err = nil // Force ignore parse error for cleanup
-					if err == nil && !t.Before(splitTime) {
-						keep = false // delete future exceptions
+				if rid := child.Props.Get(ical.PropRecurrenceID); rid != nil {
+					if t, err := rid.DateTime(docLoc); err == nil && !t.UTC().Before(splitTime) {
+						keep = false // drop exceptions at/after the split
 					}
+					// On parse failure keep the component — never silently
+					// drop an exception we can't read.
 				}
 				// Always keep masters (rid == nil) and past exceptions
 			}
@@ -223,14 +276,17 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		cal.Children = newChildren
 
 	} else {
-		// Default to the first VEVENT (master series)
-		targetEvent = &allEvents[0]
+		// Default to the master series (the RECURRENCE-ID-less component), not
+		// blindly the first VEVENT — a DAV object may list an override first.
+		targetEvent = masterEvent(allEvents)
+		if targetEvent == nil {
+			targetEvent = &allEvents[0]
+		}
 	}
 
 	if input.Summary != nil {
-		if input.Scope == "all" {
-			obj.Summary = *input.Summary
-		}
+		// Denormalized obj.Summary is rederived by PopulateDenormFieldsFromICal
+		// after re-encoding; only the iCal property needs setting here.
 		targetEvent.Props.SetText(ical.PropSummary, *input.Summary)
 	}
 
@@ -272,22 +328,16 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	if input.Start != nil {
 		if t, err := time.Parse(time.RFC3339, *input.Start); err == nil {
 			effectiveStart = t
-			if input.Scope == "all" {
-				obj.StartTime = &effectiveStart
-			}
 		} else {
-			return nil, fmt.Errorf("invalid start time format: %w", err)
+			return nil, fmt.Errorf("%w: invalid start time format: %v", ErrInvalidInput, err)
 		}
 	}
 
 	if input.End != nil {
 		if t, err := time.Parse(time.RFC3339, *input.End); err == nil {
 			effectiveEnd = t
-			if input.Scope == "all" {
-				obj.EndTime = &effectiveEnd
-			}
 		} else {
-			return nil, fmt.Errorf("invalid end time format: %w", err)
+			return nil, fmt.Errorf("%w: invalid end time format: %v", ErrInvalidInput, err)
 		}
 	}
 
@@ -299,7 +349,10 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 	}
 
-	// Always set DTSTART and DTEND on targetEvent to ensure they match obj.IsAllDay format
+	// Always set DTSTART and DTEND on targetEvent to ensure they match obj.IsAllDay format.
+	// An event stored via DAV may carry DURATION instead of DTEND; DTEND and DURATION cannot
+	// coexist (go-ical's encoder rejects it), so drop any DURATION before writing DTEND.
+	targetEvent.Props.Del(ical.PropDuration)
 	if obj.IsAllDay {
 		targetEvent.Props.SetDate(ical.PropDateTimeStart, effectiveStart)
 		targetEvent.Props.SetDate(ical.PropDateTimeEnd, effectiveEnd)
@@ -308,12 +361,19 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		targetEvent.Props.SetDateTime(ical.PropDateTimeEnd, effectiveEnd)
 	}
 
+	if effectiveEnd.Before(effectiveStart) {
+		return nil, fmt.Errorf("%w: end time is before start time", ErrInvalidInput)
+	}
+
 	if input.RRule != nil {
 		// RRULE usually only makes sense on the master event
 		if input.Scope == "all" {
 			if *input.RRule == "" {
 				targetEvent.Props.Del(ical.PropRecurrenceRule)
 			} else {
+				if _, err := rrule.StrToRRule(*input.RRule); err != nil {
+					return nil, fmt.Errorf("%w: invalid recurrence rule: %v", ErrInvalidInput, err)
+				}
 				targetEvent.Props.Set(&ical.Prop{
 					Name:  ical.PropRecurrenceRule,
 					Value: *input.RRule,
@@ -331,6 +391,12 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		return nil, fmt.Errorf("failed to encode iCalendar: %w", err)
 	}
 	obj.ICalData = sb.String()
+	// Rederive all denormalized columns (incl. recurrence_end_time) and bump the
+	// ETag so DAV clients re-fetch the edited event.
+	if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	obj.ETag = calendar.NewETag()
 
 	err = uc.calendarRepo.UpdateCalendarObject(ctx, obj)
 	if err != nil {
@@ -338,4 +404,47 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	return obj, nil
+}
+
+// formatUntilBoundary formats an RRULE UNTIL value with the value type that
+// RFC 5545 requires: UNTIL must match the series' DTSTART type. An all-day
+// (VALUE=DATE) series gets a DATE UNTIL (20060102); a timed series gets a UTC
+// DATE-TIME (20060102T150405Z). A mismatched type makes strict clients (Apple,
+// DAVx5) reject the whole RRULE.
+func formatUntilBoundary(t time.Time, allDay bool) string {
+	if allDay {
+		return t.UTC().Format("20060102")
+	}
+	return t.UTC().Format("20060102T150405Z")
+}
+
+// masterEvent returns the recurrence master — the first VEVENT with no
+// RECURRENCE-ID. A DAV-written object may list an override (a component *with*
+// RECURRENCE-ID) before the master, so we must scan rather than assume
+// events[0] (mirrors delete.go). Returns nil if every component is an override.
+func masterEvent(events []ical.Event) *ical.Event {
+	for i := range events {
+		if events[i].Props.Get(ical.PropRecurrenceID) == nil {
+			return &events[i]
+		}
+	}
+	return nil
+}
+
+// seriesLocation returns the base timezone of a recurring series — the
+// location of the first master's DTSTART — defaulting to UTC. RECURRENCE-ID /
+// EXDATE values written without an explicit TZID are interpreted in this zone.
+func seriesLocation(events []ical.Event) *time.Location {
+	for i := range events {
+		if events[i].Props.Get(ical.PropRecurrenceID) != nil {
+			continue
+		}
+		if p := events[i].Props.Get(ical.PropDateTimeStart); p != nil {
+			if t, err := p.DateTime(time.UTC); err == nil {
+				return t.Location()
+			}
+		}
+		break
+	}
+	return time.UTC
 }

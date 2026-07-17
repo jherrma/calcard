@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"testing"
 	"time"
 
@@ -27,8 +26,7 @@ import (
 )
 
 func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) {
-	dataDir, err := os.MkdirTemp("", "calcard-test-*")
-	require.NoError(t, err)
+	dataDir := t.TempDir() // auto-removed at test end
 
 	cfg := &config.Config{
 		DataDir: dataDir,
@@ -106,7 +104,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	calendarListUC := calendarusecase.NewListCalendarsUseCase(calendarRepo, calShareRepo)
 	calendarGetUC := calendarusecase.NewGetCalendarUseCase(calendarRepo)
 	calendarUpdateUC := calendarusecase.NewUpdateCalendarUseCase(calendarRepo)
-	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo)
+	calendarDeleteUC := calendarusecase.NewDeleteCalendarUseCase(calendarRepo, calShareRepo)
 	calendarExportUC := calendarusecase.NewExportCalendarUseCase(calendarRepo)
 
 	// Address Book Use Cases
@@ -114,7 +112,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	abListUC := addressbookusecase.NewListUseCase(addressBookRepo, nil)
 	abGetUC := addressbookusecase.NewGetUseCase(addressBookRepo)
 	abUpdateUC := addressbookusecase.NewUpdateUseCase(addressBookRepo)
-	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo)
+	abDeleteUC := addressbookusecase.NewDeleteUseCase(addressBookRepo, nil)
 	abExportUC := addressbookusecase.NewExportUseCase(addressBookRepo)
 
 	// Handlers
@@ -169,6 +167,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		oauthCallbackUC,
 		oauthUnlinkUC,
 		oauthListUC,
+		cfg,
 	)
 
 	healthHandler := NewHealthHandler(db)
@@ -228,9 +227,9 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	app.Get("/health", healthHandler.Liveness)
 	app.Get("/health/ready", healthHandler.Readiness)
 
-	// Cleanup
+	// Cleanup. The data dir is auto-removed by t.TempDir(); close the DB here so
+	// its file handle is released before that removal runs.
 	t.Cleanup(func() {
-		os.RemoveAll(dataDir)
 		sqlDB, err := db.DB().DB()
 		if err == nil {
 			sqlDB.Close()

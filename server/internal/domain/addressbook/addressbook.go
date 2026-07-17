@@ -1,6 +1,7 @@
 package addressbook
 
 import (
+	"crypto/rand"
 	"fmt"
 	"time"
 
@@ -24,14 +25,25 @@ type AddressBook struct {
 	Contacts    []AddressObject `gorm:"foreignKey:AddressBookID"`
 }
 
-// GenerateSyncToken generates a new sync token
+// GenerateSyncToken generates a new sync token. Includes a crypto-random suffix
+// so two changes minted in the same nanosecond tick still get distinct tokens
+// (mirrors calendar.GenerateSyncToken).
 func GenerateSyncToken() string {
-	return fmt.Sprintf("data:,%d", time.Now().UnixNano())
+	randomBytes := make([]byte, 8)
+	_, _ = rand.Read(randomBytes)
+	return fmt.Sprintf("data:,%d-%x", time.Now().UnixNano(), randomBytes)
 }
 
 // GenerateCTag generates a new CTag
 func GenerateCTag() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// NewETag generates a new ETag value. The value is stored UNQUOTED; the
+// transport layer (go-webdav, and the hand-rolled sync REPORT) adds the
+// surrounding quotes when serializing. Never store a quoted ETag.
+func NewETag() string {
+	return GenerateSyncToken()
 }
 
 // UpdateSyncTokens updates both sync token and ctag

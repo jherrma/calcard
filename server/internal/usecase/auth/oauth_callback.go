@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +13,12 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"golang.org/x/oauth2"
 )
+
+// ErrRegistrationDisabled is returned when an OAuth login would have to
+// provision a brand-new account (no existing OAuth link and no matching local
+// account) but self-service registration is disabled. Existing-user OAuth
+// logins are unaffected.
+var ErrRegistrationDisabled = errors.New("registration is disabled")
 
 // OAuthCallbackUseCase handles the OAuth callback and user login/creation
 type OAuthCallbackUseCase struct {
@@ -109,10 +117,35 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 		}
 
 		if u != nil {
+			// Auto-linking an OAuth identity onto an existing local account by
+			// email is an account-takeover vector unless the provider asserts
+			// the email is verified. Require it; otherwise the user must sign in
+			// with their password and link the provider explicitly from settings.
+			if !userInfo.EmailVerified {
+				return nil, fmt.Errorf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", providerName, providerName)
+			}
 			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo, token.AccessToken, token.RefreshToken, token.Expiry); err != nil {
 				return nil, err
 			}
 		} else {
+			// Provisioning a brand-new account keyed on the provider's email is
+			// an account-takeover vector unless the provider asserts the email is
+			// verified: an attacker could pre-emptively create an account for a
+			// victim's address (unverified), and a later genuinely-verified login
+			// by the victim would auto-link into the attacker-controlled account.
+			// Mirror the verified-email guard used on the link path above and
+			// refuse to auto-provision from an unverified email.
+			if !userInfo.EmailVerified {
+				return nil, fmt.Errorf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", providerName, providerName)
+			}
+
+			// First-time OAuth login would have to provision a new account.
+			// Honor the same kill-switch as local registration
+			// (config.Registration.Disabled / auth_handler.go) so OAuth can't be
+			// used to bypass it. Existing-user logins never reach this branch.
+			if uc.config.Registration.Disabled {
+				return nil, ErrRegistrationDisabled
+			}
 			u, err = uc.createUser(ctx, userInfo)
 			if err != nil {
 				return nil, err
@@ -121,6 +154,14 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 				return nil, err
 			}
 		}
+	}
+
+	// Deactivated accounts must not be able to obtain tokens via OAuth. New
+	// users created above are always active, so this only rejects an existing
+	// (resolved) user whose account has been deactivated. The handler maps this
+	// error to a generic OAuth error redirect.
+	if !u.IsActive {
+		return nil, ErrInactiveAccount
 	}
 
 	// Generate JWTs
@@ -175,8 +216,13 @@ func (uc *OAuthCallbackUseCase) createUser(ctx context.Context, userInfo *authad
 	}
 
 	u := &user.User{
-		UUID:          uuid.New().String(),
-		Email:         userInfo.Email,
+		UUID: uuid.New().String(),
+		// Normalize exactly as local registration and GetByEmail do
+		// (strings.ToLower + TrimSpace). Storing the provider's email verbatim
+		// (e.g. "Victim@Corp.com") would make later case-insensitive GetByEmail
+		// lookups miss on case-sensitive backends, producing duplicate accounts
+		// and missed auto-links.
+		Email:         strings.ToLower(strings.TrimSpace(userInfo.Email)),
 		Username:      username,
 		DisplayName:   userInfo.Name, // or Name
 		IsActive:      true,

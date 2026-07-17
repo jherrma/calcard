@@ -59,6 +59,13 @@ func GenerateCTag() string {
 	return GenerateSyncToken()
 }
 
+// NewETag generates a new ETag value. The value is stored UNQUOTED; the
+// transport layer (go-webdav, and the hand-rolled sync REPORT) adds the
+// surrounding quotes when serializing. Never store a quoted ETag.
+func NewETag() string {
+	return GenerateSyncToken()
+}
+
 // GenerateRandomColor generates a random hex color
 func GenerateRandomColor() string {
 	colors := []string{

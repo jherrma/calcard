@@ -23,12 +23,23 @@ type Server struct {
 
 // New creates a new Server instance
 func New(cfg *config.Config, db database.Database) *Server {
+	// Honour the configured limits, falling back to safe defaults when unset
+	// (zero) so directly-constructed configs and tests keep working.
+	bodyLimit := int(cfg.Security.MaxRequestSize)
+	if bodyLimit <= 0 {
+		bodyLimit = 10 * 1024 * 1024 // 10 MB
+	}
+	reqTimeout := cfg.Security.RequestTimeout
+	if reqTimeout <= 0 {
+		reqTimeout = 30 * time.Second
+	}
+
 	app := fiber.New(fiber.Config{
 		AppName:      "CalDAV Server",
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  reqTimeout,
+		WriteTimeout: reqTimeout,
 		IdleTimeout:  120 * time.Second,
-		BodyLimit:    10 * 1024 * 1024, // 10 MB
+		BodyLimit:    bodyLimit,
 		RequestMethods: append(fiber.DefaultMethods,
 			"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "REPORT", "MKCALENDAR",
 		),
@@ -48,6 +59,7 @@ func New(cfg *config.Config, db database.Database) *Server {
 func (s *Server) Run() error {
 	// Start server in a goroutine
 	addr := fmt.Sprintf("%s:%s", s.cfg.Server.Host, s.cfg.Server.Port)
+	errCh := make(chan error, 1)
 	go func() {
 		fmt.Printf("Server starting on %s\n", addr)
 		var err error
@@ -62,7 +74,7 @@ func (s *Server) Run() error {
 		}
 
 		if err != nil {
-			fmt.Printf("Server failed to start: %v\n", err)
+			errCh <- err
 		}
 	}()
 
@@ -70,7 +82,12 @@ func (s *Server) Run() error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
-	<-quit // Wait for signal
+	// Fail fast if the listener never came up; otherwise wait for a signal (M17).
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("server failed to start: %w", err)
+	case <-quit:
+	}
 	fmt.Println("\nShutting down server...")
 
 	// Create a deadline to wait for

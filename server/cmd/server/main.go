@@ -41,6 +41,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	_ "github.com/jherrma/caldav-server/docs" // swagger docs
 	"github.com/jherrma/caldav-server/internal/config"
@@ -48,9 +49,28 @@ import (
 	"github.com/jherrma/caldav-server/internal/infrastructure/server"
 )
 
+// resolveConfigPath determines the YAML config file path, honoring (in order):
+// the --config flag, the documented CALDAV_CONFIG_PATH env var, then the
+// CALDAV_CONFIG_FILE alias. Empty means env-and-defaults only (M18).
+func resolveConfigPath(args []string) string {
+	for i := 0; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "--config=") {
+			return strings.TrimPrefix(args[i], "--config=")
+		}
+		if args[i] == "--config" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	if p := os.Getenv("CALDAV_CONFIG_PATH"); p != "" {
+		return p
+	}
+	return os.Getenv("CALDAV_CONFIG_FILE")
+}
+
 func main() {
-	// 1. Load configuration
-	cfg, err := config.Load("")
+	// 1. Load configuration from the --config flag, CALDAV_CONFIG_PATH, or the
+	// CALDAV_CONFIG_FILE alias; empty means env-and-defaults only (M18).
+	cfg, err := config.Load(resolveConfigPath(os.Args[1:]))
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
@@ -78,6 +98,10 @@ func main() {
 				fmt.Printf("Migration failed: %v\n", err)
 				os.Exit(1)
 			}
+			if err := database.RunDataMigrations(db.DB()); err != nil {
+				fmt.Printf("Data migration failed: %v\n", err)
+				os.Exit(1)
+			}
 			fmt.Println("Migrations completed successfully")
 			return
 		}
@@ -88,6 +112,10 @@ func main() {
 		fmt.Println("Auto-migrating database...")
 		if err := db.Migrate(database.Models()...); err != nil {
 			fmt.Printf("Auto-migration failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := database.RunDataMigrations(db.DB()); err != nil {
+			fmt.Printf("Data migration failed: %v\n", err)
 			os.Exit(1)
 		}
 	}

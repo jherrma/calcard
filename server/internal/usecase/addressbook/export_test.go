@@ -36,7 +36,10 @@ func (m *mockRepo) ListByUserID(ctx context.Context, userID uint) ([]addressbook
 	return nil, nil
 }
 func (m *mockRepo) Update(ctx context.Context, ab *addressbook.AddressBook) error { return nil }
-func (m *mockRepo) Delete(ctx context.Context, id uint) error                     { return nil }
+func (m *mockRepo) UpdateMetadata(ctx context.Context, ab *addressbook.AddressBook) error {
+	return nil
+}
+func (m *mockRepo) Delete(ctx context.Context, id uint) error { return nil }
 func (m *mockRepo) CreateObject(ctx context.Context, object *addressbook.AddressObject) error {
 	return nil
 }
@@ -52,6 +55,9 @@ func (m *mockRepo) GetObjectByUUID(ctx context.Context, uuid string) (*addressbo
 func (m *mockRepo) UpdateObject(ctx context.Context, object *addressbook.AddressObject) error {
 	return nil
 }
+func (m *mockRepo) MoveObject(ctx context.Context, object *addressbook.AddressObject, sourceAddressBookID uint) error {
+	return nil
+}
 func (m *mockRepo) DeleteObjectByUUID(ctx context.Context, uuid string) error { return nil }
 func (m *mockRepo) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
 	return nil, nil
@@ -62,13 +68,16 @@ func (m *mockRepo) GetByUserAndPath(ctx context.Context, userID uint, path strin
 func (m *mockRepo) GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*addressbook.AddressObject, error) {
 	return nil, nil
 }
+func (m *mockRepo) GetObjectByUID(ctx context.Context, addressBookID uint, uid string) (*addressbook.AddressObject, error) {
+	return nil, nil
+}
 func (m *mockRepo) QueryObjects(ctx context.Context, addressBookID uint, query *addressbook.ObjectQuery) ([]addressbook.AddressObject, error) {
 	return nil, nil
 }
 func (m *mockRepo) GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*addressbook.SyncChangeLog, error) {
 	return nil, nil
 }
-func (m *mockRepo) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType, token string) error {
+func (m *mockRepo) RecordChange(ctx context.Context, addressBookID uint, path, uid, changeType string) error {
 	return nil
 }
 func (m *mockRepo) CountContactsByUserID(ctx context.Context, userID uint) (int64, error) {
@@ -115,4 +124,33 @@ func TestExportUseCase_Execute(t *testing.T) {
 	card2, err := dec.Decode()
 	assert.NoError(t, err)
 	assert.Equal(t, "Jane Smith", card2.PreferredValue(vcard.FieldFormattedName))
+}
+
+// TestExportUseCase_SanitizesUnsafeFilename feeds sanitizeFilename an actually
+// dangerous name (path traversal + shell/FS metacharacters). The "MyContacts"
+// case above would pass even if the sanitizer were a no-op, so it never proved
+// anything; this case does.
+func TestExportUseCase_SanitizesUnsafeFilename(t *testing.T) {
+	repo := new(mockRepo)
+	uc := addressbookuc.NewExportUseCase(repo)
+	ctx := context.Background()
+
+	userID := uint(1)
+	abID := uint(11)
+	ab := &addressbook.AddressBook{ID: abID, UserID: userID, Name: `../../etc/passwd:a*b?"<>|`}
+
+	repo.On("GetByID", ctx, abID).Return(ab, nil)
+	repo.On("ListObjects", ctx, abID).Return([]addressbook.AddressObject{}, nil)
+
+	_, filename, err := uc.Execute(ctx, abID, userID)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	for _, bad := range []string{"/", `\`, ":", "*", "?", `"`, "<", ">", "|"} {
+		assert.NotContainsf(t, filename, bad, "sanitized filename %q must not contain %q", filename, bad)
+	}
+	assert.NotContains(t, filename, "../", "sanitized filename must not be a path-traversal string")
+	assert.NotContains(t, filename, `..\`, "sanitized filename must not be a path-traversal string")
+	assert.True(t, strings.HasSuffix(filename, ".vcf"), "expected .vcf extension, got %q", filename)
 }

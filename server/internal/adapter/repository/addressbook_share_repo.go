@@ -53,7 +53,16 @@ func (r *gormAddressBookShareRepo) Update(ctx context.Context, share *sharing.Ad
 }
 
 func (r *gormAddressBookShareRepo) Revoke(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&sharing.AddressBookShare{}, id).Error
+	// Hard-delete: the composite unique index (address_book_id, shared_with_id)
+	// is not partial on deleted_at, so a soft-deleted row would keep blocking
+	// any future re-share of the same (address book, user) pair.
+	return r.db.WithContext(ctx).Unscoped().Delete(&sharing.AddressBookShare{}, id).Error
+}
+
+func (r *gormAddressBookShareRepo) DeleteByAddressBookID(ctx context.Context, addressBookID uint) error {
+	// Hard-delete (Unscoped) so revoked rows don't linger under the composite
+	// unique index — same rationale as Revoke.
+	return r.db.WithContext(ctx).Unscoped().Where("address_book_id = ?", addressBookID).Delete(&sharing.AddressBookShare{}).Error
 }
 
 func (r *gormAddressBookShareRepo) GetByAddressBookAndUser(ctx context.Context, addressBookID, userID uint) (*sharing.AddressBookShare, error) {

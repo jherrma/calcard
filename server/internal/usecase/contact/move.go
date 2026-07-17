@@ -50,24 +50,15 @@ func (uc *MoveUseCase) Execute(ctx context.Context, userID uint, contactUUID str
 		return nil, fmt.Errorf("target address book not found or access denied")
 	}
 
-	// 3. Move object
+	// 3. Move object. MoveObject atomically records a "modified" change on the
+	// TARGET book and a "deleted" change on the SOURCE book in one transaction,
+	// so a partial failure can't leave a permanent sync ghost on the source.
 	obj.AddressBookID = targetAddressBookID
 	obj.UpdatedAt = time.Now()
-	obj.ETag = fmt.Sprintf("%d", time.Now().UnixNano())
+	obj.ETag = addressbook.NewETag()
 
-	if err := uc.repo.UpdateObject(ctx, obj); err != nil {
+	if err := uc.repo.MoveObject(ctx, obj, sourceID); err != nil {
 		return nil, fmt.Errorf("failed to move contact: %w", err)
-	}
-
-	// 4. Update Sync Tokens for both
-	sourceAB.UpdateSyncTokens()
-	if err := uc.repo.Update(ctx, sourceAB); err != nil {
-		fmt.Printf("failed to update source address book ctag: %v\n", err)
-	}
-
-	targetAB.UpdateSyncTokens()
-	if err := uc.repo.Update(ctx, targetAB); err != nil {
-		fmt.Printf("failed to update target address book ctag: %v\n", err)
 	}
 
 	return FromAddressObject(obj), nil
