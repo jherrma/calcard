@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -215,8 +216,13 @@ func (uc *OAuthCallbackUseCase) createUser(ctx context.Context, userInfo *authad
 	}
 
 	u := &user.User{
-		UUID:          uuid.New().String(),
-		Email:         userInfo.Email,
+		UUID: uuid.New().String(),
+		// Normalize exactly as local registration and GetByEmail do
+		// (strings.ToLower + TrimSpace). Storing the provider's email verbatim
+		// (e.g. "Victim@Corp.com") would make later case-insensitive GetByEmail
+		// lookups miss on case-sensitive backends, producing duplicate accounts
+		// and missed auto-links.
+		Email:         strings.ToLower(strings.TrimSpace(userInfo.Email)),
 		Username:      username,
 		DisplayName:   userInfo.Name, // or Name
 		IsActive:      true,
