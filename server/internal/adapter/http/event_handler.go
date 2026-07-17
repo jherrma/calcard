@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	gowebdav "github.com/emersion/go-webdav"
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
@@ -70,6 +71,29 @@ func (h *EventHandler) eventPermission(c fiber.Ctx, eventUUID string) calendar.C
 // read-write). Read access is any permission other than PermissionNone.
 func canWrite(p calendar.CalendarPermission) bool {
 	return p == calendar.PermissionOwner || p == calendar.PermissionReadWrite
+}
+
+// ifMatchOK enforces an optional If-Match precondition on REST writes, giving
+// the web UI the same optimistic-concurrency guard the DAV PUT/DELETE path has
+// (two concurrent sessions could otherwise silently clobber each other). It
+// reuses the DAV path's ConditionalMatch parser/comparer. When the client sends
+// no If-Match the write stays unconditional (legacy behavior). It returns
+// (true, nil) to proceed; on a mismatch it returns (false, <412 response>),
+// which the caller must return. A vanished object falls through so the usecase
+// still produces its normal not-found result.
+func (h *EventHandler) ifMatchOK(c fiber.Ctx, eventUUID string) (bool, error) {
+	match := gowebdav.ConditionalMatch(c.Get("If-Match"))
+	if !match.IsSet() {
+		return true, nil
+	}
+	obj, err := h.calendarRepo.GetCalendarObjectByUUID(c.Context(), eventUUID)
+	if err != nil || obj == nil {
+		return true, nil
+	}
+	if ok, _ := match.MatchETag(obj.ETag); !ok {
+		return false, ErrorResponse(c, fiber.StatusPreconditionFailed, "ETag precondition failed")
+	}
+	return true, nil
 }
 
 // eventResponseFromObject builds an EventResponse from a stored calendar
@@ -248,10 +272,12 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 // @Param        calendar_id    path      integer                 true   "Calendar ID"
 // @Param        event_id       path      string                  true   "Event UUID"
 // @Param        recurrence_id  query     string                  false  "Recurrence ID (for recurring events)"
-// @Param        scope          query     string                  false  "Update scope (this, all, future)"
+// @Param        scope          query     string                  false  "Update scope (this, all, this_and_future)"
 // @Param        event          body      dto.UpdateEventRequest  true   "Event updates"
+// @Param        If-Match       header    string                  false  "Optional ETag precondition; 412 on mismatch"
 // @Success      200            {object}  dto.EventResponse
 // @Failure      400            {object}  ErrorResponseBody
+// @Failure      412            {object}  ErrorResponseBody  "ETag precondition failed"
 // @Failure      500            {object}  ErrorResponseBody
 // @Security     BearerAuth
 // @Router       /calendars/{calendar_id}/events/{event_id} [put]
@@ -263,6 +289,9 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 	}
 	if !canWrite(perm) {
 		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
+	}
+	if ok, resp := h.ifMatchOK(c, eventID); !ok {
+		return resp
 	}
 	var req dto.UpdateEventRequest
 	if err := c.Bind().Body(&req); err != nil {
@@ -304,9 +333,11 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 // @Tags         Events
 // @Param        calendar_id    path      integer  true   "Calendar ID"
 // @Param        event_id       path      string   true   "Event UUID"
-// @Param        scope          query     string   false  "Delete scope (this, all, future)"
+// @Param        scope          query     string   false  "Delete scope (this, all, this_and_future)"
 // @Param        recurrence_id  query     string   false  "Recurrence ID (for recurring events)"
+// @Param        If-Match       header    string   false  "Optional ETag precondition; 412 on mismatch"
 // @Success      204
+// @Failure      412  {object}  ErrorResponseBody  "ETag precondition failed"
 // @Failure      500  {object}  ErrorResponseBody
 // @Security     BearerAuth
 // @Router       /calendars/{calendar_id}/events/{event_id} [delete]
@@ -318,6 +349,9 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 	}
 	if !canWrite(perm) {
 		return ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
+	}
+	if ok, resp := h.ifMatchOK(c, eventID); !ok {
+		return resp
 	}
 	scope := c.Query("scope", "all")
 	recurrenceID := c.Query("recurrence_id")

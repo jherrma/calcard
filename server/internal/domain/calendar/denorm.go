@@ -95,15 +95,18 @@ func (o *CalendarObject) PopulateDenormFieldsFromICal() error {
 }
 
 // recurrenceEndTime computes the latest instant any recurring master produces an
-// occurrence end. Returns nil when no master carries an RRULE.
+// occurrence end, considering both RRULE and RDATE (RFC 5545 §3.8.5). Returns
+// nil when no master carries an RRULE or RDATE (i.e. a non-recurring object).
 func recurrenceEndTime(masters []*ical.Component) *time.Time {
 	var result *time.Time
-	for _, c := range masters {
-		rruleProp := c.Props.Get(ical.PropRecurrenceRule)
-		if rruleProp == nil {
-			continue
+	update := func(candidate time.Time) {
+		if result == nil || candidate.After(*result) {
+			c := candidate
+			result = &c
 		}
+	}
 
+	for _, c := range masters {
 		startProp := c.Props.Get(ical.PropDateTimeStart)
 		if startProp == nil {
 			continue
@@ -119,36 +122,74 @@ func recurrenceEndTime(masters []*ical.Component) *time.Time {
 			}
 		}
 
-		var candidate time.Time
-		rule, err := rrule.StrToRRule(rruleProp.Value)
-		if err != nil {
-			candidate = farFuture
-		} else {
-			rule.DTStart(mStart)
-			// Inspect OrigOptions (the parsed input) rather than GetUntil():
-			// rrule-go synthesizes a ~292-year UNTIL for unbounded rules, which
-			// we must treat as far-future, not a real bound.
-			switch {
-			case rule.OrigOptions.Count > 0:
-				all := rule.All()
-				if len(all) > 0 {
-					candidate = all[len(all)-1].Add(dur)
-				} else {
-					candidate = mStart.Add(dur)
+		if rruleProp := c.Props.Get(ical.PropRecurrenceRule); rruleProp != nil {
+			rule, err := rrule.StrToRRule(rruleProp.Value)
+			if err != nil {
+				update(farFuture)
+			} else {
+				rule.DTStart(mStart)
+				// Inspect OrigOptions (the parsed input) rather than GetUntil():
+				// rrule-go synthesizes a ~292-year UNTIL for unbounded rules,
+				// which we must treat as far-future, not a real bound.
+				switch {
+				case rule.OrigOptions.Count > 0:
+					all := rule.All()
+					if len(all) > 0 {
+						update(all[len(all)-1].Add(dur))
+					} else {
+						update(mStart.Add(dur))
+					}
+				case !rule.OrigOptions.Until.IsZero():
+					update(rule.OrigOptions.Until.Add(dur))
+				default:
+					update(farFuture)
 				}
-			case !rule.OrigOptions.Until.IsZero():
-				candidate = rule.OrigOptions.Until.Add(dur)
-			default:
-				candidate = farFuture
 			}
 		}
 
-		if result == nil || candidate.After(*result) {
-			c := candidate
-			result = &c
+		// RDATE occurrences (RFC 5545 §3.8.5.2). Without this an RDATE-only event
+		// (no RRULE) is treated as non-recurring: RecurrenceEndTime stays nil and
+		// the extra occurrences drop out of any listing window past the first.
+		if rEnd, ok := latestRDate(c, dur); ok {
+			update(rEnd)
 		}
 	}
 	return result
+}
+
+// latestRDate returns the latest occurrence-end contributed by a component's
+// RDATE properties. Each RDATE value is an occurrence start; the master's
+// duration is added to obtain the end. It handles comma-separated DATE and
+// DATE-TIME lists and the start instant of a PERIOD value. The bool is false
+// when the component carries no parseable RDATE.
+func latestRDate(c *ical.Component, dur time.Duration) (time.Time, bool) {
+	var latest time.Time
+	found := false
+	for _, prop := range c.Props[ical.PropRecurrenceDates] {
+		isPeriod := strings.EqualFold(prop.Params.Get(ical.ParamValue), string(ical.ValuePeriod))
+		for _, token := range strings.Split(prop.Value, ",") {
+			token = strings.TrimSpace(token)
+			if token == "" {
+				continue
+			}
+			tokenProp := &ical.Prop{Name: ical.PropRecurrenceDates, Value: token, Params: prop.Params}
+			if isPeriod {
+				// A PERIOD is start/(end|duration); use the start instant, which
+				// is always a DATE-TIME. The master duration approximates length.
+				tokenProp.Value = strings.SplitN(token, "/", 2)[0]
+				tokenProp.Params = ical.Params{ical.ParamValue: []string{string(ical.ValueDateTime)}}
+			}
+			t, err := tokenProp.DateTime(time.UTC)
+			if err != nil {
+				continue
+			}
+			if occEnd := t.Add(dur); !found || occEnd.After(latest) {
+				latest = occEnd
+				found = true
+			}
+		}
+	}
+	return latest, found
 }
 
 // componentEnd resolves the non-inclusive end instant of a VEVENT/VTODO using

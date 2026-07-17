@@ -84,8 +84,14 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 
 		if targetEvent == nil {
-			// Create a new exception component
-			master := allEvents[0]
+			// Create a new exception component, copying base props from the
+			// series master (scan for the RECURRENCE-ID-less component; an
+			// override may precede it). Fall back to the first component only
+			// when the object contains no true master.
+			master := masterEvent(allEvents)
+			if master == nil {
+				master = &allEvents[0]
+			}
 			event := ical.NewEvent()
 			event.Props.SetText(ical.PropUID, obj.UID)
 			// RFC 5545: RECURRENCE-ID's value type must match the series'
@@ -270,8 +276,12 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		cal.Children = newChildren
 
 	} else {
-		// Default to the first VEVENT (master series)
-		targetEvent = &allEvents[0]
+		// Default to the master series (the RECURRENCE-ID-less component), not
+		// blindly the first VEVENT — a DAV object may list an override first.
+		targetEvent = masterEvent(allEvents)
+		if targetEvent == nil {
+			targetEvent = &allEvents[0]
+		}
 	}
 
 	if input.Summary != nil {
@@ -406,6 +416,19 @@ func formatUntilBoundary(t time.Time, allDay bool) string {
 		return t.UTC().Format("20060102")
 	}
 	return t.UTC().Format("20060102T150405Z")
+}
+
+// masterEvent returns the recurrence master — the first VEVENT with no
+// RECURRENCE-ID. A DAV-written object may list an override (a component *with*
+// RECURRENCE-ID) before the master, so we must scan rather than assume
+// events[0] (mirrors delete.go). Returns nil if every component is an override.
+func masterEvent(events []ical.Event) *ical.Event {
+	for i := range events {
+		if events[i].Props.Get(ical.PropRecurrenceID) == nil {
+			return &events[i]
+		}
+	}
+	return nil
 }
 
 // seriesLocation returns the base timezone of a recurring series — the
