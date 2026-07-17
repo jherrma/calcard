@@ -86,18 +86,10 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 	if currentUser != nil {
 		if existingUser != nil {
 			if existingUser.ID == currentUser.ID {
-				// Already linked to this user. Just update tokens.
-				conn, err := uc.oauthRepo.GetByProvider(ctx, currentUser.ID, providerName)
-				if err != nil {
-					return nil, err
-				}
-				conn.AccessToken = token.AccessToken
-				conn.RefreshToken = token.RefreshToken
-				conn.TokenExpiry = &token.Expiry
-				if err := uc.oauthRepo.Update(ctx, conn); err != nil {
-					return nil, err
-				}
-				return nil, nil // No login result needed, success.
+				// Already linked to this user — nothing to persist. Provider
+				// tokens are deliberately not stored, so there is nothing to
+				// refresh here.
+				return nil, nil
 			}
 			return nil, ErrProviderAlreadyLinked
 		}
@@ -114,7 +106,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 		}
 
 		// Not linked, link it now.
-		if err := uc.linkProvider(ctx, currentUser.ID, providerName, userInfo, token.AccessToken, token.RefreshToken, token.Expiry); err != nil {
+		if err := uc.linkProvider(ctx, currentUser.ID, providerName, userInfo); err != nil {
 			return nil, err
 		}
 		return nil, nil // Success
@@ -143,7 +135,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			if !userInfo.EmailVerified {
 				return nil, ErrEmailNotVerified
 			}
-			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo, token.AccessToken, token.RefreshToken, token.Expiry); err != nil {
+			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo); err != nil {
 				return nil, err
 			}
 		} else {
@@ -169,7 +161,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			if err != nil {
 				return nil, err
 			}
-			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo, token.AccessToken, token.RefreshToken, token.Expiry); err != nil {
+			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo); err != nil {
 				return nil, err
 			}
 		}
@@ -215,15 +207,15 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 	}, nil
 }
 
-func (uc *OAuthCallbackUseCase) linkProvider(ctx context.Context, userID uint, providerName string, userInfo *authadapter.UserInfo, accessToken, refreshToken string, expiry time.Time) error {
+func (uc *OAuthCallbackUseCase) linkProvider(ctx context.Context, userID uint, providerName string, userInfo *authadapter.UserInfo) error {
 	conn := &user.OAuthConnection{
 		UserID:        userID,
 		Provider:      providerName,
 		ProviderID:    userInfo.Subject,
 		ProviderEmail: userInfo.Email,
-		AccessToken:   accessToken,  // Should be encrypted
-		RefreshToken:  refreshToken, // Should be encrypted
-		TokenExpiry:   &expiry,
+		// Provider tokens are deliberately NOT stored: nothing in the codebase
+		// consumes them, and a refresh token is a long-lived credential we
+		// should not hold.
 	}
 	return uc.oauthRepo.Create(ctx, conn)
 }
