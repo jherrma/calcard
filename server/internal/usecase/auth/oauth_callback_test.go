@@ -361,6 +361,8 @@ func TestOAuthCallbackUseCase_Execute_LinkLoggedInUser(t *testing.T) {
 	provider.On("Exchange", ctx, code).Return(token, nil)
 	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
+	// No account of this provider linked to the user yet — the link proceeds.
+	oauthRepo.On("GetByProvider", ctx, currentUser.ID, providerName).Return(nil, nil)
 
 	oauthRepo.On("Create", ctx, mock.MatchedBy(func(c *user.OAuthConnection) bool {
 		return c.UserID == currentUser.ID && c.Provider == providerName && c.ProviderID == userInfo.Subject
@@ -439,4 +441,44 @@ func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedSuccess(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, result) // Success returns nil result for linking
 	oauthRepo.AssertExpectations(t)
+}
+
+// TestOAuthCallbackUseCase_Execute_LinkSecondAccountRejected covers the new
+// (user_id, provider) uniqueness: a logged-in user who already has one account
+// linked for a provider tries to link a *different* account of the same
+// provider. It must be rejected with an actionable message and must not create
+// a second connection row.
+func TestOAuthCallbackUseCase_Execute_LinkSecondAccountRejected(t *testing.T) {
+	providerManager := new(mockOAuthProviderManager)
+	userRepo := new(mockUserRepo)
+	oauthRepo := new(mockOAuthRepo)
+	refreshTokenRepo := new(mockRefreshTokenRepo)
+	tokenProvider := new(mockTokenProvider)
+	cfg := &config.Config{JWT: config.JWTConfig{RefreshExpiry: time.Hour}}
+
+	uc := NewOAuthCallbackUseCase(providerManager, userRepo, oauthRepo, refreshTokenRepo, tokenProvider, cfg)
+
+	ctx := context.Background()
+	providerName := "google"
+	code := "auth_code"
+	currentUser := &user.User{ID: 99}
+
+	provider := new(mockOAuthProvider)
+	token := &oauth2.Token{AccessToken: "access_token"}
+	// A brand-new provider identity (subject) not linked to anyone yet.
+	userInfo := &authadapter.UserInfo{Subject: "second-sub", Email: "second@example.com"}
+	// ...but the user already has a *different* google account linked.
+	existingConn := &user.OAuthConnection{ID: 1, UserID: 99, Provider: providerName, ProviderID: "first-sub"}
+
+	providerManager.On("GetProvider", providerName).Return(provider, nil)
+	provider.On("Exchange", ctx, code).Return(token, nil)
+	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
+	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
+	oauthRepo.On("GetByProvider", ctx, currentUser.ID, providerName).Return(existingConn, nil)
+
+	_, err := uc.Execute(ctx, providerName, code, "", "", currentUser)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "already linked")
+	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }

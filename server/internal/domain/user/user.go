@@ -23,12 +23,20 @@ type User struct {
 	OAuthConnections []OAuthConnection `gorm:"foreignKey:UserID"`
 }
 
-// OAuthConnection represents a linked OAuth/OIDC provider
+// OAuthConnection represents a linked OAuth/OIDC provider.
+//
+// Two unique indexes are enforced at the DB level:
+//   - (user_id, provider): a user may link at most one account per provider.
+//   - (provider, provider_id): a given provider identity links to one user.
+//
+// GORM composes each index from the fields sharing its name, in struct-field
+// order, so the field order below matters. The (user_id, provider) index also
+// serves ListByUserID via its user_id prefix, so no separate index is needed.
 type OAuthConnection struct {
 	ID            uint   `gorm:"primaryKey"`
-	UserID        uint   `gorm:"index;not null"`
-	Provider      string `gorm:"size:50;not null"`  // google, microsoft, custom
-	ProviderID    string `gorm:"size:255;not null"` // sub claim from OIDC
+	UserID        uint   `gorm:"not null;uniqueIndex:idx_oauth_user_provider"`
+	Provider      string `gorm:"size:50;not null;uniqueIndex:idx_oauth_user_provider;uniqueIndex:idx_oauth_provider_subject"` // google, microsoft, custom
+	ProviderID    string `gorm:"size:255;not null;uniqueIndex:idx_oauth_provider_subject"`                                    // sub claim from OIDC
 	ProviderEmail string `gorm:"size:255"`
 	AccessToken   string `gorm:"size:2000"` // encrypted
 	RefreshToken  string `gorm:"size:2000"` // encrypted

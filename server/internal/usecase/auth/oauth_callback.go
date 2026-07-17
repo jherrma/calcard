@@ -94,6 +94,17 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			return nil, fmt.Errorf("this %s account is already linked to another user", providerName)
 		}
 
+		// Refuse to attach a second, different account from the same provider.
+		// Without this the new unique (user_id, provider) index would reject the
+		// insert with an opaque DB error; give the user an actionable message.
+		existingConn, err := uc.oauthRepo.GetByProvider(ctx, currentUser.ID, providerName)
+		if err != nil {
+			return nil, err
+		}
+		if existingConn != nil {
+			return nil, fmt.Errorf("a different %s account is already linked to your profile; unlink it first in settings", providerName)
+		}
+
 		// Not linked, link it now.
 		if err := uc.linkProvider(ctx, currentUser.ID, providerName, userInfo, token.AccessToken, token.RefreshToken, token.Expiry); err != nil {
 			return nil, err
