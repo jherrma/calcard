@@ -169,5 +169,19 @@ const unlinkProvider = async (provider: LinkedProvider) => {
   }
 };
 
-onMounted(fetchData);
+onMounted(() => {
+  // The OAuth callback redirects link results here in the URL fragment
+  // (#linked=<provider> on success, #error=<message> on failure). Surface them
+  // as toasts, then strip the fragment so a refresh doesn't re-toast.
+  const raw = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const params = new URLSearchParams(raw);
+  const linked = params.get('linked');
+  const err = params.get('error');
+  if (linked) toast.success(`${linked} has been linked to your account`);
+  if (err) toast.error(err);
+  if (linked || err) history.replaceState(null, '', window.location.pathname);
+  fetchData();
+});
 </script>

@@ -113,15 +113,22 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 
 	result, err := h.callbackUC.Execute(c.Context(), provider, code, userAgent, ip, currentUser)
 	if err != nil {
-		// First-time OAuth login while self-service registration is disabled:
-		// surface a clear, safe message (no internal detail) on the SPA.
-		if errors.Is(err, authUseCase.ErrRegistrationDisabled) {
-			return h.redirectOAuthError(c, ctxData.Action, "registration is disabled")
-		}
 		// The browser is here via a provider redirect, so redirect back to the
-		// SPA with a generic error rather than dead-ending on JSON or leaking the
-		// internal error detail (H16).
-		return h.redirectOAuthError(c, ctxData.Action, "authentication failed")
+		// SPA (returning JSON would dead-end, H16). Map the use case's safe,
+		// user-actionable sentinels to messages; anything else stays generic so
+		// no internal detail leaks into the URL.
+		switch {
+		case errors.Is(err, authUseCase.ErrRegistrationDisabled):
+			return h.redirectOAuthError(c, ctxData.Action, "registration is disabled")
+		case errors.Is(err, authUseCase.ErrProviderAlreadyLinked):
+			return h.redirectOAuthError(c, ctxData.Action,
+				fmt.Sprintf("this %s account is already linked to another user", provider))
+		case errors.Is(err, authUseCase.ErrEmailNotVerified):
+			return h.redirectOAuthError(c, ctxData.Action,
+				fmt.Sprintf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", provider, provider))
+		default:
+			return h.redirectOAuthError(c, ctxData.Action, "authentication failed")
+		}
 	}
 
 	// The browser arrived here via a provider redirect, so we must redirect back

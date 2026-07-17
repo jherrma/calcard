@@ -20,6 +20,14 @@ import (
 // logins are unaffected.
 var ErrRegistrationDisabled = errors.New("registration is disabled")
 
+// ErrProviderAlreadyLinked is returned when the provider account resolved from
+// the callback is already linked to a different user.
+var ErrProviderAlreadyLinked = errors.New("provider account already linked to another user")
+
+// ErrEmailNotVerified is returned when auto-linking or auto-provisioning would
+// be required but the provider did not assert a verified email.
+var ErrEmailNotVerified = errors.New("provider email not verified")
+
 // OAuthCallbackUseCase handles the OAuth callback and user login/creation
 type OAuthCallbackUseCase struct {
 	providerManager  authadapter.OAuthProviderManager
@@ -91,7 +99,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 				}
 				return nil, nil // No login result needed, success.
 			}
-			return nil, fmt.Errorf("this %s account is already linked to another user", providerName)
+			return nil, ErrProviderAlreadyLinked
 		}
 
 		// Refuse to attach a second, different account from the same provider.
@@ -133,7 +141,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			// the email is verified. Require it; otherwise the user must sign in
 			// with their password and link the provider explicitly from settings.
 			if !userInfo.EmailVerified {
-				return nil, fmt.Errorf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", providerName, providerName)
+				return nil, ErrEmailNotVerified
 			}
 			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo, token.AccessToken, token.RefreshToken, token.Expiry); err != nil {
 				return nil, err
@@ -147,7 +155,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			// Mirror the verified-email guard used on the link path above and
 			// refuse to auto-provision from an unverified email.
 			if !userInfo.EmailVerified {
-				return nil, fmt.Errorf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", providerName, providerName)
+				return nil, ErrEmailNotVerified
 			}
 
 			// First-time OAuth login would have to provision a new account.
