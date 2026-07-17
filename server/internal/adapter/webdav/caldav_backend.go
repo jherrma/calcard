@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -15,6 +16,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"gorm.io/gorm"
 )
 
 // CalDAVBackend implements caldav.Backend
@@ -285,7 +287,14 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		}
 	}
 
-	existing, _ := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
+	// A swallowed lookup error would make a transient DB failure look like a
+	// missing object, turning what should be an update into a create (and
+	// skipping the UID-change / no-uid-conflict checks below). Only a genuine
+	// "not found" means we should proceed as a create.
+	existing, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
 
 	// Honor If-Match / If-None-Match preconditions (RFC 4791 §5.3.4). Without
 	// these, two concurrent clients would silently overwrite each other.
@@ -316,7 +325,11 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 
 	// no-uid-conflict (RFC 4791 §5.3.2): a different resource in this calendar
 	// must not already own this UID.
-	if other, _ := b.calendarRepo.GetCalendarObjectByUID(ctx, c.ID, uid); other != nil && other.Path != objPath {
+	other, err := b.calendarRepo.GetCalendarObjectByUID(ctx, c.ID, uid)
+	if err != nil {
+		return nil, err
+	}
+	if other != nil && other.Path != objPath {
 		return nil, caldav.NewPreconditionError(caldav.PreconditionNoUIDConflict)
 	}
 

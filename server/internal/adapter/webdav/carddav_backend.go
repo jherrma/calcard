@@ -355,7 +355,11 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 
 	// no-uid-conflict (RFC 6352 §6.3.2): a different resource in this book must
 	// not already own this UID.
-	if other, _ := b.addressBookRepo.GetObjectByUID(ctx, ab.ID, uid); other != nil && other.Path != objPath {
+	other, err := b.addressBookRepo.GetObjectByUID(ctx, ab.ID, uid)
+	if err != nil {
+		return nil, err
+	}
+	if other != nil && other.Path != objPath {
 		return nil, carddav.NewPreconditionError(carddav.PreconditionNoUIDConflict)
 	}
 
@@ -495,19 +499,14 @@ func (b *CardDAVBackend) resolveAddressObject(ctx context.Context, u *user.User,
 		return nil, "", err
 	}
 
-	// limit=-1 cancels the LIMIT clause; GORM's Limit(0) would emit LIMIT 0
-	// and return zero rows, which would make every PROPFIND / lookup see an
-	// empty address book.
-	objects, _, err := b.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "", "")
-	if err != nil {
+	// Direct indexed lookup by path (the same call PutAddressObject uses),
+	// instead of listing the whole book and scanning. The list path now
+	// hydrates every PHOTO blob (H5), so a single-contact GET during a
+	// client's initial sync would otherwise become an O(N) photo read.
+	if obj, err := b.addressBookRepo.GetObjectByPath(ctx, ab.ID, objPath); err != nil {
 		return nil, "", err
-	}
-
-	for _, obj := range objects {
-		if obj.Path == objPath {
-			obj := obj
-			return &obj, perm, nil
-		}
+	} else if obj != nil {
+		return obj, perm, nil
 	}
 
 	// Fall back to a UUID-named object path (<uuid>.vcf). Test objPath (not the
