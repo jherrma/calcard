@@ -8,6 +8,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/require"
 )
@@ -138,4 +139,94 @@ func TestBackfillCollectionAnchors(t *testing.T) {
 	var emptyCount int64
 	require.NoError(t, g.Model(&calendar.SyncChangeLog{}).Where("calendar_id = ?", calEmpty.ID).Count(&emptyCount).Error)
 	require.Zero(t, emptyCount, "empty-token calendar must not get an anchor")
+}
+
+// TestPurgeSoftDeletedShares reproduces a tombstone left behind by the old
+// soft-delete revoke path: a share row with a non-NULL deleted_at that still
+// occupies its (collection_id, shared_with_id) unique-index slot. The migration
+// must hard-delete such rows so the pair can be re-shared, while leaving live
+// (non-deleted) shares untouched. Idempotent on re-run.
+func TestPurgeSoftDeletedShares(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "caldav-share-purge-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	cfg := &config.Config{
+		DataDir:  dataDir,
+		Database: config.DatabaseConfig{Driver: "sqlite", AutoMigrate: true},
+	}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	defer db.Close()
+	require.NoError(t, db.Migrate(Models()...))
+	g := db.DB()
+
+	// Referenced rows so the share foreign keys (calendar_id, addressbook_id,
+	// shared_with_id) resolve under SQLite FK enforcement.
+	require.NoError(t, g.Create(&user.User{ID: 1, UUID: "u-owner", Username: "owner", Email: "owner@x", PasswordHash: "x"}).Error)
+	require.NoError(t, g.Create(&user.User{ID: 2, UUID: "u-2", Username: "u2", Email: "u2@x", PasswordHash: "x"}).Error)
+	require.NoError(t, g.Create(&user.User{ID: 3, UUID: "u-3", Username: "u3", Email: "u3@x", PasswordHash: "x"}).Error)
+	require.NoError(t, g.Create(&calendar.Calendar{
+		ID: 1, UUID: "cal-1", UserID: 1, Path: "c1", Name: "C1",
+		Color: "#ffffff", Timezone: "UTC", SupportedComponents: "VEVENT",
+	}).Error)
+	require.NoError(t, g.Create(&addressbook.AddressBook{
+		ID: 1, UUID: "ab-1", UserID: 1, Path: "ab1", Name: "AB1",
+	}).Error)
+
+	// Soft-deleted calendar share (tombstone): GORM's Delete on a model with a
+	// gorm.DeletedAt field sets deleted_at rather than removing the row.
+	calTomb := &sharing.CalendarShare{
+		UUID: "cs-tomb", CalendarID: 1, SharedWithID: 2, Permission: "read",
+	}
+	require.NoError(t, g.Create(calTomb).Error)
+	require.NoError(t, g.Delete(calTomb).Error)
+
+	// Live calendar share for a different pair — must survive.
+	calLive := &sharing.CalendarShare{
+		UUID: "cs-live", CalendarID: 1, SharedWithID: 3, Permission: "read-write",
+	}
+	require.NoError(t, g.Create(calLive).Error)
+
+	// Soft-deleted address book share (tombstone).
+	abTomb := &sharing.AddressBookShare{
+		UUID: "abs-tomb", AddressBookID: 1, SharedWithID: 2, Permission: "read",
+	}
+	require.NoError(t, g.Create(abTomb).Error)
+	require.NoError(t, g.Delete(abTomb).Error)
+
+	// Sanity: the tombstone is present pre-migration (Unscoped sees it).
+	var preCount int64
+	require.NoError(t, g.Unscoped().Model(&sharing.CalendarShare{}).
+		Where("uuid = ?", "cs-tomb").Count(&preCount).Error)
+	require.EqualValues(t, 1, preCount, "tombstone must exist before migration")
+
+	run := func() {
+		require.NoError(t, RunDataMigrations(g))
+	}
+	run()
+	// Second run must be a no-op (idempotent).
+	run()
+
+	// Tombstones are hard-deleted — invisible even to an Unscoped query.
+	var calTombCount int64
+	require.NoError(t, g.Unscoped().Model(&sharing.CalendarShare{}).
+		Where("uuid = ?", "cs-tomb").Count(&calTombCount).Error)
+	require.Zero(t, calTombCount, "soft-deleted calendar share must be purged")
+
+	var abTombCount int64
+	require.NoError(t, g.Unscoped().Model(&sharing.AddressBookShare{}).
+		Where("uuid = ?", "abs-tomb").Count(&abTombCount).Error)
+	require.Zero(t, abTombCount, "soft-deleted address book share must be purged")
+
+	// Live share is untouched.
+	var live sharing.CalendarShare
+	require.NoError(t, g.Where("uuid = ?", "cs-live").First(&live).Error)
+	require.Equal(t, "read-write", live.Permission)
+
+	// The freed unique-index slot can be re-shared without a UNIQUE violation.
+	reshare := &sharing.CalendarShare{
+		UUID: "cs-reshare", CalendarID: 1, SharedWithID: 2, Permission: "read-write",
+	}
+	require.NoError(t, g.Create(reshare).Error, "re-sharing the purged pair must succeed")
 }

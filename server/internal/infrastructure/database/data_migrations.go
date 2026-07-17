@@ -25,7 +25,25 @@ func RunDataMigrations(db *gorm.DB) error {
 	if err := backfillCollectionAnchors(db); err != nil {
 		return fmt.Errorf("backfill collection anchors: %w", err)
 	}
+	if err := purgeSoftDeletedShares(db); err != nil {
+		return fmt.Errorf("purge soft-deleted shares: %w", err)
+	}
 	return nil
+}
+
+// purgeSoftDeletedShares hard-deletes share rows left behind by the old
+// soft-delete revoke path. Revoke/DeleteBy* now issue Unscoped() hard deletes,
+// but rows soft-deleted by the previous code still occupy their
+// (calendar_id, shared_with_id) / (addressbook_id, shared_with_id) slot in the
+// non-partial unique index while being invisible to default-scoped lookups —
+// so re-sharing that same pair hits a UNIQUE constraint and surfaces as an
+// opaque 500. Removing the tombstones frees the slot. Idempotent: once the
+// tombstones are gone the DELETEs match nothing.
+func purgeSoftDeletedShares(db *gorm.DB) error {
+	if err := db.Exec(`DELETE FROM calendar_shares WHERE deleted_at IS NOT NULL`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`DELETE FROM addressbook_shares WHERE deleted_at IS NOT NULL`).Error
 }
 
 // backfillCollectionAnchors repairs collections created before the "collection"
