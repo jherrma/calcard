@@ -140,16 +140,13 @@ func buildICalendarExport(cal *calendar.Calendar, objects []*calendar.CalendarOb
 		sb.WriteString(fmt.Sprintf("X-WR-CALDESC:%s\r\n", escapeICalText(cal.Description)))
 	}
 
-	for _, obj := range objects {
-		// Stored ICalData may already be wrapped in BEGIN:VCALENDAR (that's
-		// what event.CreateEventUseCase writes) or be a bare VEVENT block
-		// (that's what calendar_import.go writes). Strip any existing wrapper
-		// so we don't emit nested VCALENDARs, which no parser understands.
-		sb.WriteString(calendar.StripVCalendarWrapper(obj.ICalData))
-		if !strings.HasSuffix(obj.ICalData, "\n") {
-			sb.WriteString("\r\n")
-		}
-	}
+	// Stored ICalData may already be wrapped in BEGIN:VCALENDAR (that's what
+	// event.CreateEventUseCase writes) or be a bare VEVENT block (that's what
+	// calendar_import.go writes). Strip any existing wrapper so we don't emit
+	// nested VCALENDARs, which no parser understands, and dedup per-object
+	// VTIMEZONEs by TZID. The helper (via StripVCalendarWrapper) guarantees a
+	// trailing CRLF, so no manual newline fix-up is needed.
+	sb.WriteString(calendar.ConcatObjectsDedupVTimezones(objects))
 
 	sb.WriteString("END:VCALENDAR\r\n")
 	return sb.String()

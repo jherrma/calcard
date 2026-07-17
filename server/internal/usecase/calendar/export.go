@@ -50,10 +50,9 @@ func (uc *ExportCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 	// Add all calendar objects (events/todos). obj.ICalData is now stored as a
 	// full VCALENDAR (import/PUT wrap it), so strip that wrapper and append only
 	// the VEVENT/VTODO block — otherwise we'd nest a VCALENDAR inside this one
-	// and produce an unparseable feed. The helper guarantees a trailing CRLF.
-	for _, obj := range objects {
-		icalContent += calendar.StripVCalendarWrapper(obj.ICalData)
-	}
+	// and produce an unparseable feed. Per-object VTIMEZONEs are deduped by TZID
+	// and hoisted to the top so we don't emit N identical VTIMEZONE blocks.
+	icalContent += calendar.ConcatObjectsDedupVTimezones(objects)
 
 	icalContent += "END:VCALENDAR\r\n"
 
