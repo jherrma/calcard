@@ -36,7 +36,10 @@ func (m *mockRepo) ListByUserID(ctx context.Context, userID uint) ([]addressbook
 	return nil, nil
 }
 func (m *mockRepo) Update(ctx context.Context, ab *addressbook.AddressBook) error { return nil }
-func (m *mockRepo) Delete(ctx context.Context, id uint) error                     { return nil }
+func (m *mockRepo) UpdateMetadata(ctx context.Context, ab *addressbook.AddressBook) error {
+	return nil
+}
+func (m *mockRepo) Delete(ctx context.Context, id uint) error { return nil }
 func (m *mockRepo) CreateObject(ctx context.Context, object *addressbook.AddressObject) error {
 	return nil
 }

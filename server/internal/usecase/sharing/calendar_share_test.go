@@ -77,8 +77,9 @@ func (m *mockCalendarRepo) GetByUUID(ctx context.Context, u string) (*calendar.C
 func (m *mockCalendarRepo) ListByUserID(ctx context.Context, id uint) ([]*calendar.Calendar, error) {
 	return nil, nil
 }
-func (m *mockCalendarRepo) Update(ctx context.Context, c *calendar.Calendar) error    { return nil }
-func (m *mockCalendarRepo) Delete(ctx context.Context, id uint) error                 { return nil }
+func (m *mockCalendarRepo) Update(ctx context.Context, c *calendar.Calendar) error         { return nil }
+func (m *mockCalendarRepo) UpdateMetadata(ctx context.Context, c *calendar.Calendar) error { return nil }
+func (m *mockCalendarRepo) Delete(ctx context.Context, id uint) error                      { return nil }
 func (m *mockCalendarRepo) CountByUserID(ctx context.Context, id uint) (int64, error) { return 0, nil }
 func (m *mockCalendarRepo) GetEventCount(ctx context.Context, id uint) (int64, error) { return 0, nil }
 func (m *mockCalendarRepo) GetCalendarObjects(ctx context.Context, id uint) ([]*calendar.CalendarObject, error) {

@@ -67,16 +67,13 @@ func (uc *UpdateCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		cal.Timezone = *req.Timezone
 	}
 
-	if err := uc.repo.Update(ctx, cal); err != nil {
+	// Persist the rename and advance the sync token (backed by a change-log
+	// anchor row) atomically in one transaction. Doing the Save and RecordChange
+	// separately let a concurrent object PUT's fresh token be overwritten by the
+	// stale one loaded above, and a RecordChange failure after the Save committed
+	// left the CTag un-bumped so clients never saw the new displayname.
+	if err := uc.repo.UpdateMetadata(ctx, cal); err != nil {
 		return nil, fmt.Errorf("failed to update calendar: %w", err)
-	}
-
-	// Advance the sync token through RecordChange so it's backed by a
-	// change-log anchor row (collection-level change). Calling UpdateSyncTokens
-	// here would mint a token that no change-log row references, which the next
-	// incremental sync rejects with 403 valid-sync-token.
-	if err := uc.repo.RecordChange(ctx, cal.ID, "", "", "collection"); err != nil {
-		return nil, fmt.Errorf("failed to record calendar change: %w", err)
 	}
 
 	return cal, nil

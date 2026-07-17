@@ -75,6 +75,24 @@ func (r *AddressBookRepository) Update(ctx context.Context, ab *addressbook.Addr
 	return r.db.WithContext(ctx).Save(ab).Error
 }
 
+// UpdateMetadata persists a rename and mints a new sync token atomically. It
+// updates only the metadata columns via Select (so a Save of the whole struct
+// can't write back the stale sync_token/c_tag the caller loaded at request
+// start, clobbering a token a concurrent object PUT just committed) and records
+// the collection change in the same transaction (so a mid-rename failure can't
+// leave the CTag un-bumped, hiding the new displayname from clients).
+func (r *AddressBookRepository) UpdateMetadata(ctx context.Context, ab *addressbook.AddressBook) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&addressbook.AddressBook{}).
+			Where("id = ?", ab.ID).
+			Select("name", "description").
+			Updates(ab).Error; err != nil {
+			return err
+		}
+		return r.recordAddressBookChange(tx, ab.ID, "", "", "collection")
+	})
+}
+
 func (r *AddressBookRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&addressbook.AddressBook{}, id).Error
 }

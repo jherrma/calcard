@@ -24,6 +24,11 @@ type Repository interface {
 	GetByUserAndPath(ctx context.Context, userID uint, path string) (*AddressBook, error)
 	ListByUserID(ctx context.Context, userID uint) ([]AddressBook, error)
 	Update(ctx context.Context, addressBook *AddressBook) error
+	// UpdateMetadata persists an address-book rename (name/description only) and
+	// advances the sync token via a change-log anchor row, atomically in a single
+	// transaction. It updates only the named columns (never sync_token/c_tag from
+	// the possibly-stale passed struct) and mints a fresh token in the same tx.
+	UpdateMetadata(ctx context.Context, addressBook *AddressBook) error
 	Delete(ctx context.Context, id uint) error
 	CreateObject(ctx context.Context, object *AddressObject) error
 	GetObjectByID(ctx context.Context, id uint) (*AddressObject, error)

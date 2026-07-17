@@ -38,14 +38,12 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, input UpdateInput) (*addre
 		ab.Description = *input.Description
 	}
 
-	if err := uc.repo.Update(ctx, ab); err != nil {
-		return nil, err
-	}
-
-	// Advance the sync token via RecordChange so it's backed by a change-log
-	// anchor row; minting it inline (UpdateSyncTokens) would break incremental
-	// sync with a 403 valid-sync-token on the next request.
-	if err := uc.repo.RecordChange(ctx, ab.ID, "", "", "collection"); err != nil {
+	// Persist the rename and advance the sync token (backed by a change-log
+	// anchor row) atomically in one transaction — see UpdateMetadata. Doing the
+	// Save and RecordChange separately let a concurrent object PUT's fresh token
+	// be overwritten by the stale one loaded above, and a RecordChange failure
+	// after the Save committed left the CTag un-bumped.
+	if err := uc.repo.UpdateMetadata(ctx, ab); err != nil {
 		return nil, err
 	}
 

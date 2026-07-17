@@ -78,6 +78,24 @@ func (r *CalendarRepository) Update(ctx context.Context, cal *calendar.Calendar)
 	return r.db.WithContext(ctx).Save(cal).Error
 }
 
+// UpdateMetadata persists a rename and mints a new sync token atomically. It
+// updates only the metadata columns via Select (so a Save of the whole struct
+// can't write back the stale sync_token/ctag the caller loaded at request
+// start, clobbering a token a concurrent object PUT just committed) and records
+// the collection change in the same transaction (so a mid-rename failure can't
+// leave the CTag un-bumped, hiding the new displayname from clients).
+func (r *CalendarRepository) UpdateMetadata(ctx context.Context, cal *calendar.Calendar) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&calendar.Calendar{}).
+			Where("id = ?", cal.ID).
+			Select("name", "description", "color", "timezone").
+			Updates(cal).Error; err != nil {
+			return err
+		}
+		return r.recordChange(tx, cal.ID, "", "", "collection")
+	})
+}
+
 // Delete deletes a calendar by ID
 func (r *CalendarRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&calendar.Calendar{}, id).Error

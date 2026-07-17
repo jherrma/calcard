@@ -22,6 +22,13 @@ type CalendarRepository interface {
 	// Update updates an existing calendar
 	Update(ctx context.Context, calendar *Calendar) error
 
+	// UpdateMetadata persists a collection rename (name/description/color/
+	// timezone only) and advances the sync token via a change-log anchor row,
+	// atomically in a single transaction. It must NOT write sync_token/ctag from
+	// the passed struct (which may be stale relative to a concurrent object PUT);
+	// it updates only the named columns and mints a fresh token in the same tx.
+	UpdateMetadata(ctx context.Context, calendar *Calendar) error
+
 	// Delete deletes a calendar by ID
 	Delete(ctx context.Context, id uint) error
 
