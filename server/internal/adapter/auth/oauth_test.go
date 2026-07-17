@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"bytes"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,5 +90,57 @@ func TestNewOAuthProviderManager_TrailingSlashBaseURL(t *testing.T) {
 	got := p.AuthCodeURL("state-123")
 	if strings.Contains(got, "example.com%2F%2Fapi") {
 		t.Errorf("trailing slash in base_url produced a doubled slash in redirect_uri: %s", got)
+	}
+}
+
+// TestNewOAuthProviderManager_LogsAndSkipsFailedProvider verifies that when a
+// configured provider fails OIDC discovery, the manager (a) still constructs
+// without error, (b) omits the failed provider, and (c) logs a loud ERROR line
+// naming the provider — instead of silently swallowing the failure.
+func TestNewOAuthProviderManager_LogsAndSkipsFailedProvider(t *testing.T) {
+	// A discovery endpoint that returns 500 makes oidc.NewProvider fail fast
+	// (no network hang), simulating a misconfigured/unreachable IdP at boot.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	oldOut, oldFlags := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(oldOut)
+		log.SetFlags(oldFlags)
+	}()
+
+	cfg := &config.OAuthConfig{
+		Custom: config.OAuthProviderConfig{
+			ClientID:     "id",
+			ClientSecret: "super-secret-value",
+			Issuer:       srv.URL,
+		},
+	}
+
+	mgr, err := NewOAuthProviderManager(cfg, "https://example.com")
+	if err != nil {
+		t.Fatalf("manager construction must not fail when a provider fails to init: %v", err)
+	}
+	if mgr == nil {
+		t.Fatal("manager must be non-nil so the remaining providers stay available")
+	}
+	if _, err := mgr.GetProvider("custom"); err == nil {
+		t.Error("expected the failed provider to be absent from the manager")
+	}
+	if got := mgr.ListProviders(); len(got) != 0 {
+		t.Errorf("expected no providers, got %v", got)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "custom") || !strings.Contains(strings.ToUpper(logged), "ERROR") {
+		t.Errorf("expected an ERROR log line naming the failed provider, got: %q", logged)
+	}
+	if strings.Contains(logged, "super-secret-value") {
+		t.Errorf("log must not leak the client secret, got: %q", logged)
 	}
 }

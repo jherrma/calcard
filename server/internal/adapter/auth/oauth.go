@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -120,7 +121,9 @@ func NewOAuthProviderManager(cfg *config.OAuthConfig, baseURL string) (OAuthProv
 	// Initialize Google
 	if cfg.Google.ClientID != "" && cfg.Google.ClientSecret != "" {
 		p, err := NewOIDCProvider(ctx, "google", cfg.Google, redirectFor("google"))
-		if err == nil {
+		if err != nil {
+			log.Printf("ERROR: OAuth provider %q failed to initialize and will be UNAVAILABLE: %v", "google", err)
+		} else {
 			providers["google"] = p
 		}
 	}
@@ -128,7 +131,9 @@ func NewOAuthProviderManager(cfg *config.OAuthConfig, baseURL string) (OAuthProv
 	// Initialize Microsoft
 	if cfg.Microsoft.ClientID != "" && cfg.Microsoft.ClientSecret != "" {
 		p, err := NewOIDCProvider(ctx, "microsoft", cfg.Microsoft, redirectFor("microsoft"))
-		if err == nil {
+		if err != nil {
+			log.Printf("ERROR: OAuth provider %q failed to initialize and will be UNAVAILABLE: %v", "microsoft", err)
+		} else {
 			providers["microsoft"] = p
 		}
 	}
@@ -136,7 +141,9 @@ func NewOAuthProviderManager(cfg *config.OAuthConfig, baseURL string) (OAuthProv
 	// Initialize Custom
 	if cfg.Custom.ClientID != "" && cfg.Custom.ClientSecret != "" {
 		p, err := NewOIDCProvider(ctx, "custom", cfg.Custom, redirectFor("custom"))
-		if err == nil {
+		if err != nil {
+			log.Printf("ERROR: OAuth provider %q failed to initialize and will be UNAVAILABLE: %v", "custom", err)
+		} else {
 			providers["custom"] = p
 		}
 	}
