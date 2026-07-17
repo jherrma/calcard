@@ -96,21 +96,22 @@ func (p *oidcProvider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSou
 		return nil, err
 	}
 
+	// go-oidc already parses sub/email/email_verified and tolerates providers
+	// that (non-spec, but common: AD FS and others) send email_verified as the
+	// string "true" instead of a boolean. Re-reading those into a local bool
+	// struct broke on the string form and failed the whole login. Only "name"
+	// needs a raw-claims read (go-oidc doesn't expose it); treat it as optional.
 	var claims struct {
-		Subject       string `json:"sub"`
-		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
-		Name          string `json:"name"`
+		Name string `json:"name"`
 	}
-
 	if err := userInfo.Claims(&claims); err != nil {
-		return nil, err
+		claims.Name = ""
 	}
 
 	return &UserInfo{
-		Subject:       claims.Subject,
-		Email:         claims.Email,
-		EmailVerified: claims.EmailVerified,
+		Subject:       userInfo.Subject,
+		Email:         userInfo.Email,
+		EmailVerified: userInfo.EmailVerified,
 		Name:          claims.Name,
 	}, nil
 }
