@@ -154,3 +154,24 @@ func TestExportUseCase_SanitizesUnsafeFilename(t *testing.T) {
 	assert.NotContains(t, filename, `..\`, "sanitized filename must not be a path-traversal string")
 	assert.True(t, strings.HasSuffix(filename, ".vcf"), "expected .vcf extension, got %q", filename)
 }
+
+func TestCreateContactUseCase_Execute_AddressBookNotFound(t *testing.T) {
+	repo := new(mockRepo)
+	uc := addressbookuc.NewCreateContactUseCase(repo)
+	ctx := context.Background()
+
+	abID := uint(999)
+	// AddressBookRepository.GetByID returns (nil, nil) when the row is not found.
+	repo.On("GetByID", ctx, abID).Return((*addressbook.AddressBook)(nil), nil)
+
+	_, err := uc.Execute(ctx, addressbookuc.CreateContactInput{
+		AddressBookID: abID,
+		UserID:        1,
+		VCardData:     "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD",
+	})
+
+	// Must return an error rather than panicking on the nil address book.
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	repo.AssertExpectations(t)
+}
