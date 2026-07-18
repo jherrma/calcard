@@ -1,0 +1,9 @@
+# Code owners for this repository.
+#
+# Every file is owned by @jherrma. Combined with the branch ruleset option
+# "Require review from Code Owners", this makes jherrma's approval mandatory on
+# every pull request — even once other collaborators with write access are added.
+#
+# Ownership rules are last-match-wins, so more specific paths can be added below
+# this line to grant additional owners for particular areas.
+* @jherrma
