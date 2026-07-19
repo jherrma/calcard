@@ -32,7 +32,7 @@ func (uc *CreateContactUseCase) Execute(ctx context.Context, input CreateContact
 	if err != nil {
 		return nil, err
 	}
-	if ab.UserID != input.UserID {
+	if ab == nil || ab.UserID != input.UserID {
 		return nil, fmt.Errorf("address book not found or access denied")
 	}
 
