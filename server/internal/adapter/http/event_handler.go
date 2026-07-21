@@ -170,10 +170,18 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 			CalendarID:   inst.CalendarID,
 			UID:          inst.UID,
 			Summary:      inst.Summary,
+			Description:  inst.Description,
+			Location:     inst.Location,
 			Start:        inst.Start,
 			End:          inst.End,
 			IsAllDay:     inst.IsAllDay,
 			RecurrenceID: &inst.RecurrenceID,
+		}
+		// Mirror the single-event Get predicate so the frontend can tell a
+		// recurring instance apart and show the recurrence scope dialog before
+		// a delete/edit hits the whole series.
+		if inst.Event != nil {
+			events[i].IsRecurring = inst.Event.RecurrenceEndTime != nil
 		}
 		if *events[i].RecurrenceID == "" {
 			events[i].RecurrenceID = nil
