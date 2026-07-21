@@ -328,8 +328,11 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo, abShareRepo)
 	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, carddavCredRepo, jwtManager)
 
-	app.Get("/.well-known/caldav", webdav.WellKnownCalDAVRedirect)
-	app.Get("/.well-known/carddav", webdav.WellKnownCardDAVRedirect)
+	// RFC 6764 §5: redirect the well-known context path regardless of method.
+	// Apple's iOS/macOS account setup autodiscovers via PROPFIND (not GET), so a
+	// GET-only route 404s those clients. The redirect handlers are method-agnostic.
+	app.All("/.well-known/caldav", webdav.WellKnownCalDAVRedirect)
+	app.All("/.well-known/carddav", webdav.WellKnownCardDAVRedirect)
 
 	davGroup := app.Group("/dav", davHandler.Authenticate())
 
