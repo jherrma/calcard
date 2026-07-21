@@ -146,7 +146,12 @@ const getCalendarColor = (calendarId: number) => {
 // Map store events to FullCalendar event objects
 const mappedEvents = computed(() =>
   calendarStore.visibleEvents.map(event => ({
-    id: event.id,
+    // Expanded occurrences of a recurring event all carry the same backend id
+    // (the series UUID) and differ only by recurrence_id. FullCalendar needs a
+    // unique id per rendered event, and click/drag handlers need to know which
+    // occurrence was touched, so make the FC id composite and carry the real
+    // identifiers in extendedProps.
+    id: event.recurrence_id ? `${event.id}::${event.recurrence_id}` : event.id,
     title: event.summary,
     start: event.start,
     end: event.end,
@@ -154,6 +159,8 @@ const mappedEvents = computed(() =>
     backgroundColor: getCalendarColor(event.calendar_id),
     borderColor: getCalendarColor(event.calendar_id),
     extendedProps: {
+      eventId: event.id, // real backend id for API calls
+      recurrenceId: event.recurrence_id,
       calendarId: event.calendar_id,
       description: event.description,
       location: event.location,
@@ -206,7 +213,14 @@ const calendarOptions = computed<CalendarOptions>(() => ({
 
 // Event handlers
 const handleEventClick = (arg: EventClickArg) => {
-  const event = calendarStore.events.find(e => e.id === arg.event.id);
+  // Resolve the clicked occurrence by both the real event id and its
+  // recurrence_id — matching on arg.event.id alone always resolved to the
+  // first occurrence, since every occurrence shared the series UUID.
+  const eventId = arg.event.extendedProps.eventId as string;
+  const recurrenceId = arg.event.extendedProps.recurrenceId as string | undefined;
+  const event = calendarStore.events.find(
+    e => e.id === eventId && (e.recurrence_id || '') === (recurrenceId || '')
+  );
   if (event) {
     selectedEvent.value = event;
     showDetailDialog.value = true;
@@ -223,7 +237,7 @@ const handleDateSelect = (arg: DateSelectArg) => {
 const handleEventDrop = async (arg: EventDropArg) => {
   try {
     await calendarStore.updateEventTime(
-      arg.event.id,
+      arg.event.extendedProps.eventId as string,
       String(arg.event.extendedProps.calendarId),
       arg.event.start!,
       arg.event.end || arg.event.start!
@@ -238,7 +252,7 @@ const handleEventDrop = async (arg: EventDropArg) => {
 const handleEventResize = async (arg: EventResizeDoneArg) => {
   try {
     await calendarStore.updateEventTime(
-      arg.event.id,
+      arg.event.extendedProps.eventId as string,
       String(arg.event.extendedProps.calendarId),
       arg.event.start!,
       arg.event.end!
