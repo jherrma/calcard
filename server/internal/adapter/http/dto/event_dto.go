@@ -56,8 +56,16 @@ func (r *RecurrenceRuleDTO) ToRRule() string {
 	if r.Count != nil {
 		parts = append(parts, fmt.Sprintf("COUNT=%d", *r.Count))
 	}
-	if r.Until != nil {
-		parts = append(parts, "UNTIL="+*r.Until)
+	if r.Until != nil && *r.Until != "" {
+		until := *r.Until
+		// The frontend sends UNTIL as RFC 3339 (e.g. 2026-08-01T00:00:00+02:00),
+		// but rrule.StrToRRule requires the iCal basic UTC form 20060102T150405Z.
+		// Normalize here so both formats are accepted; anything that isn't RFC 3339
+		// is passed through and validated later by StrToRRule in the use case.
+		if t, err := time.Parse(time.RFC3339, until); err == nil {
+			until = t.UTC().Format("20060102T150405Z")
+		}
+		parts = append(parts, "UNTIL="+until)
 	}
 
 	return strings.Join(parts, ";")
