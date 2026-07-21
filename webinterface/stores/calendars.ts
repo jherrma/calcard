@@ -179,6 +179,14 @@ export const useCalendarStore = defineStore('calendars', {
       return response;
     },
 
+    async moveEvent(calendarId: string, eventId: string, targetCalendarId: string) {
+      const api = useApi();
+      await api(`/api/v1/calendars/${calendarId}/events/${eventId}/move`, {
+        method: 'POST',
+        body: { target_calendar_id: targetCalendarId },
+      });
+    },
+
     async deleteEvent(calendarId: string, eventId: string, scope?: string, recurrenceId?: string) {
       const api = useApi();
 
