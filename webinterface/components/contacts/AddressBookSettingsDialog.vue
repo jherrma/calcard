@@ -71,6 +71,7 @@
 import { useConfirm } from 'primevue/useconfirm';
 import type { AddressBook } from '~/types/contacts';
 import { useContactsStore } from '~/stores/contacts';
+import { useAuthStore } from '~/stores/auth';
 
 const props = defineProps<{
   visible: boolean;
@@ -87,6 +88,7 @@ const emit = defineEmits<{
 const toast = useAppToast();
 const confirm = useConfirm();
 const contactsStore = useContactsStore();
+const authStore = useAuthStore();
 const config = useRuntimeConfig();
 
 const isSaving = ref(false);
@@ -115,7 +117,8 @@ watch(() => props.visible, (vis) => {
 const carddavUrl = computed(() => {
   if (!props.addressBook) return '';
   const base = (config.public.apiBaseUrl as string) || '';
-  return `${base}/dav/addressbooks/me/${props.addressBook.UUID}/`;
+  const username = authStore.user?.username || 'me';
+  return `${base}/dav/${username}/addressbooks/${props.addressBook.Path}/`;
 });
 
 const save = async () => {
