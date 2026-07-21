@@ -61,10 +61,20 @@ const api = useApi();
 const isPublic = ref(false);
 const publicUrl = ref<string | null>(null);
 
-watch(() => props.calendar, (cal) => {
-  if (cal) {
-    isPublic.value = !!cal.public_enabled;
-    publicUrl.value = cal.public_url || null;
+// The calendar list payload never carries the public URL (the token is
+// json:"-" on the domain model). Seed the toggle from public_enabled, then
+// fetch the status endpoint — the only source of the public URL — whenever the
+// calendar changes. On error, keep the values from the list payload.
+watch(() => props.calendar, async (cal) => {
+  if (!cal) return;
+  isPublic.value = !!cal.public_enabled;
+  publicUrl.value = null;
+  try {
+    const status = await api<PublicAccessStatus>(`/api/v1/calendars/${cal.id}/public`);
+    isPublic.value = status.enabled;
+    publicUrl.value = status.public_url || null;
+  } catch {
+    /* keep values from the list payload */
   }
 }, { immediate: true });
 
