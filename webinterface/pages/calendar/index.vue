@@ -235,13 +235,21 @@ const handleDateSelect = (arg: DateSelectArg) => {
 };
 
 const handleEventDrop = async (arg: EventDropArg) => {
+  const recurrenceId = arg.event.extendedProps.recurrenceId as string | undefined;
   try {
     await calendarStore.updateEventTime(
       arg.event.extendedProps.eventId as string,
       String(arg.event.extendedProps.calendarId),
       arg.event.start!,
-      arg.event.end || arg.event.start!
+      arg.event.end || arg.event.start!,
+      recurrenceId ? 'this' : undefined,
+      recurrenceId
     );
+    // A scoped update creates a RECURRENCE-ID exception, which changes what the
+    // series returns — refetch the visible range instead of trusting local state.
+    if (recurrenceId && currentDateRange.value) {
+      await calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
+    }
     toast.success('Event rescheduled');
   } catch {
     arg.revert();
@@ -250,13 +258,20 @@ const handleEventDrop = async (arg: EventDropArg) => {
 };
 
 const handleEventResize = async (arg: EventResizeDoneArg) => {
+  const recurrenceId = arg.event.extendedProps.recurrenceId as string | undefined;
   try {
     await calendarStore.updateEventTime(
       arg.event.extendedProps.eventId as string,
       String(arg.event.extendedProps.calendarId),
       arg.event.start!,
-      arg.event.end!
+      arg.event.end!,
+      recurrenceId ? 'this' : undefined,
+      recurrenceId
     );
+    // Scoped resize creates a RECURRENCE-ID exception — refetch the visible range.
+    if (recurrenceId && currentDateRange.value) {
+      await calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
+    }
     toast.success('Event duration updated');
   } catch {
     arg.revert();

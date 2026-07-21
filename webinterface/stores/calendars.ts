@@ -194,9 +194,20 @@ export const useCalendarStore = defineStore('calendars', {
       this.events = this.events.filter((e: CalendarEvent) => e.id !== eventId);
     },
 
-    async updateEventTime(eventId: string, calendarId: string, start: Date, end: Date) {
+    async updateEventTime(eventId: string, calendarId: string, start: Date, end: Date, scope?: string, recurrenceId?: string) {
       const api = useApi();
-      await api(`/api/v1/calendars/${calendarId}/events/${eventId}`, {
+
+      // Mirror updateEvent: without scope the backend defaults to scope=all and
+      // rewrites the whole series' DTSTART/DTEND. For a dragged/resized single
+      // occurrence, callers pass scope='this' + recurrence_id so only that
+      // occurrence moves (as a RECURRENCE-ID exception).
+      let url = `/api/v1/calendars/${calendarId}/events/${eventId}`;
+      const params = new URLSearchParams();
+      if (scope) params.set('scope', scope);
+      if (recurrenceId) params.set('recurrence_id', recurrenceId);
+      if (params.toString()) url += `?${params.toString()}`;
+
+      await api(url, {
         method: 'PATCH',
         body: {
           start: toRFC3339(start),
@@ -205,11 +216,15 @@ export const useCalendarStore = defineStore('calendars', {
         },
       });
 
-      // Update local state
-      const event = this.events.find((e: CalendarEvent) => e.id === eventId);
-      if (event) {
-        event.start = toRFC3339(start);
-        event.end = toRFC3339(end);
+      // For scoped (recurring) mutations the server changes what the series
+      // returns, so the caller must refetch the visible range; only patch local
+      // state for an unscoped/whole-series update.
+      if (!scope || scope === 'all') {
+        const event = this.events.find((e: CalendarEvent) => e.id === eventId);
+        if (event) {
+          event.start = toRFC3339(start);
+          event.end = toRFC3339(end);
+        }
       }
     },
 
