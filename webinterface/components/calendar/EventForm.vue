@@ -18,7 +18,7 @@
       <Select
         id="event-calendar"
         v-model="form.calendar_id"
-        :options="calendarStore.writableCalendars"
+        :options="calendarSelectOptions"
         option-label="name"
         option-value="id"
         placeholder="Select calendar"
@@ -273,7 +273,7 @@ const defaultEnd = () => {
 const defaultCalendarId = () => {
   if (props.event) return String(props.event.calendar_id);
   const first = calendarStore.writableCalendars[0];
-  return first ? first.id : '';
+  return first ? String(first.id) : '';
 };
 
 const form = reactive({
@@ -390,13 +390,19 @@ const handleSubmit = () => {
 };
 
 // Helper functions
+// Calendar.id is a number at runtime (typed as string), so build the Select
+// options with stringified ids to keep option-value matching consistent.
+const calendarSelectOptions = computed(() =>
+  calendarStore.writableCalendars.map(c => ({ ...c, id: String(c.id) })),
+);
+
 const getCalendarColor = (id: string) => {
-  const cal = calendarStore.calendars.find(c => c.id === id);
+  const cal = calendarStore.calendars.find(c => String(c.id) === String(id));
   return cal?.color || '#3b82f6';
 };
 
 const getCalendarName = (id: string) => {
-  const cal = calendarStore.calendars.find(c => c.id === id);
+  const cal = calendarStore.calendars.find(c => String(c.id) === String(id));
   return cal?.name || '';
 };
 </script>
