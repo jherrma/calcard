@@ -100,13 +100,13 @@ const showScopeDialog = ref(false);
 
 const calendarColor = computed(() => {
   if (!props.event) return '#3b82f6';
-  const cal = calendarStore.calendars.find(c => c.id === String(props.event!.calendar_id));
+  const cal = calendarStore.calendars.find(c => String(c.id) === String(props.event!.calendar_id));
   return cal?.color || '#3b82f6';
 });
 
 const calendarName = computed(() => {
   if (!props.event) return '';
-  const cal = calendarStore.calendars.find(c => c.id === String(props.event!.calendar_id));
+  const cal = calendarStore.calendars.find(c => String(c.id) === String(props.event!.calendar_id));
   return cal?.name || '';
 });
 
