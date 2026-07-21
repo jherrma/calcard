@@ -96,7 +96,6 @@ definePageMeta({
 const api = useApi();
 const toast = useAppToast();
 const confirm = useConfirm();
-const config = useRuntimeConfig();
 
 const loading = ref(true);
 const linkedProviders = ref<LinkedProvider[]>([]);
@@ -145,8 +144,21 @@ const fetchData = async () => {
   }
 };
 
-const linkProvider = (method: AuthMethod) => {
-  window.location.href = `${config.public.apiBaseUrl}/api/v1/auth/oauth/${method.id}/link`;
+const linkProvider = async (method: AuthMethod) => {
+  // The /link route is POST + JWT, so a top-level navigation can't reach it.
+  // Kick it off with an authenticated XHR; the backend sets the signed
+  // oauth_context cookie on this response and returns the provider URL, then we
+  // navigate the browser there. credentials: 'include' ensures the cookie is
+  // stored even when the SPA and API are on different origins.
+  try {
+    const res = await api<{ url: string }>(`/api/v1/auth/oauth/${method.id}/link`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    window.location.href = res.url;
+  } catch {
+    toast.error('Failed to start linking');
+  }
 };
 
 const confirmUnlink = (provider: LinkedProvider) => {

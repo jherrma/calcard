@@ -84,7 +84,11 @@ func (h *OAuthHandler) Link(c fiber.Ctx) error {
 	}
 	h.setContextCookie(c, ctxData)
 
-	return c.Redirect().To(url) // Or return JSON with URL if client wants to redirect? Story implies initiation endpoint redirects.
+	// This endpoint is JWT-protected, so it is called via an authenticated XHR
+	// (a top-level navigation can't carry the Bearer token). Return the provider
+	// URL as JSON and let the SPA navigate to it; the signed oauth_context cookie
+	// set above travels with that navigation and is read back in Callback.
+	return SuccessResponse(c, fiber.Map{"url": url})
 }
 
 func (h *OAuthHandler) Callback(c fiber.Ctx) error {
