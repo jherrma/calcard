@@ -526,10 +526,14 @@ func (b *CardDAVBackend) resolveAddressObject(ctx context.Context, u *user.User,
 // mapAddressBook converts domain AddressBook to carddav.AddressBook.
 func (b *CardDAVBackend) mapAddressBook(username string, ab *addressbook.AddressBook) *carddav.AddressBook {
 	return &carddav.AddressBook{
-		Path:            fmt.Sprintf("/dav/%s/addressbooks/%s/", username, ab.Path),
-		Name:            ab.Name,
-		Description:     ab.Description,
-		MaxResourceSize: 102400, // 100KB
+		Path:        fmt.Sprintf("/dav/%s/addressbooks/%s/", username, ab.Path),
+		Name:        ab.Name,
+		Description: ab.Description,
+		// Advertise the limit the server actually enforces (the global request
+		// body cap, security.max_request_size, default 10MB). The previous 100KB
+		// value was a fiction: emersion doesn't enforce it, so its only effect was
+		// to make spec-honoring clients pre-reject any contact with a normal photo.
+		MaxResourceSize: 10 * 1024 * 1024,
 		SupportedAddressData: []carddav.AddressDataType{
 			{ContentType: "text/vcard", Version: "3.0"},
 			{ContentType: "text/vcard", Version: "4.0"},
