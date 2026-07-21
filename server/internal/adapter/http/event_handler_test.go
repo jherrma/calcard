@@ -129,6 +129,62 @@ func TestEventHandlerVTODONilTimes(t *testing.T) {
 	assert.True(t, res.End.IsZero(), "missing DTEND must serialize as a zero time, not panic")
 }
 
+// TestEventHandlerListPopulatesRecurrenceFields is the regression test for #3:
+// the List handler previously left is_recurring=false and description/location
+// empty on expanded occurrences, so the frontend never showed the recurrence
+// scope dialog and a single-occurrence delete wiped the whole series. Every
+// expanded instance of a recurring event must now report is_recurring=true and
+// carry the master's description/location.
+func TestEventHandlerListPopulatesRecurrenceFields(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+
+	start := time.Now().Add(time.Hour * 24).Truncate(time.Second)
+	count := 5
+	createInput := dto.CreateEventRequest{
+		Summary:     "Daily Standup",
+		Description: "Team sync",
+		Location:    "Room A",
+		Start:       start,
+		End:         start.Add(time.Hour),
+		Recurrence: &dto.RecurrenceRuleDTO{
+			Frequency: "DAILY",
+			Count:     &count,
+		},
+	}
+	body, _ := json.Marshal(createInput)
+	req, _ := http.NewRequest("POST", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusCreated, resp.StatusCode)
+
+	listStart := start.Add(-time.Hour).Format(time.RFC3339)
+	listEnd := start.Add(time.Hour * 24 * 10).Format(time.RFC3339)
+	listUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events?expand=true&start=" + url.QueryEscape(listStart) + "&end=" + url.QueryEscape(listEnd)
+	listReq, _ := http.NewRequest("GET", listUrl, nil)
+	listReq.Header.Set("Authorization", "Bearer "+token)
+	listResp, err := app.Test(listReq)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusOK, listResp.StatusCode)
+
+	var listRes dto.EventListResponse
+	require.NoError(t, json.NewDecoder(listResp.Body).Decode(&listRes))
+
+	occurrences := 0
+	for _, e := range listRes.Events {
+		if e.Summary != "Daily Standup" {
+			continue
+		}
+		occurrences++
+		assert.True(t, e.IsRecurring, "every expanded occurrence must report is_recurring=true")
+		assert.Equal(t, "Team sync", e.Description, "description must be populated on list instances")
+		assert.Equal(t, "Room A", e.Location, "location must be populated on list instances")
+	}
+	assert.Equal(t, count, occurrences, "all %d occurrences should be listed", count)
+}
+
 func TestEventHandler(t *testing.T) {
 	app, db, _, cal, token := setupEventHandlerTest(t)
 	defer db.Close()
