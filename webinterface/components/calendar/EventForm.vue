@@ -284,7 +284,7 @@ const form = reactive({
   all_day: props.event?.all_day ?? props.initialAllDay ?? false,
   start: defaultStart(),
   end: defaultEnd(),
-  timezone: props.event ? '' : Intl.DateTimeFormat().resolvedOptions().timeZone,
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 });
 
 // When toggling all-day off, set start to the last full hour

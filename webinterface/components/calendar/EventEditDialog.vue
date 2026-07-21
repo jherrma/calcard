@@ -69,13 +69,17 @@ const saveEvent = async (data: EventFormData, scope?: string) => {
 
   isSubmitting.value = true;
   try {
+    const originalCal = String(props.event.calendar_id);
     await calendarStore.updateEvent(
-      String(props.event.calendar_id),
+      originalCal,
       props.event.id,
       data,
       scope,
       props.event.recurrence_id
     );
+    if (data.calendar_id && String(data.calendar_id) !== originalCal) {
+      await calendarStore.moveEvent(originalCal, props.event.id, String(data.calendar_id));
+    }
     toast.success('Event updated');
     emit('update:visible', false);
     emit('updated');
