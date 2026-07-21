@@ -27,7 +27,13 @@ type RecurrenceRuleDTO struct {
 	Count      *int     `json:"count"`
 }
 
-func (r *RecurrenceRuleDTO) ToRRule() string {
+// ToRRule renders the DTO as an iCal RRULE string. allDay selects the value
+// type used for the UNTIL boundary: RFC 5545 §3.3.10 requires UNTIL to share
+// the series' DTSTART value type, so an all-day (VALUE=DATE) series must emit a
+// bare DATE UNTIL (20060102) while a timed series emits a UTC DATE-TIME
+// (20060102T150405Z). A mismatched type makes strict clients (Apple, DAVx5)
+// reject the whole RRULE.
+func (r *RecurrenceRuleDTO) ToRRule(allDay bool) string {
 	if r == nil || r.Frequency == "" {
 		return ""
 	}
@@ -59,11 +65,21 @@ func (r *RecurrenceRuleDTO) ToRRule() string {
 	if r.Until != nil && *r.Until != "" {
 		until := *r.Until
 		// The frontend sends UNTIL as RFC 3339 (e.g. 2026-08-01T00:00:00+02:00),
-		// but rrule.StrToRRule requires the iCal basic UTC form 20060102T150405Z.
-		// Normalize here so both formats are accepted; anything that isn't RFC 3339
-		// is passed through and validated later by StrToRRule in the use case.
+		// but rrule.StrToRRule requires the iCal basic forms (DATE 20060102 or
+		// DATE-TIME UTC 20060102T150405Z). Normalize here so both formats are
+		// accepted; anything that isn't RFC 3339 is passed through and validated
+		// later by StrToRRule in the use case.
 		if t, err := time.Parse(time.RFC3339, until); err == nil {
-			until = t.UTC().Format("20060102T150405Z")
+			if allDay {
+				// Keep the sender's local calendar date (t retains its offset,
+				// so 2026-08-01T00:00:00+02:00 renders as 20260801). This both
+				// matches DTSTART;VALUE=DATE and — since UNTIL is inclusive —
+				// stops the chosen end date's own occurrence being dropped east
+				// of UTC, which .UTC() would have done.
+				until = t.Format("20060102")
+			} else {
+				until = t.UTC().Format("20060102T150405Z")
+			}
 		}
 		parts = append(parts, "UNTIL="+until)
 	}

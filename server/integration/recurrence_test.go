@@ -5,6 +5,7 @@ package integration_test
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -396,6 +397,88 @@ func TestThisAndFutureGarbageRecurrenceID(t *testing.T) {
 		token, nil)
 	require.Equalf(t, http.StatusNoContent, status, "all-day this_and_future split must succeed: %s", errorMessage(raw))
 	assert.Len(t, listEvents(t, token, calID, adRange), 2, "all-day split must retain only the two occurrences before June 7")
+}
+
+// TestAllDayRecurrenceUntilIsDateValue is the end-to-end regression guard for
+// issue #118. Creating an all-day recurring series with an "Ends on" date must:
+//
+//  1. persist an RRULE whose UNTIL is a bare DATE (matching DTSTART;VALUE=DATE),
+//     not a UTC DATE-TIME — RFC 5545 §3.3.10 requires the value types to match,
+//     and a mismatch makes strict clients (Apple, DAVx5) reject the series; and
+//  2. include the chosen end date's own occurrence. The web UI sends UNTIL as
+//     local midnight of the end date (e.g. 2035-02-03T00:00:00+02:00); the old
+//     unconditional .UTC() normalization landed on 2035-02-02T22:00:00Z, which
+//     — since UNTIL is inclusive — silently dropped the Feb 3 occurrence for
+//     any user east of UTC.
+func TestAllDayRecurrenceUntilIsDateValue(t *testing.T) {
+	email := "rrule-allday-until@example.test"
+	password := "rruleSecret!123"
+	token := registerAndLogin(t, email, password, "Rrule AllDay Until")
+
+	calID, calUUID := createCalendar(t, token, "AllDay Until", "#5566aa")
+
+	// Weekly all-day series. DTSTART 2035-01-06 and the chosen end date
+	// 2035-02-03 are 28 days (4 weeks) apart, so the end date is a genuine
+	// occurrence. Send UNTIL as local midnight in a +02:00 zone — the case the
+	// old code corrupted.
+	start := time.Date(2035, 1, 6, 0, 0, 0, 0, time.UTC)
+	var ev struct {
+		ID  string `json:"id"`
+		UID string `json:"uid"`
+	}
+	code := doJSONRaw(t, http.MethodPost,
+		"/calendars/"+uintStr(calID)+"/events/", token,
+		map[string]any{
+			"summary":  "All-day weekly",
+			"start":    start.Format(time.RFC3339),
+			"end":      start.Add(24 * time.Hour).Format(time.RFC3339),
+			"timezone": "UTC",
+			"all_day":  true,
+			"recurrence": map[string]any{
+				"frequency": "WEEKLY",
+				"until":     "2035-02-03T00:00:00+02:00",
+			},
+		}, &ev)
+	require.Equal(t, http.StatusCreated, code)
+	require.NotEmpty(t, ev.ID)
+
+	// The expansion must include the chosen end date (Feb 3) itself: five
+	// weekly occurrences Jan 6, 13, 20, 27, Feb 3.
+	rangeQS := "?start=2035-01-01T00:00:00Z&end=2035-02-28T00:00:00Z&expand=true"
+	instances := listEvents(t, token, calID, rangeQS)
+	assert.Lenf(t, instances, 5,
+		"all-day series ending 2035-02-03 must expand to 5 occurrences (got %d)", len(instances))
+	foundEndDate := false
+	for _, inst := range instances {
+		if strings.HasPrefix(inst.RecurrenceID, "20350203") {
+			foundEndDate = true
+			break
+		}
+	}
+	assert.Truef(t, foundEndDate,
+		"the chosen end date 2035-02-03 must appear as an occurrence, got %+v", instances)
+
+	// The persisted iCal (via export) must carry a DTSTART;VALUE=DATE and an
+	// RRULE UNTIL that is a bare DATE, not a UTC DATE-TIME.
+	status, raw := restCall(t, http.MethodGet, "/calendars/"+calUUID+"/export", token, nil)
+	require.Equalf(t, http.StatusOK, status, "export: %s", string(raw))
+	body := string(raw)
+
+	var rruleLine string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, "RRULE:") {
+			rruleLine = line
+			break
+		}
+	}
+	require.NotEmptyf(t, rruleLine, "export must contain an RRULE:\n%s", body)
+	assert.Contains(t, rruleLine, "UNTIL=20350203",
+		"RRULE UNTIL must be the bare DATE 20350203, got %q", rruleLine)
+	assert.NotContains(t, rruleLine, "UNTIL=20350203T",
+		"RRULE UNTIL must be a DATE, not a DATE-TIME, got %q", rruleLine)
+	assert.Contains(t, body, "DTSTART;VALUE=DATE:20350106",
+		"all-day master must persist DTSTART;VALUE=DATE:\n%s", body)
 }
 
 // listEvents is a thin wrapper around GET /calendars/:id/events returning

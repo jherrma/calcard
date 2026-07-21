@@ -257,7 +257,7 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 		Timezone:    req.Timezone,
 	}
 	if req.Recurrence != nil {
-		input.RRule = req.Recurrence.ToRRule() // Need to add ToRRule to DTO
+		input.RRule = req.Recurrence.ToRRule(req.AllDay)
 	}
 
 	obj, err := h.createUC.Execute(c.Context(), input)
@@ -320,7 +320,11 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 	}
 
 	if req.Recurrence != nil {
-		rruleStr := req.Recurrence.ToRRule()
+		// The update request carries all_day whenever the client edits the
+		// series (the web UI always sends it alongside recurrence); a nil flag
+		// defaults to a timed UNTIL, preserving prior behavior.
+		allDay := req.AllDay != nil && *req.AllDay
+		rruleStr := req.Recurrence.ToRRule(allDay)
 		input.RRule = &rruleStr
 	}
 
