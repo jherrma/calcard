@@ -43,8 +43,8 @@
                 :style="{ backgroundColor: avatarColor }"
               >
                 <img
-                  v-if="contact.photo_url"
-                  :src="contact.photo_url"
+                  v-if="photoSrc"
+                  :src="photoSrc"
                   :alt="contact.formatted_name"
                   class="w-20 h-20 rounded-full object-cover"
                 >
@@ -176,6 +176,10 @@ const contact = ref<Contact | null>(null);
 const isLoading = ref(true);
 const loadError = ref<string | null>(null);
 const numericAbId = ref<number | null>(null);
+
+// The photo endpoint requires a Bearer token, which an <img> can't send, so
+// fetch it via the authenticated client and render the resulting blob URL.
+const photoSrc = useAuthedImage(() => contact.value?.photo_url);
 
 onMounted(async () => {
   try {

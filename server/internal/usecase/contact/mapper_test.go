@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/emersion/go-vcard"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/contact"
 	"github.com/stretchr/testify/assert"
 )
@@ -142,4 +143,32 @@ func TestPatchVCard(t *testing.T) {
 		assert.Equal(t, "item1", label.Group, "X-ABLabel must keep its group")
 		assert.Equal(t, "homepage", label.Value)
 	}
+}
+
+// TestFromAddressObjectPhotoURL is the regression test for #10: list/search
+// mappings must expose a photo via a relative URL (loaded separately by the
+// client) whenever the hydrated vCard carries a PHOTO, and must not inline the
+// base64 blob. Contacts without a photo carry no photo_url.
+func TestFromAddressObjectPhotoURL(t *testing.T) {
+	withPhoto := &addressbook.AddressObject{
+		UUID:          "contact-uuid-1",
+		AddressBookID: 7,
+		VCardData: "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:with-photo\r\n" +
+			"FN:Ada Lovelace\r\nN:Lovelace;Ada;;;\r\n" +
+			"PHOTO;ENCODING=b;TYPE=JPEG:SGVsbG8=\r\nEND:VCARD\r\n",
+	}
+	c := FromAddressObject(withPhoto)
+	assert.NotNil(t, c)
+	assert.Equal(t, "/api/v1/addressbooks/7/contacts/contact-uuid-1/photo", c.PhotoURL)
+	assert.Empty(t, c.Photo, "base64 blob must not be inlined in the mapped contact")
+
+	noPhoto := &addressbook.AddressObject{
+		UUID:          "contact-uuid-2",
+		AddressBookID: 7,
+		VCardData: "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:no-photo\r\n" +
+			"FN:Grace Hopper\r\nN:Hopper;Grace;;;\r\nEND:VCARD\r\n",
+	}
+	c = FromAddressObject(noPhoto)
+	assert.NotNil(t, c)
+	assert.Empty(t, c.PhotoURL, "contacts without a photo must not carry a photo_url")
 }

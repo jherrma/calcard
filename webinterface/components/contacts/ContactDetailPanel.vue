@@ -37,8 +37,8 @@
           :style="{ backgroundColor: avatarColor }"
         >
           <img
-            v-if="contact.photo_url"
-            :src="contact.photo_url"
+            v-if="photoSrc"
+            :src="photoSrc"
             :alt="contact.formatted_name"
             class="w-20 h-20 rounded-full object-cover"
           >
@@ -155,6 +155,10 @@ defineEmits<{
   delete: [contact: Contact];
   close: [];
 }>();
+
+// Photos require a Bearer token an <img> can't send, so fetch via the
+// authenticated client and render the resulting blob URL.
+const photoSrc = useAuthedImage(() => props.contact?.photo_url);
 
 const initials = computed(() => {
   if (!props.contact) return '';

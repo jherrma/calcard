@@ -339,5 +339,15 @@ func FromAddressObject(obj *addressbook.AddressObject) *contact.Contact {
 	c.Etag = obj.ETag
 	c.CreatedAt = obj.CreatedAt
 	c.UpdatedAt = obj.UpdatedAt
+
+	// Expose the photo via its own URL (loaded separately by the client) rather
+	// than inlining the base64 blob. ToContact fills c.Photo from the hydrated
+	// vCard PHOTO property, so a non-empty value is the "has photo" signal. The
+	// URL matches the one built by the single-contact GET handler; keep it
+	// relative so the web frontend can prepend its configured API base URL.
+	if c.Photo != "" {
+		c.PhotoURL = fmt.Sprintf("/api/v1/addressbooks/%d/contacts/%s/photo", obj.AddressBookID, obj.UUID)
+		c.Photo = "" // Drop the base64 blob so list payloads stay small.
+	}
 	return c
 }
