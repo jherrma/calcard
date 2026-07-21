@@ -137,6 +137,7 @@
 
 <script setup lang="ts">
 import QRCode from 'qrcode';
+import { useAuthStore } from '~/stores/auth';
 import type { DavCredential } from '~/types/settings';
 
 interface SelectOption {
@@ -155,6 +156,7 @@ const props = defineProps<{
 }>();
 
 const toast = useAppToast();
+const authStore = useAuthStore();
 const clientTab = ref('davx5');
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 
@@ -204,7 +206,11 @@ const activeCredential = computed(() =>
 const davUrl = computed(() => {
   if (!activeCredential.value) return '';
   const pathType = props.protocol === 'caldav' ? 'calendars' : 'addressbooks';
-  return `${props.serverUrl}/dav/${activeCredential.value.username}/${pathType}/`;
+  // The server's DAV tree lives under the account username, not the credential
+  // (Basic-auth login) username. Clients configured with the literal URL need
+  // the account username so object hrefs resolve.
+  const account = authStore.user?.username || '';
+  return `${props.serverUrl}/dav/${account}/${pathType}/`;
 });
 
 // QR code
@@ -254,7 +260,8 @@ Server URL: ${props.serverUrl}
 Username: ${activeCredential.value.username}
 ${label} URL: ${davUrl.value}
 
-Note: Use the password you set when creating this credential.`;
+Note: "Username" is the login for the password prompt; it may differ from the account name in the ${label} URL path.
+Use the password you set when creating this credential.`;
 
   await navigator.clipboard.writeText(text);
   toast.success('Settings copied to clipboard');
