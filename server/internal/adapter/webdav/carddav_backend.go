@@ -73,7 +73,7 @@ func (b *CardDAVBackend) ListAddressBooks(ctx context.Context) ([]carddav.Addres
 
 	res := make([]carddav.AddressBook, 0, len(books)+len(shared))
 	for _, ab := range books {
-		res = append(res, *b.mapAddressBook(u.Username, &ab))
+		res = append(res, *b.mapAddressBook(u.Username, &ab, false))
 	}
 	for _, s := range shared {
 		// Defense in depth: skip a share whose address book no longer exists
@@ -81,7 +81,7 @@ func (b *CardDAVBackend) ListAddressBooks(ctx context.Context) ([]carddav.Addres
 		if s.AddressBook.ID == 0 {
 			continue
 		}
-		res = append(res, *b.mapAddressBook(u.Username, &s.AddressBook))
+		res = append(res, *b.mapAddressBook(u.Username, &s.AddressBook, true))
 	}
 
 	return res, nil
@@ -94,12 +94,12 @@ func (b *CardDAVBackend) GetAddressBook(ctx context.Context, p string) (*carddav
 		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
 	}
 
-	ab, _, err := b.resolveAddressBook(ctx, u, p)
+	ab, perm, err := b.resolveAddressBook(ctx, u, p)
 	if err != nil {
 		return nil, err
 	}
 
-	return b.mapAddressBook(u.Username, ab), nil
+	return b.mapAddressBook(u.Username, ab, perm != abPermOwner), nil
 }
 
 // CreateAddressBook creates a new address book.
@@ -512,7 +512,9 @@ func (b *CardDAVBackend) resolveAddressBook(ctx context.Context, u *user.User, p
 			return nil, "", err
 		}
 		for _, s := range shared {
-			if s.AddressBook.Path == abPath {
+			// Match by UUID (the path shares are now advertised under) or the
+			// legacy owner path, so already-connected clients don't 404.
+			if s.AddressBook.UUID == abPath || s.AddressBook.Path == abPath {
 				ab := s.AddressBook
 				return &ab, s.Permission, nil
 			}
@@ -562,10 +564,17 @@ func (b *CardDAVBackend) resolveAddressObject(ctx context.Context, u *user.User,
 	return nil, "", webdav.NewHTTPError(http.StatusNotFound, nil)
 }
 
-// mapAddressBook converts domain AddressBook to carddav.AddressBook.
-func (b *CardDAVBackend) mapAddressBook(username string, ab *addressbook.AddressBook) *carddav.AddressBook {
+// mapAddressBook converts domain AddressBook to carddav.AddressBook. Shared
+// books are addressed by UUID (see mapCalendar): the owner's path segment can
+// collide with one of the recipient's own paths, and the DAV URL must be unique
+// per collection or writes land in the wrong book.
+func (b *CardDAVBackend) mapAddressBook(username string, ab *addressbook.AddressBook, shared bool) *carddav.AddressBook {
+	pathSeg := ab.Path
+	if shared {
+		pathSeg = ab.UUID
+	}
 	return &carddav.AddressBook{
-		Path:        fmt.Sprintf("/dav/%s/addressbooks/%s/", username, ab.Path),
+		Path:        fmt.Sprintf("/dav/%s/addressbooks/%s/", username, pathSeg),
 		Name:        ab.Name,
 		Description: ab.Description,
 		// Advertise the limit the server actually enforces (the global request
