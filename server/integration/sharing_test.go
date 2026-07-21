@@ -307,7 +307,10 @@ func TestSharedCalendarCalDAVVisible(t *testing.T) {
 	// to discover via PROPFIND / GET.
 	calID, calUUID := createCalendar(t, ownerToken, "TeamSchedule", "#336699")
 	seedUID, _ := createSeededEvent(t, ownerToken, calID, "TeamSchedule", 0)
-	calPath := calUUID + ".ics"
+	// The owner addresses this calendar as {uuid}.ics; since #47 the sharee
+	// sees it advertised under the bare UUID so a share can never collide
+	// with one of their own collection paths.
+	sharedSeg := calUUID
 
 	// Owner shares with target at read-write.
 	var shareResp struct {
@@ -330,14 +333,14 @@ func TestSharedCalendarCalDAVVisible(t *testing.T) {
 		propfindCalendarHomeBody, depthHeader("1"))
 	require.Equalf(t, http.StatusMultiStatus, status,
 		"target home PROPFIND: %s", string(body))
-	assert.Containsf(t, string(body), calPath,
-		"shared calendar path %q must show up in target's CalDAV home-set", calPath)
+	assert.Containsf(t, string(body), "/calendars/"+sharedSeg+"/",
+		"shared calendar must show up in target's CalDAV home-set under its UUID %q", sharedSeg)
 
 	// 2. PROPFIND on the collection itself — addressed under the TARGET's
 	//    /dav path, since ResolvePath matches parts[1] against the
 	//    authenticated user. The shared-calendar fallback in ResolvePath
-	//    handles the mapping by comparing calendar.Path.
-	collection := home + calPath + "/"
+	//    matches the segment against the calendar's UUID (or legacy path).
+	collection := home + sharedSeg + "/"
 	status, _, body = davCall(t, "PROPFIND", collection,
 		targetEmail, targetAppPass,
 		propfindCalendarBody, depthHeader("0"))
@@ -472,6 +475,25 @@ func addressBookPath(t *testing.T, token, name string) string {
 	for _, ab := range wrap.AddressBooks {
 		if ab.Name == name {
 			return ab.Path
+		}
+	}
+	return ""
+}
+
+// addressBookUUID returns the book's UUID — the segment a SHAREE's home set
+// advertises it under (#47). The owner keeps addressing it by Path.
+func addressBookUUID(t *testing.T, token, name string) string {
+	t.Helper()
+	var wrap struct {
+		AddressBooks []struct {
+			Name string `json:"Name"`
+			UUID string `json:"UUID"`
+		} `json:"addressbooks"`
+	}
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &wrap))
+	for _, ab := range wrap.AddressBooks {
+		if ab.Name == name {
+			return ab.UUID
 		}
 	}
 	return ""
@@ -612,6 +634,8 @@ func TestAddressBookDAVDeleteRevokesShares(t *testing.T) {
 	abID := createAddressBook(t, ownerToken, "Doomed DAV Directory")
 	abPath := addressBookPath(t, ownerToken, "Doomed DAV Directory")
 	require.NotEmpty(t, abPath)
+	abUUID := addressBookUUID(t, ownerToken, "Doomed DAV Directory")
+	require.NotEmpty(t, abUUID)
 
 	shareAB(t, ownerToken, abID, shareeEmail, "read")
 	require.True(t, addressBookVisibleTo(t, shareeToken, abID), "sharee should see the shared book pre-delete")
@@ -623,7 +647,7 @@ func TestAddressBookDAVDeleteRevokesShares(t *testing.T) {
 	pfHeaders := map[string]string{"Depth": "1", "Content-Type": "application/xml"}
 	status, _, body := davCall(t, "PROPFIND", shareeHome, shareeEmail, shareeAppPass, propfind, pfHeaders)
 	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND pre-delete: %s", string(body))
-	require.Truef(t, strings.Contains(string(body), abPath), "shared book must appear in sharee's home set before delete")
+	require.Truef(t, strings.Contains(string(body), abUUID), "shared book must appear in sharee's home set (under its UUID) before delete")
 
 	// Delete the book over DAV (CardDAVBackend.DeleteAddressBook).
 	status, _, body = davCall(t, "DELETE", "/dav/"+ownerUsername+"/addressbooks/"+abPath+"/",
@@ -634,7 +658,7 @@ func TestAddressBookDAVDeleteRevokesShares(t *testing.T) {
 	// their REST list.
 	status, _, body = davCall(t, "PROPFIND", shareeHome, shareeEmail, shareeAppPass, propfind, pfHeaders)
 	require.Equalf(t, http.StatusMultiStatus, status, "sharee PROPFIND post-delete: %s", string(body))
-	assert.NotContainsf(t, string(body), abPath, "DAV-deleted book must not linger as a ghost in the sharee's home set")
+	assert.NotContainsf(t, string(body), abUUID, "DAV-deleted book must not linger as a ghost in the sharee's home set")
 	assert.False(t, addressBookVisibleTo(t, shareeToken, abID),
 		"DAV-deleted book must not linger in the sharee's REST list")
 

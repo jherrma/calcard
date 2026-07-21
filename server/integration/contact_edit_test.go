@@ -64,9 +64,12 @@ func TestContactEditPreservesUnknownProps(t *testing.T) {
 	served := string(getBody)
 	assert.Contains(t, served, "FN:Renamed Person", "managed field must reflect the edit")
 	assert.NotContains(t, served, "Original Name", "old FN must be gone")
-	// Exact CATEGORIES form: the comma-list must survive as two categories, not
-	// collapse into a single escaped "Work\,Important" value.
-	assert.Contains(t, served, "CATEGORIES:Work,Important", "CATEGORIES comma-list must survive unchanged")
+	// CATEGORIES must survive as two distinct categories. Since #44 the server
+	// re-serializes the comma list as repeated CATEGORIES instances (the RFC
+	// 6350 §6.7.1-equivalent form) so go-vcard's encoder can never escape the
+	// separator into a single mangled "Work\,Important" value.
+	assert.Contains(t, served, "CATEGORIES:Work", "first category must survive")
+	assert.Contains(t, served, "CATEGORIES:Important", "second category must survive as its own instance")
 	assert.NotContains(t, served, `Work\,Important`, "commas in a category list must not be escaped into one value")
 	assert.Contains(t, served, "X-CUSTOM-FIELD:custom-value", "X-CUSTOM-FIELD must survive a web-UI edit")
 	assert.Contains(t, served, "chat.example", "IMPP must survive a web-UI edit")
