@@ -158,8 +158,26 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	authGroup.Post("/refresh", authHandler.Refresh)
 	authGroup.Post("/logout", authHandler.Logout)
-	authGroup.Post("/forgot-password", authHandler.ForgotPassword)
-	authGroup.Post("/reset-password", authHandler.ResetPassword)
+
+	// Password-reset rate limiting — gated by the same RateLimit.Enabled flag
+	// as login so tests (which disable it) aren't clamped. forgot-password
+	// sends a real email per request, so without a dedicated throttle it can be
+	// abused as a mail-flooding primitive against a victim inbox. It reuses the
+	// login pattern (IP + email limiter): the per-EMAIL limiter is the primary
+	// control, since behind a reverse proxy c.IP() collapses every client to a
+	// single address. reset-password sends no mail (tokens are high-entropy and
+	// hashed), so an IP limiter is enough there.
+	if cfg.RateLimit.Enabled {
+		forgotIPLimiter := http.NewIPRateLimiter(5, time.Minute)
+		forgotEmailLimiter := http.NewEmailRateLimiter(10, time.Minute)
+		authGroup.Post("/forgot-password", http.ExtractEmailMiddleware(), forgotIPLimiter, forgotEmailLimiter, authHandler.ForgotPassword)
+
+		resetIPLimiter := http.NewIPRateLimiter(5, time.Minute)
+		authGroup.Post("/reset-password", resetIPLimiter, authHandler.ResetPassword)
+	} else {
+		authGroup.Post("/forgot-password", authHandler.ForgotPassword)
+		authGroup.Post("/reset-password", authHandler.ResetPassword)
+	}
 
 	// User Routes (Protected)
 	userGroup := v1.Group("/users", http.Authenticate(jwtManager, userRepo))
