@@ -115,6 +115,39 @@ func TestOAuthHandler_Lifecycle(t *testing.T) {
 		assert.NotEmpty(t, resp.Cookies())
 	})
 
+	t.Run("Link", func(t *testing.T) {
+		// The /link route is POST + JWT and is called via an authenticated XHR, so
+		// it must return the provider URL as JSON (not a redirect) and set the
+		// signed oauth_context cookie the callback reads back.
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/google/link", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+		var respData struct {
+			Status string `json:"status"`
+			Data   struct {
+				URL string `json:"url"`
+			} `json:"data"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&respData)
+		require.NoError(t, err)
+		assert.Equal(t, "ok", respData.Status)
+		assert.Contains(t, respData.Data.URL, "https://example.com/auth")
+
+		// The oauth_context cookie must be set so the callback can validate state
+		// and know this is a "link" action for the current user.
+		var found bool
+		for _, ck := range resp.Cookies() {
+			if ck.Name == "oauth_context" {
+				found = true
+			}
+		}
+		assert.True(t, found, "oauth_context cookie must be set")
+	})
+
 	t.Run("List Providers", func(t *testing.T) {
 		// Mock a connection first so it's not empty
 		conn := &user.OAuthConnection{
