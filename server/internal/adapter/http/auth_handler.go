@@ -220,14 +220,18 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	if err := c.Bind().JSON(&req); err != nil {
-		// If no token in body, maybe check header? AC says POST body for refresh/logout
-		return BadRequestResponse(c, "Invalid request body")
+	// A missing or unparseable body carries no token to revoke, so logout is a
+	// no-op success rather than a 400: the client clears its own session either
+	// way and there is nothing for the server to invalidate.
+	_ = c.Bind().JSON(&req)
+
+	if req.RefreshToken == "" {
+		return SuccessResponse(c, "Logged out successfully")
 	}
 
 	if err := h.logoutUC.Execute(c.Context(), req.RefreshToken); err != nil {
-		// Log error but return success to avoid leaking info?
-		// Actually, if it fails, it's usually already deleted or non-existent.
+		// A revoke failure usually means the token was already deleted or never
+		// existed. Return success regardless to avoid leaking token state.
 	}
 
 	return SuccessResponse(c, "Logged out successfully")

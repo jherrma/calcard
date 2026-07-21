@@ -71,8 +71,16 @@ export const useAuthStore = defineStore("auth", {
 
     async logout() {
       const api = useApi();
+      // Send the refresh token so the server can revoke it. Without it the
+      // token stays valid for its full lifetime after "logout" (see #7).
+      const refreshCookie = useCookie("refresh_token");
       try {
-        await api("/api/v1/auth/logout", { method: "POST" });
+        if (refreshCookie.value) {
+          await api("/api/v1/auth/logout", {
+            method: "POST",
+            body: { refresh_token: refreshCookie.value },
+          });
+        }
       } finally {
         this.clearAuth();
         navigateTo("/auth/login");
