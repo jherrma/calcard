@@ -77,8 +77,8 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	carddavBackend := NewCardDAVBackend(addressBookRepo, userRepo, abShareRepo)
 	davHandler := NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, carddavCredRepo, jwtManager)
 
-	app.Get("/.well-known/caldav", WellKnownCalDAVRedirect)
-	app.Get("/.well-known/carddav", WellKnownCardDAVRedirect)
+	app.All("/.well-known/caldav", WellKnownCalDAVRedirect)
+	app.All("/.well-known/carddav", WellKnownCardDAVRedirect)
 	davGroup := app.Group("/dav", davHandler.Authenticate())
 
 	davGroup.All("/*", davHandler.Handler())
@@ -466,4 +466,24 @@ func TestCardDAVPutRejectsUIDChange(t *testing.T) {
 	assert.NotEqual(t, fiber.StatusConflict, resp.StatusCode)
 	assert.GreaterOrEqual(t, resp.StatusCode, 200)
 	assert.Less(t, resp.StatusCode, 300)
+}
+
+// TestWellKnownRedirect is the regression test for #66: RFC 6764 autodiscovery
+// must redirect the well-known context path for ANY method, not just GET. Apple
+// clients probe with PROPFIND, which previously 404'd because only GET was routed.
+func TestWellKnownRedirect(t *testing.T) {
+	app, db, _ := setupTestApp(t)
+	defer db.Close()
+
+	for _, path := range []string{"/.well-known/caldav", "/.well-known/carddav"} {
+		for _, method := range []string{"GET", "PROPFIND"} {
+			req, _ := http.NewRequest(method, path, nil)
+			resp, err := app.Test(req, davTestTimeout)
+			require.NoError(t, err)
+			assert.Equalf(t, fiber.StatusMovedPermanently, resp.StatusCode,
+				"%s %s should 301-redirect (RFC 6764), got %d", method, path, resp.StatusCode)
+			assert.Equalf(t, "/dav/", resp.Header.Get("Location"),
+				"%s %s should redirect to /dav/", method, path)
+		}
+	}
 }
