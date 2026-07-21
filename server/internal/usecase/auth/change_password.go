@@ -67,8 +67,14 @@ func (uc *ChangePasswordUseCase) Execute(ctx context.Context, req ChangePassword
 		return nil, ErrSamePassword
 	}
 
+	// Enforce the password complexity policy before hashing so the account
+	// cannot be downgraded to a weak password.
+	if err := user.ValidatePassword(req.NewPassword); err != nil {
+		return nil, err
+	}
+
 	// Hash new password
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), user.BcryptCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash new password: %w", err)
 	}

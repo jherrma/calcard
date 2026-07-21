@@ -64,7 +64,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 	}
 
 	// 3. Hash password
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), user.BcryptCost)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to hash password: %w", err)
 	}

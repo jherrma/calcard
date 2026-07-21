@@ -6,6 +6,12 @@ import (
 	"unicode"
 )
 
+// BcryptCost is the bcrypt work factor used whenever a user password is
+// (re)hashed. Every site that hashes a password — registration, reset, and
+// change — must use this constant so the cost cannot drift between flows and
+// leave the newer hash of an account weaker than the original.
+const BcryptCost = 12
+
 var (
 	ErrInvalidEmail      = errors.New("invalid email format")
 	ErrPasswordTooShort  = errors.New("password must be at least 8 characters")
