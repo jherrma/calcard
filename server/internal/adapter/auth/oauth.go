@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jherrma/caldav-server/internal/config"
@@ -144,7 +145,12 @@ type oauthProviderManager struct {
 // registered at each provider.
 func NewOAuthProviderManager(cfg *config.OAuthConfig, baseURL string) (OAuthProviderManager, error) {
 	providers := make(map[string]OAuthProvider)
-	ctx := context.Background() // TODO: potentially pass context
+
+	// Bound OIDC discovery so an unreachable issuer can't stall startup.
+	// go-oidc copies only the HTTP client out of this context for later use
+	// (cloneContext), so cancelling it after discovery is safe.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
 	// Trailing-slash trim matters: base_url "http://host:8080/" would otherwise
 	// yield "//api/..." and providers reject the mismatched redirect URI.
