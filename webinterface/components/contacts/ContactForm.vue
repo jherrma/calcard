@@ -363,12 +363,16 @@ const birthdayDate = ref<Date | null>(
   props.contact?.birthday ? new Date(props.contact.birthday + 'T00:00:00') : null
 );
 
+// The existing contact's photo sits behind Bearer auth, so fetch it via the
+// authenticated client and preview the resulting blob URL rather than the raw
+// (relative) photo_url, which an <img> can't authenticate against.
+const existingPhotoSrc = useAuthedImage(() => props.contact?.photo_url);
+
 // Photo preview
 const photoPreview = computed(() => {
   if (photoRemoved.value) return null;
   if (selectedPhoto.value) return URL.createObjectURL(selectedPhoto.value);
-  if (props.contact?.photo_url) return props.contact.photo_url;
-  return null;
+  return existingPhotoSrc.value;
 });
 
 const initials = computed(() => {

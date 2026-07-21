@@ -9,8 +9,8 @@
       :style="{ backgroundColor: avatarColor }"
     >
       <img
-        v-if="contact.photo_url"
-        :src="contact.photo_url"
+        v-if="photoSrc"
+        :src="photoSrc"
         :alt="contact.formatted_name"
         class="w-10 h-10 rounded-full object-cover"
       >
@@ -67,6 +67,10 @@ defineEmits<{
   edit: [contact: Contact];
   delete: [contact: Contact];
 }>();
+
+// Photos sit behind Bearer auth, so fetch them via the authenticated client
+// and render a blob URL instead of pointing <img> at the raw (relative) URL.
+const photoSrc = useAuthedImage(() => props.contact.photo_url);
 
 const primaryEmail = computed(() =>
   props.contact.emails?.find(e => e.primary)?.value || props.contact.emails?.[0]?.value || ''
