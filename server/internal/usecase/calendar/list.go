@@ -18,6 +18,7 @@ type CalendarWithEventCount struct {
 	*calendar.Calendar
 	EventCount int64          `json:"event_count"`
 	Shared     bool           `json:"shared"`
+	Permission string         `json:"permission"` // "owner" for owned; "read" / "read-write" for shared
 	Owner      *CalendarOwner `json:"owner,omitempty"`
 }
 
@@ -51,6 +52,7 @@ func (uc *ListCalendarsUseCase) Execute(ctx context.Context, userID uint) ([]*Ca
 			Calendar:   cal,
 			EventCount: eventCount,
 			Shared:     false,
+			Permission: "owner",
 		})
 	}
 
@@ -78,6 +80,7 @@ func (uc *ListCalendarsUseCase) Execute(ctx context.Context, userID uint) ([]*Ca
 				Calendar:   &cal,
 				EventCount: eventCount,
 				Shared:     true,
+				Permission: share.Permission,
 				Owner: &CalendarOwner{
 					ID:          cal.Owner.UUID,
 					DisplayName: cal.Owner.DisplayName,
