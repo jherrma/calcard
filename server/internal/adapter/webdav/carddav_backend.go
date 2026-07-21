@@ -202,8 +202,40 @@ func (b *CardDAVBackend) ListAddressObjects(ctx context.Context, p string, req *
 	return res, nil
 }
 
-// QueryAddressObjects returns address objects matching a query.
-// Uses database-level filtering for performance.
+// dbFilterableProps mirrors propertyToColumn in the addressbook repository —
+// the only properties the SQL fast path can filter on. Keep the two in sync.
+var dbFilterableProps = map[string]bool{
+	"FN": true, "N": true, "EMAIL": true, "TEL": true, "ORG": true,
+	"GIVEN-NAME": true, "FAMILY-NAME": true, "UID": true,
+}
+
+// canFilterInDB reports whether the SQL fast path produces exactly the same
+// result set as a spec-compliant evaluation of the query. It doesn't when:
+//   - there are multiple prop-filters (the DB ANDs them, but CardDAV's default
+//     combinator is anyof/OR — and even allof isn't safe with the shortcuts below);
+//   - a filter names a property with no DB column (it would be silently dropped,
+//     matching everyone instead of no one);
+//   - a filter carries multiple text-matches or param-filters (the DB path only
+//     applies the first text-match and ignores params).
+func canFilterInDB(query *carddav.AddressBookQuery) bool {
+	if len(query.PropFilters) > 1 {
+		return false
+	}
+	for _, pf := range query.PropFilters {
+		if !dbFilterableProps[strings.ToUpper(pf.Name)] {
+			return false
+		}
+		if len(pf.TextMatches) > 1 || len(pf.Params) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// QueryAddressObjects returns address objects matching a query. It uses a
+// database fast path for the single simple filter shape it can translate
+// exactly, and otherwise falls back to go-webdav's spec-compliant in-memory
+// matcher (anyof/allof, multiple text-matches, param-filters, and Limit).
 func (b *CardDAVBackend) QueryAddressObjects(ctx context.Context, p string, query *carddav.AddressBookQuery) ([]carddav.AddressObject, error) {
 	u, ok := UserFromContext(ctx)
 	if !ok {
@@ -215,24 +247,31 @@ func (b *CardDAVBackend) QueryAddressObjects(ctx context.Context, p string, quer
 		return nil, err
 	}
 
-	// Build database query from CardDAV filters
-	dbQuery := b.buildDBQuery(query)
+	if canFilterInDB(query) {
+		dbQuery := b.buildDBQuery(query)
+		objects, err := b.addressBookRepo.QueryObjects(ctx, ab.ID, dbQuery)
+		if err != nil {
+			return nil, err
+		}
+		res := make([]carddav.AddressObject, 0, len(objects))
+		for _, obj := range objects {
+			ao, err := b.mapAddressObject(path.Join(p, obj.Path), &obj)
+			if err != nil {
+				continue
+			}
+			res = append(res, *ao)
+		}
+		return res, nil
+	}
 
-	objects, err := b.addressBookRepo.QueryObjects(ctx, ab.ID, dbQuery)
+	// Fallback: load the book and evaluate the query in memory with the
+	// spec-compliant matcher. carddav.Filter also applies DataRequest
+	// prop-narrowing and Limit, so don't re-narrow afterwards.
+	all, err := b.ListAddressObjects(ctx, p, &query.DataRequest)
 	if err != nil {
 		return nil, err
 	}
-
-	res := make([]carddav.AddressObject, 0, len(objects))
-	for _, obj := range objects {
-		ao, err := b.mapAddressObject(path.Join(p, obj.Path), &obj)
-		if err != nil {
-			continue
-		}
-		res = append(res, *ao)
-	}
-
-	return res, nil
+	return carddav.Filter(query, all)
 }
 
 // buildDBQuery converts CardDAV query filters to database query format.
