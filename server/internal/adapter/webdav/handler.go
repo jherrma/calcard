@@ -218,17 +218,45 @@ func (h *Handler) Handler() fiber.Handler {
 			stdCtx = addressbook.WithSkipPhotoHydration(stdCtx)
 		}
 
-		// MKCALENDAR (RFC 4791 §5.3.1) — some clients send this
-		// instead of MKCOL for calendar creation. emersion/go-webdav
-		// only dispatches MKCOL, so normalise here: the caldav backend
-		// treats both identically (CreateCalendar). The MKCALENDAR body
-		// is mkcalendar-rooted XML that emersion's MKCOL parser can't
-		// read, so we drop the body — displayname can be set by the
-		// client via PROPPATCH after creation (Apple Calendar, DAVx5).
+		// MKCALENDAR (RFC 4791 §5.3.1) — some clients (Apple Calendar, DAVx5)
+		// send this instead of MKCOL for calendar creation. emersion/go-webdav
+		// only dispatches MKCOL, so normalise here; the caldav backend treats
+		// both identically (CreateCalendar).
+		//
+		// The MKCALENDAR body is mkcalendar-rooted XML emersion's MKCOL parser
+		// can't read. Rather than drop it (which lost the client-chosen name
+		// forever — emersion's PROPPATCH is a hard 501, so it could never be set
+		// afterwards), transform it into the extended-MKCOL body emersion DOES
+		// parse (set>prop>displayname + resourcetype), so the name survives.
 		if c.Method() == "MKCALENDAR" {
+			var mkcal struct {
+				XMLName     xml.Name `xml:"mkcalendar"`
+				DisplayName string   `xml:"set>prop>displayname"`
+			}
+			name := ""
+			// Go's decoder matches "mkcalendar"/"set>prop>displayname" in any
+			// namespace; an empty/unparseable body just yields an empty name.
+			if err := xml.Unmarshal(c.Body(), &mkcal); err == nil {
+				name = mkcal.DisplayName
+			}
+
+			var buf bytes.Buffer
+			buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
+			buf.WriteString(`<mkcol xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><set><prop>`)
+			// emersion's Mkcol rejects a body whose resourcetype lacks either
+			// DAV:collection or CALDAV:calendar, so always include both.
+			buf.WriteString(`<resourcetype><collection/><C:calendar/></resourcetype>`)
+			if name != "" {
+				buf.WriteString(`<displayname>`)
+				_ = xml.EscapeText(&buf, []byte(name))
+				buf.WriteString(`</displayname>`)
+			}
+			buf.WriteString(`</prop></set></mkcol>`)
+
 			c.Request().Header.SetMethod("MKCOL")
-			c.Request().SetBody(nil)
-			c.Request().Header.SetContentLength(0)
+			c.Request().SetBody(buf.Bytes())
+			c.Request().Header.SetContentLength(buf.Len())
+			c.Request().Header.SetContentType("application/xml; charset=utf-8")
 		}
 
 		// Combined principal discovery (RFC 6764). emersion/go-webdav's
