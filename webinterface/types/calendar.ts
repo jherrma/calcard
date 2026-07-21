@@ -8,6 +8,7 @@ export interface Calendar {
   timezone?: string;
   owner_id: string;
   shared?: boolean;
+  permission?: string;
   public_enabled?: boolean;
   public_url?: string;
   owner?: {

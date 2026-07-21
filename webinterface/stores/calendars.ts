@@ -55,7 +55,7 @@ export const useCalendarStore = defineStore('calendars', {
     },
 
     writableCalendars(state: CalendarState) {
-      return state.calendars.filter((c: Calendar) => !c.shared);
+      return state.calendars.filter((c: Calendar) => !c.shared || c.permission === 'read-write');
     },
   },
 
