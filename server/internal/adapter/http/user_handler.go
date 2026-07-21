@@ -232,6 +232,11 @@ func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
 		if errors.Is(err, authusecase.ErrIncorrectPassword) || errors.Is(err, authusecase.ErrSamePassword) {
 			return ErrorResponse(c, fiber.StatusUnauthorized, err.Error())
 		}
+		// Password complexity sentinels carry safe, actionable messages so the
+		// client can show the same policy feedback the register page does.
+		if isSafeValidationError(err) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to change password")
 	}
 

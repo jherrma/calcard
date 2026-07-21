@@ -62,8 +62,14 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, req ResetPasswordRe
 		return errors.New("user not found")
 	}
 
+	// Enforce the password complexity policy before hashing so a reset link
+	// cannot be used to downgrade the account to a weak password.
+	if err := user.ValidatePassword(req.NewPassword); err != nil {
+		return err
+	}
+
 	// Hash new password
-	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), user.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("failed to hash new password: %w", err)
 	}
@@ -74,9 +80,7 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, req ResetPasswordRe
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
-	// Mark token as used
-	now := time.Now()
-	reset.UsedAt = &now
+	// Invalidate all reset tokens for this user
 	if err := uc.resetRepo.DeleteByUserID(ctx, u.ID); err != nil {
 		return fmt.Errorf("failed to clear reset tokens: %w", err)
 	}

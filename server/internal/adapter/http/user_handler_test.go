@@ -163,6 +163,51 @@ func TestUserHandler_ChangePassword(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 	})
+
+	t.Run("WeakPassword", func(t *testing.T) {
+		// Use a dedicated user so this case does not depend on whether the
+		// "Success" subtest above has already rotated the shared user's password.
+		weakHash, _ := bcrypt.GenerateFromPassword([]byte("OldPass123!"), bcrypt.DefaultCost)
+		weakUser := &user.User{
+			Email:         "changepw-weak@example.com",
+			Username:      "changepw-weak",
+			PasswordHash:  string(weakHash),
+			IsActive:      true,
+			EmailVerified: true,
+			UUID:          "changepw-weak-uuid",
+		}
+		require.NoError(t, userRepo.Create(context.Background(), weakUser))
+		weakToken, _, err := jwtManager.GenerateAccessToken(weakUser.UUID, weakUser.Email)
+		require.NoError(t, err)
+
+		payload := map[string]string{
+			"current_password": "OldPass123!",
+			"new_password":     "a",
+		}
+		body, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/password", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+weakToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		// The policy sentinel must surface as a 400 with its actionable message,
+		// not be swallowed into a generic 500.
+		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+		var respData struct {
+			Message string `json:"message"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&respData)
+		require.NoError(t, err)
+		assert.Contains(t, respData.Message, "at least 8 characters")
+
+		// The account must not have been touched on the rejected path.
+		unchanged, err := userRepo.GetByID(context.Background(), weakUser.ID)
+		require.NoError(t, err)
+		assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(unchanged.PasswordHash), []byte("OldPass123!")))
+	})
 }
 
 func TestUserHandler_DeleteAccount(t *testing.T) {
