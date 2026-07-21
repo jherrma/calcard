@@ -242,6 +242,17 @@ func (h *Handler) Handler() fiber.Handler {
 		// made in Authenticate (both go through davCollectionType).
 		collectionType := davCollectionType(reqPath)
 
+		// Serve a Depth: 0 PROPFIND on a collection ourselves: clients discover
+		// sync support (sync-token / getctag / supported-report-set) this way, and
+		// emersion serves none of those properties. Depth 1/infinity PROPFINDs
+		// (home-set and member listing) keep flowing to emersion unchanged. Kept
+		// after the principal-discovery block above, which handles /dav/ and
+		// /dav/{user}/.
+		pathParts := strings.Split(strings.Trim(reqPath, "/"), "/")
+		if c.Method() == "PROPFIND" && collectionType != "" && len(pathParts) == 4 && c.Get("Depth") == "0" {
+			return h.handleCollectionPropfind(c, stdCtx, reqPath, collectionType)
+		}
+
 		// Enforce conditional DELETE (If-Match). emersion's caldav/carddav
 		// dispatch drops If-Match on DELETE, so a stale-ETag If-Match DELETE
 		// (sent by iOS/macOS) would otherwise delete unconditionally — the

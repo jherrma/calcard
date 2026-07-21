@@ -91,7 +91,11 @@ func (h *Handler) sendSyncTokenError(c fiber.Ctx) error {
 type SyncMultiStatus struct {
 	XMLName   xml.Name       `xml:"DAV: multistatus"`
 	Responses []SyncResponse `xml:"response"`
-	SyncToken string         `xml:"sync-token"`
+	// omitempty so the collection-PROPFIND handler (which carries sync-token in
+	// a propstat, not at the multistatus level) doesn't emit a bogus empty
+	// <sync-token/>. The sync REPORT always sets a non-empty token, so its
+	// output is unchanged.
+	SyncToken string `xml:"sync-token,omitempty"`
 }
 
 func getUsername(p string) string {
