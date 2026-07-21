@@ -46,15 +46,21 @@ func (Calendar) TableName() string {
 	return "calendars"
 }
 
-// GenerateSyncToken generates a new sync token from timestamp + random component
+// GenerateSyncToken generates a new sync token from timestamp + random
+// component. RFC 6578 §6.4 requires the sync token to be a URI, so it carries
+// the same "data:," scheme the addressbook domain already uses. Tokens are
+// compared by exact string equality against stored change-log rows, so tokens
+// clients already hold keep resolving; only newly minted ones gain the prefix.
 func GenerateSyncToken() string {
 	timestamp := time.Now().UnixNano()
 	randomBytes := make([]byte, 8)
 	rand.Read(randomBytes)
-	return fmt.Sprintf("%d-%x", timestamp, randomBytes)
+	return fmt.Sprintf("data:,%d-%x", timestamp, randomBytes)
 }
 
-// GenerateCTag generates a new CTag (same format as sync token)
+// GenerateCTag generates a new CTag (same format as sync token). getctag is an
+// opaque per-collection string to clients, so the "data:," prefix it inherits
+// from GenerateSyncToken is harmless.
 func GenerateCTag() string {
 	return GenerateSyncToken()
 }
@@ -62,8 +68,14 @@ func GenerateCTag() string {
 // NewETag generates a new ETag value. The value is stored UNQUOTED; the
 // transport layer (go-webdav, and the hand-rolled sync REPORT) adds the
 // surrounding quotes when serializing. Never store a quoted ETag.
+//
+// Deliberately NOT the sync-token format: ETags travel in If-Match /
+// If-None-Match headers, where a "data:," prefix (note the comma) invites naive
+// header-list parsers to split the value.
 func NewETag() string {
-	return GenerateSyncToken()
+	randomBytes := make([]byte, 8)
+	_, _ = rand.Read(randomBytes)
+	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), randomBytes)
 }
 
 // GenerateRandomColor generates a random hex color

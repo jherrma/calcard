@@ -42,8 +42,15 @@ func GenerateCTag() string {
 // NewETag generates a new ETag value. The value is stored UNQUOTED; the
 // transport layer (go-webdav, and the hand-rolled sync REPORT) adds the
 // surrounding quotes when serializing. Never store a quoted ETag.
+//
+// Deliberately NOT the sync-token format: ETags travel in If-Match /
+// If-None-Match headers, where the sync token's "data:," prefix (note the
+// comma) invites naive header-list parsers to split the value — which is
+// exactly how contact ETags ended up reading "data:,1751...-ab".
 func NewETag() string {
-	return GenerateSyncToken()
+	randomBytes := make([]byte, 8)
+	_, _ = rand.Read(randomBytes)
+	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), randomBytes)
 }
 
 // UpdateSyncTokens updates both sync token and ctag
