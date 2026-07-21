@@ -20,65 +20,102 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLoginRateLimiter asserts that the login IP rate limiter kicks in when
+// TestLoginRateLimiter asserts the login limiters kick in when
 // RateLimit.Enabled is true. The package-level test server turns this off so
-// the other tests can log in repeatedly, so we have to spin up a dedicated
-// server instance for this one test.
+// the other tests can log in repeatedly, so each subtest spins up a dedicated
+// server instance (a fresh server means fresh, isolated limiter windows).
 //
-// The production rule is 5 logins per minute per IP. On the 6th attempt the
-// server should answer 429 Too Many Requests.
+// Regression guard for #105: the per-IP allowance must sit ABOVE the per-email
+// allowance so the tighter per-account (per-email) control is actually
+// reachable from a single IP. When IP <= email the IP limiter always trips
+// first and the per-email limiter is dead code from any one source address
+// (which, behind a NAT/reverse proxy, is every client). The two subtests pin
+// small explicit thresholds and assert that BOTH limiters are reachable and
+// that each returns its own distinct 429 message.
 func TestLoginRateLimiter(t *testing.T) {
-	rlURL, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
-		cfg.RateLimit.Enabled = true
-	})
-	t.Cleanup(shutdown)
+	// The two limiters carry distinct messages (see rate_limiter.go); we key
+	// off them to prove which limiter actually fired.
+	const emailLimitMsg = "this account"     // NewEmailRateLimiter: per-account
+	const ipLimitMsg = "Too many attempts"    // NewIPRateLimiter: per-IP
 
-	// Register one user so we have a valid account. The rate limiter fires
-	// on IP, not on auth success/failure, so we just need *some* body for
-	// the POSTs — but a valid account also lets us prove the limiter isn't
-	// flipping successful logins to 429 due to some unrelated bug.
-	registerOn(t, rlURL, "ratelimit@example.test", "ratelimitSecret!123", "Ratelimit User")
+	t.Run("per-email limiter reachable from a single IP", func(t *testing.T) {
+		// IP=20 well above email=3, so from one IP the email limiter is the
+		// first to trip for a stream of same-email requests.
+		rlURL, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
+			cfg.RateLimit.Enabled = true
+			cfg.RateLimit.AuthIPRequests = 20
+			cfg.RateLimit.AuthEmailRequests = 3
+		})
+		t.Cleanup(shutdown)
 
-	// Hammer the login endpoint. The configured limit is 5/min per IP and
-	// 10/min per email. We fire well past the limit and assert on two
-	// separable properties so the test doesn't depend on the exact cut-off
-	// (Fiber's limiter implementation details can shift the first 429 by
-	// one attempt depending on whether readiness probes count against the
-	// window, etc.):
-	//
-	//   1. The very first login attempt makes it through (returns 401 for
-	//      the wrong password — the *interesting* thing here is that it's
-	//      not 429).
-	//   2. Within a reasonable burst, the server does start responding 429,
-	//      i.e. the limiter is actually turned on.
-	//
-	// We use wrong credentials on purpose so the requests go through the
-	// limiter but never create side-effects like refresh tokens.
-	var got []int
-	for i := 0; i < 10; i++ {
-		status := postLoginOn(t, rlURL, "ratelimit@example.test", "WRONG-PASSWORD")
-		got = append(got, status)
-	}
+		// A valid account also proves the limiter isn't flipping otherwise-401
+		// responses to 429 for some unrelated reason. We log in with the WRONG
+		// password so requests traverse the limiter chain without creating
+		// side-effects (refresh tokens).
+		registerOn(t, rlURL, "ratelimit@example.test", "ratelimitSecret!123", "Ratelimit User")
 
-	assert.NotEqualf(t, http.StatusTooManyRequests, got[0],
-		"the very first login attempt must not be rate-limited (got sequence: %v)", got)
-
-	sawLimit := false
-	for _, s := range got {
-		if s == http.StatusTooManyRequests {
-			sawLimit = true
-			break
+		// Fire AuthEmailRequests+1 same-email attempts. The IP cap (20) is far
+		// away, so the only limiter that can fire in this burst is the email
+		// one — request 4 must be the first 429 and it must carry the
+		// per-account message.
+		var statuses []int
+		var firstLimitedBody string
+		for i := 0; i < 5; i++ {
+			status, body := postLoginOn(t, rlURL, "ratelimit@example.test", "WRONG-PASSWORD")
+			statuses = append(statuses, status)
+			if status == http.StatusTooManyRequests && firstLimitedBody == "" {
+				firstLimitedBody = string(body)
+			}
 		}
-	}
-	assert.Truef(t, sawLimit,
-		"expected at least one 429 response in the burst (got sequence: %v)", got)
 
-	// And a quick smoke check that other /auth endpoints still work — i.e.
-	// the limiter only clamps /login, not every /auth route.
-	resp, err := http.Get(rlURL + "/api/v1/system/settings")
-	require.NoError(t, err)
-	_ = resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "non-login endpoints must not be affected")
+		assert.NotEqualf(t, http.StatusTooManyRequests, statuses[0],
+			"the very first login attempt must not be rate-limited (got sequence: %v)", statuses)
+		require.Containsf(t, statuses, http.StatusTooManyRequests,
+			"expected the per-email limiter to fire within the burst (got sequence: %v)", statuses)
+		assert.Containsf(t, firstLimitedBody, emailLimitMsg,
+			"the 429 must come from the per-EMAIL limiter (got body: %q)", firstLimitedBody)
+		assert.NotContainsf(t, firstLimitedBody, ipLimitMsg,
+			"the IP limiter (allowance 20) must not have fired at request <=5 (got body: %q)", firstLimitedBody)
+	})
+
+	t.Run("IP limiter still trips on a spray across distinct emails", func(t *testing.T) {
+		// Distinct emails never accumulate on any single per-email key, so the
+		// per-IP limiter is the only thing that can stop an account-spraying
+		// attacker. Pin a small IP cap so the test stays fast.
+		rlURL, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
+			cfg.RateLimit.Enabled = true
+			cfg.RateLimit.AuthIPRequests = 5
+			cfg.RateLimit.AuthEmailRequests = 10
+		})
+		t.Cleanup(shutdown)
+
+		var statuses []int
+		var firstLimitedBody string
+		for i := 0; i < 7; i++ {
+			email := fmt.Sprintf("spray-%d@example.test", i)
+			status, body := postLoginOn(t, rlURL, email, "WRONG-PASSWORD")
+			statuses = append(statuses, status)
+			if status == http.StatusTooManyRequests && firstLimitedBody == "" {
+				firstLimitedBody = string(body)
+			}
+		}
+
+		assert.NotEqualf(t, http.StatusTooManyRequests, statuses[0],
+			"the very first login attempt must not be rate-limited (got sequence: %v)", statuses)
+		require.Containsf(t, statuses, http.StatusTooManyRequests,
+			"expected the per-IP limiter to fire within the spray (got sequence: %v)", statuses)
+		assert.Containsf(t, firstLimitedBody, ipLimitMsg,
+			"the 429 must come from the per-IP limiter (got body: %q)", firstLimitedBody)
+		assert.NotContainsf(t, firstLimitedBody, emailLimitMsg,
+			"distinct-email spray must not trip the per-email limiter (got body: %q)", firstLimitedBody)
+
+		// A quick smoke check that other /auth endpoints still work — i.e. the
+		// limiter only clamps /login, not every /auth route.
+		resp, err := http.Get(rlURL + "/api/v1/system/settings")
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "non-login endpoints must not be affected")
+	})
 }
 
 // --- local helpers ---------------------------------------------------------
@@ -109,11 +146,15 @@ func bootServerWithConfig(t *testing.T, tweak func(*config.Config)) (string, fun
 		// Global middleware limiter: 100/min/IP matches production defaults.
 		// The caller's `tweak` can still flip Enabled on. Setting the numeric
 		// fields ensures that a tweak enabling this limiter doesn't leave
-		// Max=0 (which would cause every request to 429 immediately).
+		// Max=0. The auth-specific allowances mirror the production defaults
+		// (per-IP ABOVE per-email so the per-email limiter is reachable from a
+		// single IP); rate-limit tests override them to pin exact thresholds.
 		RateLimit: config.RateLimitConfig{
-			Enabled:  false,
-			Requests: 100,
-			Window:   time.Minute,
+			Enabled:           false,
+			Requests:          100,
+			Window:            time.Minute,
+			AuthIPRequests:    20,
+			AuthEmailRequests: 10,
 		},
 		Security: config.SecurityConfig{
 			MaxRequestSize: 10 * 1024 * 1024,
@@ -161,9 +202,10 @@ func registerOn(t *testing.T, base, email, password, displayName string) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 }
 
-// postLoginOn POSTs /auth/login and returns just the status code. Used by
-// the rate-limit test, which doesn't care about the body.
-func postLoginOn(t *testing.T, base, email, password string) int {
+// postLoginOn POSTs /auth/login and returns the status code and raw response
+// body. The rate-limit test inspects the body to tell the per-IP and per-email
+// limiters apart by their distinct 429 messages.
+func postLoginOn(t *testing.T, base, email, password string) (int, []byte) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"email": email, "password": password})
 	req, _ := http.NewRequest(http.MethodPost, base+"/api/v1/auth/login", bytes.NewReader(body))
@@ -171,9 +213,6 @@ func postLoginOn(t *testing.T, base, email, password string) int {
 	resp, err := httpClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
 }
-
-// Suppress "imported and not used: fmt" if we happen to trim error wrappers.
-var _ = fmt.Sprint
