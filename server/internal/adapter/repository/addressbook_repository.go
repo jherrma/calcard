@@ -435,8 +435,13 @@ func (r *AddressBookRepository) ListObjects(ctx context.Context, addressBookID u
 		return nil, 0, err
 	}
 
-	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
-		return nil, 0, err
+	// An ETag-only PROPFIND poll (flagged via context) doesn't serialize vCard
+	// bodies, so skip re-injecting every contact's PHOTO blob — otherwise a
+	// large book pulls hundreds of MB of blob reads per poll just to serve ETags.
+	if !addressbook.SkipPhotoHydration(ctx) {
+		if err := r.hydrateObjectSlice(ctx, objs); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	return objs, total, nil

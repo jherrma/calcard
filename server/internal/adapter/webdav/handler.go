@@ -198,6 +198,18 @@ func (h *Handler) Handler() fiber.Handler {
 		stdCtx := WithUser(c.Context(), u)
 		reqPath := c.Path()
 
+		// An addressbook PROPFIND that doesn't request address-data only needs
+		// ETags / content-type, so it can be served without hydrating PHOTO blobs
+		// (which polling clients would otherwise pull on every refresh interval).
+		// Substring sniff is safe: a false positive (the string appears anywhere)
+		// merely takes the slow path; a false negative is impossible. An allprop
+		// PROPFIND has no "address-data" — correct, since CARDDAV:address-data is
+		// not an allprop property and emersion won't serve it for allprop.
+		if c.Method() == "PROPFIND" && davCollectionType(reqPath) == "addressbooks" &&
+			!bytes.Contains(c.Body(), []byte("address-data")) {
+			stdCtx = addressbook.WithSkipPhotoHydration(stdCtx)
+		}
+
 		// MKCALENDAR (RFC 4791 §5.3.1) — some clients send this
 		// instead of MKCOL for calendar creation. emersion/go-webdav
 		// only dispatches MKCOL, so normalise here: the caldav backend
