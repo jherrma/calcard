@@ -89,14 +89,22 @@ export const useContactsStore = defineStore('contacts', {
       try {
         const api = useApi();
         const allContacts: Contact[] = [];
+        const limit = 200; // backend maxPageLimit
 
         for (const ab of this.addressBooks) {
           try {
-            const response = await api<{ Contacts: Contact[]; Total: number; Limit: number; Offset: number }>(
-              `/api/v1/addressbooks/${ab.ID}/contacts`
-            );
-            if (response.Contacts) {
-              allContacts.push(...response.Contacts);
+            // Page through every contact instead of reading only the first
+            // page: the backend defaults to limit=50, so without this loop the
+            // UI silently dropped contacts beyond the first 50 per book.
+            let offset = 0;
+            for (;;) {
+              const response = await api<{ Contacts: Contact[]; Total: number; Limit: number; Offset: number }>(
+                `/api/v1/addressbooks/${ab.ID}/contacts?limit=${limit}&offset=${offset}`
+              );
+              const page = response.Contacts || [];
+              allContacts.push(...page);
+              offset += limit;
+              if (page.length < limit || offset >= response.Total) break;
             }
           } catch (e) {
             console.warn(`Failed to load contacts for address book ${ab.Name}`, e);
@@ -124,8 +132,10 @@ export const useContactsStore = defineStore('contacts', {
 
       try {
         const api = useApi();
+        // Raise the search page size from the backend default (20) to its cap
+        // (200) so search results aren't silently clipped to 20 matches.
         const response = await api<{ contacts: Contact[]; query: string; count: number }>(
-          `/api/v1/contacts/search?q=${encodeURIComponent(query)}`
+          `/api/v1/contacts/search?q=${encodeURIComponent(query)}&limit=200`
         );
         this.contacts = response.contacts || [];
       } catch (e: unknown) {
