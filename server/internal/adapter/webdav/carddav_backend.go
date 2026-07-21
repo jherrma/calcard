@@ -543,6 +543,11 @@ func (b *CardDAVBackend) mapAddressObject(p string, obj *addressbook.AddressObje
 	if err != nil {
 		return nil, err
 	}
+	// Split comma-list properties (CATEGORIES) into repeated single-value
+	// instances so go-vcard's encoder can't re-escape the separators into one
+	// mangled "Friends\,VIP" value. Fixes GET, REPORT multiget, query, and
+	// PROPFIND-with-address-data in one place (multiget is how phones sync).
+	addressbook.SplitCommaListFields(card)
 
 	return &carddav.AddressObject{
 		Path:          p,

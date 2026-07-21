@@ -1,6 +1,10 @@
 package addressbook
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/emersion/go-vcard"
+)
 
 // commaListVCardFields are vCard properties whose value is a comma-separated
 // list (RFC 6350 §6.3.1 CATEGORIES). go-vcard's encoder escapes every comma
@@ -11,6 +15,43 @@ import "strings"
 // serialization) must restore the separators afterward.
 var commaListVCardFields = map[string]bool{
 	"CATEGORIES": true,
+}
+
+// SplitCommaListFields rewrites comma-list properties (CATEGORIES) into
+// multiple single-value property instances, in place, on a decoded card.
+//
+// This fixes comma corruption at the source, before the card is re-encoded on
+// ANY DAV path (GET, REPORT multiget, addressbook-query, PROPFIND-with-address-
+// data) — unlike RestoreVCardCommaLists, which only post-processes single-vCard
+// GET responses and misses the multiget path phones actually sync over.
+// CATEGORIES:Friends\r\nCATEGORIES:VIP (two instances) is semantically identical
+// per RFC 6350 and contains no commas for go-vcard's encoder to mangle.
+//
+// go-vcard's decoder already collapsed the escaped/unescaped comma distinction
+// (both "\," and "," decode to ","), so a category legitimately named "A,B"
+// cannot be preserved — the same accepted tradeoff RestoreVCardCommaLists makes.
+func SplitCommaListFields(card vcard.Card) {
+	for name := range commaListVCardFields {
+		fields := card[name]
+		if len(fields) == 0 {
+			continue
+		}
+		var out []*vcard.Field
+		for _, f := range fields {
+			for _, part := range strings.Split(f.Value, ",") {
+				part = strings.TrimSpace(part)
+				if part == "" {
+					continue
+				}
+				nf := *f // copy so Params (TYPE=) and Group carry to each instance
+				nf.Value = part
+				out = append(out, &nf)
+			}
+		}
+		if len(out) > 0 {
+			card[name] = out
+		}
+	}
 }
 
 // RestoreVCardCommaLists rewrites an encoded vCard so comma-list properties keep
