@@ -28,6 +28,13 @@ var ErrProviderAlreadyLinked = errors.New("provider account already linked to an
 // be required but the provider did not assert a verified email.
 var ErrEmailNotVerified = errors.New("provider email not verified")
 
+// ErrDifferentAccountLinked is returned when the user already has a different
+// account of this provider linked; they must unlink it before attaching another.
+// Both the explicit link flow and the login-flow auto-link-by-email path guard
+// against this so the (user_id, provider) unique index never rejects the insert
+// with an opaque DB error.
+var ErrDifferentAccountLinked = errors.New("a different account from this provider is already linked to your profile; unlink it first in settings")
+
 // OAuthCallbackUseCase handles the OAuth callback and user login/creation
 type OAuthCallbackUseCase struct {
 	providerManager  authadapter.OAuthProviderManager
@@ -108,7 +115,7 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			return nil, err
 		}
 		if existingConn != nil {
-			return nil, fmt.Errorf("a different %s account is already linked to your profile; unlink it first in settings", providerName)
+			return nil, ErrDifferentAccountLinked
 		}
 
 		// Not linked, link it now.
@@ -140,6 +147,18 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			// with their password and link the provider explicitly from settings.
 			if !userInfo.EmailVerified {
 				return nil, ErrEmailNotVerified
+			}
+			// Mirror the link-flow guard: refuse to auto-link a second, different
+			// account of the same provider. GetByOAuth already failed to match this
+			// subject, so any existing connection here is by definition a different
+			// account — attaching it would violate the (user_id, provider) unique
+			// index and surface as an opaque DB error.
+			existingConn, err := uc.oauthRepo.GetByProvider(ctx, u.ID, providerName)
+			if err != nil {
+				return nil, err
+			}
+			if existingConn != nil {
+				return nil, ErrDifferentAccountLinked
 			}
 			if err := uc.linkProvider(ctx, u.ID, providerName, userInfo); err != nil {
 				return nil, err
