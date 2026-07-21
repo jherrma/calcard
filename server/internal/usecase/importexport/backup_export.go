@@ -37,6 +37,13 @@ func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint) ([]byte
 		Version:    "1.0",
 	}
 
+	// Collection names are not unique per user, but a ZIP can't hold two entries
+	// with the same path. Track the entry names already written so a collision
+	// (two calendars both named "Personal", or names that sanitize to the same
+	// string like "a/b" and "a:b") gets a deterministic suffix instead of
+	// silently overwriting the earlier entry and dropping its data.
+	usedNames := make(map[string]bool)
+
 	// Export calendars
 	calendars, err := uc.calendarRepo.ListByUserID(ctx, userID)
 	if err != nil {
@@ -52,7 +59,7 @@ func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint) ([]byte
 		// Build iCalendar content
 		icalContent := buildICalendarExport(cal, objects)
 
-		filename := fmt.Sprintf("calendars/%s.ics", sanitizeFilename(cal.Name))
+		filename := uniqueZipEntry(usedNames, "calendars", sanitizeFilename(cal.Name), "ics")
 		w, err := zipWriter.Create(filename)
 		if err != nil {
 			continue
@@ -88,7 +95,7 @@ func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint) ([]byte
 			}
 		}
 
-		filename := fmt.Sprintf("addressbooks/%s.vcf", sanitizeFilename(ab.Name))
+		filename := uniqueZipEntry(usedNames, "addressbooks", sanitizeFilename(ab.Name), "vcf")
 		w, err := zipWriter.Create(filename)
 		if err != nil {
 			continue
@@ -150,6 +157,21 @@ func buildICalendarExport(cal *calendar.Calendar, objects []*calendar.CalendarOb
 
 	sb.WriteString("END:VCALENDAR\r\n")
 	return sb.String()
+}
+
+// uniqueZipEntry returns a ZIP entry name "<dir>/<base>.<ext>" that has not yet
+// been recorded in used, disambiguating collisions deterministically. The first
+// use of a name is unsuffixed; each subsequent collision gets "-2", "-3", ... so
+// two collections that sanitize to the same base ("Personal") become
+// "Personal.ics" and "Personal-2.ics" rather than overwriting each other. The
+// chosen name is added to used before returning. base must already be sanitized.
+func uniqueZipEntry(used map[string]bool, dir, base, ext string) string {
+	name := fmt.Sprintf("%s/%s.%s", dir, base, ext)
+	for i := 2; used[name]; i++ {
+		name = fmt.Sprintf("%s/%s-%d.%s", dir, base, i, ext)
+	}
+	used[name] = true
+	return name
 }
 
 // sanitizeFilename removes characters that are not safe for filenames
