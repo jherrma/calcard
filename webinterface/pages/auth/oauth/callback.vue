@@ -57,6 +57,12 @@ onMounted(async () => {
       history.replaceState(null, "", window.location.pathname);
 
       await authStore.fetchUser();
+      // fetchUser() swallows errors and clears auth on failure — check the
+      // store instead of relying on an exception.
+      if (!authStore.isAuthenticated) {
+        error.value = "Signed in, but loading your profile failed. Please try again.";
+        return;
+      }
       navigateTo("/calendar", { replace: true });
     } catch (e: any) {
       error.value = "Failed to complete authentication. " + (e.message || "");
