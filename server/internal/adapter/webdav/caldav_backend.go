@@ -97,51 +97,12 @@ func (b *CalDAVBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, e
 }
 
 func (b *CalDAVBackend) GetCalendar(ctx context.Context, p string) (*caldav.Calendar, error) {
-	u, ok := UserFromContext(ctx)
-	if !ok {
-		return nil, webdav.NewHTTPError(http.StatusUnauthorized, nil)
+	// Single resolver so owned/shared resolution (and UUID-vs-legacy-path
+	// matching) can never diverge between GetCalendar and ResolvePath.
+	c, u, perm, err := b.ResolvePath(ctx, p)
+	if err != nil {
+		return nil, err
 	}
-
-	// Path: /dav/username/calendars/calname/
-	parts := strings.Split(strings.Trim(p, "/"), "/")
-	if len(parts) < 4 || parts[0] != "dav" || parts[1] != u.Username || parts[2] != "calendars" {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
-	}
-
-	calPath := parts[3]
-	c, err := b.calendarRepo.GetByPath(ctx, u.ID, calPath)
-
-	// If not found in owned, check shared
-	var perm calendar.CalendarPermission
-	if err != nil || c == nil {
-		// Try to find if it's a shared calendar.
-		// Since GetByPath checks user_id, it won't find shared calendars.
-		// We iterate shared calendars to find a match by path.
-		// Note: Potential name collisions are not yet handled; first match wins.
-		shared, err := b.shareRepo.FindCalendarsSharedWithUser(ctx, u.ID)
-		if err != nil {
-			return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
-		}
-		found := false
-		for _, s := range shared {
-			if s.Calendar.Path == calPath {
-				c = &s.Calendar
-				if s.Permission == "read-write" {
-					perm = calendar.PermissionReadWrite
-				} else {
-					perm = calendar.PermissionRead
-				}
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, webdav.NewHTTPError(http.StatusNotFound, nil)
-		}
-	} else {
-		perm = calendar.PermissionOwner
-	}
-
 	return b.mapCalendar(u.Username, c, perm), nil
 }
 
@@ -453,7 +414,11 @@ func (b *CalDAVBackend) ResolvePath(ctx context.Context, p string) (*calendar.Ca
 	}
 
 	for _, s := range shared {
-		if s.Calendar.Path == calPath {
+		// Match by UUID (the path shares are now advertised under) or by the
+		// legacy owner path, so clients still connected to the old URL don't 404
+		// mid-flight. An owned calendar still shadows a colliding legacy path
+		// (step 1 above wins) — exactly today's behavior.
+		if s.Calendar.UUID == calPath || s.Calendar.Path == calPath {
 			perm := calendar.PermissionRead
 			if s.Permission == "read-write" {
 				perm = calendar.PermissionReadWrite
@@ -498,8 +463,18 @@ func (b *CalDAVBackend) mapCalendar(username string, c *calendar.Calendar, permi
 		}
 	}
 
+	pathSeg := c.Path
+	if permission != calendar.PermissionOwner {
+		// Shared calendars are addressed by UUID: the owner's path segment can
+		// collide with one of the recipient's own paths (or another share's),
+		// and both would then occupy the same DAV URL — making the share
+		// unreachable and misrouting writes into the owned calendar. UUIDs are
+		// globally unique, so collisions become impossible.
+		pathSeg = c.UUID
+	}
+
 	return &caldav.Calendar{
-		Path:                  fmt.Sprintf("/dav/%s/calendars/%s/", username, c.Path),
+		Path:                  fmt.Sprintf("/dav/%s/calendars/%s/", username, pathSeg),
 		Name:                  c.Name,
 		Description:           desc,
 		SupportedComponentSet: []string{"VEVENT", "VTODO"},

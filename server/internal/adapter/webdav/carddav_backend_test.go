@@ -15,7 +15,7 @@ func TestMapAddressBookAdvertisesRealMaxResourceSize(t *testing.T) {
 	b := &CardDAVBackend{}
 	ab := &addressbook.AddressBook{Name: "Personal", Path: "personal"}
 
-	got := b.mapAddressBook("testuser", ab)
+	got := b.mapAddressBook("testuser", ab, false)
 
 	assert.Equal(t, int64(10*1024*1024), got.MaxResourceSize,
 		"advertised max-resource-size must match the server's real 10MB request cap")

@@ -181,10 +181,14 @@ func TestCalendarSharingIntegration(t *testing.T) {
 	require.NoError(t, err)
 	found := false
 	for _, c := range cals {
-		if strings.Contains(c.Path, "/dav/recipient/calendars/shared-cal/") {
+		// Shared calendars are now advertised under their UUID (issue #47), not
+		// the owner's path segment, so they can't collide with the recipient's
+		// own collections or misroute writes.
+		if strings.Contains(c.Path, "/dav/recipient/calendars/"+cal.UUID+"/") {
 			found = true
-			break
 		}
+		assert.NotContains(t, c.Path, "/dav/recipient/calendars/shared-cal/",
+			"a share must not be advertised under the owner's path segment")
 	}
-	assert.True(t, found, "Shared calendar should be listed for recipient")
+	assert.True(t, found, "Shared calendar should be listed for recipient under its UUID path")
 }
