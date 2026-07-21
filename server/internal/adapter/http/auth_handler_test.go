@@ -326,6 +326,35 @@ func TestAuthHandler_ResetPassword(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	t.Run("WeakPassword", func(t *testing.T) {
+		payload := map[string]string{
+			"token":        token,
+			"new_password": "a",
+		}
+		body, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/reset-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		// The policy sentinel must surface as a 400 with its actionable message,
+		// not be swallowed into a generic 500.
+		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+		var respData struct {
+			Message string `json:"message"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&respData)
+		require.NoError(t, err)
+		assert.Contains(t, respData.Message, "at least 8 characters")
+
+		// The account must not have been downgraded on the rejected path.
+		unchanged, err := userRepo.GetByID(context.Background(), u.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "oldhash", unchanged.PasswordHash)
+	})
+
 	t.Run("Success", func(t *testing.T) {
 		payload := map[string]string{
 			"token":        token,

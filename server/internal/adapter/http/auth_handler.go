@@ -297,6 +297,11 @@ func (h *AuthHandler) ResetPassword(c fiber.Ctx) error {
 		if errors.Is(err, authusecase.ErrInvalidToken) {
 			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
 		}
+		// Password complexity sentinels carry safe, actionable messages so the
+		// client can show the same policy feedback the register page does.
+		if isSafeValidationError(err) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to reset password")
 	}
 
