@@ -355,6 +355,30 @@ func TestAuthHandler_ResetPassword(t *testing.T) {
 		assert.Equal(t, "oldhash", unchanged.PasswordHash)
 	})
 
+	t.Run("InvalidToken", func(t *testing.T) {
+		payload := map[string]string{
+			"token":        "does-not-exist",
+			"new_password": "NewPass123!",
+		}
+		body, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/reset-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		// An invalid/expired reset token surfaces ErrInvalidResetToken, which
+		// must map to a 400 with its actionable message, not a generic 500.
+		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+		var respData struct {
+			Message string `json:"message"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&respData)
+		require.NoError(t, err)
+		assert.Contains(t, respData.Message, "invalid or has expired")
+	})
+
 	t.Run("Success", func(t *testing.T) {
 		payload := map[string]string{
 			"token":        token,
