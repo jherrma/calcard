@@ -430,6 +430,10 @@ func (r *AddressBookRepository) ListObjects(ctx context.Context, addressBookID u
 		// Sort by First Name then Last Name
 		query = query.Order(fmt.Sprintf("given_name %s", dbOrder)).Order(fmt.Sprintf("family_name %s", dbOrder))
 	}
+	// Unique tiebreaker so offset paging over rows tied on the sort key is
+	// deterministic (no duplicated or dropped contacts across page boundaries).
+	// dbOrder is sanitized to ASC/DESC above, so this Sprintf stays injection-safe.
+	query = query.Order(fmt.Sprintf("id %s", dbOrder))
 
 	if err := query.Limit(limit).Offset(offset).Find(&objs).Error; err != nil {
 		return nil, 0, err
