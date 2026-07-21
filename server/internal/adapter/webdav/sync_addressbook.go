@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -23,6 +24,20 @@ func (h *Handler) handleAddressBookSyncReport(c fiber.Ctx, ctx context.Context, 
 			return h.sendSyncTokenError(c)
 		}
 		return err
+	}
+
+	// RFC 6578 §3.8: report each resource at most once (its latest state).
+	changes = dedupeAddressBookChanges(changes)
+
+	// RFC 6578 §3.7: honor <limit><nresults>, resuming from the last included
+	// change's token. Skipped on initial sync (empty token). See the calendar
+	// handler for the full rationale — these two paths are kept symmetric.
+	truncated := false
+	if query.Limit != nil && query.Limit.NResults > 0 && query.SyncToken != "" &&
+		len(changes) > int(query.Limit.NResults) {
+		changes = changes[:query.Limit.NResults]
+		newToken = changes[len(changes)-1].SyncToken
+		truncated = true
 	}
 
 	// Build MultiStatus response
@@ -62,6 +77,14 @@ func (h *Handler) handleAddressBookSyncReport(c fiber.Ctx, ctx context.Context, 
 		ms.Responses = append(ms.Responses, resp)
 	}
 
+	// RFC 6578 §3.6: signal truncation with a 507 for the collection itself.
+	if truncated {
+		ms.Responses = append(ms.Responses, SyncResponse{
+			Href:   (&url.URL{Path: c.Path()}).EscapedPath(),
+			Status: "HTTP/1.1 507 Insufficient Storage",
+		})
+	}
+
 	c.Set("Content-Type", "application/xml; charset=utf-8")
 	c.Status(http.StatusMultiStatus)
 
@@ -72,12 +95,31 @@ func (h *Handler) handleAddressBookSyncReport(c fiber.Ctx, ctx context.Context, 
 	return xml.NewEncoder(c).Encode(ms)
 }
 
-// buildAddressBookHref constructs the full href for an address object.
+// dedupeAddressBookChanges keeps only the latest change-log row per resource
+// path (mirror of dedupeCalendarChanges; see it for the full rationale).
+func dedupeAddressBookChanges(changes []*addressbook.SyncChangeLog) []*addressbook.SyncChangeLog {
+	seen := make(map[string]bool, len(changes))
+	deduped := make([]*addressbook.SyncChangeLog, 0, len(changes))
+	for i := len(changes) - 1; i >= 0; i-- {
+		if seen[changes[i].ResourcePath] {
+			continue
+		}
+		seen[changes[i].ResourcePath] = true
+		deduped = append(deduped, changes[i])
+	}
+	for i, j := 0, len(deduped)-1; i < j; i, j = i+1, j-1 {
+		deduped[i], deduped[j] = deduped[j], deduped[i]
+	}
+	return deduped
+}
+
+// buildAddressBookHref constructs the full, percent-escaped href for an address
+// object. ResourcePath may contain spaces or reserved characters; an unescaped
+// href is invalid XML/URI (RFC 6578).
 func buildAddressBookHref(path, resourcePath string) string {
-	// Path is like /dav/username/addressbooks/abname/
-	// ResourcePath is like contact.vcf
+	// Path is like /dav/username/addressbooks/abname/, ResourcePath like contact.vcf
 	path = strings.TrimSuffix(path, "/")
-	return path + "/" + resourcePath
+	return (&url.URL{Path: path + "/" + resourcePath}).EscapedPath()
 }
 
 // getAddressBookPath extracts the address book path from a full path.
