@@ -112,10 +112,10 @@ watch(() => props.addressBookId, () => {
 const fetchShares = async () => {
   isLoadingShares.value = true;
   try {
-    const response = await api<AddressBookShare[]>(
+    const response = await api<{ shares: AddressBookShare[] }>(
       `/api/v1/addressbooks/${props.addressBookId}/shares`
     );
-    shares.value = Array.isArray(response) ? response : [];
+    shares.value = response.shares || [];
   } catch {
     shares.value = [];
   } finally {
