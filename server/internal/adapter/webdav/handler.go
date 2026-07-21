@@ -301,6 +301,14 @@ func (h *Handler) Handler() fiber.Handler {
 			return h.handleCollectionPropfind(c, stdCtx, reqPath, collectionType)
 		}
 
+		// Handle PROPPATCH on a collection ourselves (displayname / calendar-color).
+		// emersion's PROPPATCH is a hard 501, so client rename/recolor always
+		// failed. Read-only credentials are already blocked (PROPPATCH is not in
+		// the safe-method list checked in Authenticate).
+		if c.Method() == "PROPPATCH" && collectionType != "" && len(pathParts) == 4 {
+			return h.handleCollectionProppatch(c, stdCtx, reqPath, collectionType)
+		}
+
 		// Enforce conditional DELETE (If-Match). emersion's caldav/carddav
 		// dispatch drops If-Match on DELETE, so a stale-ETag If-Match DELETE
 		// (sent by iOS/macOS) would otherwise delete unconditionally — the
