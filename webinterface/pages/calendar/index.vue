@@ -168,16 +168,6 @@ const mappedEvents = computed(() =>
   }))
 );
 
-// Sync events to FullCalendar via API when store changes
-watch(mappedEvents, (newEvents) => {
-  const api = calendarRef.value?.getApi();
-  if (!api) return;
-  api.removeAllEvents();
-  for (const event of newEvents) {
-    api.addEvent(event);
-  }
-});
-
 // FullCalendar options
 const calendarOptions = computed<CalendarOptions>(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
