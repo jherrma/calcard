@@ -86,6 +86,90 @@ func TestOAuthHandler_GetContextCookieValidatesMAC(t *testing.T) {
 	assert.Equal(t, fiber.StatusUnauthorized, resp2.StatusCode, "tampered payload must be rejected")
 }
 
+// TestOAuthHandler_CallbackProviderError verifies that when the provider
+// redirects back with an OAuth error (RFC 6749 §4.1.2.1) instead of a code —
+// e.g. the user clicked "Cancel" on the consent screen — the callback surfaces
+// a calm, mapped message on the SPA page rather than attempting a doomed token
+// exchange. The check runs only after state validation and the attacker-
+// influenceable error_description is never echoed into the redirect.
+func TestOAuthHandler_CallbackProviderError(t *testing.T) {
+	app, _, cfg := setupTestApp(t)
+
+	// Build the signed oauth_context cookie the callback validates (same recipe
+	// as the lifecycle handler, keyed on the shared JWT secret in cfg).
+	h := &OAuthHandler{cfg: cfg}
+	sign := func(ctx oauthContext) string {
+		b, _ := json.Marshal(ctx)
+		payload := base64.URLEncoding.EncodeToString(b)
+		return payload + "." + h.cookieMAC(payload)
+	}
+
+	const state = "test-state"
+	cookieVal := sign(oauthContext{State: state, Action: "login"})
+
+	assertErrorRedirect := func(t *testing.T, query, wantFrag string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/google/callback?"+query, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_context", Value: cookieVal})
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		require.True(t,
+			resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther,
+			"expected a redirect, got %d", resp.StatusCode)
+
+		loc := resp.Header.Get("Location")
+		assert.Contains(t, loc, "/auth/oauth/callback#"+wantFrag)
+		// No token exchange happened: the use case was never invoked, so the
+		// success fragment (which would carry an access_token) is absent.
+		assert.NotContains(t, loc, "access_token")
+	}
+
+	t.Run("access_denied maps to a cancellation message", func(t *testing.T) {
+		assertErrorRedirect(t,
+			"error=access_denied&error_description=The+user+denied+the+request&state="+state,
+			"error=sign-in+was+cancelled")
+	})
+
+	t.Run("does not echo error_description into the redirect", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/v1/auth/oauth/google/callback?error=access_denied&error_description=The+user+denied+the+request&state="+state, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_context", Value: cookieVal})
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.NotContains(t, resp.Header.Get("Location"), "denied")
+	})
+
+	t.Run("unknown error code maps to a generic message", func(t *testing.T) {
+		assertErrorRedirect(t,
+			"error=server_error&state="+state,
+			"error=the+identity+provider+returned+an+error")
+	})
+
+	t.Run("missing code with no error is rejected", func(t *testing.T) {
+		assertErrorRedirect(t,
+			"state="+state,
+			"error=missing+authorization+code")
+	})
+
+	t.Run("provider error without a valid state cookie is not probeable", func(t *testing.T) {
+		// No oauth_context cookie: state validation fails first, so the provider
+		// error is never inspected — the browser lands on the generic invalid-state
+		// message, not the mapped cancellation one.
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/v1/auth/oauth/google/callback?error=access_denied&state="+state, nil)
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		require.True(t,
+			resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther,
+			"expected a redirect, got %d", resp.StatusCode)
+		loc := resp.Header.Get("Location")
+		assert.Contains(t, loc, "error=invalid+state+parameter")
+		assert.NotContains(t, loc, "sign-in+was+cancelled")
+	})
+}
+
 func TestOAuthHandler_Lifecycle(t *testing.T) {
 	app, db, cfg := setupTestApp(t)
 	userRepo := repository.NewUserRepository(db.DB())

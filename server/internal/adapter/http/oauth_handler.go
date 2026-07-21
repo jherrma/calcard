@@ -106,6 +106,20 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 	// Clear cookie
 	c.ClearCookie("oauth_context")
 
+	// The provider may redirect back with an error instead of a code (e.g. the
+	// user clicked "Cancel" on the consent screen). Surface that instead of
+	// attempting a doomed token exchange.
+	if provErr := c.Query("error"); provErr != "" {
+		msg := "the identity provider returned an error"
+		if provErr == "access_denied" {
+			msg = "sign-in was cancelled"
+		}
+		return h.redirectOAuthError(c, ctxData.Action, msg)
+	}
+	if code == "" {
+		return h.redirectOAuthError(c, ctxData.Action, "missing authorization code")
+	}
+
 	var currentUser *user.User
 	if ctxData.Action == "link" {
 		currentUser = &user.User{ID: ctxData.UserID}
