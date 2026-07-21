@@ -23,7 +23,7 @@ export interface AddressBookShare {
 
 export interface PublicAccessStatus {
   enabled: boolean;
-  public_url?: string;
+  public_url?: string | null;
   token?: string;
   enabled_at?: string;
 }
