@@ -59,14 +59,20 @@ func NewOAuthCallbackUseCase(
 
 // Execute processes the OAuth callback
 // currentUser is optional. If provided, the flow attempts to link the provider to this user.
-func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code, userAgent, ip string, currentUser *user.User) (*LoginResult, error) {
+// verifier is the PKCE code verifier captured at initiation; it may be empty for
+// flows that started before PKCE was enabled (an in-flight cookie may lack it).
+func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code, verifier, userAgent, ip string, currentUser *user.User) (*LoginResult, error) {
 	provider, err := uc.providerManager.GetProvider(providerName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Exchange code for token
-	token, err := provider.Exchange(ctx, code)
+	// Exchange code for token, supplying the PKCE verifier when present.
+	var exchangeOpts []oauth2.AuthCodeOption
+	if verifier != "" {
+		exchangeOpts = append(exchangeOpts, oauth2.VerifierOption(verifier))
+	}
+	token, err := provider.Exchange(ctx, code, exchangeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange token: %w", err)
 	}

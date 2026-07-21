@@ -15,7 +15,7 @@ import (
 type OAuthProvider interface {
 	Name() string
 	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
-	Exchange(ctx context.Context, code string) (*oauth2.Token, error)
+	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*UserInfo, error)
 }
 
@@ -88,8 +88,8 @@ func (p *oidcProvider) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) 
 	return p.config.AuthCodeURL(state, opts...)
 }
 
-func (p *oidcProvider) Exchange(ctx context.Context, code string) (*oauth2.Token, error) {
-	return p.config.Exchange(ctx, code)
+func (p *oidcProvider) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	return p.config.Exchange(ctx, code, opts...)
 }
 
 func (p *oidcProvider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*UserInfo, error) {

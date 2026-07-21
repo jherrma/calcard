@@ -247,7 +247,7 @@ func (p *mockOAuthProvider) Name() string { return p.name }
 func (p *mockOAuthProvider) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
 	return "https://example.com/auth?state=" + state
 }
-func (p *mockOAuthProvider) Exchange(ctx context.Context, code string) (*oauth2.Token, error) {
+func (p *mockOAuthProvider) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	return &oauth2.Token{AccessToken: "fake-token"}, nil
 }
 func (p *mockOAuthProvider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*authadapter.UserInfo, error) {
