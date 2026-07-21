@@ -46,7 +46,7 @@ func (m *mockOAuthProvider) AuthCodeURL(state string, opts ...oauth2.AuthCodeOpt
 	return args.String(0)
 }
 
-func (m *mockOAuthProvider) Exchange(ctx context.Context, code string) (*oauth2.Token, error) {
+func (m *mockOAuthProvider) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	args := m.Called(ctx, code)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -177,7 +177,7 @@ func TestOAuthCallbackUseCase_Execute_LoginExistingUser(t *testing.T) {
 	tokenProvider.On("HashToken", "jwt_refresh").Return("hashed_refresh")
 	refreshTokenRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	result, err := uc.Execute(ctx, providerName, code, userAgent, ip, nil)
+	result, err := uc.Execute(ctx, providerName, code, "", userAgent, ip, nil)
 
 	assert.NoError(t, err)
 	assert.Equal(t, existingUser, result.User)
@@ -222,7 +222,7 @@ func TestOAuthCallbackUseCase_Execute_LinkNewUser(t *testing.T) {
 	tokenProvider.On("HashToken", "jwt_refresh").Return("hashed_refresh")
 	refreshTokenRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	result, err := uc.Execute(ctx, providerName, code, userAgent, ip, nil)
+	result, err := uc.Execute(ctx, providerName, code, "", userAgent, ip, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result.User)
@@ -256,7 +256,7 @@ func TestOAuthCallbackUseCase_Execute_CreateRequiresVerifiedEmail(t *testing.T) 
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
 	userRepo.On("GetByEmail", ctx, userInfo.Email).Return(nil, nil)
 
-	_, err := uc.Execute(ctx, providerName, code, "ua", "127.0.0.1", nil)
+	_, err := uc.Execute(ctx, providerName, code, "", "ua", "127.0.0.1", nil)
 
 	assert.Error(t, err, "unverified-email auto-provisioning must be rejected")
 	assert.ErrorIs(t, err, ErrEmailNotVerified)
@@ -291,7 +291,7 @@ func TestOAuthCallbackUseCase_Execute_LinkByEmailRequiresVerified(t *testing.T) 
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
 	userRepo.On("GetByEmail", ctx, userInfo.Email).Return(existingUser, nil)
 
-	_, err := uc.Execute(ctx, providerName, code, "ua", "127.0.0.1", nil)
+	_, err := uc.Execute(ctx, providerName, code, "", "ua", "127.0.0.1", nil)
 
 	assert.Error(t, err, "unverified-email auto-link must be rejected")
 	assert.ErrorIs(t, err, ErrEmailNotVerified)
@@ -329,7 +329,7 @@ func TestOAuthCallbackUseCase_Execute_LinkByEmailVerifiedSucceeds(t *testing.T) 
 	tokenProvider.On("HashToken", "jwt_refresh").Return("hashed_refresh")
 	refreshTokenRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	result, err := uc.Execute(ctx, providerName, code, "ua", "127.0.0.1", nil)
+	result, err := uc.Execute(ctx, providerName, code, "", "ua", "127.0.0.1", nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result.User)
@@ -369,7 +369,7 @@ func TestOAuthCallbackUseCase_Execute_LinkLoggedInUser(t *testing.T) {
 	})).Return(nil)
 
 	// Since we return (nil, nil) for successful linking, no token generation
-	result, err := uc.Execute(ctx, providerName, code, userAgent, ip, currentUser)
+	result, err := uc.Execute(ctx, providerName, code, "", userAgent, ip, currentUser)
 
 	assert.NoError(t, err)
 	assert.Nil(t, result)
@@ -400,7 +400,7 @@ func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedError(t *testing.T) {
 	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(otherUser, nil)
 
-	_, err := uc.Execute(ctx, providerName, code, "", "", currentUser)
+	_, err := uc.Execute(ctx, providerName, code, "", "", "", currentUser)
 
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrProviderAlreadyLinked)
@@ -431,7 +431,7 @@ func TestOAuthCallbackUseCase_Execute_LinkAlreadyLinkedSuccess(t *testing.T) {
 	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(existingUser, nil)
 
-	result, err := uc.Execute(ctx, providerName, code, "", "", currentUser)
+	result, err := uc.Execute(ctx, providerName, code, "", "", "", currentUser)
 
 	// Re-linking the same account is a no-op success: provider tokens are no
 	// longer persisted, so nothing is read or written on the connection row.
@@ -474,7 +474,7 @@ func TestOAuthCallbackUseCase_Execute_LinkSecondAccountRejected(t *testing.T) {
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
 	oauthRepo.On("GetByProvider", ctx, currentUser.ID, providerName).Return(existingConn, nil)
 
-	_, err := uc.Execute(ctx, providerName, code, "", "", currentUser)
+	_, err := uc.Execute(ctx, providerName, code, "", "", "", currentUser)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already linked")

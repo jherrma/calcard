@@ -43,23 +43,25 @@ func NewOAuthHandler(
 }
 
 type oauthContext struct {
-	State  string `json:"state"`
-	Action string `json:"action"` // "login" or "link"
-	UserID uint   `json:"user_id,omitempty"`
+	State    string `json:"state"`
+	Verifier string `json:"verifier,omitempty"` // PKCE code verifier
+	Action   string `json:"action"`             // "login" or "link"
+	UserID   uint   `json:"user_id,omitempty"`
 }
 
 func (h *OAuthHandler) Initiate(c fiber.Ctx) error {
 	provider := c.Params("provider")
 
-	url, state, err := h.initiateUC.Execute(provider, "")
+	url, state, verifier, err := h.initiateUC.Execute(provider, "")
 	if err != nil {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Store state in cookie
+	// Store state (and PKCE verifier) in cookie
 	ctxData := oauthContext{
-		State:  state,
-		Action: "login",
+		State:    state,
+		Verifier: verifier,
+		Action:   "login",
 	}
 	h.setContextCookie(c, ctxData)
 
@@ -70,7 +72,7 @@ func (h *OAuthHandler) Link(c fiber.Ctx) error {
 	provider := c.Params("provider")
 	u := c.Locals("user").(*user.User) // Assuming middleware sets this
 
-	url, state, err := h.initiateUC.Execute(provider, "") // TODO: Redirect URL might differ?
+	url, state, verifier, err := h.initiateUC.Execute(provider, "") // TODO: Redirect URL might differ?
 	if err != nil {
 		// 409 if provider already linked handled in callback?
 		// AC says "Returns 409 if provider account already linked to another user". That's callback.
@@ -78,9 +80,10 @@ func (h *OAuthHandler) Link(c fiber.Ctx) error {
 	}
 
 	ctxData := oauthContext{
-		State:  state,
-		Action: "link",
-		UserID: u.ID,
+		State:    state,
+		Verifier: verifier,
+		Action:   "link",
+		UserID:   u.ID,
 	}
 	h.setContextCookie(c, ctxData)
 
@@ -115,7 +118,7 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 	userAgent := string(c.Request().Header.UserAgent())
 	ip := c.IP()
 
-	result, err := h.callbackUC.Execute(c.Context(), provider, code, userAgent, ip, currentUser)
+	result, err := h.callbackUC.Execute(c.Context(), provider, code, ctxData.Verifier, userAgent, ip, currentUser)
 	if err != nil {
 		// The browser is here via a provider redirect, so redirect back to the
 		// SPA (returning JSON would dead-end, H16). Map the use case's safe,

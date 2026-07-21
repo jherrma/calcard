@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
+	"golang.org/x/oauth2"
 )
 
 // InitiateOAuthUseCase handles starting the OAuth flow
@@ -20,22 +21,28 @@ func NewInitiateOAuthUseCase(providerManager authadapter.OAuthProviderManager) *
 	}
 }
 
-// Execute returns the authorization URL and state for the given provider
-func (uc *InitiateOAuthUseCase) Execute(providerName string, redirectURL string) (string, string, error) {
+// Execute returns the authorization URL, state, and PKCE verifier for the given
+// provider. The verifier is a secret that must survive the round-trip through
+// the provider (stored in the signed, HttpOnly oauth_context cookie) and be
+// supplied to the token exchange in the callback.
+func (uc *InitiateOAuthUseCase) Execute(providerName string, redirectURL string) (string, string, string, error) {
 	provider, err := uc.providerManager.GetProvider(providerName)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	state, err := generateState()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate state: %w", err)
+		return "", "", "", fmt.Errorf("failed to generate state: %w", err)
 	}
 
-	// We might want to pass options like AccessTypeOffline here
-	url := provider.AuthCodeURL(state)
+	// PKCE (S256): send a code challenge on the authorization request and keep
+	// the verifier for the token exchange. Providers that don't support PKCE
+	// ignore the extra code_challenge parameter, so this is safe unconditionally.
+	verifier := oauth2.GenerateVerifier()
+	url := provider.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
 
-	return url, state, nil
+	return url, state, verifier, nil
 }
 
 func generateState() (string, error) {
