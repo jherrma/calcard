@@ -45,6 +45,20 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 
 	result := &ImportResult{}
 
+	// Fetch the calendar's existing objects ONCE and index them by UID, rather
+	// than re-materializing the whole object list on every imported event
+	// (which made import O(N*M)). The map is kept coherent as the loop mutates
+	// the calendar below (see create/replace handling) so duplicate UIDs within
+	// the same file behave exactly as a fresh per-event fetch would.
+	existingObjects, err := uc.calendarRepo.GetCalendarObjects(ctx, cal.ID)
+	if err != nil {
+		return nil, err
+	}
+	byUID := make(map[string]*calendar.CalendarObject, len(existingObjects))
+	for _, obj := range existingObjects {
+		byUID[obj.UID] = obj
+	}
+
 	// Get all VEVENT and VTODO components
 	for _, child := range parsedCal.Children {
 		if child.Name != ical.CompEvent && child.Name != ical.CompToDo {
@@ -72,15 +86,8 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 			summary = summaryProp.Value
 		}
 
-		// Check for existing event by UID
-		existingObjects, _ := uc.calendarRepo.GetCalendarObjects(ctx, cal.ID)
-		var existing *calendar.CalendarObject
-		for _, obj := range existingObjects {
-			if obj.UID == uid {
-				existing = obj
-				break
-			}
-		}
+		// Check for existing event by UID (indexed once, above the loop)
+		existing := byUID[uid]
 
 		if existing != nil {
 			switch opts.DuplicateHandling {
@@ -99,6 +106,10 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 					})
 					continue
 				}
+				// Drop the now-deleted object from the index so a subsequent
+				// event with the same UID (or a create failure below) sees the
+				// same state a fresh re-fetch would.
+				delete(byUID, uid)
 			case "duplicate":
 				// Generate new UID
 				uid = uuid.New().String() + "@imported"
@@ -161,6 +172,9 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 			})
 			continue
 		}
+		// Keep the index in sync with the calendar we're mutating so a later
+		// event carrying the same UID resolves against the just-created object.
+		byUID[uid] = obj
 
 		result.Imported++
 	}
