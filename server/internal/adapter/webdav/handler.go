@@ -94,8 +94,16 @@ func (h *Handler) Authenticate() fiber.Handler {
 			emailOrUsername, password := pair[0], pair[1]
 			u, _ = h.userRepo.GetByEmail(c.Context(), emailOrUsername)
 			if u == nil {
-				// Dummy compare so the unknown-user path costs roughly the same
-				// as a wrong-password path (anti-enumeration).
+				// DAV clients are commonly configured with the account username —
+				// it's the segment shown in the DAV URL (/dav/{username}/...) — not
+				// the email. Accept both. Email is tried first, so if one user's
+				// email equals another's username, email wins (matches login).
+				u, _ = h.userRepo.GetByUsername(c.Context(), emailOrUsername)
+			}
+			if u == nil {
+				// Dummy compare so the unknown-identifier path costs roughly the
+				// same as a wrong-password path (anti-enumeration). Kept after BOTH
+				// lookups fail so the timing signature stays uniform.
 				_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
 			}
 			if u != nil {
