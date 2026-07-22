@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"sort"
 	"strings"
@@ -42,9 +44,19 @@ func (s *stubAddressBookRepo) ListByUserID(ctx context.Context, userID uint) ([]
 	return s.books, nil
 }
 
+// ListObjects honors limit/offset so tests can exercise the export's paging
+// loop (limit -1 still means "everything from offset", matching the repo).
 func (s *stubAddressBookRepo) ListObjects(ctx context.Context, addressBookID uint, limit, offset int, sortField, order string) ([]addressbook.AddressObject, int64, error) {
 	objs := s.objects[addressBookID]
-	return objs, int64(len(objs)), nil
+	total := int64(len(objs))
+	if offset >= len(objs) {
+		return nil, total, nil
+	}
+	end := len(objs)
+	if limit >= 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return objs[offset:end], total, nil
 }
 
 // readZipEntries unzips raw ZIP bytes into a name->content map.
@@ -99,12 +111,16 @@ func TestBackupExportDedupesCollidingNames(t *testing.T) {
 	}
 
 	uc := NewBackupExportUseCase(calRepo, abRepo)
-	data, _, err := uc.Execute(context.Background(), 42)
+	var buf bytes.Buffer
+	name, err := uc.Execute(context.Background(), 42, &buf)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
+	if name == "" {
+		t.Fatalf("Execute returned an empty filename")
+	}
 
-	entries := readZipEntries(t, data)
+	entries := readZipEntries(t, buf.Bytes())
 
 	// Collect the calendar and address book entry names.
 	var calNames, abNames []string
@@ -171,6 +187,70 @@ func TestUniqueZipEntrySanitizedCollision(t *testing.T) {
 	}
 	if second != "calendars/a-b-2.ics" {
 		t.Errorf("expected second entry calendars/a-b-2.ics, got %q", second)
+	}
+}
+
+// TestBackupExportPagesContacts exercises the streaming/paging rewrite: an
+// address book larger than one page must be exported completely. The export
+// pages ListObjects contactPageSize at a time and writes each vCard straight
+// into the ZIP as it is read; this asserts the resulting single .vcf entry
+// still contains every contact (including those past the first page and in the
+// short final page) and that the metadata count matches. Before paging, the
+// use case loaded everything with limit -1, so this is the guard that the new
+// loop produces the same archive contents.
+func TestBackupExportPagesContacts(t *testing.T) {
+	const total = contactPageSize*2 + 37 // multiple pages, with a short last page
+
+	objs := make([]addressbook.AddressObject, 0, total)
+	for i := 0; i < total; i++ {
+		uid := fmt.Sprintf("paged-%d", i)
+		objs = append(objs, addressbook.AddressObject{
+			UID:       uid,
+			VCardData: fmt.Sprintf("BEGIN:VCARD\r\nUID:%s\r\nEND:VCARD\r\n", uid),
+		})
+	}
+
+	calRepo := &stubCalendarRepo{}
+	abRepo := &stubAddressBookRepo{
+		books:   []addressbook.AddressBook{{ID: 1, Name: "Big"}},
+		objects: map[uint][]addressbook.AddressObject{1: objs},
+	}
+
+	uc := NewBackupExportUseCase(calRepo, abRepo)
+	var buf bytes.Buffer
+	if _, err := uc.Execute(context.Background(), 7, &buf); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	entries := readZipEntries(t, buf.Bytes())
+	vcf, ok := entries["addressbooks/Big.vcf"]
+	if !ok {
+		t.Fatalf("expected addressbooks/Big.vcf entry; got %v", keysOf(entries))
+	}
+	for i := 0; i < total; i++ {
+		uid := fmt.Sprintf("paged-%d", i)
+		if !strings.Contains(vcf, "UID:"+uid+"\r\n") {
+			t.Errorf("exported vCard missing contact %q — paging dropped it", uid)
+		}
+	}
+
+	// The metadata contact_count must reflect every paged contact, not just
+	// the first page.
+	var md ExportMetadata
+	if err := json.Unmarshal([]byte(entries["metadata.json"]), &md); err != nil {
+		t.Fatalf("parse metadata.json: %v", err)
+	}
+	found := false
+	for _, ab := range md.AddressBooks {
+		if ab.Name == "Big" {
+			found = true
+			if ab.ContactCount != total {
+				t.Errorf("metadata contact_count = %d, want %d", ab.ContactCount, total)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("metadata missing address book %q", "Big")
 	}
 }
 
