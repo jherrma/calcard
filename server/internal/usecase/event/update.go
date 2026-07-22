@@ -13,14 +13,19 @@ import (
 )
 
 type UpdateEventInput struct {
-	UUID         string
-	Summary      *string
-	Description  *string
-	Location     *string
-	Start        *string // ISO 8601
-	End          *string // ISO 8601
-	IsAllDay     *bool
-	RRule        *string
+	UUID        string
+	Summary     *string
+	Description *string
+	Location    *string
+	Start       *string // ISO 8601
+	End         *string // ISO 8601
+	IsAllDay    *bool
+	// Recurrence carries the raw recurrence rule (UNTIL still in its RFC 3339
+	// form). The RRULE string is rendered here, once obj.IsAllDay is resolved,
+	// so a partial update that omits all_day still emits an UNTIL value type
+	// matching DTSTART (issue #118). A nil pointer leaves the stored RRULE
+	// untouched.
+	Recurrence   *calendar.RecurrenceRule
 	Timezone     *string
 	RecurrenceID string // Specific instance to update (RFC 5545 format, e.g., 20230101T100000Z)
 	Scope        string // this, this_and_future, all
@@ -365,18 +370,25 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		return nil, fmt.Errorf("%w: end time is before start time", ErrInvalidInput)
 	}
 
-	if input.RRule != nil {
-		// RRULE usually only makes sense on the master event
+	if input.Recurrence != nil {
+		// RRULE usually only makes sense on the master event. Render UNTIL here,
+		// against the now-resolved effective all-day state (obj.IsAllDay), rather
+		// than in the handler: a partial update from an API/MCP client may omit
+		// all_day, so the handler can't know the series' value type. The raw
+		// recurrence still carries the sender's RFC 3339 offset at this point, so
+		// an all-day UNTIL renders as the correct bare DATE (issue #118) — a day
+		// that would be lost if we re-derived it from an already-UTC'd string.
 		if input.Scope == "all" {
-			if *input.RRule == "" {
+			rendered := input.Recurrence.ToRRule(obj.IsAllDay)
+			if rendered == "" {
 				targetEvent.Props.Del(ical.PropRecurrenceRule)
 			} else {
-				if _, err := rrule.StrToRRule(*input.RRule); err != nil {
+				if _, err := rrule.StrToRRule(rendered); err != nil {
 					return nil, fmt.Errorf("%w: invalid recurrence rule: %v", ErrInvalidInput, err)
 				}
 				targetEvent.Props.Set(&ical.Prop{
 					Name:  ical.PropRecurrenceRule,
-					Value: *input.RRule,
+					Value: rendered,
 				})
 			}
 		}

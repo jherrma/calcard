@@ -320,12 +320,12 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 	}
 
 	if req.Recurrence != nil {
-		// The update request carries all_day whenever the client edits the
-		// series (the web UI always sends it alongside recurrence); a nil flag
-		// defaults to a timed UNTIL, preserving prior behavior.
-		allDay := req.AllDay != nil && *req.AllDay
-		rruleStr := req.Recurrence.ToRRule(allDay)
-		input.RRule = &rruleStr
+		// Pass the raw recurrence through; the RRULE (and its UNTIL value type)
+		// is rendered in the use case against the *effective* all-day state. A
+		// partial update from an API/MCP client may omit all_day, so rendering
+		// here with the request's flag would persist a DATE-TIME UNTIL on an
+		// all-day series — the exact issue #118 violation, plus an off-by-one day.
+		input.Recurrence = req.Recurrence.ToDomain()
 	}
 
 	obj, err := h.updateUC.Execute(c.Context(), input)
