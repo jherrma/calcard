@@ -106,3 +106,52 @@ describe('fetchContacts paging loop', () => {
     warnSpy.mockRestore();
   });
 });
+
+// Build a Contact whose first-name (default sort key) is `givenName`.
+function named(id: string, givenName: string, abId = 1): Contact {
+  return {
+    id,
+    addressbook_id: String(abId),
+    uid: `uid-${id}`,
+    given_name: givenName,
+    formatted_name: givenName,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+}
+
+describe('groupedContacts letter bucketing', () => {
+  it('folds accented/umlaut first letters onto their base Latin letter instead of #', () => {
+    const store = useContactsStore();
+    store.addressBooks = [book(1)];
+    store.selectedAddressBookIds = new Set([1]);
+    store.sortBy = 'first_name';
+    store.contacts = [
+      named('a', 'Ärzte'),
+      named('b', 'Élan'),
+      named('c', 'Öztürk'),
+      named('d', 'Zöe'),
+      named('e', '9Lives'),
+      named('f', 'Bob'),
+    ];
+
+    const groups = store.groupedContacts;
+    // Locate the bucket key that a given contact landed in.
+    const keyOf = (givenName: string) =>
+      [...groups.entries()].find(([, cts]) => cts.some((c) => c.given_name === givenName))?.[0];
+
+    // Diacritics fold to the base Latin letter (this is what the pre-fix code got wrong).
+    expect(keyOf('Ärzte')).toBe('A');
+    expect(keyOf('Élan')).toBe('E');
+    expect(keyOf('Öztürk')).toBe('O');
+    expect(keyOf('Zöe')).toBe('Z');
+    // Plain A–Z is unchanged and genuinely non-Latin (a leading digit) still buckets to '#'.
+    expect(keyOf('Bob')).toBe('B');
+    expect(keyOf('9Lives')).toBe('#');
+
+    // Only the digit-led name is in '#'; no accented name leaked in.
+    expect(groups.get('#')?.map((c) => c.given_name)).toEqual(['9Lives']);
+    // availableLetters stays coherent with the folded keys (sorted).
+    expect(store.availableLetters).toEqual(['#', 'A', 'B', 'E', 'O', 'Z']);
+  });
+});
