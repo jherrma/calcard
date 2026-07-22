@@ -358,9 +358,13 @@ const form = reactive({
   notes: props.contact?.notes || '',
 });
 
-// Birthday as Date object for DatePicker
+// Birthday as Date object for DatePicker. The incoming vCard BDAY may be in the
+// basic form `YYYYMMDD` (e.g. `19850412`) or the extended form `YYYY-MM-DD`;
+// normalize to `YYYY-MM-DD` first so `new Date(...)` never yields an Invalid
+// Date (which would later save as `NaN-NaN-NaN`). See utils/vcardDate.ts.
+const initialBirthday = normalizeVCardDate(props.contact?.birthday);
 const birthdayDate = ref<Date | null>(
-  props.contact?.birthday ? new Date(props.contact.birthday + 'T00:00:00') : null
+  initialBirthday ? new Date(initialBirthday + 'T00:00:00') : null
 );
 
 // The existing contact's photo sits behind Bearer auth, so fetch it via the
