@@ -7,7 +7,9 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",
@@ -29,14 +31,19 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@nuxt/test-utils": "^4.0.3",
     "@nuxtjs/eslint-config-typescript": "^12.1.0",
     "@nuxtjs/tailwindcss": "6",
+    "@pinia/testing": "^1.0.3",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^25.2.0",
     "@types/qrcode": "^1.5.6",
+    "@vue/test-utils": "^2.4.11",
     "eslint": "^9.39.2",
+    "happy-dom": "^20.11.0",
     "prettier": "^3.8.1",
     "tailwindcss": "^3.4.19",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }

@@ -246,10 +246,20 @@ confirm.require({
 ## Development
 
 ```bash
-pnpm dev              # Dev server (hot reload)
-pnpm nuxt typecheck   # TypeScript check (must pass with zero errors)
-pnpm build            # Production build
+pnpm dev                        # Dev server (hot reload)
+pnpm nuxt typecheck && pnpm test # Verification gate (typecheck must pass, then all Vitest specs)
+pnpm test                       # Vitest specs (run once) — co-located *.spec.ts
+pnpm test:watch                 # Vitest specs (watch mode)
+pnpm build                      # Production build
 ```
+
+### Testing
+
+- **Runner**: Vitest with the `@nuxt/test-utils` Nuxt environment (happy-dom). Config in `vitest.config.ts` via `defineVitestConfig` — this wires Nuxt aliases (`~/…`) and auto-imports into specs.
+- **Specs are co-located** next to sources as `*.spec.ts`.
+- **Mock auto-imports in tests** with `mockNuxtImport('useApi', () => …)` from `@nuxt/test-utils/runtime`. `$fetch` is a Nuxt global (not an unimport auto-import) — stub it with `vi.stubGlobal('$fetch', …)`.
+- **Store setup**: use `createTestingPinia({ stubActions: false })` from `@pinia/testing` (it sets the active pinia and keeps real action logic so you assert behavior, not that an action was called). Prefer importing this over `pinia` directly, which does not resolve under `vue-tsc`.
+- Keep specs hermetic: no network (mock `useApi`/`$fetch`), and shallow-mount heavy PrimeVue components (assert logic, not PrimeVue internals).
 
 The `NUXT_PUBLIC_API_BASE_URL` environment variable must point to the running backend (default: `http://localhost:8080`).
 
