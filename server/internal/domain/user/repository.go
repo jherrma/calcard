@@ -28,6 +28,15 @@ type RefreshTokenRepository interface {
 	GetByHash(ctx context.Context, hash string) (*RefreshToken, error)
 	DeleteByHash(ctx context.Context, hash string) error
 	DeleteByUserID(ctx context.Context, userID uint) error
+	// Rotate atomically supersedes oldHash with newToken: within a single
+	// transaction it creates newToken and marks the old row revoked with its
+	// ReplacedByHash set to newToken.TokenHash. Atomicity guarantees a crash can
+	// never leave both tokens live or both dead.
+	Rotate(ctx context.Context, oldHash string, newToken *RefreshToken) error
+	// RevokeFamily revokes every not-yet-revoked token in the given family.
+	// Implementations MUST refuse an empty familyID: legacy rows carry
+	// family_id='' and revoking that "family" would log out unrelated users.
+	RevokeFamily(ctx context.Context, familyID string) error
 }
 
 // AppPasswordRepository defines the interface for app password persistence

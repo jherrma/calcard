@@ -98,12 +98,21 @@ func (uc *LoginUseCase) Execute(ctx context.Context, email, password string, use
 
 	hash := uc.jwtManager.HashToken(refreshToken)
 
+	// Every login opens a fresh token family. Subsequent refreshes inherit this
+	// id so a detected reuse can revoke the whole lineage (#75). The value only
+	// needs to be unique and opaque, so a random token doubles as the family id.
+	familyID, err := uc.jwtManager.GenerateRefreshToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token family id: %w", err)
+	}
+
 	rt := &user.RefreshToken{
 		UserID:    u.ID,
 		TokenHash: hash,
 		ExpiresAt: time.Now().Add(uc.cfg.JWT.RefreshExpiry),
 		UserAgent: userAgent,
 		IP:        ip,
+		FamilyID:  familyID,
 	}
 
 	if err := uc.tokenRepo.Create(ctx, rt); err != nil {

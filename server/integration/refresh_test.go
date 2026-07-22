@@ -10,20 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRefreshTokenFlow exercises /auth/refresh end-to-end:
+// TestRefreshTokenFlow exercises /auth/refresh end-to-end with ROTATION +
+// REUSE DETECTION (#75):
 //
-//   - a fresh refresh token produces a new *access* token that actually
-//     authenticates protected endpoints;
+//   - a fresh refresh token produces a new *access* token that authenticates
+//     protected endpoints AND a new *refresh* token (rotation);
 //   - invalid / garbage refresh tokens are rejected with 401;
-//   - logout revokes the refresh token so subsequent refresh attempts fail.
-//
-// The current implementation does NOT rotate the refresh token itself —
-// successive refreshes with the same refresh token are accepted until the
-// user explicitly logs out or the token expires. That's a deliberate choice
-// in the server code (see auth.RefreshUseCase.Execute); if you ever add
-// rotation, the "second refresh with the same token succeeds" assertion
-// below will start failing and should be updated to assert rotation
-// semantics instead (old-token-after-rotation → 401).
+//   - the OLD refresh token stops working the instant it is rotated;
+//   - two sequential refreshes chain (token1 → token2 → token3);
+//   - logout revokes the current refresh token so subsequent attempts fail.
 func TestRefreshTokenFlow(t *testing.T) {
 	email := "refresh@example.test"
 	password := "refreshSecret!123"
@@ -42,7 +37,7 @@ func TestRefreshTokenFlow(t *testing.T) {
 		map[string]string{"email": email, "password": password}, &login)
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, login.RefreshToken)
-	initialAccess := login.AccessToken
+	token1 := login.RefreshToken
 
 	// --- Garbage refresh token must 401 ---------------------------------
 	status, _ := restCall(t, http.MethodPost, "/auth/refresh", "",
@@ -54,42 +49,57 @@ func TestRefreshTokenFlow(t *testing.T) {
 	assert.True(t, status == http.StatusBadRequest || status == http.StatusUnauthorized,
 		"missing refresh_token must yield 4xx, got %d", status)
 
-	// --- Valid refresh: returns an access token that works -------------
-	// We don't assert token-inequality: the JWT's `iat`/`exp` are in whole
-	// seconds, so two refreshes issued in the same second produce byte-
-	// identical tokens. The meaningful property is that the returned token
-	// authenticates a protected endpoint.
-	var refresh1 struct {
-		AccessToken string `json:"access_token"`
-		ExpiresAt   int64  `json:"expires_at"`
-		TokenType   string `json:"token_type"`
+	// --- Valid refresh: returns an access token that works + a NEW refresh
+	// token (rotation). ------------------------------------------------------
+	type refreshResp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresAt    int64  `json:"expires_at"`
+		TokenType    string `json:"token_type"`
 	}
+	var refresh1 refreshResp
 	code = doJSON(t, http.MethodPost, "/auth/refresh", "",
-		map[string]string{"refresh_token": login.RefreshToken}, &refresh1)
+		map[string]string{"refresh_token": token1}, &refresh1)
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, refresh1.AccessToken)
 	assert.Equal(t, "Bearer", refresh1.TokenType)
-	_ = initialAccess // same JWT claims within a 1-second window would match
+	require.NotEmpty(t, refresh1.RefreshToken, "refresh must rotate: a new refresh token is returned")
+	assert.NotEqual(t, token1, refresh1.RefreshToken, "the rotated refresh token must differ from the presented one")
+	token2 := refresh1.RefreshToken
 
+	// The refreshed access token authenticates a protected endpoint.
 	status, raw := restCall(t, http.MethodGet, "/users/me", refresh1.AccessToken, nil)
 	require.Equalf(t, http.StatusOK, status, "refreshed access token: %s", string(raw))
 
-	// --- Second refresh with the same refresh token is still accepted ---
-	// (Current server does not rotate refresh tokens. If rotation is added
-	// later this sub-assertion should flip to asserting 401 on the second
-	// use of the same refresh token.)
-	code = doJSON(t, http.MethodPost, "/auth/refresh", "",
-		map[string]string{"refresh_token": login.RefreshToken}, nil)
-	require.Equal(t, http.StatusOK, code,
-		"without rotation the same refresh token should keep working until logout")
+	// --- The OLD refresh token (token1) is now dead ---------------------
+	// This is the rotation guarantee: reusing token1 after it was rotated must
+	// be rejected. (Before rotation existed, token1 would keep working.)
+	status, _ = restCall(t, http.MethodPost, "/auth/refresh", "",
+		map[string]string{"refresh_token": token1})
+	assert.Equal(t, http.StatusUnauthorized, status,
+		"the rotated (old) refresh token must be rejected")
 
-	// --- Logout revokes the refresh token -------------------------------
-	code = doJSON(t, http.MethodPost, "/auth/logout", refresh1.AccessToken,
-		map[string]string{"refresh_token": login.RefreshToken}, nil)
+	// --- Second sequential refresh chains: token2 → token3 --------------
+	var refresh2 refreshResp
+	code = doJSON(t, http.MethodPost, "/auth/refresh", "",
+		map[string]string{"refresh_token": token2}, &refresh2)
+	require.Equal(t, http.StatusOK, code, "the current refresh token (token2) must work")
+	require.NotEmpty(t, refresh2.RefreshToken)
+	assert.NotEqual(t, token2, refresh2.RefreshToken)
+	assert.NotEqual(t, token1, refresh2.RefreshToken)
+	token3 := refresh2.RefreshToken
+
+	// token3 authenticates a protected endpoint.
+	status, raw = restCall(t, http.MethodGet, "/users/me", refresh2.AccessToken, nil)
+	require.Equalf(t, http.StatusOK, status, "second refreshed access token: %s", string(raw))
+
+	// --- Logout revokes the current refresh token (token3) --------------
+	code = doJSON(t, http.MethodPost, "/auth/logout", refresh2.AccessToken,
+		map[string]string{"refresh_token": token3}, nil)
 	require.Equal(t, http.StatusOK, code)
 
 	status, _ = restCall(t, http.MethodPost, "/auth/refresh", "",
-		map[string]string{"refresh_token": login.RefreshToken})
+		map[string]string{"refresh_token": token3})
 	assert.Equal(t, http.StatusUnauthorized, status,
 		"refresh after logout must be rejected")
 }

@@ -27,38 +27,48 @@ func TestLogoutRevokesRefreshToken(t *testing.T) {
 	}, nil)
 	require.Equal(t, http.StatusOK, code)
 
-	var login struct {
+	// Refresh rotates the token, so track the current one across each step.
+	type tokenResp struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 	}
+	var login tokenResp
 	code = doJSON(t, http.MethodPost, "/auth/login", "",
 		map[string]string{"email": email, "password": password}, &login)
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, login.RefreshToken)
 
-	// Sanity check: the refresh token works before logout.
+	// Sanity check: the refresh token works before logout — and rotates to a
+	// fresh token (#75). The rotated token becomes the current session token.
+	var afterSanity tokenResp
 	code = doJSON(t, http.MethodPost, "/auth/refresh", "",
-		map[string]string{"refresh_token": login.RefreshToken}, nil)
+		map[string]string{"refresh_token": login.RefreshToken}, &afterSanity)
 	require.Equal(t, http.StatusOK, code, "refresh should work before logout")
+	require.NotEmpty(t, afterSanity.RefreshToken)
+	current := afterSanity.RefreshToken
 
 	// Hardening: a logout with no body is a 200 no-op — nothing to revoke.
-	status, raw := restCall(t, http.MethodPost, "/auth/logout", login.AccessToken, nil)
+	status, raw := restCall(t, http.MethodPost, "/auth/logout", afterSanity.AccessToken, nil)
 	assert.Equalf(t, http.StatusOK, status,
 		"empty-body logout must be a no-op success, got %d: %s", status, string(raw))
 
-	// The no-op logout must NOT have revoked the still-valid token.
+	// The no-op logout must NOT have revoked the still-valid current token: it
+	// still refreshes (and rotates once more).
+	var afterNoop tokenResp
 	code = doJSON(t, http.MethodPost, "/auth/refresh", "",
-		map[string]string{"refresh_token": login.RefreshToken}, nil)
+		map[string]string{"refresh_token": current}, &afterNoop)
 	require.Equal(t, http.StatusOK, code, "empty-body logout must not revoke the token")
+	require.NotEmpty(t, afterNoop.RefreshToken)
+	current = afterNoop.RefreshToken
 
-	// Real logout: send the refresh token in the JSON body.
-	code = doJSON(t, http.MethodPost, "/auth/logout", login.AccessToken,
-		map[string]string{"refresh_token": login.RefreshToken}, nil)
+	// Real logout: send the current refresh token in the JSON body.
+	code = doJSON(t, http.MethodPost, "/auth/logout", afterNoop.AccessToken,
+		map[string]string{"refresh_token": current}, nil)
 	require.Equal(t, http.StatusOK, code)
 
 	// Replaying the same refresh token after logout must be rejected.
 	status, _ = restCall(t, http.MethodPost, "/auth/refresh", "",
-		map[string]string{"refresh_token": login.RefreshToken})
+		map[string]string{"refresh_token": current})
 	assert.Equal(t, http.StatusUnauthorized, status,
 		"refresh with a logged-out token must 401")
 }
