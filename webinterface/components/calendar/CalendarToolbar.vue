@@ -34,6 +34,7 @@
         :options="viewOptions"
         option-label="label"
         option-value="value"
+        :allow-empty="false"
         @update:model-value="$emit('view-change', $event)"
       />
     </div>

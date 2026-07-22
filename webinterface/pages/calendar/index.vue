@@ -375,9 +375,16 @@ const goToNext = () => {
   if (date) calendarStore.setCurrentDate(date);
 };
 
-const changeView = (view: string) => {
+const VALID_VIEWS = ['dayGridMonth', 'timeGridWeek', 'timeGridDay'] as const;
+type CalendarViewName = (typeof VALID_VIEWS)[number];
+
+const changeView = (view: string | null | undefined) => {
+  // The view SelectButton can emit null when deselected; passing that straight
+  // to FullCalendar's changeView() throws and blanks the calendar. Ignore any
+  // value that isn't a known view (belt-and-suspenders alongside allowEmpty=false).
+  if (!view || !VALID_VIEWS.includes(view as CalendarViewName)) return;
   calendarRef.value?.getApi().changeView(view);
-  calendarStore.setCurrentView(view as 'dayGridMonth' | 'timeGridWeek' | 'timeGridDay');
+  calendarStore.setCurrentView(view as CalendarViewName);
 };
 </script>
 
