@@ -125,7 +125,7 @@
                 <div class="space-y-2">
                   <div v-for="(url, i) in contact.urls" :key="i" class="flex items-center gap-2">
                     <i class="pi pi-link text-surface-400 text-sm" />
-                    <a :href="url.value" target="_blank" rel="noopener" class="text-sm text-primary-600 dark:text-primary-400 hover:underline truncate">
+                    <a :href="sanitizeUrl(url.value)" target="_blank" rel="noopener" class="text-sm text-primary-600 dark:text-primary-400 hover:underline truncate">
                       {{ url.value }}
                     </a>
                   </div>
