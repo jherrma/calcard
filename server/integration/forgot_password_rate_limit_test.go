@@ -19,21 +19,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestForgotPasswordRateLimiter is the regression guard for issue #74:
-// POST /forgot-password sends a real email per request, so without a dedicated
-// throttle it can be abused as a mail-flooding primitive. This test boots a
-// dedicated server with RateLimit.Enabled=true (the package-level server leaves
-// it off) pointed at an in-process fake SMTP server that counts every message
-// handed to it, then hammers /forgot-password for a registered account past the
-// limit and asserts two things:
+// TestForgotPasswordRateLimiter is the regression guard for issues #74 and
+// #105: POST /forgot-password sends a real email per request, so without a
+// dedicated throttle it can be abused as a mail-flooding primitive. The primary
+// control is the per-EMAIL limiter, because behind a reverse proxy every client
+// collapses to a single c.IP() and the per-IP limiter can no longer tell
+// accounts apart. This test boots a dedicated server with RateLimit.Enabled=true
+// (the package-level server leaves it off) pointed at an in-process fake SMTP
+// server that counts every message handed to it.
 //
-//  1. The endpoint starts answering 429 within the burst (the limiter is wired).
+// It pins the auth thresholds so the per-EMAIL limiter is the one that fires
+// from a single test connection (AuthIPRequests kept ABOVE AuthEmailRequests —
+// this is exactly the #105 ordering that makes the per-email limiter reachable).
+// It asserts:
+//
+//  1. The endpoint starts answering 429 within the burst, and the 429 comes
+//     from the per-email limiter (not the per-IP one).
 //  2. Exactly one email is handed to the sender per allowed (200) request and
 //     none for the throttled ones — i.e. the throttle actually stops the flood.
-//
-// It also checks the anti-enumeration property required by the issue: a
-// throttled response for a non-existent account is byte-identical to one for a
-// real account, and forgot-password never mails a non-existent account.
+//  3. Anti-enumeration: a throttled response for a non-existent account is
+//     byte-identical to one for a real account, and forgot-password never mails
+//     a non-existent account.
 func TestForgotPasswordRateLimiter(t *testing.T) {
 	smtpAddr, emailCount, stopSMTP := startCountingSMTP(t)
 	t.Cleanup(stopSMTP)
@@ -41,8 +47,14 @@ func TestForgotPasswordRateLimiter(t *testing.T) {
 	host, port, err := net.SplitHostPort(smtpAddr)
 	require.NoError(t, err)
 
+	// per-email allowance; per-IP is set far above it so the email limiter is
+	// the first to trip for a same-email stream from one connection.
+	const emailAllowance = 3
+
 	base, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
 		cfg.RateLimit.Enabled = true
+		cfg.RateLimit.AuthIPRequests = 50
+		cfg.RateLimit.AuthEmailRequests = emailAllowance
 		// Point the email service at the fake SMTP server so every send
 		// attempt is observable as a counted TCP connection.
 		cfg.SMTP = config.SMTPConfig{
@@ -59,7 +71,9 @@ func TestForgotPasswordRateLimiter(t *testing.T) {
 	registerOn(t, base, "victim@example.test", "victimSecret!123", "Victim User")
 	baseline := atomic.LoadInt64(emailCount)
 
-	const attempts = 15
+	// Fire emailAllowance+3 same-email attempts. The per-IP cap (50) is far
+	// away, so the only limiter that can fire is the per-email one.
+	const attempts = emailAllowance + 3
 	var statuses []int
 	var firstThrottledBody []byte
 	for i := 0; i < attempts; i++ {
@@ -87,10 +101,15 @@ func TestForgotPasswordRateLimiter(t *testing.T) {
 	assert.NotEqualf(t, http.StatusTooManyRequests, statuses[0],
 		"the first forgot-password attempt must not be rate-limited (got: %v)", statuses)
 
-	// (2) The limiter must engage within the burst.
+	// (2) The limiter must engage within the burst, and it must be the
+	// per-EMAIL limiter (distinct message from the per-IP one). This is the
+	// #105 property: with per-IP above per-email, the per-email control is
+	// actually reachable from one connection.
 	assert.Greaterf(t, limited, 0,
 		"expected at least one 429 in the burst (got: %v)", statuses)
 	require.NotNil(t, firstThrottledBody, "expected to capture a 429 response body")
+	assert.Containsf(t, string(firstThrottledBody), "this account",
+		"the 429 must come from the per-EMAIL limiter, not the per-IP one (body: %q)", firstThrottledBody)
 
 	// (3) Exactly one email per allowed request, zero for throttled ones. This
 	// is the crux of the fix: throttled requests never reach the send path.
@@ -103,15 +122,24 @@ func TestForgotPasswordRateLimiter(t *testing.T) {
 		"throttle should prevent some emails: handed %d of %d attempts to the sender", sent, attempts)
 
 	// Anti-enumeration: a throttled request for a non-existent account must be
-	// indistinguishable from one for a real account. The IP limiter for
-	// 127.0.0.1 is already exhausted, so the very first ghost request is 429.
-	ghostStatus, ghostThrottledBody := postForgotPasswordOn(t, base, "ghost@example.test")
-	require.Equalf(t, http.StatusTooManyRequests, ghostStatus,
-		"expected the non-existent-account request to be throttled as well (got %d)", ghostStatus)
+	// indistinguishable from one for a real account. The ghost address has its
+	// own per-email window, so drive it past the same allowance to trip the
+	// limiter, then compare bodies. The usecase short-circuits unknown emails,
+	// so none of these must produce a send.
+	var ghostThrottledBody []byte
+	for i := 0; i < attempts; i++ {
+		status, body := postForgotPasswordOn(t, base, "ghost@example.test")
+		if status == http.StatusTooManyRequests && ghostThrottledBody == nil {
+			ghostThrottledBody = body
+		}
+	}
+	require.NotNilf(t, ghostThrottledBody,
+		"expected the non-existent-account requests to be throttled as well")
 	assert.Equal(t, string(firstThrottledBody), string(ghostThrottledBody),
 		"429 response must be byte-identical for existing vs non-existent accounts (no enumeration)")
 
-	// The non-existent account must never have produced an email either.
+	// The non-existent account must never have produced an email — the total
+	// handed to the sender is still exactly the victim's allowed 200 count.
 	assert.Equalf(t, int64(okCount), atomic.LoadInt64(emailCount)-baseline,
 		"forgot-password for a non-existent account must not hand any email to the sender")
 }

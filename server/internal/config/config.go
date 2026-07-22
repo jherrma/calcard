@@ -69,6 +69,17 @@ type RateLimitConfig struct {
 	Enabled  bool          `yaml:"enabled" env:"CALDAV_RATE_LIMIT_ENABLED"`
 	Requests int           `yaml:"requests" env:"CALDAV_RATE_LIMIT_REQUESTS"`
 	Window   time.Duration `yaml:"window" env:"CALDAV_RATE_LIMIT_WINDOW"`
+
+	// AuthIPRequests and AuthEmailRequests bound the auth-specific limiters on
+	// login / forgot-password / reset-password (all within Window). The per-IP
+	// allowance MUST stay above the per-email allowance: with IP <= email the
+	// IP limiter always trips first from a single source address, so the tighter
+	// per-account (per-email) control is never reached — masked in production
+	// behind a NAT/reverse proxy where every client shares one c.IP(), and
+	// impossible to exercise from a single-connection test. reset-password has
+	// no email to key on, so it uses only the per-IP allowance.
+	AuthIPRequests    int `yaml:"auth_ip_requests" env:"CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS"`
+	AuthEmailRequests int `yaml:"auth_email_requests" env:"CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS"`
 }
 
 // OAuthConfig contains OAuth2/OIDC settings
@@ -189,6 +200,14 @@ func Load(configPath string) (*Config, error) {
 			Enabled:  true,
 			Requests: 100,
 			Window:   time.Minute,
+			// Per-IP allowance sits ABOVE the per-email allowance on purpose so
+			// the tighter per-account control is reachable from one IP (and
+			// behind a proxy). 20/min per IP still throttles one address
+			// spraying many accounts while being friendly to shared/office NAT;
+			// 10/min per email remains the tighter per-account brute-force /
+			// mail-flood control.
+			AuthIPRequests:    20,
+			AuthEmailRequests: 10,
 		},
 		OAuth: OAuthConfig{
 			Google: OAuthProviderConfig{
@@ -262,6 +281,20 @@ func Load(configPath string) (*Config, error) {
 		if cfg.Database.Host == "" || cfg.Database.User == "" || cfg.Database.Name == "" {
 			return nil, fmt.Errorf("postgres driver requires host, user, and name to be set")
 		}
+	}
+
+	// Clamp non-positive auth rate-limit thresholds back to their defaults. A
+	// misconfigured 0 (or negative) value would otherwise reach Fiber's limiter
+	// as Max<=0, which silently falls back to 5 — collapsing BOTH auth limiters
+	// to 5/5 and resurrecting the IP-trips-first ordering bug (per-IP must stay
+	// strictly above per-email so the per-email limiter is reachable). Mirror
+	// the default literals from the defaults block above so an operator can't
+	// accidentally disable the ordering guarantee.
+	if cfg.RateLimit.AuthIPRequests <= 0 {
+		cfg.RateLimit.AuthIPRequests = 20
+	}
+	if cfg.RateLimit.AuthEmailRequests <= 0 {
+		cfg.RateLimit.AuthEmailRequests = 10
 	}
 
 	return cfg, nil

@@ -145,12 +145,26 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	authGroup.Post("/register", authHandler.Register)
 	authGroup.Get("/verify", authHandler.Verify)
 
+	// Auth limiter thresholds. The per-IP allowance is kept ABOVE the per-email
+	// allowance on purpose: with IP <= email the IP limiter always trips first
+	// from a single source address, so the tighter per-account (per-email)
+	// control is never reached — masked in production behind a NAT/reverse
+	// proxy (where every client collapses to one c.IP()) and untestable from a
+	// single connection. Defaults come from config (20 IP / 10 email); tests
+	// override them to pin exact thresholds.
+	authIPMax := cfg.RateLimit.AuthIPRequests
+	authEmailMax := cfg.RateLimit.AuthEmailRequests
+	authWindow := cfg.RateLimit.Window
+	if authWindow <= 0 {
+		authWindow = time.Minute
+	}
+
 	// Login rate limiting — gated by the same RateLimit.Enabled flag that
 	// controls the global limiter, so integration tests (which set it false)
 	// don't trip IP-level limits when they log in repeatedly from 127.0.0.1.
 	if cfg.RateLimit.Enabled {
-		loginIPLimiter := http.NewIPRateLimiter(5, time.Minute)
-		loginEmailLimiter := http.NewEmailRateLimiter(10, time.Minute)
+		loginIPLimiter := http.NewIPRateLimiter(authIPMax, authWindow)
+		loginEmailLimiter := http.NewEmailRateLimiter(authEmailMax, authWindow)
 		authGroup.Post("/login", http.ExtractEmailMiddleware(), loginIPLimiter, loginEmailLimiter, authHandler.Login)
 	} else {
 		authGroup.Post("/login", authHandler.Login)
@@ -168,11 +182,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// single address. reset-password sends no mail (tokens are high-entropy and
 	// hashed), so an IP limiter is enough there.
 	if cfg.RateLimit.Enabled {
-		forgotIPLimiter := http.NewIPRateLimiter(5, time.Minute)
-		forgotEmailLimiter := http.NewEmailRateLimiter(10, time.Minute)
+		forgotIPLimiter := http.NewIPRateLimiter(authIPMax, authWindow)
+		forgotEmailLimiter := http.NewEmailRateLimiter(authEmailMax, authWindow)
 		authGroup.Post("/forgot-password", http.ExtractEmailMiddleware(), forgotIPLimiter, forgotEmailLimiter, authHandler.ForgotPassword)
 
-		resetIPLimiter := http.NewIPRateLimiter(5, time.Minute)
+		// reset-password has no email in its body ({token, new_password}), so
+		// only the per-IP allowance applies here.
+		resetIPLimiter := http.NewIPRateLimiter(authIPMax, authWindow)
 		authGroup.Post("/reset-password", resetIPLimiter, authHandler.ResetPassword)
 	} else {
 		authGroup.Post("/forgot-password", authHandler.ForgotPassword)
