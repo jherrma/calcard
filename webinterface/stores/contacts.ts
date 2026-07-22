@@ -54,7 +54,12 @@ export const useContactsStore = defineStore('contacts', {
         const name = this.sortBy === 'last_name'
           ? (contact.family_name || contact.formatted_name || '?')
           : (contact.given_name || contact.formatted_name || '?');
-        const letter = name.charAt(0).toUpperCase();
+        // Diacritic-fold the first character so accented/umlaut names bucket
+        // under their base Latin letter (Ärzte→A, Élan→E, Öztürk→O) instead of
+        // falling into '#'. NFD splits e.g. 'Ä' into 'A' + combining mark, which
+        // the \p{Diacritic} strip removes. Genuinely non-Latin first characters
+        // (digits, CJK, emoji) still fail the A–Z test and land in '#'.
+        const letter = name.charAt(0).normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase();
         const key = /[A-Z]/.test(letter) ? letter : '#';
         if (!groups.has(key)) {
           groups.set(key, []);
