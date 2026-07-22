@@ -294,7 +294,10 @@ func (h *AuthHandler) ResetPassword(c fiber.Ctx) error {
 	}
 
 	if err := h.resetUC.Execute(c.Context(), usecaseReq); err != nil {
-		if errors.Is(err, authusecase.ErrInvalidToken) {
+		// ErrInvalidResetToken is the sentinel the reset use case returns for a
+		// bad/expired reset link; ErrInvalidToken covers the shared verification
+		// sentinel. Both are safe, actionable 400s rather than a generic 500.
+		if errors.Is(err, authusecase.ErrInvalidResetToken) || errors.Is(err, authusecase.ErrInvalidToken) {
 			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
 		}
 		// Password complexity sentinels carry safe, actionable messages so the
