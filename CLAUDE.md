@@ -36,7 +36,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 3 web interfa
     ├── components/
     │   ├── auth/            # PasswordStrength
     │   ├── calendar/        # CalendarSidebar, CalendarToolbar, EventForm, Event*Dialog, RecurrenceScopeDialog
-    │   ├── contacts/        # ContactsSidebar, ContactListItem, ContactDetailPanel, AlphabetNavigation
+    │   ├── contacts/        # ContactsSidebar, ContactListItem, AlphabetNavigation
     │   └── common/          # AppHeader, AppSidebar, HighlightText, LoadingSpinner, SkeletonList
     ├── stores/              # Pinia stores: auth, calendars, contacts
     ├── composables/         # useApi (fetch wrapper), useAppToast

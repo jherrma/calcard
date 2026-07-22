@@ -49,7 +49,6 @@ webinterface/
 │   ├── contacts/
 │   │   ├── ContactsSidebar.vue    # Address book list with checkboxes
 │   │   ├── ContactListItem.vue    # Single contact row (avatar, name, email, actions)
-│   │   ├── ContactDetailPanel.vue # Full contact details (right panel on desktop, dialog on mobile)
 │   │   └── AlphabetNavigation.vue # A-Z letter strip for quick scrolling
 │   └── common/
 │       ├── AppHeader.vue          # Top bar with hamburger toggle
@@ -145,7 +144,7 @@ The contacts page (`pages/contacts/index.vue`) uses a custom list layout:
 - **Search**: 300ms debounced input triggers `contactsStore.searchContacts()` which calls the backend search API.
 - **Grouping**: Contacts are grouped by first letter of `formatted_name` via the `groupedContacts` getter (returns `Map<string, Contact[]>`).
 - **AlphabetNavigation**: A-Z letter strip. Only letters with contacts are clickable. Clicking scrolls to that section.
-- **ContactDetailPanel**: On desktop, shown as a right panel. On mobile, shown as a dialog.
+- **Contact detail**: Full contact details live on the route page `pages/contacts/[id]/index.vue` (navigated to when a contact is selected).
 - **Virtual scrolling**: Manual implementation with computed offsets and a scroll container.
 
 ### Type System Gotchas
