@@ -81,9 +81,11 @@ cd server && go test ./...                    # Run tests
 cd server && go run ./cmd/server              # Run dev server
 
 # Frontend
-cd webinterface && pnpm dev                   # Dev server
-cd webinterface && pnpm nuxt typecheck        # TypeScript check (strict mode)
-cd webinterface && pnpm build                 # Production build
+cd webinterface && pnpm dev                          # Dev server
+cd webinterface && pnpm nuxt typecheck && pnpm test  # Verification gate (typecheck + Vitest specs)
+cd webinterface && pnpm test                         # Vitest specs (run once)
+cd webinterface && pnpm test:watch                   # Vitest specs (watch mode)
+cd webinterface && pnpm build                        # Production build
 
 # Docker
 cd server && docker-compose up --build                                    # SQLite
