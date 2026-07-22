@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 )
 
 var (
@@ -22,9 +23,10 @@ const rotationGrace = 15 * time.Second
 
 // RefreshUseCase handles token refresh with rotation and reuse detection.
 type RefreshUseCase struct {
-	tokenRepo  user.RefreshTokenRepository
-	jwtManager user.TokenProvider
-	cfg        refreshConfig
+	tokenRepo      user.RefreshTokenRepository
+	jwtManager     user.TokenProvider
+	cfg            refreshConfig
+	securityLogger *logging.SecurityLogger
 }
 
 // refreshConfig is the minimal config surface the use case needs (kept as a
@@ -43,12 +45,14 @@ type RefreshResult struct {
 }
 
 // NewRefreshUseCase creates a new refresh use case. refreshExpiry is the
-// lifetime stamped onto rotated refresh tokens.
-func NewRefreshUseCase(tokenRepo user.RefreshTokenRepository, jwtManager user.TokenProvider, refreshExpiry time.Duration) *RefreshUseCase {
+// lifetime stamped onto rotated refresh tokens. securityLogger records detected
+// refresh-token reuse (theft) as a structured security event.
+func NewRefreshUseCase(tokenRepo user.RefreshTokenRepository, jwtManager user.TokenProvider, refreshExpiry time.Duration, securityLogger *logging.SecurityLogger) *RefreshUseCase {
 	return &RefreshUseCase{
-		tokenRepo:  tokenRepo,
-		jwtManager: jwtManager,
-		cfg:        refreshConfig{RefreshExpiry: refreshExpiry},
+		tokenRepo:      tokenRepo,
+		jwtManager:     jwtManager,
+		cfg:            refreshConfig{RefreshExpiry: refreshExpiry},
+		securityLogger: securityLogger,
 	}
 }
 
@@ -89,9 +93,16 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, presented string) (*Refre
 		// that was never rotated). Kill the whole lineage — the classic
 		// stolen-token signal. Legacy rows have no family (family_id=''); never
 		// pass "" to RevokeFamily (it would nuke unrelated users), just reject.
+		var revokeErr error
 		if t.FamilyID != "" {
-			// Best-effort: even if the revoke errors we still reject the token.
-			_ = uc.tokenRepo.RevokeFamily(ctx, t.FamilyID)
+			// Best-effort: even if the revoke errors we still reject the token —
+			// but the failure is logged below, not swallowed.
+			revokeErr = uc.tokenRepo.RevokeFamily(ctx, t.FamilyID)
+		}
+		if uc.securityLogger != nil {
+			// t.IP / t.UserAgent are the LOGIN-time values stored on the token
+			// row, not the replaying request's — still useful for correlation.
+			uc.securityLogger.LogRefreshTokenReuse(ctx, t.UserID, t.FamilyID, t.IP, t.UserAgent, revokeErr)
 		}
 		return nil, ErrInvalidRefreshToken
 	}
@@ -128,6 +139,12 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, presented string) (*Refre
 	}
 
 	if err := uc.tokenRepo.Rotate(ctx, hash, successor); err != nil {
+		if errors.Is(err, user.ErrRefreshTokenRotated) {
+			// Lost a concurrent-rotation race on the same token. Same semantics
+			// as the benign multi-tab race: reject this presentation, do NOT
+			// revoke the family — the winner's successor is the live token.
+			return nil, ErrInvalidRefreshToken
+		}
 		return nil, fmt.Errorf("failed to rotate refresh token: %w", err)
 	}
 

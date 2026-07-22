@@ -2,8 +2,14 @@ package user
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrRefreshTokenRotated is returned by Rotate when the old token was already
+// revoked/rotated by a concurrent request. The caller must NOT get a successor
+// in that case — treat it like presenting an already-rotated token.
+var ErrRefreshTokenRotated = errors.New("refresh token: already rotated by a concurrent request")
 
 // UserRepository defines the interface for user persistence
 type UserRepository interface {
@@ -32,6 +38,9 @@ type RefreshTokenRepository interface {
 	// transaction it creates newToken and marks the old row revoked with its
 	// ReplacedByHash set to newToken.TokenHash. Atomicity guarantees a crash can
 	// never leave both tokens live or both dead.
+	//
+	// Returns ErrRefreshTokenRotated (and creates nothing) if the old token is
+	// already revoked — i.e. a concurrent request rotated it first.
 	Rotate(ctx context.Context, oldHash string, newToken *RefreshToken) error
 	// RevokeFamily revokes every not-yet-revoked token in the given family.
 	// Implementations MUST refuse an empty familyID: legacy rows carry

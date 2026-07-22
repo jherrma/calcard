@@ -1,5 +1,16 @@
 import type { User, LoginResponse, RefreshResponse } from "~/types/auth";
 
+// Single source of truth for the refresh-token cookie attributes. A useCookie()
+// handle serializes WRITES with its own options (options are not remembered per
+// cookie name), so every writer must pass these — an options-less write would
+// silently downgrade the cookie to a session cookie without Secure/SameSite.
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: false, // client JS must read it to perform the refresh
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  maxAge: 60 * 60 * 24 * 7, // 7 days
+} as const;
+
 interface AuthState {
   user: User | null;
   accessToken: string | null;
@@ -41,12 +52,7 @@ export const useAuthStore = defineStore("auth", {
       this.isAdmin = response.user.is_admin || false;
 
       // Store refresh token in cookie
-      const refreshCookie = useCookie("refresh_token", {
-        httpOnly: false, // Client needs to access it for refresh
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-      });
+      const refreshCookie = useCookie("refresh_token", REFRESH_COOKIE_OPTIONS);
       refreshCookie.value = response.refresh_token;
 
       // Schedule token refresh
@@ -103,8 +109,10 @@ export const useAuthStore = defineStore("auth", {
       // presents the freshest token (another tab may have just rotated it).
       const performRefresh = async () => {
         // Fresh useCookie() call re-parses document.cookie → picks up a rotation
-        // performed by another tab while we were queued behind the lock.
-        const cookie = useCookie("refresh_token");
+        // performed by another tab while we were queued behind the lock. The
+        // options must match setAuth's, or the write-back below downgrades the
+        // cookie to an attribute-less session cookie.
+        const cookie = useCookie("refresh_token", REFRESH_COOKIE_OPTIONS);
         const presented = cookie.value;
         if (!presented) {
           this.clearAuth();

@@ -56,6 +56,34 @@ func TestRotate_AtomicallySupersedes(t *testing.T) {
 	assert.Equal(t, "fam-1", reloadedNew.FamilyID)
 }
 
+// TestRotate_ConcurrentSecondRotationConflicts: once a token is rotated, a
+// second Rotate on the same old hash must return ErrRefreshTokenRotated and must
+// NOT create the second successor or overwrite the first rotation.
+func TestRotate_ConcurrentSecondRotationConflicts(t *testing.T) {
+	repo, db := newRefreshTokenTestRepo(t)
+	ctx := context.Background()
+
+	old := &user.RefreshToken{UserID: 1, TokenHash: "old-hash", ExpiresAt: time.Now().Add(time.Hour), FamilyID: "fam-1"}
+	require.NoError(t, repo.Create(ctx, old))
+
+	winner := &user.RefreshToken{UserID: 1, TokenHash: "winner-hash", ExpiresAt: time.Now().Add(time.Hour), FamilyID: "fam-1"}
+	require.NoError(t, repo.Rotate(ctx, "old-hash", winner))
+
+	loser := &user.RefreshToken{UserID: 1, TokenHash: "loser-hash", ExpiresAt: time.Now().Add(time.Hour), FamilyID: "fam-1"}
+	err := repo.Rotate(ctx, "old-hash", loser)
+	require.ErrorIs(t, err, user.ErrRefreshTokenRotated)
+
+	// The loser's successor must NOT exist (transaction rolled back).
+	var count int64
+	require.NoError(t, db.Model(&user.RefreshToken{}).Where("token_hash = ?", "loser-hash").Count(&count).Error)
+	assert.Equal(t, int64(0), count, "conflicting rotation must not create a successor")
+
+	// The first rotation is untouched: old row still points at the winner.
+	var reloaded user.RefreshToken
+	require.NoError(t, db.Where("token_hash = ?", "old-hash").First(&reloaded).Error)
+	assert.Equal(t, "winner-hash", reloaded.ReplacedByHash)
+}
+
 // TestRevokeFamily_RevokesEntireLineage verifies every live token in a family is
 // revoked while tokens in other families are untouched.
 func TestRevokeFamily_RevokesEntireLineage(t *testing.T) {

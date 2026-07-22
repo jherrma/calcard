@@ -11,9 +11,17 @@ mockNuxtImport('useApi', () => () => apiMock);
 
 // A single shared cookie object so every useCookie('refresh_token') call in the
 // store observes the same value — this lets us assert the store WRITES the
-// rotated token back, and mirrors real cross-call cookie reads.
-const { cookieState } = vi.hoisted(() => ({ cookieState: { value: null as string | null } }));
-mockNuxtImport('useCookie', () => () => cookieState);
+// rotated token back, and mirrors real cross-call cookie reads. cookieOptionCalls
+// records the options each writer passes so we can assert the rotated cookie
+// keeps its Secure/SameSite/maxAge attributes (#75).
+const { cookieState, cookieOptionCalls } = vi.hoisted(() => ({
+  cookieState: { value: null as string | null },
+  cookieOptionCalls: [] as any[],
+}));
+mockNuxtImport('useCookie', () => (_name: string, opts?: any) => {
+  if (opts) cookieOptionCalls.push(opts);
+  return cookieState;
+});
 
 // navigateTo is a no-op in specs (we only exercise the success path here).
 mockNuxtImport('navigateTo', () => () => {});
@@ -22,6 +30,7 @@ beforeEach(() => {
   createTestingPinia({ stubActions: false });
   apiMock.mockReset();
   cookieState.value = null;
+  cookieOptionCalls.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -51,6 +60,13 @@ describe('refresh token rotation persistence (#75)', () => {
     expect(store.accessToken).toBe('access-2');
     // The rotated refresh token replaces the presented one in the cookie.
     expect(cookieState.value).toBe('refresh-token-2');
+    // The write-back handle must carry the full cookie attributes — an
+    // options-less write would downgrade the cookie to a session cookie.
+    expect(
+      cookieOptionCalls.some(
+        (o) => o.sameSite === 'strict' && o.maxAge === 60 * 60 * 24 * 7,
+      ),
+    ).toBe(true);
     // The lock was actually used to serialize the refresh across tabs.
     expect(request).toHaveBeenCalledWith('caldav-auth-refresh', expect.any(Function));
     // The token presented to the backend was the ORIGINAL (pre-rotation) one.

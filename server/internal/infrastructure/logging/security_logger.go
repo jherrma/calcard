@@ -86,3 +86,26 @@ func (l *SecurityLogger) LogAppPasswordRevoked(ctx context.Context, userID uint,
 	}
 	l.logger.Info("security_event", slog.Any("event", event))
 }
+
+// LogRefreshTokenReuse logs a detected refresh-token reuse — the signal that a
+// token was replayed (possible theft). revokeErr, when non-nil, records that
+// the containment action (revoking the token family) itself failed.
+func (l *SecurityLogger) LogRefreshTokenReuse(ctx context.Context, userID uint, familyID string, ip string, userAgent string, revokeErr error) {
+	details := "refresh token reuse detected; token family revoked"
+	if familyID == "" {
+		details = "refresh token reuse detected on legacy token (no family); token rejected"
+	}
+	if revokeErr != nil {
+		details = "refresh token reuse detected but family revocation FAILED: " + revokeErr.Error()
+	}
+	event := SecurityEvent{
+		Timestamp: time.Now(),
+		Event:     "refresh_token_reuse",
+		UserID:    &userID,
+		IP:        ip,
+		UserAgent: userAgent,
+		Success:   false,
+		Details:   details,
+	}
+	l.logger.Log(ctx, slog.LevelWarn, "security_event", slog.Any("event", event))
+}

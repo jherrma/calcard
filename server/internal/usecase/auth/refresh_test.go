@@ -1,11 +1,14 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -15,6 +18,14 @@ import (
 // string maps to a predictable "hash", which keeps the assertions readable.
 
 const testRefreshExpiry = 7 * 24 * time.Hour
+
+// newTestRefreshUC constructs a RefreshUseCase with a real (default-slog-backed)
+// security logger so the reuse-detection logging path is exercised without any
+// per-test wiring. Tests that want to assert on the emitted event construct the
+// use case directly with a captured logger instead.
+func newTestRefreshUC(repo user.RefreshTokenRepository, jwt user.TokenProvider) *RefreshUseCase {
+	return NewRefreshUseCase(repo, jwt, testRefreshExpiry, logging.NewSecurityLogger(slog.Default()))
+}
 
 func activeUser() user.User {
 	return user.User{ID: 1, UUID: "user-uuid", Email: "user@example.com", IsActive: true}
@@ -26,7 +37,7 @@ func activeUser() user.User {
 func TestRefresh_RotatesAndOldTokenStopsWorking(t *testing.T) {
 	repo := new(mockRefreshTokenRepo)
 	jwt := new(mockTokenProvider)
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	uc := newTestRefreshUC(repo, jwt)
 	ctx := context.Background()
 
 	// Identity-style hashing: token string == its hash.
@@ -85,7 +96,7 @@ func TestRefresh_RotatesAndOldTokenStopsWorking(t *testing.T) {
 		User:           activeUser(),
 	}
 	repo2 := new(mockRefreshTokenRepo)
-	uc2 := NewRefreshUseCase(repo2, jwt, testRefreshExpiry)
+	uc2 := newTestRefreshUC(repo2, jwt)
 	repo2.On("GetByHash", ctx, "old-refresh").Return(revoked, nil)
 
 	res2, err2 := uc2.Execute(ctx, "old-refresh")
@@ -99,7 +110,10 @@ func TestRefresh_RotatesAndOldTokenStopsWorking(t *testing.T) {
 func TestRefresh_ReuseDetectionRevokesFamily(t *testing.T) {
 	repo := new(mockRefreshTokenRepo)
 	jwt := new(mockTokenProvider)
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	// Capture the security log so we can assert the reuse event is emitted.
+	var buf bytes.Buffer
+	logger := logging.NewSecurityLogger(slog.New(slog.NewTextHandler(&buf, nil)))
+	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry, logger)
 	ctx := context.Background()
 
 	jwt.On("HashToken", "stolen").Return("stolen")
@@ -126,6 +140,8 @@ func TestRefresh_ReuseDetectionRevokesFamily(t *testing.T) {
 	// The whole lineage is revoked.
 	repo.AssertCalled(t, "RevokeFamily", ctx, "fam-42")
 	repo.AssertNotCalled(t, "Rotate", mock.Anything, mock.Anything, mock.Anything)
+	// The detected reuse is logged as a security event (not swallowed).
+	assert.Contains(t, buf.String(), "refresh_token_reuse")
 }
 
 // TestRefresh_ReuseDetection_SiblingRevoked models the family-store behavior: a
@@ -162,7 +178,7 @@ func TestRefresh_ReuseDetection_SiblingRevoked(t *testing.T) {
 			}
 		}).Return(nil)
 
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	uc := newTestRefreshUC(repo, jwt)
 	_, err := uc.Execute(ctx, "reused")
 	assert.ErrorIs(t, err, ErrInvalidRefreshToken)
 
@@ -176,7 +192,7 @@ func TestRefresh_ReuseDetection_SiblingRevoked(t *testing.T) {
 func TestRefresh_BenignRaceDoesNotRevokeFamily(t *testing.T) {
 	repo := new(mockRefreshTokenRepo)
 	jwt := new(mockTokenProvider)
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	uc := newTestRefreshUC(repo, jwt)
 	ctx := context.Background()
 
 	jwt.On("HashToken", "raced").Return("raced")
@@ -203,13 +219,41 @@ func TestRefresh_BenignRaceDoesNotRevokeFamily(t *testing.T) {
 	repo.AssertNotCalled(t, "Rotate", mock.Anything, mock.Anything, mock.Anything)
 }
 
+// TestRefresh_RotateConflictRejectedWithoutFamilyRevocation: losing the
+// concurrent-rotation race is rejected like a benign race — 401 semantics, no
+// family revocation.
+func TestRefresh_RotateConflictRejectedWithoutFamilyRevocation(t *testing.T) {
+	repo := new(mockRefreshTokenRepo)
+	jwt := new(mockTokenProvider)
+	uc := newTestRefreshUC(repo, jwt)
+	ctx := context.Background()
+
+	jwt.On("HashToken", "raced").Return("raced")
+	jwt.On("GenerateRefreshToken").Return("new-refresh", nil)
+	jwt.On("HashToken", "new-refresh").Return("new-refresh")
+
+	stored := &user.RefreshToken{
+		ID: 10, UserID: 1, TokenHash: "raced",
+		ExpiresAt: time.Now().Add(testRefreshExpiry),
+		FamilyID:  "fam-1", User: activeUser(),
+	}
+	repo.On("GetByHash", ctx, "raced").Return(stored, nil)
+	repo.On("Rotate", ctx, "raced", mock.Anything).Return(user.ErrRefreshTokenRotated)
+
+	res, err := uc.Execute(ctx, "raced")
+
+	assert.Nil(t, res)
+	assert.ErrorIs(t, err, ErrInvalidRefreshToken)
+	repo.AssertNotCalled(t, "RevokeFamily", mock.Anything, mock.Anything)
+}
+
 // TestRefresh_LegacyRevokedTokenNeverNukesEmptyFamily proves a legacy revoked
 // token (FamilyID == "") presented as reuse is rejected WITHOUT calling
 // RevokeFamily("") — that would log out unrelated users.
 func TestRefresh_LegacyRevokedTokenNeverNukesEmptyFamily(t *testing.T) {
 	repo := new(mockRefreshTokenRepo)
 	jwt := new(mockTokenProvider)
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	uc := newTestRefreshUC(repo, jwt)
 	ctx := context.Background()
 
 	jwt.On("HashToken", "legacy").Return("legacy")
@@ -242,7 +286,7 @@ func TestRefresh_LegacyRevokedTokenNeverNukesEmptyFamily(t *testing.T) {
 func TestRefresh_UnknownTokenRejected(t *testing.T) {
 	repo := new(mockRefreshTokenRepo)
 	jwt := new(mockTokenProvider)
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	uc := newTestRefreshUC(repo, jwt)
 	ctx := context.Background()
 
 	jwt.On("HashToken", "ghost").Return("ghost")
@@ -257,7 +301,7 @@ func TestRefresh_UnknownTokenRejected(t *testing.T) {
 func TestRefresh_ExpiredTokenRejected(t *testing.T) {
 	repo := new(mockRefreshTokenRepo)
 	jwt := new(mockTokenProvider)
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	uc := newTestRefreshUC(repo, jwt)
 	ctx := context.Background()
 
 	jwt.On("HashToken", "old").Return("old")
@@ -279,7 +323,7 @@ func TestRefresh_ExpiredTokenRejected(t *testing.T) {
 func TestRefresh_InactiveAccountRejected(t *testing.T) {
 	repo := new(mockRefreshTokenRepo)
 	jwt := new(mockTokenProvider)
-	uc := NewRefreshUseCase(repo, jwt, testRefreshExpiry)
+	uc := newTestRefreshUC(repo, jwt)
 	ctx := context.Background()
 
 	jwt.On("HashToken", "valid").Return("valid")
