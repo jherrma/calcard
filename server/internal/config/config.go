@@ -283,6 +283,20 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
+	// Clamp non-positive auth rate-limit thresholds back to their defaults. A
+	// misconfigured 0 (or negative) value would otherwise reach Fiber's limiter
+	// as Max<=0, which silently falls back to 5 — collapsing BOTH auth limiters
+	// to 5/5 and resurrecting the IP-trips-first ordering bug (per-IP must stay
+	// strictly above per-email so the per-email limiter is reachable). Mirror
+	// the default literals from the defaults block above so an operator can't
+	// accidentally disable the ordering guarantee.
+	if cfg.RateLimit.AuthIPRequests <= 0 {
+		cfg.RateLimit.AuthIPRequests = 20
+	}
+	if cfg.RateLimit.AuthEmailRequests <= 0 {
+		cfg.RateLimit.AuthEmailRequests = 10
+	}
+
 	return cfg, nil
 }
 
