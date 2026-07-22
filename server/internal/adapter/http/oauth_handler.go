@@ -144,6 +144,9 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 		case errors.Is(err, authUseCase.ErrProviderAlreadyLinked):
 			return h.redirectOAuthError(c, ctxData.Action,
 				fmt.Sprintf("this %s account is already linked to another user", provider))
+		case errors.Is(err, authUseCase.ErrDifferentAccountLinked):
+			return h.redirectOAuthError(c, ctxData.Action,
+				fmt.Sprintf("a different %s account is already linked to your profile; unlink it first in settings", provider))
 		case errors.Is(err, authUseCase.ErrEmailNotVerified):
 			return h.redirectOAuthError(c, ctxData.Action,
 				fmt.Sprintf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", provider, provider))

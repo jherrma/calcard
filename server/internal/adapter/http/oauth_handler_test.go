@@ -170,6 +170,74 @@ func TestOAuthHandler_CallbackProviderError(t *testing.T) {
 	})
 }
 
+// TestOAuthHandler_CallbackDifferentAccountLinked verifies the login-flow
+// auto-link-by-email guard surfaces an actionable message rather than the
+// generic "authentication failed". The mock provider asserts subject "fake-sub"
+// / verified email "oauth@example.com". We seed a user with that email who
+// already has a *different* google account (subject "other-sub") linked, so
+// GetByOAuth misses, GetByEmail resolves the user, and GetByProvider finds the
+// existing different-subject connection → ErrDifferentAccountLinked. The handler
+// must map that sentinel to the "unlink it first" message in the redirect
+// fragment (built from the server-validated provider name only).
+func TestOAuthHandler_CallbackDifferentAccountLinked(t *testing.T) {
+	app, db, cfg := setupTestApp(t)
+	userRepo := repository.NewUserRepository(db.DB())
+	connRepo := repository.NewOAuthConnectionRepository(db.DB())
+
+	u := &user.User{
+		Email:         "oauth@example.com", // matches the mock provider's UserInfo email
+		Username:      "diffacct",
+		PasswordHash:  "hash",
+		IsActive:      true,
+		EmailVerified: true,
+		UUID:          "diff-acct-uuid",
+	}
+	require.NoError(t, userRepo.Create(context.Background(), u))
+
+	// A pre-existing, DIFFERENT google account (subject != the mock's "fake-sub")
+	// linked to the same user. GetByOAuth("google","fake-sub") will therefore miss.
+	require.NoError(t, connRepo.Create(context.Background(), &user.OAuthConnection{
+		UserID:     u.ID,
+		Provider:   "google",
+		ProviderID: "other-sub",
+	}))
+
+	h := &OAuthHandler{cfg: cfg}
+	sign := func(ctx oauthContext) string {
+		b, _ := json.Marshal(ctx)
+		payload := base64.URLEncoding.EncodeToString(b)
+		return payload + "." + h.cookieMAC(payload)
+	}
+
+	const state = "diff-state"
+	cookieVal := sign(oauthContext{State: state, Action: "login"})
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/auth/oauth/google/callback?code=auth_code&state="+state, nil)
+	req.AddCookie(&http.Cookie{Name: "oauth_context", Value: cookieVal})
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.True(t,
+		resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther,
+		"expected a redirect, got %d", resp.StatusCode)
+
+	loc := resp.Header.Get("Location")
+	// Login-flow errors land on the OAuth callback page with the message in the
+	// fragment; it must be the actionable one, not the opaque fallback.
+	assert.Contains(t, loc, "/auth/oauth/callback#")
+	assert.Contains(t, loc, "different+google+account")
+	assert.Contains(t, loc, "unlink+it+first")
+	assert.NotContains(t, loc, "authentication+failed")
+	// No tokens were minted (the flow errored before token generation).
+	assert.NotContains(t, loc, "access_token")
+
+	// The guard must not have created a second connection row for the user.
+	conns, err := connRepo.ListByUserID(context.Background(), u.ID)
+	require.NoError(t, err)
+	assert.Len(t, conns, 1, "no second provider connection may be created")
+}
+
 func TestOAuthHandler_Lifecycle(t *testing.T) {
 	app, db, cfg := setupTestApp(t)
 	userRepo := repository.NewUserRepository(db.DB())

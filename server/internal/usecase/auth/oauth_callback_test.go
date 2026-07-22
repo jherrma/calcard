@@ -323,6 +323,8 @@ func TestOAuthCallbackUseCase_Execute_LinkByEmailVerifiedSucceeds(t *testing.T) 
 	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
 	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
 	userRepo.On("GetByEmail", ctx, userInfo.Email).Return(existingUser, nil)
+	// No account of this provider linked to the user yet — the auto-link proceeds.
+	oauthRepo.On("GetByProvider", ctx, existingUser.ID, providerName).Return(nil, nil)
 	oauthRepo.On("Create", ctx, mock.Anything).Return(nil)
 	tokenProvider.On("GenerateAccessToken", mock.Anything, userInfo.Email).Return("jwt_access", time.Now().Add(time.Hour), nil)
 	tokenProvider.On("GenerateRefreshToken").Return("jwt_refresh", nil)
@@ -477,6 +479,52 @@ func TestOAuthCallbackUseCase_Execute_LinkSecondAccountRejected(t *testing.T) {
 	_, err := uc.Execute(ctx, providerName, code, "", "", "", currentUser)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "already linked")
+	assert.ErrorIs(t, err, ErrDifferentAccountLinked)
 	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+// TestOAuthCallbackUseCase_Execute_LoginSecondAccountRejected covers the
+// login-flow (no currentUser) auto-link-by-email path: GetByOAuth finds no user
+// for this provider subject, GetByEmail resolves an existing user, but that user
+// already has a *different* account of the same provider linked. The mirror guard
+// must reject with ErrDifferentAccountLinked before linkProvider runs, so no
+// second connection row is created and the (user_id, provider) unique index is
+// never tripped with an opaque DB error.
+func TestOAuthCallbackUseCase_Execute_LoginSecondAccountRejected(t *testing.T) {
+	providerManager := new(mockOAuthProviderManager)
+	userRepo := new(mockUserRepo)
+	oauthRepo := new(mockOAuthRepo)
+	refreshTokenRepo := new(mockRefreshTokenRepo)
+	tokenProvider := new(mockTokenProvider)
+	cfg := &config.Config{JWT: config.JWTConfig{RefreshExpiry: time.Hour}}
+
+	uc := NewOAuthCallbackUseCase(providerManager, userRepo, oauthRepo, refreshTokenRepo, tokenProvider, cfg)
+
+	ctx := context.Background()
+	providerName := "google"
+	code := "auth_code"
+
+	provider := new(mockOAuthProvider)
+	token := &oauth2.Token{AccessToken: "access_token"}
+	// A brand-new provider identity (subject) with a verified email matching an
+	// existing local account, so the flow would try to auto-link by email.
+	userInfo := &authadapter.UserInfo{Subject: "second-sub", Email: "owner@example.com", EmailVerified: true}
+	existingUser := &user.User{ID: 7, UUID: "owner-uuid", Email: userInfo.Email, IsActive: true}
+	// ...but that user already has a *different* google account linked.
+	existingConn := &user.OAuthConnection{ID: 1, UserID: 7, Provider: providerName, ProviderID: "first-sub"}
+
+	providerManager.On("GetProvider", providerName).Return(provider, nil)
+	provider.On("Exchange", ctx, code).Return(token, nil)
+	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
+	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
+	userRepo.On("GetByEmail", ctx, userInfo.Email).Return(existingUser, nil)
+	oauthRepo.On("GetByProvider", ctx, existingUser.ID, providerName).Return(existingConn, nil)
+
+	_, err := uc.Execute(ctx, providerName, code, "", "ua", "127.0.0.1", nil)
+
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrDifferentAccountLinked)
+	// The second connection must never be created, and no new user provisioned.
+	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	userRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
