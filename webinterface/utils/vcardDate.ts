@@ -27,5 +27,20 @@ export function normalizeVCardDate(input: string | null | undefined): string {
   const year = match[1]!;
   const month = match[2]!;
   const day = match[3]!;
-  return `${year}-${month}-${day}`;
+  const iso = `${year}-${month}-${day}`;
+
+  // Reject well-shaped but non-existent calendar dates (e.g. `19851345` →
+  // `1985-13-45`, or Feb 30) so callers never build an `Invalid Date` that
+  // later serializes to `NaN-NaN-NaN`. `Date` rolls out-of-range parts over, so
+  // we require the parsed components to round-trip exactly.
+  const probe = new Date(`${iso}T00:00:00Z`);
+  if (
+    Number.isNaN(probe.getTime()) ||
+    probe.getUTCFullYear() !== Number(year) ||
+    probe.getUTCMonth() + 1 !== Number(month) ||
+    probe.getUTCDate() !== Number(day)
+  ) {
+    return '';
+  }
+  return iso;
 }

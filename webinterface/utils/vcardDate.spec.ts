@@ -44,4 +44,20 @@ describe('normalizeVCardDate', () => {
   it('tolerates a trailing time component, keeping only the date part', () => {
     expect(normalizeVCardDate('1985-04-12T00:00:00')).toBe('1985-04-12');
   });
+
+  it('rejects well-shaped but non-existent calendar dates (issue #24 hardening)', () => {
+    // Revert proof: without the round-trip validation, `19851345` normalized to
+    // the string `1985-13-45`, which `new Date(...)` treats as Invalid → the
+    // exact NaN-NaN-NaN corruption for out-of-range values. These must be inert.
+    expect(normalizeVCardDate('19851345')).toBe(''); // month 13, day 45
+    expect(normalizeVCardDate('1985-13-01')).toBe(''); // month 13
+    expect(normalizeVCardDate('19850230')).toBe(''); // Feb 30 never exists
+    expect(normalizeVCardDate('20010229')).toBe(''); // 2001 is not a leap year
+  });
+
+  it('accepts real edge-case dates (leap day, month/day bounds)', () => {
+    expect(normalizeVCardDate('20000229')).toBe('2000-02-29'); // 2000 is a leap year
+    expect(normalizeVCardDate('19851231')).toBe('1985-12-31');
+    expect(normalizeVCardDate('19850101')).toBe('1985-01-01');
+  });
 });

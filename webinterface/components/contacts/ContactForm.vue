@@ -436,6 +436,9 @@ const validate = (): boolean => {
 const formatBirthday = (): string => {
   if (!birthdayDate.value) return '';
   const d = birthdayDate.value;
+  // An `Invalid Date` is truthy, so guard explicitly to avoid emitting
+  // `NaN-NaN-NaN` if the model ever holds one.
+  if (Number.isNaN(d.getTime())) return '';
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
