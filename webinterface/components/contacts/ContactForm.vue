@@ -368,11 +368,31 @@ const birthdayDate = ref<Date | null>(
 // (relative) photo_url, which an <img> can't authenticate against.
 const existingPhotoSrc = useAuthedImage(() => props.contact?.photo_url);
 
+// Object URL for the locally-selected photo preview. We allocate it explicitly
+// when a file is chosen (never inside a computed — computeds must stay
+// side-effect free) and revoke the previous one before replacing it, plus on
+// unmount, so blob: URLs don't leak for the tab's lifetime (#25). Only URLs we
+// allocated here are ever revoked; the existing-photo src is owned by
+// useAuthedImage and any remote/https URL passes through untouched.
+const selectedPhotoUrl = ref<string | null>(null);
+
+const setSelectedPhotoUrl = (next: string | null) => {
+  const prev = selectedPhotoUrl.value;
+  if (prev && prev !== next && prev.startsWith('blob:')) {
+    URL.revokeObjectURL(prev);
+  }
+  selectedPhotoUrl.value = next;
+};
+
 // Photo preview
 const photoPreview = computed(() => {
   if (photoRemoved.value) return null;
-  if (selectedPhoto.value) return URL.createObjectURL(selectedPhoto.value);
+  if (selectedPhotoUrl.value) return selectedPhotoUrl.value;
   return existingPhotoSrc.value;
+});
+
+onBeforeUnmount(() => {
+  setSelectedPhotoUrl(null);
 });
 
 const initials = computed(() => {
@@ -393,12 +413,14 @@ const onFileSelected = (event: Event) => {
   if (file) {
     selectedPhoto.value = file;
     photoRemoved.value = false;
+    setSelectedPhotoUrl(URL.createObjectURL(file));
   }
 };
 
 const removePhoto = () => {
   selectedPhoto.value = null;
   photoRemoved.value = true;
+  setSelectedPhotoUrl(null);
   if (fileInputRef.value) {
     fileInputRef.value.value = '';
   }
