@@ -257,7 +257,7 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 		Timezone:    req.Timezone,
 	}
 	if req.Recurrence != nil {
-		input.RRule = req.Recurrence.ToRRule() // Need to add ToRRule to DTO
+		input.RRule = req.Recurrence.ToRRule(req.AllDay)
 	}
 
 	obj, err := h.createUC.Execute(c.Context(), input)
@@ -320,8 +320,12 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 	}
 
 	if req.Recurrence != nil {
-		rruleStr := req.Recurrence.ToRRule()
-		input.RRule = &rruleStr
+		// Pass the raw recurrence through; the RRULE (and its UNTIL value type)
+		// is rendered in the use case against the *effective* all-day state. A
+		// partial update from an API/MCP client may omit all_day, so rendering
+		// here with the request's flag would persist a DATE-TIME UNTIL on an
+		// all-day series — the exact issue #118 violation, plus an off-by-one day.
+		input.Recurrence = req.Recurrence.ToDomain()
 	}
 
 	obj, err := h.updateUC.Execute(c.Context(), input)

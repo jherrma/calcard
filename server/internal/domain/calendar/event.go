@@ -36,35 +36,69 @@ type RecurrenceRule struct {
 	Until      *string  `json:"until"`        // End date (ISO 8601)
 }
 
-// ToRRule converts RecurrenceRule to RFC 5545 RRULE string
-func (r *RecurrenceRule) ToRRule() string {
-	parts := []string{fmt.Sprintf("FREQ=%s", strings.ToUpper(r.Frequency))}
+// ToRRule renders the RecurrenceRule as an RFC 5545 RRULE string. It is the
+// single canonical renderer: the HTTP DTO delegates here via ToDomain so both
+// the create and update paths produce identical output.
+//
+// allDay selects the value type used for the UNTIL boundary: RFC 5545 §3.3.10
+// requires UNTIL to share the series' DTSTART value type, so an all-day
+// (VALUE=DATE) series must emit a bare DATE UNTIL (20060102) while a timed
+// series emits a UTC DATE-TIME (20060102T150405Z). A mismatched type makes
+// strict clients (Apple, DAVx5) reject the whole RRULE. Because the caller
+// passes the *raw* Until (still carrying its RFC 3339 offset) together with the
+// effective all-day state, the all-day branch preserves the sender's local
+// calendar date instead of shifting it a day west of UTC.
+func (r *RecurrenceRule) ToRRule(allDay bool) string {
+	if r == nil || r.Frequency == "" {
+		return ""
+	}
+
+	parts := []string{"FREQ=" + strings.ToUpper(r.Frequency)}
 	if r.Interval > 1 {
 		parts = append(parts, fmt.Sprintf("INTERVAL=%d", r.Interval))
 	}
 	if len(r.ByDay) > 0 {
-		parts = append(parts, fmt.Sprintf("BYDAY=%s", strings.Join(r.ByDay, ",")))
+		parts = append(parts, "BYDAY="+strings.Join(r.ByDay, ","))
 	}
 	if len(r.ByMonthDay) > 0 {
 		var days []string
 		for _, d := range r.ByMonthDay {
 			days = append(days, fmt.Sprintf("%d", d))
 		}
-		parts = append(parts, fmt.Sprintf("BYMONTHDAY=%s", strings.Join(days, ",")))
+		parts = append(parts, "BYMONTHDAY="+strings.Join(days, ","))
 	}
 	if len(r.ByMonth) > 0 {
 		var months []string
 		for _, m := range r.ByMonth {
 			months = append(months, fmt.Sprintf("%d", m))
 		}
-		parts = append(parts, fmt.Sprintf("BYMONTH=%s", strings.Join(months, ",")))
+		parts = append(parts, "BYMONTH="+strings.Join(months, ","))
 	}
 	if r.Count != nil {
 		parts = append(parts, fmt.Sprintf("COUNT=%d", *r.Count))
 	}
-	if r.Until != nil {
-		parts = append(parts, fmt.Sprintf("UNTIL=%s", *r.Until))
+	if r.Until != nil && *r.Until != "" {
+		until := *r.Until
+		// The frontend sends UNTIL as RFC 3339 (e.g. 2026-08-01T00:00:00+02:00),
+		// but rrule.StrToRRule requires the iCal basic forms (DATE 20060102 or
+		// DATE-TIME UTC 20060102T150405Z). Normalize here so both formats are
+		// accepted; anything that isn't RFC 3339 is passed through and validated
+		// later by StrToRRule.
+		if t, err := time.Parse(time.RFC3339, until); err == nil {
+			if allDay {
+				// Keep the sender's local calendar date (t retains its offset,
+				// so 2026-08-01T00:00:00+02:00 renders as 20260801). This both
+				// matches DTSTART;VALUE=DATE and — since UNTIL is inclusive —
+				// stops the chosen end date's own occurrence being dropped east
+				// of UTC, which .UTC() would have done.
+				until = t.Format("20060102")
+			} else {
+				until = t.UTC().Format("20060102T150405Z")
+			}
+		}
+		parts = append(parts, "UNTIL="+until)
 	}
+
 	return strings.Join(parts, ";")
 }
 
