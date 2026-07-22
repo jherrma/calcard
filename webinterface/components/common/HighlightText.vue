@@ -20,11 +20,21 @@ function escapeHtml(s: string): string {
 
 const highlighted = computed(() => {
   if (!props.highlight || !props.text) return props.text;
-  // HTML-escape the (attacker-influenceable) contact text BEFORE injecting the
-  // <mark> wrapper, so vendored vCard data can't smuggle in markup/script.
-  const safeText = escapeHtml(props.text);
-  const escapedTerm = escapeHtml(props.highlight).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Match against the RAW text and split on the (regex-escaped, never
+  // HTML-escaped) term. Splitting with a capturing group yields the matched
+  // substrings at the odd indices. Every piece — matched and unmatched alike —
+  // is HTML-escaped AFTER the split, so the <mark> wrapper can never be injected
+  // inside an HTML entity (which corrupted names containing & < > " '), and the
+  // attacker-influenceable vCard text still can't smuggle in markup/script.
+  const escapedTerm = props.highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`(${escapedTerm})`, 'gi');
-  return safeText.replace(regex, '<mark class="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5">$1</mark>');
+  return props.text
+    .split(regex)
+    .map((part, i) =>
+      i % 2 === 1
+        ? `<mark class="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5">${escapeHtml(part)}</mark>`
+        : escapeHtml(part),
+    )
+    .join('');
 });
 </script>
