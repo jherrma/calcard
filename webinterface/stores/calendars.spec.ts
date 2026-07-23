@@ -142,3 +142,48 @@ describe('writableCalendars', () => {
     expect(writable).not.toContain('2');
   });
 });
+
+describe('fetchEvents parallel loading (#22)', () => {
+  it('dispatches all calendar requests concurrently, not one at a time', async () => {
+    const store = useCalendarStore();
+    store.calendars = [cal({ id: 1 }), cal({ id: 2 }), cal({ id: 3 })];
+
+    // Never-resolving promises: a serial `for … await` would issue the first
+    // request and stall on it, so only ONE call would be in flight at the assert
+    // below. Promise.allSettled fires all three up front. (Revert to serial and
+    // this drops to 1 — the test proves the parallelism.)
+    const resolvers: Array<(v: { events: CalendarEvent[] }) => void> = [];
+    apiMock.mockImplementation(() => new Promise((res) => { resolvers.push(res); }));
+
+    const p = store.fetchEvents(new Date('2026-02-01T00:00:00Z'), new Date('2026-03-01T00:00:00Z'));
+    expect(apiMock).toHaveBeenCalledTimes(3);
+
+    resolvers.forEach((res, i) =>
+      res({ events: [{ id: `e${i + 1}`, calendar_id: i + 1 } as unknown as CalendarEvent] }),
+    );
+    await p;
+    expect(store.events).toHaveLength(3);
+  });
+
+  it('continues past a failing calendar (allSettled) and warns, without a store error', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = useCalendarStore();
+    store.calendars = [cal({ id: 1 }), cal({ id: 2 }), cal({ id: 3 })];
+
+    // Dispatched in calendar order, so the mock queue lines up 1 → 2 → 3.
+    apiMock
+      .mockResolvedValueOnce({ events: [{ id: 'e1', calendar_id: 1 } as unknown as CalendarEvent] })
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ events: [{ id: 'e3', calendar_id: 3 } as unknown as CalendarEvent] });
+
+    await store.fetchEvents(new Date('2026-02-01T00:00:00Z'), new Date('2026-03-01T00:00:00Z'));
+
+    // None dropped by the failure; only the healthy calendars' events survive.
+    expect(apiMock).toHaveBeenCalledTimes(3);
+    expect(store.events.map((e) => e.id).sort()).toEqual(['e1', 'e3']);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    // A per-calendar failure is swallowed, so the store-level error stays clear.
+    expect(store.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+});

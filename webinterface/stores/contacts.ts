@@ -93,28 +93,38 @@ export const useContactsStore = defineStore('contacts', {
 
       try {
         const api = useApi();
-        const allContacts: Contact[] = [];
         const limit = 200; // backend maxPageLimit
 
-        for (const ab of this.addressBooks) {
-          try {
-            // Page through every contact instead of reading only the first
-            // page: the backend defaults to limit=50, so without this loop the
-            // UI silently dropped contacts beyond the first 50 per book.
+        // Fetch every address book IN PARALLEL (was N sequential round-trips).
+        // Each task pages through its OWN book (the backend defaults to limit=50,
+        // so without paging the UI silently dropped contacts beyond the first 50
+        // per book). allSettled keeps the continue-on-error behaviour: one failing
+        // book doesn't block the others.
+        const results = await Promise.allSettled(
+          this.addressBooks.map(async (ab: AddressBook) => {
+            const bookContacts: Contact[] = [];
             let offset = 0;
             for (;;) {
               const response = await api<{ Contacts: Contact[]; Total: number; Limit: number; Offset: number }>(
                 `/api/v1/addressbooks/${ab.ID}/contacts?limit=${limit}&offset=${offset}`
               );
               const page = response.Contacts || [];
-              allContacts.push(...page);
+              bookContacts.push(...page);
               offset += limit;
               if (page.length < limit || offset >= response.Total) break;
             }
-          } catch (e) {
-            console.warn(`Failed to load contacts for address book ${ab.Name}`, e);
+            return bookContacts;
+          })
+        );
+
+        const allContacts: Contact[] = [];
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled') {
+            allContacts.push(...r.value);
+          } else {
+            console.warn(`Failed to load contacts for address book ${this.addressBooks[i]?.Name}`, r.reason);
           }
-        }
+        });
 
         this.contacts = allContacts;
       } catch (e: unknown) {
