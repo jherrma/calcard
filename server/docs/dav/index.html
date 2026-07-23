@@ -263,6 +263,21 @@
         </div>
       </div>
 
+      <h3>Scheduling &amp; Invitations (not supported)</h3>
+      <p style="color: var(--text-muted); margin-bottom: 1rem">
+        CalCard is a personal calendar/contact <strong>sync</strong> server. It
+        does <strong>not</strong> implement CalDAV scheduling (RFC 6638): there
+        are no <code>schedule-inbox</code>/<code>schedule-outbox</code>
+        collections, no iTIP/iMIP processing, and no free-busy lookups. Events
+        that carry <code>ATTENDEE</code> properties are stored and synced
+        verbatim, but <strong>no invitations are sent and no replies are
+        processed</strong>. Accordingly the server only ever advertises the
+        <code>calendar-access</code> capability, never
+        <code>calendar-auto-schedule</code>, so clients don't attempt
+        invitation flows against it. Personal calendar and contact
+        synchronization is unaffected.
+      </p>
+
       <h3>Authentication</h3>
       <p style="color: var(--text-muted); margin-bottom: 1rem">
         DAV endpoints use HTTP Basic Authentication with either:

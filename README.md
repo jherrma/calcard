@@ -4,12 +4,18 @@ CalCard is a high-performance CalDAV and CardDAV server written in Go. It provid
 
 ## Features
 
-- **Standard Protocols**: Full support for CalDAV and CardDAV.
+- **Standard Protocols**: CalDAV (RFC 4791) and CardDAV (RFC 6352) synchronization, including WebDAV-Sync (RFC 6578).
 - **Modern Authentication**: JWT-based auth and OAuth2/OIDC support (Google, Microsoft, 3rd Party).
 - **Sharing**: Calendar and Address Book sharing between users.
 - **Public Calendars**: Ability to publish calendars via unique URLs.
 - **Security Focused**: Built-in TLS support, Rate Limiting, CORS, and Security Headers.
 - **Flexible Storage**: Supports SQLite (default) and PostgreSQL.
+
+> **Scope note:** CalCard is a personal **sync** server. It does not implement
+> CalDAV scheduling (RFC 6638) — no attendee invitations (iTIP/iMIP), no
+> `schedule-inbox`/`schedule-outbox`, and no free-busy. Events with `ATTENDEE`
+> properties sync verbatim but generate no invitations. The server advertises
+> only `calendar-access`, never `calendar-auto-schedule`.
 
 ## Quick Start
 
