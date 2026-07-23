@@ -157,7 +157,7 @@ func TestAddressBookSharing(t *testing.T) {
 	targetToken, targetUsername := registerAndLoginFull(t, targetEmail, password, "AB Target")
 
 	// Owner creates an address book to share.
-	abID := createAddressBook(t, ownerToken, "Shared Colleagues")
+	_, abUUID := createAddressBook(t, ownerToken, "Shared Colleagues")
 
 	// Owner creates a share with the target at read-write.
 	var createResp struct {
@@ -167,7 +167,7 @@ func TestAddressBookSharing(t *testing.T) {
 			Email string `json:"email"`
 		} `json:"shared_with"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+uintStr(abID)+"/shares", ownerToken, map[string]string{
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+abUUID+"/shares", ownerToken, map[string]string{
 		"user_identifier": targetEmail,
 		"permission":      "read-write",
 	}, &createResp)
@@ -177,7 +177,7 @@ func TestAddressBookSharing(t *testing.T) {
 	shareUUID := createResp.ID
 
 	// Owner listing the shares sees the target.
-	status, raw := restCall(t, http.MethodGet, "/addressbooks/"+uintStr(abID)+"/shares", ownerToken, nil)
+	status, raw := restCall(t, http.MethodGet, "/addressbooks/"+abUUID+"/shares", ownerToken, nil)
 	require.Equal(t, http.StatusOK, status, "list shares: %s", errorMessage(raw))
 	require.Contains(t, string(raw), targetEmail, "owner's share list should mention the target")
 
@@ -196,13 +196,13 @@ func TestAddressBookSharing(t *testing.T) {
 	var updated struct {
 		Permission string `json:"permission"`
 	}
-	code = doJSONRaw(t, http.MethodPatch, "/addressbooks/"+uintStr(abID)+"/shares/"+shareUUID, ownerToken,
+	code = doJSONRaw(t, http.MethodPatch, "/addressbooks/"+abUUID+"/shares/"+shareUUID, ownerToken,
 		map[string]string{"permission": "read"}, &updated)
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "read", updated.Permission)
 
 	// Owner revokes.
-	status, raw = restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(abID)+"/shares/"+shareUUID, ownerToken, nil)
+	status, raw = restCall(t, http.MethodDelete, "/addressbooks/"+abUUID+"/shares/"+shareUUID, ownerToken, nil)
 	require.Equalf(t, http.StatusNoContent, status, "revoke: %s", errorMessage(raw))
 
 	// After revoke the target's home no longer lists the shared book.
@@ -229,7 +229,7 @@ func TestSharedAddressBookRESTVisible(t *testing.T) {
 	ownerToken := registerAndLogin(t, ownerEmail, password, "AB REST Owner")
 	targetToken := registerAndLogin(t, targetEmail, password, "AB REST Target")
 
-	abID := createAddressBook(t, ownerToken, "Team Directory")
+	abID, abUUID := createAddressBook(t, ownerToken, "Team Directory")
 
 	// Before the share, the target's list must NOT include the book.
 	var targetList struct {
@@ -254,7 +254,7 @@ func TestSharedAddressBookRESTVisible(t *testing.T) {
 		ID string `json:"id"`
 	}
 	code = doJSONRaw(t, http.MethodPost,
-		"/addressbooks/"+uintStr(abID)+"/shares", ownerToken, map[string]string{
+		"/addressbooks/"+abUUID+"/shares", ownerToken, map[string]string{
 			"user_identifier": targetEmail,
 			"permission":      "read-write",
 		}, &createResp)
@@ -413,7 +413,7 @@ func TestSharedAddressBookCardDAVVisible(t *testing.T) {
 	targetToken, targetUsername := registerAndLoginFull(t, targetEmail, password, "AB DAV Target")
 	roToken, roUsername := registerAndLoginFull(t, roEmail, password, "AB DAV ReadOnly")
 
-	abID := createAddressBook(t, ownerToken, "Shared DAV Book")
+	_, abUUID := createAddressBook(t, ownerToken, "Shared DAV Book")
 
 	// Owner's address book path slug (a UUID) — needed to build the DAV URL.
 	abPath := addressBookPath(t, ownerToken, "Shared DAV Book")
@@ -429,8 +429,8 @@ func TestSharedAddressBookCardDAVVisible(t *testing.T) {
 	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "owner seed PUT: %s", string(body))
 
 	// Share read-write with target, read-only with the RO user.
-	shareAB(t, ownerToken, abID, targetEmail, "read-write")
-	shareAB(t, ownerToken, abID, roEmail, "read")
+	shareAB(t, ownerToken, abUUID, targetEmail, "read-write")
+	shareAB(t, ownerToken, abUUID, roEmail, "read")
 
 	// Read-write sharee: PROPFIND the shared collection under their own DAV path
 	// (was 404 before the fix).
@@ -499,12 +499,12 @@ func addressBookUUID(t *testing.T, token, name string) string {
 	return ""
 }
 
-func shareAB(t *testing.T, ownerToken string, abID uint, targetEmail, permission string) {
+func shareAB(t *testing.T, ownerToken string, abUUID string, targetEmail, permission string) {
 	t.Helper()
 	var resp struct {
 		ID string `json:"id"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+uintStr(abID)+"/shares", ownerToken,
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+abUUID+"/shares", ownerToken,
 		map[string]string{"user_identifier": targetEmail, "permission": permission}, &resp)
 	require.Equalf(t, http.StatusCreated, code, "share addressbook (%s)", permission)
 }
@@ -598,12 +598,12 @@ func TestAddressBookDeleteRevokesShares(t *testing.T) {
 	ownerToken := registerAndLogin(t, ownerEmail, password, "Ghost AB Owner")
 	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Ghost AB Sharee")
 
-	abID := createAddressBook(t, ownerToken, "Doomed Directory")
-	shareAB(t, ownerToken, abID, shareeEmail, "read")
+	abID, abUUID := createAddressBook(t, ownerToken, "Doomed Directory")
+	shareAB(t, ownerToken, abUUID, shareeEmail, "read")
 	require.True(t, addressBookVisibleTo(t, shareeToken, abID), "sharee should see the shared address book")
 
 	// Owner deletes the shared address book.
-	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(abID), ownerToken,
+	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+abUUID, ownerToken,
 		map[string]string{"confirmation": "DELETE"})
 	require.Equalf(t, http.StatusNoContent, status, "delete address book: %s", errorMessage(raw))
 
@@ -611,8 +611,8 @@ func TestAddressBookDeleteRevokesShares(t *testing.T) {
 		"deleted address book must not linger as a ghost in the sharee's list")
 
 	// A new address book can still be shared with the same user.
-	newABID := createAddressBook(t, ownerToken, "Fresh Directory")
-	shareAB(t, ownerToken, newABID, shareeEmail, "read")
+	newABID, newABUUID := createAddressBook(t, ownerToken, "Fresh Directory")
+	shareAB(t, ownerToken, newABUUID, shareeEmail, "read")
 	assert.True(t, addressBookVisibleTo(t, shareeToken, newABID), "sharee should see the freshly shared address book")
 }
 
@@ -631,13 +631,11 @@ func TestAddressBookDAVDeleteRevokesShares(t *testing.T) {
 	_, ownerAppPass := createAppPassword(t, ownerToken, "ghost-ab-dav-owner")
 	_, shareeAppPass := createAppPassword(t, shareeToken, "ghost-ab-dav-sharee")
 
-	abID := createAddressBook(t, ownerToken, "Doomed DAV Directory")
+	abID, abUUID := createAddressBook(t, ownerToken, "Doomed DAV Directory")
 	abPath := addressBookPath(t, ownerToken, "Doomed DAV Directory")
 	require.NotEmpty(t, abPath)
-	abUUID := addressBookUUID(t, ownerToken, "Doomed DAV Directory")
-	require.NotEmpty(t, abUUID)
 
-	shareAB(t, ownerToken, abID, shareeEmail, "read")
+	shareAB(t, ownerToken, abUUID, shareeEmail, "read")
 	require.True(t, addressBookVisibleTo(t, shareeToken, abID), "sharee should see the shared book pre-delete")
 
 	// Sanity: the shared book appears in the sharee's CardDAV home set first, so
@@ -663,8 +661,8 @@ func TestAddressBookDAVDeleteRevokesShares(t *testing.T) {
 		"DAV-deleted book must not linger in the sharee's REST list")
 
 	// Re-sharing a fresh book with the same user still works.
-	newABID := createAddressBook(t, ownerToken, "Fresh DAV Directory")
-	shareAB(t, ownerToken, newABID, shareeEmail, "read")
+	newABID, newABUUID := createAddressBook(t, ownerToken, "Fresh DAV Directory")
+	shareAB(t, ownerToken, newABUUID, shareeEmail, "read")
 	assert.True(t, addressBookVisibleTo(t, shareeToken, newABID))
 }
 

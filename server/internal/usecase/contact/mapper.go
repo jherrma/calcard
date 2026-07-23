@@ -345,8 +345,12 @@ func FromAddressObject(obj *addressbook.AddressObject) *contact.Contact {
 	// vCard PHOTO property, so a non-empty value is the "has photo" signal. The
 	// URL matches the one built by the single-contact GET handler; keep it
 	// relative so the web frontend can prepend its configured API base URL.
+	// The address-book segment is the UUID (#52) — the canonical external id the
+	// photo route now expects — so callers that expose photo_url must ensure the
+	// AddressBook association is populated: ListObjects/SearchObjects preload it,
+	// and MoveUseCase sets it explicitly from the book it already loaded.
 	if c.Photo != "" {
-		c.PhotoURL = fmt.Sprintf("/api/v1/addressbooks/%d/contacts/%s/photo", obj.AddressBookID, obj.UUID)
+		c.PhotoURL = fmt.Sprintf("/api/v1/addressbooks/%s/contacts/%s/photo", obj.AddressBook.UUID, obj.UUID)
 		c.Photo = "" // Drop the base64 blob so list payloads stay small.
 	}
 	return c

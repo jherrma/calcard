@@ -435,7 +435,8 @@ func (r *AddressBookRepository) ListObjects(ctx context.Context, addressBookID u
 	// dbOrder is sanitized to ASC/DESC above, so this Sprintf stays injection-safe.
 	query = query.Order(fmt.Sprintf("id %s", dbOrder))
 
-	if err := query.Limit(limit).Offset(offset).Find(&objs).Error; err != nil {
+	// Preload AddressBook so the DTO mapper can build the UUID-based photo URL (#52).
+	if err := query.Preload("AddressBook").Limit(limit).Offset(offset).Find(&objs).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -466,6 +467,11 @@ func (r *AddressBookRepository) hydrateObjectSlice(ctx context.Context, objs []a
 
 func (r *AddressBookRepository) GetObjectByUUID(ctx context.Context, uuid string) (*addressbook.AddressObject, error) {
 	var obj addressbook.AddressObject
+	// NOTE: deliberately no Preload("AddressBook") here — this getter feeds the
+	// contact move path, which saves the returned object back, and a populated
+	// association would make GORM cascade-write it (duplicating rows). Callers
+	// that expose the DTO photo URL populate the association themselves: List/
+	// Search preload it, and MoveUseCase sets it from the book it already loaded.
 	if err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&obj).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -638,6 +644,8 @@ func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, 
 	}
 
 	err := db.Where("address_objects.formatted_name LIKE ? ESCAPE '\\' OR address_objects.email LIKE ? ESCAPE '\\' OR address_objects.phone LIKE ? ESCAPE '\\' OR address_objects.organization LIKE ? ESCAPE '\\' OR address_objects.given_name LIKE ? ESCAPE '\\' OR address_objects.family_name LIKE ? ESCAPE '\\'", q, q, q, q, q, q).
+		// Preload AddressBook so the DTO mapper can build the UUID-based photo URL (#52).
+		Preload("AddressBook").
 		Limit(limit).
 		Find(&objs).Error
 

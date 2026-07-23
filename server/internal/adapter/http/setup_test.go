@@ -153,6 +153,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		abUpdateUC,
 		abDeleteUC,
 		abExportUC,
+		addressBookRepo,
 	)
 
 	appPwdHandler := NewAppPasswordHandler(

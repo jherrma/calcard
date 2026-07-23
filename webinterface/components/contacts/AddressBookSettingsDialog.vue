@@ -31,7 +31,7 @@
         <!-- Sharing Tab -->
         <TabPanel value="sharing">
           <div class="pt-4">
-            <ContactsAddressBookSharing v-if="addressBook" :address-book-id="addressBook.ID" />
+            <ContactsAddressBookSharing v-if="addressBook" :address-book-id="addressBook.UUID" />
           </div>
         </TabPanel>
 

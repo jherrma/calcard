@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
@@ -124,7 +123,7 @@ func TestContactHandler_CRUD(t *testing.T) {
 	defer db.Close()
 
 	var contactID string
-	abIDStr := strconv.Itoa(int(ab.ID))
+	abIDStr := ab.UUID
 
 	t.Run("Create Contact", func(t *testing.T) {
 		reqBody := contact.Contact{
@@ -246,7 +245,7 @@ func TestContactHandler_CRUD(t *testing.T) {
 func TestContactHandler_Photo(t *testing.T) {
 	app, db, _, ab, token := setupContactHandlerTest(t)
 	defer db.Close()
-	abIDStr := strconv.Itoa(int(ab.ID))
+	abIDStr := ab.UUID
 
 	// Create Contact
 	reqBody := contact.Contact{
@@ -319,7 +318,7 @@ func TestContactHandler_Move(t *testing.T) {
 	err := abRepo.Create(context.Background(), ab2)
 	require.NoError(t, err)
 
-	ab1IDStr := strconv.Itoa(int(ab1.ID))
+	ab1IDStr := ab1.UUID
 
 	// Create Contact in AB1
 	c := &contact.Contact{GivenName: "Mover"}
@@ -333,7 +332,7 @@ func TestContactHandler_Move(t *testing.T) {
 	contactID := res.ID
 
 	t.Run("Move Contact", func(t *testing.T) {
-		targetIDStr := strconv.Itoa(int(ab2.ID))
+		targetIDStr := ab2.UUID
 		moveInput := map[string]string{
 			"target_addressbook_id": targetIDStr,
 		}
@@ -348,6 +347,8 @@ func TestContactHandler_Move(t *testing.T) {
 
 		var res contact.Contact
 		json.NewDecoder(resp.Body).Decode(&res)
-		assert.Equal(t, targetIDStr, res.AddressBookID)
+		// The move target is addressed by UUID (#52), but the DTO's addressbook_id
+		// stays the internal numeric id, so assert against that.
+		assert.Equal(t, typeToString(ab2.ID), res.AddressBookID)
 	})
 }

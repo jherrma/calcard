@@ -83,7 +83,7 @@ import { useConfirm } from 'primevue/useconfirm';
 import type { AddressBookShare } from '~/types/sharing';
 
 const props = defineProps<{
-  addressBookId: number;
+  addressBookId: string;
 }>();
 
 const toast = useAppToast();

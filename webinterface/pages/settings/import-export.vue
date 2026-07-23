@@ -413,7 +413,7 @@ async function executeContactImport() {
     formData.append('file', vcfFile.value);
 
     const result = await api<ImportResult>(
-      `/api/v1/addressbooks/${selectedAddressBook.value.ID}/import?duplicate_handling=${vcfDuplicateAction.value}`,
+      `/api/v1/addressbooks/${selectedAddressBook.value.UUID}/import?duplicate_handling=${vcfDuplicateAction.value}`,
       { method: 'POST', body: formData },
     );
 
@@ -452,7 +452,7 @@ async function exportContactsVcf() {
   vcfExporting.value = true;
   try {
     const blob = await api<Blob>(
-      `/api/v1/addressbooks/${exportAddressBook.value.ID}/export`,
+      `/api/v1/addressbooks/${exportAddressBook.value.UUID}/export`,
       { responseType: 'blob' },
     );
     downloadBlob(blob, `${exportAddressBook.value.Name}.vcf`);

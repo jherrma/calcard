@@ -35,8 +35,8 @@ import (
 func TestLoginRateLimiter(t *testing.T) {
 	// The two limiters carry distinct messages (see rate_limiter.go); we key
 	// off them to prove which limiter actually fired.
-	const emailLimitMsg = "this account"     // NewEmailRateLimiter: per-account
-	const ipLimitMsg = "Too many attempts"    // NewIPRateLimiter: per-IP
+	const emailLimitMsg = "this account"   // NewEmailRateLimiter: per-account
+	const ipLimitMsg = "Too many attempts" // NewIPRateLimiter: per-IP
 
 	t.Run("per-email limiter reachable from a single IP", func(t *testing.T) {
 		// IP=20 well above email=3, so from one IP the email limiter is the

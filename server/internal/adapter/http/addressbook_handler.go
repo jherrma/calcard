@@ -2,7 +2,6 @@ package http
 
 import (
 	"errors"
-	"strconv"
 
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 
@@ -14,12 +13,13 @@ import (
 var _ = domainaddressbook.AddressBook{}
 
 type AddressBookHandler struct {
-	createUC *addressbook.CreateUseCase
-	listUC   *addressbook.ListUseCase
-	getUC    *addressbook.GetUseCase
-	updateUC *addressbook.UpdateUseCase
-	deleteUC *addressbook.DeleteUseCase
-	exportUC *addressbook.ExportUseCase
+	createUC        *addressbook.CreateUseCase
+	listUC          *addressbook.ListUseCase
+	getUC           *addressbook.GetUseCase
+	updateUC        *addressbook.UpdateUseCase
+	deleteUC        *addressbook.DeleteUseCase
+	exportUC        *addressbook.ExportUseCase
+	addressBookRepo domainaddressbook.Repository
 }
 
 func NewAddressBookHandler(
@@ -29,15 +29,29 @@ func NewAddressBookHandler(
 	updateUC *addressbook.UpdateUseCase,
 	deleteUC *addressbook.DeleteUseCase,
 	exportUC *addressbook.ExportUseCase,
+	addressBookRepo domainaddressbook.Repository,
 ) *AddressBookHandler {
 	return &AddressBookHandler{
-		createUC: createUC,
-		listUC:   listUC,
-		getUC:    getUC,
-		updateUC: updateUC,
-		deleteUC: deleteUC,
-		exportUC: exportUC,
+		createUC:        createUC,
+		listUC:          listUC,
+		getUC:           getUC,
+		updateUC:        updateUC,
+		deleteUC:        deleteUC,
+		exportUC:        exportUC,
+		addressBookRepo: addressBookRepo,
 	}
+}
+
+// resolveAddressBookID maps the :id path segment — an address-book UUID, the
+// canonical external identifier (#52) — to its internal numeric id. Returns
+// (0, false) when the UUID doesn't resolve; callers turn that into a 404 so
+// existence isn't leaked (the use cases still enforce ownership via userID).
+func (h *AddressBookHandler) resolveAddressBookID(c fiber.Ctx) (uint, bool) {
+	ab, err := h.addressBookRepo.GetByUUID(c.Context(), c.Params("id"))
+	if err != nil || ab == nil {
+		return 0, false
+	}
+	return ab.ID, true
 }
 
 // Create godoc
@@ -126,12 +140,12 @@ func (h *AddressBookHandler) Get(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_id"})
+	id, ok := h.resolveAddressBookID(c)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
-	ab, err := h.getUC.Execute(c.Context(), uint(id), userID)
+	ab, err := h.getUC.Execute(c.Context(), id, userID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -162,9 +176,9 @@ func (h *AddressBookHandler) Update(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_id"})
+	id, ok := h.resolveAddressBookID(c)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	var req dto.UpdateAddressBookRequest
@@ -173,7 +187,7 @@ func (h *AddressBookHandler) Update(c fiber.Ctx) error {
 	}
 
 	input := addressbook.UpdateInput{
-		ID:          uint(id),
+		ID:          id,
 		UserID:      userID,
 		Name:        req.Name,
 		Description: req.Description,
@@ -205,9 +219,9 @@ func (h *AddressBookHandler) Delete(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_id"})
+	id, ok := h.resolveAddressBookID(c)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	var req dto.DeleteAddressBookRequest
@@ -219,7 +233,7 @@ func (h *AddressBookHandler) Delete(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "confirmation_required"})
 	}
 
-	if err := h.deleteUC.Execute(c.Context(), uint(id), userID); err != nil {
+	if err := h.deleteUC.Execute(c.Context(), id, userID); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -243,12 +257,12 @@ func (h *AddressBookHandler) Export(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_id"})
+	id, ok := h.resolveAddressBookID(c)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
-	data, filename, err := h.exportUC.Execute(c.Context(), uint(id), userID)
+	data, filename, err := h.exportUC.Execute(c.Context(), id, userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}

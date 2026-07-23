@@ -117,7 +117,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
 	shareHandler := http.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC, calendarRepo)
-	abShareHandler := http.NewAddressBookShareHandler(createABShareUC, listABShareUC, updateABShareUC, revokeABShareUC)
+	abShareHandler := http.NewAddressBookShareHandler(createABShareUC, listABShareUC, updateABShareUC, revokeABShareUC, addressBookRepo)
 	healthHandler := http.NewHealthHandler(db)
 
 	// Public Calendar Use Cases
@@ -210,7 +210,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	contactImportUC := importexport.NewContactImportUseCase(addressBookRepo)
 	backupExportUC := importexport.NewBackupExportUseCase(calendarRepo, addressBookRepo)
 
-	importHandler := http.NewImportHandler(calendarImportUC, contactImportUC)
+	importHandler := http.NewImportHandler(calendarImportUC, contactImportUC, addressBookRepo)
 	backupHandler := http.NewBackupHandler(backupExportUC)
 
 	// Backup Export Route
@@ -305,6 +305,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		abUpdateUC,
 		abDeleteUC,
 		abExportUC,
+		addressBookRepo,
 	)
 
 	abGroup := v1.Group("/addressbooks", http.Authenticate(jwtManager, userRepo))

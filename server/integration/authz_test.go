@@ -47,13 +47,13 @@ func TestAuthorizationBoundaries(t *testing.T) {
 		}, &ev)
 	require.Equal(t, http.StatusCreated, code)
 
-	aliceAbID := createAddressBook(t, aliceToken, "Alice's Addressbook")
+	_, aliceAbUUID := createAddressBook(t, aliceToken, "Alice's Addressbook")
 	var ct struct {
 		ID  string `json:"id"`
 		UID string `json:"uid"`
 	}
 	code = doJSONRaw(t, http.MethodPost,
-		"/addressbooks/"+uintStr(aliceAbID)+"/contacts", aliceToken,
+		"/addressbooks/"+aliceAbUUID+"/contacts", aliceToken,
 		map[string]any{
 			"formatted_name": "Alice's contact",
 			"given_name":     "Secret",
@@ -138,30 +138,30 @@ func TestAuthorizationBoundaries(t *testing.T) {
 	// ------ Address book / contact boundaries ----------------------------
 
 	t.Run("Bob cannot GET Alice's addressbook", func(t *testing.T) {
-		status, _ := restCall(t, http.MethodGet, "/addressbooks/"+uintStr(aliceAbID), bobToken, nil)
+		status, _ := restCall(t, http.MethodGet, "/addressbooks/"+aliceAbUUID, bobToken, nil)
 		assert.GreaterOrEqual(t, status, 400)
 		assert.Less(t, status, 500)
 	})
 	t.Run("Bob cannot list contacts in Alice's addressbook", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodGet,
-			"/addressbooks/"+uintStr(aliceAbID)+"/contacts", bobToken, nil)
+			"/addressbooks/"+aliceAbUUID+"/contacts", bobToken, nil)
 		assert.Equal(t, http.StatusNotFound, status)
 	})
 	t.Run("Bob cannot GET Alice's contact", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodGet,
-			"/addressbooks/"+uintStr(aliceAbID)+"/contacts/"+ct.ID, bobToken, nil)
+			"/addressbooks/"+aliceAbUUID+"/contacts/"+ct.ID, bobToken, nil)
 		assert.Equal(t, http.StatusNotFound, status)
 	})
 	t.Run("Bob cannot DELETE Alice's contact", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodDelete,
-			"/addressbooks/"+uintStr(aliceAbID)+"/contacts/"+ct.ID, bobToken, nil)
+			"/addressbooks/"+aliceAbUUID+"/contacts/"+ct.ID, bobToken, nil)
 		assert.Equal(t, http.StatusNotFound, status)
 
 		var got struct {
 			FormattedName string `json:"formatted_name"`
 		}
 		code := doJSONRaw(t, http.MethodGet,
-			"/addressbooks/"+uintStr(aliceAbID)+"/contacts/"+ct.ID, aliceToken, nil, &got)
+			"/addressbooks/"+aliceAbUUID+"/contacts/"+ct.ID, aliceToken, nil, &got)
 		require.Equal(t, http.StatusOK, code)
 		assert.Equal(t, "Alice's contact", got.FormattedName, "Alice's contact must survive Bob's delete attempt")
 	})
