@@ -33,14 +33,14 @@ type User struct {
 // order, so the field order below matters. The (user_id, provider) index also
 // serves ListByUserID via its user_id prefix, so no separate index is needed.
 type OAuthConnection struct {
-	ID            uint   `gorm:"primaryKey"`
-	UserID        uint   `gorm:"not null;uniqueIndex:idx_oauth_user_provider"`
-	Provider      string `gorm:"size:50;not null;uniqueIndex:idx_oauth_user_provider;uniqueIndex:idx_oauth_provider_subject"` // google, microsoft, custom
-	ProviderID    string `gorm:"size:255;not null;uniqueIndex:idx_oauth_provider_subject"`                                    // sub claim from OIDC
-	ProviderEmail string `gorm:"size:255"`
-	AccessToken   string `gorm:"size:2000"` // deprecated: no longer written; kept to avoid a destructive migration
-	RefreshToken  string `gorm:"size:2000"` // deprecated: no longer written; kept to avoid a destructive migration
-	TokenExpiry   *time.Time                // deprecated: no longer written; kept to avoid a destructive migration
+	ID            uint       `gorm:"primaryKey"`
+	UserID        uint       `gorm:"not null;uniqueIndex:idx_oauth_user_provider"`
+	Provider      string     `gorm:"size:50;not null;uniqueIndex:idx_oauth_user_provider;uniqueIndex:idx_oauth_provider_subject"` // google, microsoft, custom
+	ProviderID    string     `gorm:"size:255;not null;uniqueIndex:idx_oauth_provider_subject"`                                    // sub claim from OIDC
+	ProviderEmail string     `gorm:"size:255"`
+	AccessToken   string     `gorm:"size:2000"` // deprecated: no longer written; kept to avoid a destructive migration
+	RefreshToken  string     `gorm:"size:2000"` // deprecated: no longer written; kept to avoid a destructive migration
+	TokenExpiry   *time.Time // deprecated: no longer written; kept to avoid a destructive migration
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	User          User `gorm:"foreignKey:UserID"`
