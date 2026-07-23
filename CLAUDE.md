@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a CalDAV/CardDAV server project with a Go backend and Nuxt 3 web interface. The server implements RFC 4791 (CalDAV) and RFC 6352 (CardDAV) protocols for calendar and contact synchronization.
+This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interface. The server implements RFC 4791 (CalDAV) and RFC 6352 (CardDAV) protocols for calendar and contact synchronization.
 
 ## Project Structure
 
@@ -28,7 +28,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 3 web interfa
 │   │   └── usecase/         # Business logic use cases
 │   ├── Dockerfile
 │   └── docker-compose*.yml
-└── webinterface/            # Nuxt 3 SPA frontend
+└── webinterface/            # Nuxt 4 SPA frontend
     ├── pages/               # File-based routing
     │   ├── auth/            # Login, register, setup, forgot/reset password, OAuth callback, verify
     │   ├── calendar/        # Calendar view with FullCalendar
@@ -99,7 +99,7 @@ cd server && docker-compose -f docker-compose.postgres.yml up     # PostgreSQL
 - **Database**: SQLite (default), PostgreSQL (production)
 - **Protocols**: CalDAV (RFC 4791), CardDAV (RFC 6352), WebDAV-Sync
 - **Auth**: JWT, OAuth2/OIDC
-- **Frontend**: Nuxt 3 (SPA mode), Vue 3 Composition API, TypeScript (strict)
+- **Frontend**: Nuxt 4 (SPA mode), Vue 3 Composition API, TypeScript (strict)
 - **UI**: PrimeVue 4.x (Material preset), Tailwind CSS 3, PrimeIcons
 - **Frontend Libraries**: Pinia (state), VueUse, Vuelidate, FullCalendar
 

@@ -1,36 +1,36 @@
 // @vitest-environment nuxt
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { createTestingPinia } from '@pinia/testing';
 import { useApi } from './useApi';
 import { useAuthStore } from '~/stores/auth';
 
-// `$fetch` is a Nuxt GLOBAL (not an unimport auto-import), so it is stubbed via
-// vi.stubGlobal rather than mockNuxtImport. We capture the config object useApi()
-// hands to $fetch.create so we can invoke its onResponse hook directly — no
-// network, fully hermetic.
-const fetchCreate = vi.fn((_config?: unknown) => vi.fn());
-
+// `$fetch` is a Nuxt GLOBAL (not an unimport auto-import). Rebinding the name
+// with vi.stubGlobal does NOT intercept it — useApi() captures its own
+// reference to the global — so we spy on the shared `$fetch.create` METHOD
+// instead. That lets us grab the config object useApi() hands to it and invoke
+// its onResponse hook directly: no network, fully hermetic.
 interface OfetchContext {
   response: { _data: unknown; status?: number };
 }
 type OnResponse = (ctx: OfetchContext) => void | Promise<void>;
 
+let createSpy: MockInstance;
+
 function buildConfig() {
   useApi();
-  const cfg = fetchCreate.mock.calls[0]![0] as { onResponse: OnResponse };
+  const cfg = createSpy.mock.calls[0]![0] as { onResponse: OnResponse };
   return cfg;
 }
 
 beforeEach(() => {
   createTestingPinia({ stubActions: false });
-  fetchCreate.mockClear();
-  const f = vi.fn() as unknown as { create: typeof fetchCreate };
-  f.create = fetchCreate;
-  vi.stubGlobal('$fetch', f);
+  createSpy = vi.spyOn($fetch, 'create').mockImplementation(
+    () => vi.fn() as unknown as typeof $fetch,
+  );
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('useApi onResponse unwrapping', () => {

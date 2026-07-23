@@ -4,7 +4,7 @@ This file provides guidance to AI coding assistants when working with this repos
 
 ## Project Overview
 
-CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalDAV) and RFC 6352 (CardDAV) for calendar and contact synchronization. The project consists of a Go backend server and a Nuxt 3 SPA frontend.
+CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalDAV) and RFC 6352 (CardDAV) for calendar and contact synchronization. The project consists of a Go backend server and a Nuxt 4 SPA frontend.
 
 ## Project Structure
 
@@ -26,7 +26,7 @@ CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalD
 │   │   └── config/          # Configuration loading
 │   ├── Dockerfile           # Multi-stage Alpine build (static binary)
 │   └── docker-compose*.yml  # SQLite and PostgreSQL configurations
-└── webinterface/            # Nuxt 3 SPA frontend
+└── webinterface/            # Nuxt 4 SPA frontend
     ├── pages/               # File-based routing (auth, calendar, contacts)
     ├── components/          # Auto-imported Vue components (auth, calendar, contacts, common)
     ├── stores/              # Pinia stores (auth, calendars, contacts)
@@ -68,7 +68,7 @@ CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalD
 | Backend | Go 1.22+, Fiber v3, GORM, JWT, OAuth2/OIDC |
 | Database | SQLite (default), PostgreSQL (production) |
 | Protocols | CalDAV (RFC 4791), CardDAV (RFC 6352), WebDAV-Sync |
-| Frontend | Nuxt 3 (SPA), Vue 3 Composition API, TypeScript (strict) |
+| Frontend | Nuxt 4 (SPA), Vue 3 Composition API, TypeScript (strict) |
 | UI | PrimeVue 4.x (Material preset), Tailwind CSS 3, PrimeIcons |
 | Libraries | Pinia, VueUse, Vuelidate, FullCalendar |
 

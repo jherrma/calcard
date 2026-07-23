@@ -1,6 +1,6 @@
 # CalCard Frontend
 
-Nuxt 3 web interface for the CalDAV/CardDAV server.
+Nuxt 4 web interface for the CalDAV/CardDAV server.
 
 ## Setup
 
@@ -26,7 +26,7 @@ Nuxt 3 web interface for the CalDAV/CardDAV server.
 
 ## Technology Stack
 
-- **Framework**: Nuxt 3 (Vue 3)
+- **Framework**: Nuxt 4 (Vue 3)
 - **State Management**: Pinia
 - **UI Components**: PrimeVue (Material Theme)
 - **Styling**: Tailwind CSS
