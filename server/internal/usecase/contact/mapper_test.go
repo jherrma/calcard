@@ -153,13 +153,16 @@ func TestFromAddressObjectPhotoURL(t *testing.T) {
 	withPhoto := &addressbook.AddressObject{
 		UUID:          "contact-uuid-1",
 		AddressBookID: 7,
+		// The photo URL uses the address book's UUID (#52), which comes from the
+		// preloaded AddressBook association.
+		AddressBook: addressbook.AddressBook{UUID: "ab-uuid-7"},
 		VCardData: "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:with-photo\r\n" +
 			"FN:Ada Lovelace\r\nN:Lovelace;Ada;;;\r\n" +
 			"PHOTO;ENCODING=b;TYPE=JPEG:SGVsbG8=\r\nEND:VCARD\r\n",
 	}
 	c := FromAddressObject(withPhoto)
 	assert.NotNil(t, c)
-	assert.Equal(t, "/api/v1/addressbooks/7/contacts/contact-uuid-1/photo", c.PhotoURL)
+	assert.Equal(t, "/api/v1/addressbooks/ab-uuid-7/contacts/contact-uuid-1/photo", c.PhotoURL)
 	assert.Empty(t, c.Photo, "base64 blob must not be inlined in the mapped contact")
 
 	noPhoto := &addressbook.AddressObject{

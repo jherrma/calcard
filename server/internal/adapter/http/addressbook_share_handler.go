@@ -1,18 +1,18 @@
 package http
 
 import (
-	"strconv"
-
 	"github.com/gofiber/fiber/v3"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 )
 
 type AddressBookShareHandler struct {
-	createUC *sharing.CreateAddressBookShareUseCase
-	listUC   *sharing.ListAddressBookSharesUseCase
-	updateUC *sharing.UpdateAddressBookShareUseCase
-	revokeUC *sharing.RevokeAddressBookShareUseCase
+	createUC        *sharing.CreateAddressBookShareUseCase
+	listUC          *sharing.ListAddressBookSharesUseCase
+	updateUC        *sharing.UpdateAddressBookShareUseCase
+	revokeUC        *sharing.RevokeAddressBookShareUseCase
+	addressBookRepo addressbook.Repository
 }
 
 func NewAddressBookShareHandler(
@@ -20,28 +20,42 @@ func NewAddressBookShareHandler(
 	listUC *sharing.ListAddressBookSharesUseCase,
 	updateUC *sharing.UpdateAddressBookShareUseCase,
 	revokeUC *sharing.RevokeAddressBookShareUseCase,
+	addressBookRepo addressbook.Repository,
 ) *AddressBookShareHandler {
 	return &AddressBookShareHandler{
-		createUC: createUC,
-		listUC:   listUC,
-		updateUC: updateUC,
-		revokeUC: revokeUC,
+		createUC:        createUC,
+		listUC:          listUC,
+		updateUC:        updateUC,
+		revokeUC:        revokeUC,
+		addressBookRepo: addressBookRepo,
 	}
+}
+
+// resolveOwnedAddressBookID maps the :id path segment — an address-book UUID
+// (#52) — to its internal numeric id, scoped to the caller: a missing or
+// non-owned address book yields (0, false), which callers turn into a 404
+// (never leaking existence).
+func (h *AddressBookShareHandler) resolveOwnedAddressBookID(c fiber.Ctx, userID uint) (uint, bool) {
+	ab, err := h.addressBookRepo.GetByUUID(c.Context(), c.Params("id"))
+	if err != nil || ab == nil || ab.UserID != userID {
+		return 0, false
+	}
+	return ab.ID, true
 }
 
 // POST /api/v1/addressbooks/:id/shares
 func (h *AddressBookShareHandler) Create(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	addressBookID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_addressbook_id"})
+	addressBookID, ok := h.resolveOwnedAddressBookID(c, u.ID)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	var req sharing.CreateAddressBookShareInput
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_request"})
 	}
-	req.AddressBookID = uint(addressBookID)
+	req.AddressBookID = addressBookID
 
 	output, err := h.createUC.Execute(c.Context(), u.ID, req)
 	if err != nil {
@@ -54,12 +68,12 @@ func (h *AddressBookShareHandler) Create(c fiber.Ctx) error {
 // GET /api/v1/addressbooks/:id/shares
 func (h *AddressBookShareHandler) List(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	addressBookID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_addressbook_id"})
+	addressBookID, ok := h.resolveOwnedAddressBookID(c, u.ID)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
-	output, err := h.listUC.Execute(c.Context(), u.ID, uint(addressBookID))
+	output, err := h.listUC.Execute(c.Context(), u.ID, addressBookID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -70,9 +84,9 @@ func (h *AddressBookShareHandler) List(c fiber.Ctx) error {
 // PATCH /api/v1/addressbooks/:id/shares/:share_id
 func (h *AddressBookShareHandler) Update(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	addressBookID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_addressbook_id"})
+	addressBookID, ok := h.resolveOwnedAddressBookID(c, u.ID)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 	shareUUID := c.Params("share_id")
 
@@ -81,7 +95,7 @@ func (h *AddressBookShareHandler) Update(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_request"})
 	}
 
-	output, err := h.updateUC.Execute(c.Context(), u.ID, uint(addressBookID), shareUUID, req)
+	output, err := h.updateUC.Execute(c.Context(), u.ID, addressBookID, shareUUID, req)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -92,13 +106,13 @@ func (h *AddressBookShareHandler) Update(c fiber.Ctx) error {
 // DELETE /api/v1/addressbooks/:id/shares/:share_id
 func (h *AddressBookShareHandler) Revoke(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	addressBookID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_addressbook_id"})
+	addressBookID, ok := h.resolveOwnedAddressBookID(c, u.ID)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 	shareUUID := c.Params("share_id")
 
-	if err := h.revokeUC.Execute(c.Context(), u.ID, uint(addressBookID), shareUUID); err != nil {
+	if err := h.revokeUC.Execute(c.Context(), u.ID, addressBookID, shareUUID); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 

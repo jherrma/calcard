@@ -63,9 +63,11 @@ type flowState struct {
 
 	eventID string
 
-	addressBookID    uint
-	secondAddressBk  uint
-	contactID        string
+	addressBookID       uint
+	addressBookUUID     string
+	secondAddressBk     uint
+	secondAddressBkUUID string
+	contactID           string
 }
 
 func (s *flowState) registerAdmin(t *testing.T) {
@@ -276,17 +278,21 @@ func (s *flowState) createAddressBook(t *testing.T) {
 	require.NotEmpty(t, ab.UUID)
 	assert.Equal(t, "Colleagues", ab.Name)
 	s.addressBookID = ab.ID
+	s.addressBookUUID = ab.UUID
 
 	// Second address book — we delete this one so we don't run into the
 	// "cannot delete your last address book" guard when exercising DELETE.
 	var ab2 struct {
-		ID uint `json:"ID"`
+		ID   uint   `json:"ID"`
+		UUID string `json:"UUID"`
 	}
 	code2 := doJSONRaw(t, http.MethodPost, "/addressbooks/", s.adminToken,
 		map[string]string{"name": "Temp"}, &ab2)
 	require.Equal(t, http.StatusCreated, code2)
 	require.NotZero(t, ab2.ID)
+	require.NotEmpty(t, ab2.UUID)
 	s.secondAddressBk = ab2.ID
+	s.secondAddressBkUUID = ab2.UUID
 }
 
 func (s *flowState) updateAddressBook(t *testing.T) {
@@ -295,7 +301,7 @@ func (s *flowState) updateAddressBook(t *testing.T) {
 	var ab struct {
 		Name string `json:"Name"`
 	}
-	code := doJSONRaw(t, http.MethodPatch, "/addressbooks/"+uintStr(s.addressBookID), s.adminToken, reqBody, &ab)
+	code := doJSONRaw(t, http.MethodPatch, "/addressbooks/"+s.addressBookUUID, s.adminToken, reqBody, &ab)
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, newName, ab.Name)
 }
@@ -318,7 +324,7 @@ func (s *flowState) createContact(t *testing.T) {
 		UID           string `json:"uid"`
 		FormattedName string `json:"formatted_name"`
 	}
-	path := "/addressbooks/" + uintStr(s.addressBookID) + "/contacts"
+	path := "/addressbooks/" + s.addressBookUUID + "/contacts"
 	code := doJSONRaw(t, http.MethodPost, path, s.adminToken, reqBody, &ct)
 	require.Equal(t, http.StatusCreated, code)
 	require.NotEmpty(t, ct.ID)
@@ -336,14 +342,14 @@ func (s *flowState) updateContact(t *testing.T) {
 	var ct struct {
 		FormattedName string `json:"formatted_name"`
 	}
-	path := "/addressbooks/" + uintStr(s.addressBookID) + "/contacts/" + s.contactID
+	path := "/addressbooks/" + s.addressBookUUID + "/contacts/" + s.contactID
 	code := doJSONRaw(t, http.MethodPatch, path, s.adminToken, reqBody, &ct)
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "Jane Q. Doe", ct.FormattedName)
 }
 
 func (s *flowState) deleteContact(t *testing.T) {
-	path := "/addressbooks/" + uintStr(s.addressBookID) + "/contacts/" + s.contactID
+	path := "/addressbooks/" + s.addressBookUUID + "/contacts/" + s.contactID
 	status, _ := restCall(t, http.MethodDelete, path, s.adminToken, nil)
 	require.Equal(t, http.StatusNoContent, status)
 
@@ -360,7 +366,7 @@ func (s *flowState) deleteContact(t *testing.T) {
 
 func (s *flowState) deleteSecondAddressBook(t *testing.T) {
 	reqBody := map[string]string{"confirmation": "DELETE"}
-	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(s.secondAddressBk), s.adminToken, reqBody)
+	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+s.secondAddressBkUUID, s.adminToken, reqBody)
 	require.Equal(t, http.StatusNoContent, status, "delete temp addressbook: %s", errorMessage(raw))
 }
 

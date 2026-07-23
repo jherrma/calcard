@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/usecase/importexport"
 )
 
@@ -16,16 +16,19 @@ const maxImportFileSize = 10 * 1024 * 1024 // 10MB
 type ImportHandler struct {
 	calendarImportUC *importexport.CalendarImportUseCase
 	contactImportUC  *importexport.ContactImportUseCase
+	addressBookRepo  addressbook.Repository
 }
 
 // NewImportHandler creates a new import handler
 func NewImportHandler(
 	calendarImportUC *importexport.CalendarImportUseCase,
 	contactImportUC *importexport.ContactImportUseCase,
+	addressBookRepo addressbook.Repository,
 ) *ImportHandler {
 	return &ImportHandler{
 		calendarImportUC: calendarImportUC,
 		contactImportUC:  contactImportUC,
+		addressBookRepo:  addressBookRepo,
 	}
 }
 
@@ -67,9 +70,12 @@ func (h *ImportHandler) ImportContact(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_id"})
+	// The :id path segment is the address book's UUID (#52); resolve it to the
+	// internal numeric id (missing → 404, so existence isn't leaked). The import
+	// use case still enforces ownership via userID.
+	ab, err := h.addressBookRepo.GetByUUID(c.Context(), c.Params("id"))
+	if err != nil || ab == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	// Get import options
@@ -83,7 +89,7 @@ func (h *ImportHandler) ImportContact(c fiber.Ctx) error {
 		return writeImportDataError(c, err)
 	}
 
-	result, err := h.contactImportUC.Execute(c.Context(), userID, uint(id), data, opts)
+	result, err := h.contactImportUC.Execute(c.Context(), userID, ab.ID, data, opts)
 	if err != nil {
 		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
 	}

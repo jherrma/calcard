@@ -37,15 +37,18 @@ func TestCardDAV(t *testing.T) {
 	code := doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &wrap)
 	require.Equal(t, http.StatusOK, code)
 	var abID uint
+	var abUUID string
 	var abPath string
 	for _, ab := range wrap.AddressBooks {
 		if ab.Name == "Contacts" {
 			abID = ab.ID
+			abUUID = ab.UUID
 			abPath = ab.Path
 			break
 		}
 	}
 	require.NotZero(t, abID, "default Contacts address book should exist")
+	require.NotEmpty(t, abUUID)
 	require.NotEmpty(t, abPath, "address book should have a URL-path slug")
 
 	// --- PROPFIND: addressbook home set -----------------------------------
@@ -91,7 +94,7 @@ func TestCardDAV(t *testing.T) {
 			FormattedName string `json:"formatted_name"`
 		} `json:"Contacts"`
 	}
-	code = doJSONRaw(t, http.MethodGet, "/addressbooks/"+uintStr(abID)+"/contacts?limit=100", token, nil, &listResp)
+	code = doJSONRaw(t, http.MethodGet, "/addressbooks/"+abUUID+"/contacts?limit=100", token, nil, &listResp)
 	require.Equal(t, http.StatusOK, code)
 	found := false
 	for _, c := range listResp.Contacts {

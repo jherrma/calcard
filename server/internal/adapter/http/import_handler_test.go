@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -96,7 +95,7 @@ func setupImportTestApp(t *testing.T) *importTestEnv {
 
 	calImportUC := importexport.NewCalendarImportUseCase(calendarRepo)
 	contactImportUC := importexport.NewContactImportUseCase(addressBookRepo)
-	h := NewImportHandler(calImportUC, contactImportUC)
+	h := NewImportHandler(calImportUC, contactImportUC, addressBookRepo)
 
 	app := fiber.New(fiber.Config{
 		BodyLimit: 50 * 1024 * 1024, // 50MB: bigger than the 10MB import limit
@@ -192,7 +191,7 @@ func TestImportContact_SizeLimit(t *testing.T) {
 		body, err := json.Marshal(map[string]string{"data": string(oversizePayload())})
 		require.NoError(t, err)
 
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/addressbooks/%d/import", env.ab.ID), bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/addressbooks/"+env.ab.UUID+"/import", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := env.app.Test(req, fiber.TestConfig{Timeout: 0})
@@ -204,7 +203,7 @@ func TestImportContact_SizeLimit(t *testing.T) {
 	t.Run("raw text/vcard body oversize is rejected and not imported", func(t *testing.T) {
 		env := setupImportTestApp(t)
 
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/addressbooks/%d/import", env.ab.ID), bytes.NewReader(oversizePayload()))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/addressbooks/"+env.ab.UUID+"/import", bytes.NewReader(oversizePayload()))
 		req.Header.Set("Content-Type", "text/vcard")
 
 		resp, err := env.app.Test(req, fiber.TestConfig{Timeout: 0})
@@ -219,7 +218,7 @@ func TestImportContact_SizeLimit(t *testing.T) {
 		body, err := json.Marshal(map[string]string{"data": validVCard})
 		require.NoError(t, err)
 
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/addressbooks/%d/import", env.ab.ID), bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/addressbooks/"+env.ab.UUID+"/import", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := env.app.Test(req, fiber.TestConfig{Timeout: 0})

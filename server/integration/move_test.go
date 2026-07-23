@@ -73,15 +73,15 @@ func TestContactMove(t *testing.T) {
 	password := "moveSecret!123"
 	token := registerAndLogin(t, email, password, "Contact Move User")
 
-	abA := createAddressBook(t, token, "AB A")
-	abB := createAddressBook(t, token, "AB B")
+	_, abAUUID := createAddressBook(t, token, "AB A")
+	abBID, abBUUID := createAddressBook(t, token, "AB B")
 
 	// Seed a contact in A.
 	var ct struct {
 		ID  string `json:"id"`
 		UID string `json:"uid"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+uintStr(abA)+"/contacts", token,
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+abAUUID+"/contacts", token,
 		map[string]any{
 			"formatted_name": "Mover McMoveson",
 			"given_name":     "Mover",
@@ -92,21 +92,24 @@ func TestContactMove(t *testing.T) {
 	originalUID := ct.UID
 
 	// --- Move ------------------------------------------------------------
-	movePath := "/addressbooks/" + uintStr(abA) + "/contacts/" + ct.ID + "/move"
+	// The source path and the target_addressbook_id body field are both address
+	// book UUIDs now (#52); the response's addressbook_id stays the internal
+	// numeric id (unchanged DTO field), so that assertion uses the numeric form.
+	movePath := "/addressbooks/" + abAUUID + "/contacts/" + ct.ID + "/move"
 	var moved struct {
 		UID           string `json:"uid"`
 		AddressBookID string `json:"addressbook_id"`
 	}
 	code = doJSONRaw(t, http.MethodPost, movePath, token, map[string]string{
-		"target_addressbook_id": uintStr(abB),
+		"target_addressbook_id": abBUUID,
 	}, &moved)
 	require.Equal(t, http.StatusOK, code, "move contact")
 	assert.Equal(t, originalUID, moved.UID, "contact UID must survive the move")
-	assert.Equal(t, uintStr(abB), moved.AddressBookID, "addressbook_id should reflect the target")
+	assert.Equal(t, uintStr(abBID), moved.AddressBookID, "addressbook_id should reflect the target")
 
 	// --- Verify ---------------------------------------------------------
-	uidsInA := collectContactUIDs(t, token, abA)
-	uidsInB := collectContactUIDs(t, token, abB)
+	uidsInA := collectContactUIDs(t, token, abAUUID)
+	uidsInB := collectContactUIDs(t, token, abBUUID)
 	assert.NotContains(t, uidsInA, originalUID, "moved contact must be gone from AB A")
 	assert.Contains(t, uidsInB, originalUID, "moved contact must appear in AB B")
 }
@@ -129,7 +132,7 @@ func collectEventUIDs(t *testing.T, token string, calUUID string, rangeQS string
 	return out
 }
 
-func collectContactUIDs(t *testing.T, token string, abID uint) []string {
+func collectContactUIDs(t *testing.T, token string, abUUID string) []string {
 	t.Helper()
 	var resp struct {
 		Contacts []struct {
@@ -137,7 +140,7 @@ func collectContactUIDs(t *testing.T, token string, abID uint) []string {
 		} `json:"Contacts"`
 	}
 	code := doJSONRaw(t, http.MethodGet,
-		"/addressbooks/"+uintStr(abID)+"/contacts?limit=100", token, nil, &resp)
+		"/addressbooks/"+abUUID+"/contacts?limit=100", token, nil, &resp)
 	require.Equal(t, http.StatusOK, code)
 	out := make([]string, 0, len(resp.Contacts))
 	for _, c := range resp.Contacts {

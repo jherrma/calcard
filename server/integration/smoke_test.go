@@ -115,11 +115,11 @@ func TestAddressBookExport(t *testing.T) {
 	password := "abexportSecret!123"
 	token := registerAndLogin(t, email, password, "AB Export User")
 
-	abID := createAddressBook(t, token, "Exportable")
-	_, fn := createSeededContact(t, token, abID, "Exportable", 0)
+	_, abUUID := createAddressBook(t, token, "Exportable")
+	_, fn := createSeededContact(t, token, abUUID, "Exportable", 0)
 
 	status, raw := restCall(t, http.MethodGet,
-		"/addressbooks/"+uintStr(abID)+"/export", token, nil)
+		"/addressbooks/"+abUUID+"/export", token, nil)
 	require.Equal(t, http.StatusOK, status)
 
 	body := string(raw)

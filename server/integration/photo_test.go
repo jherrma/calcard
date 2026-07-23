@@ -27,14 +27,14 @@ func TestContactPhoto(t *testing.T) {
 	password := "photoSecret!123"
 	token := registerAndLogin(t, email, password, "Photo User")
 
-	abID := createAddressBook(t, token, "Photo Book")
+	_, abUUID := createAddressBook(t, token, "Photo Book")
 
 	// Create a contact we can attach the photo to.
 	var contact struct {
 		ID  string `json:"id"`
 		UID string `json:"uid"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+uintStr(abID)+"/contacts", token,
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+abUUID+"/contacts", token,
 		map[string]any{
 			"formatted_name": "Alice Avatar",
 			"given_name":     "Alice",
@@ -50,7 +50,7 @@ func TestContactPhoto(t *testing.T) {
 
 	// --- Upload ----------------------------------------------------------
 
-	photoURL := "/api/v1/addressbooks/" + uintStr(abID) + "/contacts/" + contact.ID + "/photo"
+	photoURL := "/api/v1/addressbooks/" + abUUID + "/contacts/" + contact.ID + "/photo"
 	status, raw := rawCall(t, http.MethodPut, baseURL+photoURL, token, icon1, map[string]string{
 		"Content-Type": "image/jpeg",
 	})
@@ -95,7 +95,7 @@ func TestContactPhoto(t *testing.T) {
 		PhotoURL string `json:"photo_url"`
 	}
 	code = doJSONRaw(t, http.MethodGet,
-		"/addressbooks/"+uintStr(abID)+"/contacts/"+contact.ID, token, nil, &after)
+		"/addressbooks/"+abUUID+"/contacts/"+contact.ID, token, nil, &after)
 	require.Equal(t, http.StatusOK, code)
 	assert.Empty(t, after.PhotoURL, "contact must not advertise a photo_url once the photo is gone")
 }
@@ -172,14 +172,14 @@ func TestCardDAVPhotoRoundTrip(t *testing.T) {
 	require.Containsf(t, []int{http.StatusCreated, http.StatusNoContent, http.StatusOK}, status, "re-PUT: %s", string(body))
 
 	// The photo must still be served via REST (proves it wasn't deleted).
-	abID := addressBookID(t, token, "Contacts")
+	abUUID := addressBookUUID(t, token, "Contacts")
 	var listResp struct {
 		Contacts []struct {
 			ID string `json:"id"`
 		} `json:"Contacts"`
 	}
 	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
-		"/addressbooks/"+uintStr(abID)+"/contacts", token, nil, &listResp))
+		"/addressbooks/"+abUUID+"/contacts", token, nil, &listResp))
 	require.NotEmpty(t, listResp.Contacts)
 	contactID := listResp.Contacts[0].ID
 
@@ -188,11 +188,11 @@ func TestCardDAVPhotoRoundTrip(t *testing.T) {
 		PhotoURL string `json:"photo_url"`
 	}
 	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
-		fmt.Sprintf("/addressbooks/%d/contacts/%s", abID, contactID), token, nil, &single))
+		fmt.Sprintf("/addressbooks/%s/contacts/%s", abUUID, contactID), token, nil, &single))
 	require.NotEmptyf(t, single.PhotoURL, "photo must survive the GET→PUT round-trip")
 
 	// And the photo endpoint returns the JPEG bytes.
-	status, photoBytes := rawCall(t, http.MethodGet, baseURL+"/api/v1/addressbooks/"+uintStr(abID)+"/contacts/"+contactID+"/photo", token, nil, nil)
+	status, photoBytes := rawCall(t, http.MethodGet, baseURL+"/api/v1/addressbooks/"+abUUID+"/contacts/"+contactID+"/photo", token, nil, nil)
 	require.Equal(t, http.StatusOK, status)
 	require.GreaterOrEqual(t, len(photoBytes), 3)
 	assert.Equal(t, []byte{0xFF, 0xD8, 0xFF}, photoBytes[:3], "round-tripped photo must still be a JPEG")
@@ -218,8 +218,8 @@ func TestContactPhotoStrippedOnMove(t *testing.T) {
 
 	srcPath := addressBookPath(t, token, "Contacts")
 	require.NotEmpty(t, srcPath)
-	srcID := addressBookID(t, token, "Contacts")
-	dstID := createAddressBook(t, token, "Archive")
+	srcUUID := addressBookUUID(t, token, "Contacts")
+	_, dstUUID := createAddressBook(t, token, "Archive")
 	dstPath := addressBookPath(t, token, "Archive")
 	require.NotEmpty(t, dstPath)
 
@@ -242,7 +242,7 @@ func TestContactPhotoStrippedOnMove(t *testing.T) {
 		} `json:"Contacts"`
 	}
 	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
-		"/addressbooks/"+uintStr(srcID)+"/contacts", token, nil, &listResp))
+		"/addressbooks/"+srcUUID+"/contacts", token, nil, &listResp))
 	var contactID string
 	for _, c := range listResp.Contacts {
 		if c.UID == uid {
@@ -252,12 +252,12 @@ func TestContactPhotoStrippedOnMove(t *testing.T) {
 	require.NotEmpty(t, contactID, "seeded contact must appear in the source book")
 
 	// Move it to the target book via the dedicated REST move route.
-	movePath := "/addressbooks/" + uintStr(srcID) + "/contacts/" + contactID + "/move"
+	movePath := "/addressbooks/" + srcUUID + "/contacts/" + contactID + "/move"
 	var moved struct {
 		UID string `json:"uid"`
 	}
 	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodPost, movePath, token,
-		map[string]string{"target_addressbook_id": uintStr(dstID)}, &moved))
+		map[string]string{"target_addressbook_id": dstUUID}, &moved))
 
 	// DAV-GET the moved object from the TARGET collection: exactly one PHOTO.
 	dstObj := "/dav/" + username + "/addressbooks/" + dstPath + "/" + uid + ".vcf"
@@ -265,6 +265,44 @@ func TestContactPhotoStrippedOnMove(t *testing.T) {
 	require.Equalf(t, http.StatusOK, status, "GET moved vCard: %s", string(served))
 	assert.Equal(t, 1, countPhotoProps(string(served)),
 		"moved contact must carry exactly one PHOTO property, not a duplicate")
+}
+
+// TestContactMoveSameBookPhotoURL guards the #52 photo-URL contract on the
+// move use case's "already there" path (target == source). That path returns
+// the still-hydrated object (photo present) straight from GetObjectByUUID,
+// which does NOT preload the AddressBook association — so the DTO mapper needs
+// the use case to populate it, or it would emit a broken
+// "/api/v1/addressbooks//contacts/..." URL (empty id segment). No other test
+// exercises this branch, and the bug is invisible unless the contact has a
+// photo, so assert the returned photo_url carries the book's real UUID.
+func TestContactMoveSameBookPhotoURL(t *testing.T) {
+	token := registerAndLogin(t, "photo-move-same@example.test", "photoSecret!123", "Photo Move Same")
+	_, abUUID := createAddressBook(t, token, "Same Book")
+
+	var ct struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+abUUID+"/contacts", token,
+		map[string]any{"formatted_name": "Selfie Sam", "given_name": "Selfie", "family_name": "Sam"}, &ct)
+	require.Equal(t, http.StatusCreated, code)
+	require.NotEmpty(t, ct.ID)
+
+	// Give the contact a photo so the mapper's photo_url branch is taken.
+	icon := readAsset(t, "user-icon.jpg")
+	photoURL := "/api/v1/addressbooks/" + abUUID + "/contacts/" + ct.ID + "/photo"
+	status, raw := rawCall(t, http.MethodPut, baseURL+photoURL, token, icon, map[string]string{"Content-Type": "image/jpeg"})
+	require.Equalf(t, http.StatusNoContent, status, "PUT photo: %s", errorMessage(raw))
+
+	// "Move" the contact into the book it already lives in (the early-return
+	// branch). The response's photo_url must reference the book by UUID.
+	var moved struct {
+		PhotoURL string `json:"photo_url"`
+	}
+	code = doJSONRaw(t, http.MethodPost, "/addressbooks/"+abUUID+"/contacts/"+ct.ID+"/move", token,
+		map[string]string{"target_addressbook_id": abUUID}, &moved)
+	require.Equal(t, http.StatusOK, code, "same-book move must succeed")
+	assert.Equal(t, "/api/v1/addressbooks/"+abUUID+"/contacts/"+ct.ID+"/photo", moved.PhotoURL,
+		"same-book move response must carry a UUID-based photo_url, not an empty id segment")
 }
 
 func mustAtoi(t *testing.T, s string) int {

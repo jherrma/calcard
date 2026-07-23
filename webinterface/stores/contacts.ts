@@ -106,7 +106,7 @@ export const useContactsStore = defineStore('contacts', {
             let offset = 0;
             for (;;) {
               const response = await api<{ Contacts: Contact[]; Total: number; Limit: number; Offset: number }>(
-                `/api/v1/addressbooks/${ab.ID}/contacts?limit=${limit}&offset=${offset}`
+                `/api/v1/addressbooks/${ab.UUID}/contacts?limit=${limit}&offset=${offset}`
               );
               const page = response.Contacts || [];
               bookContacts.push(...page);
@@ -186,7 +186,7 @@ export const useContactsStore = defineStore('contacts', {
 
     async updateAddressBook(id: number, data: { name?: string; description?: string }) {
       const api = useApi();
-      const response = await api<AddressBook>(`/api/v1/addressbooks/${id}`, {
+      const response = await api<AddressBook>(`/api/v1/addressbooks/${this.addressBookUuid(id)}`, {
         method: 'PATCH',
         body: data,
       });
@@ -199,7 +199,7 @@ export const useContactsStore = defineStore('contacts', {
 
     async deleteAddressBook(id: number) {
       const api = useApi();
-      await api(`/api/v1/addressbooks/${id}`, {
+      await api(`/api/v1/addressbooks/${this.addressBookUuid(id)}`, {
         method: 'DELETE',
         body: { confirmation: 'DELETE' },
       });
@@ -210,7 +210,7 @@ export const useContactsStore = defineStore('contacts', {
 
     async deleteContact(addressBookId: number, contactId: string) {
       const api = useApi();
-      await api(`/api/v1/addressbooks/${addressBookId}/contacts/${contactId}`, {
+      await api(`/api/v1/addressbooks/${this.addressBookUuid(addressBookId)}/contacts/${contactId}`, {
         method: 'DELETE',
       });
       this.contacts = this.contacts.filter((c: Contact) => c.id !== contactId);
@@ -220,9 +220,20 @@ export const useContactsStore = defineStore('contacts', {
       return this.addressBooks.find((ab: AddressBook) => String(ab.ID) === id);
     },
 
+    // Map an address book's numeric id (what contacts and the sidebar carry) to
+    // its UUID, the canonical external identifier the API now expects on
+    // /addressbooks/:id routes (#52). Callers still pass the numeric id; the
+    // store resolves it here so there's a single translation point. Falls back
+    // to the given value if the book isn't loaded (keeps the URL well-formed).
+    addressBookUuid(id: string | number): string {
+      return (
+        this.addressBooks.find((ab: AddressBook) => String(ab.ID) === String(id))?.UUID ?? String(id)
+      );
+    },
+
     async getContact(abId: number, contactId: string): Promise<Contact> {
       const api = useApi();
-      return await api<Contact>(`/api/v1/addressbooks/${abId}/contacts/${contactId}`);
+      return await api<Contact>(`/api/v1/addressbooks/${this.addressBookUuid(abId)}/contacts/${contactId}`);
     },
 
     buildFormattedName(data: ContactFormData): string {
@@ -240,7 +251,7 @@ export const useContactsStore = defineStore('contacts', {
         ...data,
         formatted_name: this.buildFormattedName(data),
       };
-      const contact = await api<Contact>(`/api/v1/addressbooks/${abId}/contacts`, {
+      const contact = await api<Contact>(`/api/v1/addressbooks/${this.addressBookUuid(abId)}/contacts`, {
         method: 'POST',
         body: payload,
       });
@@ -254,7 +265,7 @@ export const useContactsStore = defineStore('contacts', {
         ...data,
         formatted_name: this.buildFormattedName(data),
       };
-      const updated = await api<Contact>(`/api/v1/addressbooks/${abId}/contacts/${contactId}`, {
+      const updated = await api<Contact>(`/api/v1/addressbooks/${this.addressBookUuid(abId)}/contacts/${contactId}`, {
         method: 'PATCH',
         body: payload,
       });
@@ -269,7 +280,7 @@ export const useContactsStore = defineStore('contacts', {
       const config = useRuntimeConfig();
       const authStore = useAuthStore();
       const baseURL = (config.public.apiBaseUrl as string) || '';
-      const url = `${baseURL}/api/v1/addressbooks/${abId}/contacts/${contactId}/photo`;
+      const url = `${baseURL}/api/v1/addressbooks/${this.addressBookUuid(abId)}/contacts/${contactId}/photo`;
 
       await $fetch(url, {
         method: 'PUT',
@@ -283,7 +294,7 @@ export const useContactsStore = defineStore('contacts', {
 
     async deletePhoto(abId: number, contactId: string) {
       const api = useApi();
-      await api(`/api/v1/addressbooks/${abId}/contacts/${contactId}/photo`, {
+      await api(`/api/v1/addressbooks/${this.addressBookUuid(abId)}/contacts/${contactId}/photo`, {
         method: 'DELETE',
       });
     },

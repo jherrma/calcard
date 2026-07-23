@@ -23,8 +23,8 @@ func TestContactEditPreservesUnknownProps(t *testing.T) {
 
 	abPath := addressBookPath(t, token, "Contacts")
 	require.NotEmpty(t, abPath)
-	abID := addressBookID(t, token, "Contacts")
-	require.NotZero(t, abID)
+	abUUID := addressBookUUID(t, token, "Contacts")
+	require.NotEmpty(t, abUUID)
 
 	uid := "preserve-uid"
 	collection := "/dav/" + username + "/addressbooks/" + abPath + "/"
@@ -48,13 +48,13 @@ func TestContactEditPreservesUnknownProps(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"Contacts"`
 	}
-	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet, "/addressbooks/"+uintStr(abID)+"/contacts", token, nil, &listResp))
+	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet, "/addressbooks/"+abUUID+"/contacts", token, nil, &listResp))
 	require.NotEmpty(t, listResp.Contacts)
 	contactID := listResp.Contacts[0].ID
 
 	// Rename the contact via the REST (web-UI) path.
 	newName := "Renamed Person"
-	status, raw := restCall(t, http.MethodPatch, "/addressbooks/"+uintStr(abID)+"/contacts/"+contactID, token,
+	status, raw := restCall(t, http.MethodPatch, "/addressbooks/"+abUUID+"/contacts/"+contactID, token,
 		map[string]any{"formatted_name": newName, "given_name": "Renamed", "family_name": "Person"})
 	require.Equalf(t, http.StatusOK, status, "rename contact: %s", string(raw))
 

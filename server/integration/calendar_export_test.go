@@ -112,19 +112,19 @@ func TestDeleteLastAddressBookGuard(t *testing.T) {
 
 	idx := listAddressBooksIndex(t, token)
 	require.Contains(t, idx, "Contacts", "registration should seed a Contacts address book")
-	var onlyID uint
-	for name, id := range idx {
+	var onlyUUID string
+	for name, uuid := range idx {
 		if name == "Contacts" {
-			onlyID = id
+			onlyUUID = uuid
 			continue
 		}
-		status, _ := restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(id), token,
+		status, _ := restCall(t, http.MethodDelete, "/addressbooks/"+uuid, token,
 			map[string]string{"confirmation": "DELETE"})
 		require.Equal(t, http.StatusNoContent, status)
 	}
-	require.NotZero(t, onlyID)
+	require.NotEmpty(t, onlyUUID)
 
-	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(onlyID), token,
+	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+onlyUUID, token,
 		map[string]string{"confirmation": "DELETE"})
 	assert.GreaterOrEqualf(t, status, 400,
 		"deleting the last address book must NOT succeed (got %d, body: %s)", status, string(raw))

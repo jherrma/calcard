@@ -47,10 +47,10 @@ func TestExportImportRoundtrip(t *testing.T) {
 
 	seededContacts := map[string]map[string]string{} // abName -> UID -> FN
 	for _, abName := range []string{"Trip AB A", "Trip AB B"} {
-		abID := createAddressBook(t, token, abName)
+		_, abUUID := createAddressBook(t, token, abName)
 		seededContacts[abName] = map[string]string{}
 		for i := 0; i < 3; i++ {
-			uid, fn := createSeededContact(t, token, abID, abName, i)
+			uid, fn := createSeededContact(t, token, abUUID, abName, i)
 			seededContacts[abName][uid] = fn
 		}
 	}
@@ -109,8 +109,8 @@ func TestExportImportRoundtrip(t *testing.T) {
 		importCalendar(t, token, calUUID, data)
 	}
 	for name, data := range vcfByName {
-		abID := createAddressBook(t, token, name)
-		importAddressBook(t, token, abID, data)
+		_, abUUID := createAddressBook(t, token, name)
+		importAddressBook(t, token, abUUID, data)
 	}
 
 	// --- Verify: every seeded UID is present again --------------------------
@@ -200,17 +200,19 @@ func createCalendarReturningUUID(t *testing.T, token, name, color string) (uuid 
 	return uuid, id
 }
 
-func createAddressBook(t *testing.T, token, name string) uint {
+func createAddressBook(t *testing.T, token, name string) (uint, string) {
 	t.Helper()
 	var ab struct {
-		ID uint `json:"ID"`
+		ID   uint   `json:"ID"`
+		UUID string `json:"UUID"`
 	}
 	code := doJSONRaw(t, http.MethodPost, "/addressbooks/", token, map[string]string{
 		"name": name,
 	}, &ab)
 	require.Equal(t, http.StatusCreated, code, "create addressbook %s", name)
 	require.NotZero(t, ab.ID)
-	return ab.ID
+	require.NotEmpty(t, ab.UUID)
+	return ab.ID, ab.UUID
 }
 
 // createSeededEvent makes an event with a deterministic summary and returns
@@ -241,7 +243,7 @@ func createSeededEvent(t *testing.T, token string, calUUID string, calName strin
 // createSeededContact creates a vCard contact and returns (uid, formattedName).
 // We post a minimal JSON shape that ContactHandler.Create accepts, then read
 // the resulting UID from the response.
-func createSeededContact(t *testing.T, token string, addressBookID uint, abName string, idx int) (uid, fn string) {
+func createSeededContact(t *testing.T, token string, abUUID string, abName string, idx int) (uid, fn string) {
 	t.Helper()
 	fn = fmt.Sprintf("%s contact %d", abName, idx)
 	body := map[string]any{
@@ -253,7 +255,7 @@ func createSeededContact(t *testing.T, token string, addressBookID uint, abName 
 		UID           string `json:"uid"`
 		FormattedName string `json:"formatted_name"`
 	}
-	path := "/addressbooks/" + uintStr(addressBookID) + "/contacts"
+	path := "/addressbooks/" + abUUID + "/contacts"
 	code := doJSONRaw(t, http.MethodPost, path, token, body, &ct)
 	require.Equal(t, http.StatusCreated, code, "create contact in %s", abName)
 	require.NotEmpty(t, ct.UID)
@@ -353,20 +355,23 @@ func listCalendarsIndex(t *testing.T, token string) map[string]struct {
 	return out
 }
 
-func listAddressBooksIndex(t *testing.T, token string) map[string]uint {
+// listAddressBooksIndex maps address-book Name → UUID. The UUID is the canonical
+// external id the REST routes now take (#52); callers build /addressbooks/:id
+// paths from it.
+func listAddressBooksIndex(t *testing.T, token string) map[string]string {
 	t.Helper()
 	// AddressBook fields have no JSON tags → PascalCase.
 	var wrap struct {
 		AddressBooks []struct {
-			ID   uint   `json:"ID"`
+			UUID string `json:"UUID"`
 			Name string `json:"Name"`
 		} `json:"addressbooks"`
 	}
 	code := doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &wrap)
 	require.Equal(t, http.StatusOK, code)
-	out := map[string]uint{}
+	out := map[string]string{}
 	for _, ab := range wrap.AddressBooks {
-		out[ab.Name] = ab.ID
+		out[ab.Name] = ab.UUID
 	}
 	return out
 }
@@ -384,9 +389,9 @@ func deleteCalendarByName(t *testing.T, token, name string) {
 func deleteAddressBookByName(t *testing.T, token, name string) {
 	t.Helper()
 	idx := listAddressBooksIndex(t, token)
-	id, ok := idx[name]
+	uuid, ok := idx[name]
 	require.True(t, ok, "addressbook %q not found for delete", name)
-	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+uintStr(id), token,
+	status, raw := restCall(t, http.MethodDelete, "/addressbooks/"+uuid, token,
 		map[string]string{"confirmation": "DELETE"})
 	require.Equal(t, http.StatusNoContent, status, "delete addressbook %s: %s", name, errorMessage(raw))
 }
@@ -411,9 +416,9 @@ func importCalendar(t *testing.T, token, calendarUUID string, icsData []byte) {
 	require.Equal(t, result.Total, result.Imported, "all events should import")
 }
 
-func importAddressBook(t *testing.T, token string, abID uint, vcfData []byte) {
+func importAddressBook(t *testing.T, token string, abUUID string, vcfData []byte) {
 	t.Helper()
-	status, raw := rawCall(t, http.MethodPost, baseURL+"/api/v1/addressbooks/"+uintStr(abID)+"/import",
+	status, raw := rawCall(t, http.MethodPost, baseURL+"/api/v1/addressbooks/"+abUUID+"/import",
 		token, vcfData, map[string]string{"Content-Type": "text/vcard"})
 	require.Equalf(t, http.StatusOK, status, "import addressbook: %s", errorMessage(raw))
 
@@ -487,7 +492,7 @@ func collectContactsByAddressBookName(t *testing.T, token string, seeded map[str
 	idx := listAddressBooksIndex(t, token)
 	out := map[string]map[string]string{}
 	for abName := range seeded {
-		abID, ok := idx[abName]
+		abUUID, ok := idx[abName]
 		if !ok {
 			continue
 		}
@@ -499,7 +504,7 @@ func collectContactsByAddressBookName(t *testing.T, token string, seeded map[str
 				FormattedName string `json:"formatted_name"`
 			} `json:"Contacts"`
 		}
-		code := doJSONRaw(t, http.MethodGet, "/addressbooks/"+uintStr(abID)+"/contacts?limit=100", token, nil, &resp)
+		code := doJSONRaw(t, http.MethodGet, "/addressbooks/"+abUUID+"/contacts?limit=100", token, nil, &resp)
 		require.Equal(t, http.StatusOK, code, "list contacts for %s", abName)
 		out[abName] = map[string]string{}
 		for _, ct := range resp.Contacts {

@@ -39,6 +39,7 @@ func TestAddressBookHandler_CRUD(t *testing.T) {
 	require.NoError(t, err)
 
 	var createdABID uint
+	var createdABUUID string
 
 	t.Run("Create AddressBook", func(t *testing.T) {
 		payload := map[string]string{
@@ -60,11 +61,13 @@ func TestAddressBookHandler_CRUD(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Test AddressBook", ab.Name)
 		assert.NotEmpty(t, ab.ID)
+		require.NotEmpty(t, ab.UUID)
 		createdABID = ab.ID
+		createdABUUID = ab.UUID
 	})
 
 	t.Run("Get AddressBook", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/addressbooks/"+typeToString(createdABID), nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/addressbooks/"+createdABUUID, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := app.Test(req)
@@ -100,7 +103,7 @@ func TestAddressBookHandler_CRUD(t *testing.T) {
 		}
 		body, _ := json.Marshal(payload)
 
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/addressbooks/"+typeToString(createdABID), bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/addressbooks/"+createdABUUID, bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -128,7 +131,7 @@ func TestAddressBookHandler_CRUD(t *testing.T) {
 		}
 		body, _ := json.Marshal(payload)
 
-		req := httptest.NewRequest(http.MethodDelete, "/api/v1/addressbooks/"+typeToString(createdABID), bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/addressbooks/"+createdABUUID, bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -167,6 +170,7 @@ func TestAddressBookHandler_Export(t *testing.T) {
 	require.NoError(t, err)
 
 	ab := &addressbook.AddressBook{
+		UUID:        "export-ab-book-uuid",
 		UserID:      u.ID,
 		Name:        "Export AddressBook",
 		Description: "Export Test",
@@ -175,7 +179,7 @@ func TestAddressBookHandler_Export(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("Success", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/addressbooks/"+typeToString(ab.ID)+"/export", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/addressbooks/"+ab.UUID+"/export", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := app.Test(req)

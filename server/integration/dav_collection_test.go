@@ -231,7 +231,7 @@ func TestDAVDeleteAddressBook(t *testing.T) {
 
 	// Create a second addressbook so we're not trying to delete the user's
 	// only one (the domain forbids that and it's tested elsewhere).
-	abID := createAddressBook(t, token, "ToBeDeleted")
+	abID, _ := createAddressBook(t, token, "ToBeDeleted")
 	idx := listAddressBooksIndex(t, token)
 	var abPath string
 	// Need to grab the URL slug — the list endpoint returns it as `Path`.
