@@ -193,9 +193,13 @@ const calendarOptions = computed<CalendarOptions>(() => ({
   nowIndicator: true,
   dayMaxEvents: true,
   weekends: true,
-  slotMinTime: '06:00:00',
-  slotMaxTime: '22:00:00',
+  // Show the full day so events before 06:00 / after 22:00 (night shifts, early
+  // flights) stay reachable — the old 06:00–22:00 clamp hid them with no way to
+  // scroll to them (#28). scrollTime keeps the viewport opening in the morning.
+  slotMinTime: '00:00:00',
+  slotMaxTime: '24:00:00',
   slotDuration: '00:30:00',
+  scrollTime: '07:00:00',
 
   // Responsive
   height: '100%',
