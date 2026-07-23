@@ -18,15 +18,32 @@ CalCard is a high-performance CalDAV and CardDAV server written in Go. It provid
 - Go 1.25+ or Docker
 - A secure JWT secret (at least 32 characters)
 
-### Running with Docker
+### Running with Docker (single container, web UI included)
 
-The easiest way to get started is using Docker Compose:
+The easiest way to get started is using Docker Compose (run from the `server/`
+directory — the compose files set the build context to the repo root so the
+image can bundle the web UI):
 
 ```bash
-docker-compose up -d
+cd server
+docker compose up -d                                   # SQLite
+# docker compose -f docker-compose.postgres.yml up -d  # PostgreSQL
 ```
 
-This will start the server with a SQLite database on port 8080.
+This builds **one image** that serves everything on **one origin** (port 8080):
+the REST API (`/api`), DAV (`/dav`), `/.well-known`, `/health`, `/api/docs`, **and
+the built web UI**. Open `http://localhost:8080/` and the UI loads from the same
+server that answers its API calls.
+
+Because the UI and API share an origin, the browser never applies CORS, so
+**no CORS configuration is required**. The CORS settings
+(`CALDAV_CORS_ENABLED`, …) exist only as an escape hatch for split hosting (UI
+and API on separate origins); leave them disabled for the single-container setup.
+
+> The SPA is baked at image-build time as a static bundle. Do **not** set
+> `NUXT_PUBLIC_API_BASE_URL` for the single-container image — an empty value
+> makes the UI issue same-origin relative requests. Set it only when hosting the
+> UI on a different origin than the API.
 
 ### Running from Source
 
@@ -35,6 +52,10 @@ This will start the server with a SQLite database on port 8080.
 3. Copy the example configuration: `cp configs/config.yaml.example config.yaml`
 4. Update `config.yaml` with your settings (don't forget the JWT secret)
 5. Run the server: `go run ./cmd/server`
+
+For frontend development, run the SPA separately with `cd webinterface && pnpm dev`
+(serves on `:3000` against the API on `:8080`); in that mode the UI defaults
+`apiBaseUrl` to `http://localhost:8080`.
 
 ---
 

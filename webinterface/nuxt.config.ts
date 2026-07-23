@@ -82,7 +82,22 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8080',
+      // Empty string = same-origin relative requests, for the single-container
+      // production build where the Go server serves this SPA too (#99). Baked
+      // in at build time (ssr: false), so the prod image must NOT set
+      // NUXT_PUBLIC_API_BASE_URL to keep requests same-origin.
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || '',
+    },
+  },
+
+  // `pnpm dev` serves the SPA on :3000 against the Go server on :8080, so a
+  // relative base won't reach the API — keep the localhost default there only.
+  // ($development is a built-in Nuxt env override key applied during dev.)
+  $development: {
+    runtimeConfig: {
+      public: {
+        apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8080',
+      },
     },
   },
 

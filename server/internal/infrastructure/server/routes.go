@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/http"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
@@ -397,4 +400,35 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	eventGroup.Patch("/:event_id", eventHandler.Update)
 	eventGroup.Delete("/:event_id", eventHandler.Delete)
 	eventGroup.Post("/:event_id/move", eventHandler.Move)
+
+	// Serve the built SPA (single-container deployment). Registered LAST so every
+	// API/DAV/well-known/health/docs route above wins first.
+	registerWebUI(app, "./public")
+}
+
+// registerWebUI serves the built Nuxt SPA from dir when dir/index.html exists
+// (the Docker image copies the static output there; in dev / unit tests the
+// directory is absent, so this is a no-op and behavior is unchanged). Unknown
+// non-API GET paths fall back to index.html so the SPA's client-side router can
+// handle deep links; API-ish paths keep 404-ing (never HTML). Returns whether
+// static serving was registered. Must be called AFTER all API/DAV routes.
+func registerWebUI(app *fiber.App, dir string) bool {
+	if _, err := os.Stat(dir + "/index.html"); err != nil {
+		return false
+	}
+	app.Get("/*", static.New(dir, static.Config{
+		Compress: true,
+		NotFoundHandler: func(c fiber.Ctx) error {
+			p := c.Path()
+			if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/dav/") ||
+				strings.HasPrefix(p, "/.well-known/") {
+				return c.SendStatus(fiber.StatusNotFound)
+			}
+			// The static handler set 404 before delegating here; a client-side
+			// route is a successful SPA load, so reset to 200 for the fallback.
+			c.Status(fiber.StatusOK)
+			return c.SendFile(dir + "/index.html")
+		},
+	}))
+	return true
 }
