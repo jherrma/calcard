@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"strconv"
 	"testing"
 	"time"
 
@@ -114,7 +113,7 @@ func TestEventHandlerVTODONilTimes(t *testing.T) {
 	}
 	require.NoError(t, db.DB().Create(obj).Error)
 
-	req, _ := http.NewRequest("GET", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events/"+obj.UUID, nil)
+	req, _ := http.NewRequest("GET", "/api/v1/calendars/"+cal.UUID+"/events/"+obj.UUID, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := app.Test(req)
@@ -153,7 +152,7 @@ func TestEventHandlerListPopulatesRecurrenceFields(t *testing.T) {
 		},
 	}
 	body, _ := json.Marshal(createInput)
-	req, _ := http.NewRequest("POST", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events", bytes.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/calendars/"+cal.UUID+"/events", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
@@ -162,7 +161,7 @@ func TestEventHandlerListPopulatesRecurrenceFields(t *testing.T) {
 
 	listStart := start.Add(-time.Hour).Format(time.RFC3339)
 	listEnd := start.Add(time.Hour * 24 * 10).Format(time.RFC3339)
-	listUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events?expand=true&start=" + url.QueryEscape(listStart) + "&end=" + url.QueryEscape(listEnd)
+	listUrl := "/api/v1/calendars/" + cal.UUID + "/events?expand=true&start=" + url.QueryEscape(listStart) + "&end=" + url.QueryEscape(listEnd)
 	listReq, _ := http.NewRequest("GET", listUrl, nil)
 	listReq.Header.Set("Authorization", "Bearer "+token)
 	listResp, err := app.Test(listReq)
@@ -198,7 +197,7 @@ func TestEventHandler(t *testing.T) {
 			End:     time.Now().Add(time.Hour),
 		}
 		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+cal.UUID+"/events", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -213,7 +212,7 @@ func TestEventHandler(t *testing.T) {
 	})
 
 	t.Run("Get Event", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events/"+eventID, nil)
+		req, _ := http.NewRequest("GET", "/api/v1/calendars/"+cal.UUID+"/events/"+eventID, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := app.Test(req)
@@ -229,7 +228,7 @@ func TestEventHandler(t *testing.T) {
 		start := time.Now().Add(-time.Hour * 24).Format(time.RFC3339)
 		end := time.Now().Add(time.Hour * 24).Format(time.RFC3339)
 
-		req, _ := http.NewRequest("GET", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events", nil)
+		req, _ := http.NewRequest("GET", "/api/v1/calendars/"+cal.UUID+"/events", nil)
 		q := req.URL.Query()
 		q.Add("start", start)
 		q.Add("end", end)
@@ -252,7 +251,7 @@ func TestEventHandler(t *testing.T) {
 			Summary: &newSummary,
 		}
 		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("PUT", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events/"+eventID, bytes.NewReader(body))
+		req, _ := http.NewRequest("PUT", "/api/v1/calendars/"+cal.UUID+"/events/"+eventID, bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -276,10 +275,10 @@ func TestEventHandler(t *testing.T) {
 		db.DB().Create(cal2)
 
 		reqBody := dto.MoveEventRequest{
-			TargetCalendarID: strconv.Itoa(int(cal2.ID)),
+			TargetCalendarID: cal2.UUID,
 		}
 		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events/"+eventID+"/move", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+cal.UUID+"/events/"+eventID+"/move", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -293,7 +292,7 @@ func TestEventHandler(t *testing.T) {
 	})
 
 	t.Run("Delete Event", func(t *testing.T) {
-		req, _ := http.NewRequest("DELETE", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events/"+eventID, nil)
+		req, _ := http.NewRequest("DELETE", "/api/v1/calendars/"+cal.UUID+"/events/"+eventID, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := app.Test(req)
@@ -301,7 +300,7 @@ func TestEventHandler(t *testing.T) {
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 
 		// Verify it's gone
-		reqGet, _ := http.NewRequest("GET", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events/"+eventID, nil)
+		reqGet, _ := http.NewRequest("GET", "/api/v1/calendars/"+cal.UUID+"/events/"+eventID, nil)
 		reqGet.Header.Set("Authorization", "Bearer "+token)
 		respGet, _ := app.Test(reqGet)
 		assert.Equal(t, fiber.StatusNotFound, respGet.StatusCode)
@@ -318,7 +317,7 @@ func TestEventHandler(t *testing.T) {
 			},
 		}
 		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+cal.UUID+"/events", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 		resp, _ := app.Test(req)
@@ -333,7 +332,7 @@ func TestEventHandler(t *testing.T) {
 			Summary: &newSummary,
 		}
 		updBody, _ := json.Marshal(updateReq)
-		updUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events/" + recEventID + "?scope=this&recurrence_id=" + recurrenceID
+		updUrl := "/api/v1/calendars/" + cal.UUID + "/events/" + recEventID + "?scope=this&recurrence_id=" + recurrenceID
 		updReq, _ := http.NewRequest("PUT", updUrl, bytes.NewReader(updBody))
 		updReq.Header.Set("Authorization", "Bearer "+token)
 		updReq.Header.Set("Content-Type", "application/json")
@@ -345,7 +344,7 @@ func TestEventHandler(t *testing.T) {
 		// Verify List displays both
 		start := time.Now().Add(-time.Hour * 24).Format(time.RFC3339)
 		end := time.Now().Add(time.Hour * 24 * 14).Format(time.RFC3339)
-		listUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events?expand=true&start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+		listUrl := "/api/v1/calendars/" + cal.UUID + "/events?expand=true&start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
 		listReq, _ := http.NewRequest("GET", listUrl, nil)
 		listReq.Header.Set("Authorization", "Bearer "+token)
 		listResp, _ := app.Test(listReq)
@@ -373,7 +372,7 @@ func TestEventHandler(t *testing.T) {
 			},
 		}
 		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+cal.UUID+"/events", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 		resp, _ := app.Test(req)
@@ -383,7 +382,7 @@ func TestEventHandler(t *testing.T) {
 
 		// Delete the first instance
 		recurrenceID := reqBody.Start.UTC().Format("20060102T150405Z")
-		delUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events/" + recEventID + "?scope=this&recurrence_id=" + recurrenceID
+		delUrl := "/api/v1/calendars/" + cal.UUID + "/events/" + recEventID + "?scope=this&recurrence_id=" + recurrenceID
 		delReq, _ := http.NewRequest("DELETE", delUrl, nil)
 		delReq.Header.Set("Authorization", "Bearer "+token)
 
@@ -394,7 +393,7 @@ func TestEventHandler(t *testing.T) {
 		// Verify List does NOT display the deleted instance
 		start := time.Now().Add(-time.Hour * 24).Format(time.RFC3339)
 		end := time.Now().Add(time.Hour * 24 * 60).Format(time.RFC3339)
-		listUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events?expand=true&start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+		listUrl := "/api/v1/calendars/" + cal.UUID + "/events?expand=true&start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
 		listReq, _ := http.NewRequest("GET", listUrl, nil)
 		listReq.Header.Set("Authorization", "Bearer "+token)
 		listResp, _ := app.Test(listReq)
@@ -427,7 +426,7 @@ func TestEventHandler(t *testing.T) {
 			},
 		}
 		body, _ := json.Marshal(createInput)
-		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+strconv.Itoa(int(cal.ID))+"/events", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", "/api/v1/calendars/"+cal.UUID+"/events", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 		resp, _ := app.Test(req)
@@ -442,7 +441,7 @@ func TestEventHandler(t *testing.T) {
 		updateBody, _ := json.Marshal(map[string]interface{}{
 			"summary": newSummary,
 		})
-		updateUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events/" + eventID +
+		updateUrl := "/api/v1/calendars/" + cal.UUID + "/events/" + eventID +
 			"?scope=this_and_future&recurrence_id=" + url.QueryEscape(recurrenceID)
 
 		updateReq, _ := http.NewRequest("PUT", updateUrl, bytes.NewReader(updateBody))
@@ -454,7 +453,7 @@ func TestEventHandler(t *testing.T) {
 		// 3. Expand and Verify
 		listStart := start.Add(-time.Hour).Format(time.RFC3339)
 		listEnd := start.Add(time.Hour * 24 * 10).Format(time.RFC3339)
-		listUrl := "/api/v1/calendars/" + strconv.Itoa(int(cal.ID)) + "/events?expand=true&start=" + url.QueryEscape(listStart) + "&end=" + url.QueryEscape(listEnd)
+		listUrl := "/api/v1/calendars/" + cal.UUID + "/events?expand=true&start=" + url.QueryEscape(listStart) + "&end=" + url.QueryEscape(listEnd)
 		listReq, _ := http.NewRequest("GET", listUrl, nil)
 		listReq.Header.Set("Authorization", "Bearer "+token)
 		listResp, _ := app.Test(listReq)

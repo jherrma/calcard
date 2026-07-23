@@ -90,7 +90,7 @@ func TestCalDAV(t *testing.T) {
 		} `json:"events"`
 	}
 	rangeQS := "?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z&expand=false"
-	code := doJSONRaw(t, http.MethodGet, "/calendars/"+uintStr(personal.ID)+"/events/"+rangeQS, token, nil, &listResp)
+	code := doJSONRaw(t, http.MethodGet, "/calendars/"+personal.UUID+"/events/"+rangeQS, token, nil, &listResp)
 	require.Equal(t, http.StatusOK, code)
 	found := false
 	for _, ev := range listResp.Events {

@@ -24,7 +24,7 @@ func TestSyncTokenSurvivesRenameAndMove(t *testing.T) {
 	_, appPass := createAppPassword(t, token, "sync-lifecycle")
 
 	// Create a brand-new calendar (fresh collection — token came from Create).
-	calID, calUUID := createCalendar(t, token, "Lifecycle Cal", "#111222")
+	_, calUUID := createCalendar(t, token, "Lifecycle Cal", "#111222")
 	collection := "/dav/" + username + "/calendars/" + calUUID + ".ics/"
 
 	// Initial sync on the fresh collection returns a token...
@@ -68,13 +68,13 @@ func TestSyncTokenSurvivesRenameAndMove(t *testing.T) {
 	preMoveToken := extractSyncToken(string(body))
 
 	// Find the event's REST id and a target calendar.
-	eventID := firstEventID(t, token, calID, "?start=2035-01-01T00:00:00Z&end=2035-12-31T00:00:00Z")
+	eventID := firstEventID(t, token, calUUID, "?start=2035-01-01T00:00:00Z&end=2035-12-31T00:00:00Z")
 	require.NotEmpty(t, eventID)
 
-	targetID, _ := createCalendar(t, token, "Move Target", "#333444")
+	_, targetUUID := createCalendar(t, token, "Move Target", "#333444")
 	status, raw = restCall(t, http.MethodPost,
-		fmt.Sprintf("/calendars/%d/events/%s/move", calID, eventID), token,
-		map[string]any{"target_calendar_id": uintStr(targetID)})
+		fmt.Sprintf("/calendars/%s/events/%s/move", calUUID, eventID), token,
+		map[string]any{"target_calendar_id": targetUUID})
 	require.Equalf(t, http.StatusOK, status, "move: %s", errorMessage(raw))
 
 	// Incremental sync of the SOURCE with the pre-move token must succeed and
@@ -117,7 +117,7 @@ func incrementalSync(t *testing.T, collection, email, pass, tok string) int {
 	return status
 }
 
-func firstEventID(t *testing.T, token string, calID uint, rangeQS string) string {
+func firstEventID(t *testing.T, token string, calUUID string, rangeQS string) string {
 	t.Helper()
 	var resp struct {
 		Events []struct {
@@ -125,7 +125,7 @@ func firstEventID(t *testing.T, token string, calID uint, rangeQS string) string
 		} `json:"events"`
 	}
 	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet,
-		"/calendars/"+uintStr(calID)+"/events/"+rangeQS, token, nil, &resp))
+		"/calendars/"+calUUID+"/events/"+rangeQS, token, nil, &resp))
 	if len(resp.Events) == 0 {
 		return ""
 	}

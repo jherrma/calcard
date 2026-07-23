@@ -22,10 +22,10 @@ func TestPublicCalendar(t *testing.T) {
 	password := "publicSecret!123"
 	token := registerAndLogin(t, email, password, "Public Cal User")
 
-	calID, calUUID := createCalendar(t, token, "Team Holidays", "#998877")
+	_, calUUID := createCalendar(t, token, "Team Holidays", "#998877")
 
 	// Seed one event so the feed has recognisable content.
-	eventUID, eventSummary := createSeededEvent(t, token, calID, "Team Holidays", 0)
+	eventUID, eventSummary := createSeededEvent(t, token, calUUID, "Team Holidays", 0)
 
 	// --- Enable public access ---------------------------------------------
 	var enable struct {
@@ -94,8 +94,6 @@ func TestPublicCalendar(t *testing.T) {
 
 	status, _, _ = rawGet(t, baseURL+"/public/calendar/"+*regen.Token)
 	assert.Equal(t, http.StatusNotFound, status, "after disable the most recent token must 404 too")
-
-	_ = calUUID // not used here; kept so the call site reads naturally
 }
 
 // rawGet issues a plain unauthenticated GET against the given URL and returns

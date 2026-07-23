@@ -88,7 +88,7 @@ export const useCalendarStore = defineStore('calendars', {
         const results = await Promise.allSettled(
           this.calendars.map((c: Calendar) =>
             api<{ events: CalendarEvent[] }>(
-              `/api/v1/calendars/${c.id}/events?start=${start.toISOString()}&end=${end.toISOString()}`
+              `/api/v1/calendars/${c.uuid}/events?start=${start.toISOString()}&end=${end.toISOString()}`
             )
           )
         );
@@ -119,6 +119,17 @@ export const useCalendarStore = defineStore('calendars', {
       }
     },
 
+    // Map a calendar's numeric id (what event objects and the sidebar carry) to
+    // its UUID, the canonical external identifier the API now expects on
+    // /calendars/:id routes (#52). Callers still pass the numeric id; the store
+    // resolves it here so there's a single translation point. Falls back to the
+    // given value if the calendar isn't loaded (keeps the URL well-formed).
+    calendarUuid(id: string | number): string {
+      return (
+        this.calendars.find((c: Calendar) => String(c.id) === String(id))?.uuid ?? String(id)
+      );
+    },
+
     async createEvent(calendarId: string, data: EventFormData) {
       const api = useApi();
       const body: Record<string, unknown> = {
@@ -134,7 +145,7 @@ export const useCalendarStore = defineStore('calendars', {
         body.recurrence = data.recurrence;
       }
 
-      const response = await api<CalendarEvent>(`/api/v1/calendars/${calendarId}/events`, {
+      const response = await api<CalendarEvent>(`/api/v1/calendars/${this.calendarUuid(calendarId)}/events`, {
         method: 'POST',
         body,
       });
@@ -145,7 +156,7 @@ export const useCalendarStore = defineStore('calendars', {
 
     async getEvent(calendarId: string, eventId: string) {
       const api = useApi();
-      return await api<CalendarEvent>(`/api/v1/calendars/${calendarId}/events/${eventId}`);
+      return await api<CalendarEvent>(`/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`);
     },
 
     async updateEvent(calendarId: string, eventId: string, data: EventFormData, scope?: string, recurrenceId?: string) {
@@ -163,7 +174,7 @@ export const useCalendarStore = defineStore('calendars', {
         body.recurrence = data.recurrence;
       }
 
-      let url = `/api/v1/calendars/${calendarId}/events/${eventId}`;
+      let url = `/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`;
       const params = new URLSearchParams();
       if (scope) params.set('scope', scope);
       if (recurrenceId) params.set('recurrence_id', recurrenceId);
@@ -187,16 +198,17 @@ export const useCalendarStore = defineStore('calendars', {
 
     async moveEvent(calendarId: string, eventId: string, targetCalendarId: string) {
       const api = useApi();
-      await api(`/api/v1/calendars/${calendarId}/events/${eventId}/move`, {
+      // Both the source (path) and target (body) are calendar UUIDs now (#52).
+      await api(`/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}/move`, {
         method: 'POST',
-        body: { target_calendar_id: targetCalendarId },
+        body: { target_calendar_id: this.calendarUuid(targetCalendarId) },
       });
     },
 
     async deleteEvent(calendarId: string, eventId: string, scope?: string, recurrenceId?: string) {
       const api = useApi();
 
-      let url = `/api/v1/calendars/${calendarId}/events/${eventId}`;
+      let url = `/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`;
       const params = new URLSearchParams();
       if (scope) params.set('scope', scope);
       if (recurrenceId) params.set('recurrence_id', recurrenceId);
@@ -215,7 +227,7 @@ export const useCalendarStore = defineStore('calendars', {
       // rewrites the whole series' DTSTART/DTEND. For a dragged/resized single
       // occurrence, callers pass scope='this' + recurrence_id so only that
       // occurrence moves (as a RECURRENCE-ID exception).
-      let url = `/api/v1/calendars/${calendarId}/events/${eventId}`;
+      let url = `/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`;
       const params = new URLSearchParams();
       if (scope) params.set('scope', scope);
       if (recurrenceId) params.set('recurrence_id', recurrenceId);

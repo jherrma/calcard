@@ -2,7 +2,6 @@ package http
 
 import (
 	"errors"
-	"strconv"
 	"time"
 
 	gowebdav "github.com/emersion/go-webdav"
@@ -40,6 +39,18 @@ func NewEventHandler(
 		moveUC:       moveUC,
 		calendarRepo: calendarRepo,
 	}
+}
+
+// resolveCalendarID maps the :calendar_id path segment — a calendar UUID, the
+// canonical external identifier (#52) — to its internal numeric id. Returns
+// (0, false) when the UUID doesn't resolve; callers turn that into a 404 so
+// existence isn't leaked and behavior matches an unshared/unknown calendar.
+func (h *EventHandler) resolveCalendarID(c fiber.Ctx) (uint, bool) {
+	cal, err := h.calendarRepo.GetByUUID(c.Context(), c.Params("calendar_id"))
+	if err != nil || cal == nil {
+		return 0, false
+	}
+	return cal.ID, true
 }
 
 // calendarPermission returns the authenticated user's effective permission on
@@ -135,8 +146,8 @@ func eventResponseFromObject(obj *calendar.CalendarObject) dto.EventResponse {
 // @Security     BearerAuth
 // @Router       /calendars/{calendar_id}/events [get]
 func (h *EventHandler) List(c fiber.Ctx) error {
-	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
-	if h.calendarPermission(c, uint(calendarID)) == calendar.PermissionNone {
+	calendarID, ok := h.resolveCalendarID(c)
+	if !ok || h.calendarPermission(c, calendarID) == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
 	startStr := c.Query("start")
@@ -154,7 +165,7 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 	expand := expandStr == "true"
 
 	instances, err := h.listUC.Execute(c.Context(), event.ListEventsInput{
-		CalendarID: uint(calendarID),
+		CalendarID: calendarID,
 		Start:      start,
 		End:        end,
 		Expand:     expand,
@@ -233,8 +244,11 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 // @Security     BearerAuth
 // @Router       /calendars/{calendar_id}/events [post]
 func (h *EventHandler) Create(c fiber.Ctx) error {
-	calendarID, _ := strconv.Atoi(c.Params("calendar_id"))
-	perm := h.calendarPermission(c, uint(calendarID))
+	calendarID, ok := h.resolveCalendarID(c)
+	if !ok {
+		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	perm := h.calendarPermission(c, calendarID)
 	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
@@ -247,7 +261,7 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 	}
 
 	input := event.CreateEventInput{
-		CalendarID:  uint(calendarID),
+		CalendarID:  calendarID,
 		Summary:     req.Summary,
 		Description: req.Description,
 		Location:    req.Location,
@@ -406,8 +420,13 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	targetCalendarID, _ := strconv.Atoi(req.TargetCalendarID)
-	targetPerm := h.calendarPermission(c, uint(targetCalendarID))
+	// req.TargetCalendarID is the target calendar's UUID (#52); resolve it to the
+	// internal id here so the use case still receives a uint.
+	targetCal, err := h.calendarRepo.GetByUUID(c.Context(), req.TargetCalendarID)
+	if err != nil || targetCal == nil {
+		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	targetPerm := h.calendarPermission(c, targetCal.ID)
 	if targetPerm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
@@ -416,7 +435,7 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 	}
 	obj, err := h.moveUC.Execute(c.Context(), event.MoveEventInput{
 		EventUUID:        eventID,
-		TargetCalendarID: uint(targetCalendarID),
+		TargetCalendarID: targetCal.ID,
 	})
 	if err != nil {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to move event")

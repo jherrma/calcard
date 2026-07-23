@@ -21,8 +21,8 @@ func TestEventMove(t *testing.T) {
 	password := "moveSecret!123"
 	token := registerAndLogin(t, email, password, "Event Move User")
 
-	calA, _ := createCalendar(t, token, "Cal A", "#aa0000")
-	calB, _ := createCalendar(t, token, "Cal B", "#00aa00")
+	_, calAUUID := createCalendar(t, token, "Cal A", "#aa0000")
+	calB, calBUUID := createCalendar(t, token, "Cal B", "#00aa00")
 
 	// Seed one event in calendar A.
 	start := time.Date(2031, 8, 1, 10, 0, 0, 0, time.UTC)
@@ -31,7 +31,7 @@ func TestEventMove(t *testing.T) {
 		ID  string `json:"id"`
 		UID string `json:"uid"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calA)+"/events/", token, map[string]any{
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+calAUUID+"/events/", token, map[string]any{
 		"summary":  "About to move",
 		"start":    start.Format(time.RFC3339),
 		"end":      end.Format(time.RFC3339),
@@ -47,9 +47,9 @@ func TestEventMove(t *testing.T) {
 		UID        string `json:"uid"`
 		CalendarID uint   `json:"calendar_id"`
 	}
-	movePath := "/calendars/" + uintStr(calA) + "/events/" + ev.ID + "/move"
+	movePath := "/calendars/" + calAUUID + "/events/" + ev.ID + "/move"
 	code = doJSONRaw(t, http.MethodPost, movePath, token, map[string]string{
-		"target_calendar_id": uintStr(calB),
+		"target_calendar_id": calBUUID,
 	}, &moved)
 	require.Equal(t, http.StatusOK, code, "move event")
 	assert.Equal(t, originalUID, moved.UID, "UID must survive the move")
@@ -57,8 +57,8 @@ func TestEventMove(t *testing.T) {
 
 	// --- Verify A no longer has it, B does -------------------------------
 	rangeQS := "?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z&expand=false"
-	uidsInA := collectEventUIDs(t, token, calA, rangeQS)
-	uidsInB := collectEventUIDs(t, token, calB, rangeQS)
+	uidsInA := collectEventUIDs(t, token, calAUUID, rangeQS)
+	uidsInB := collectEventUIDs(t, token, calBUUID, rangeQS)
 	assert.NotContains(t, uidsInA, originalUID, "moved event must be gone from calendar A")
 	assert.Contains(t, uidsInB, originalUID, "moved event must appear in calendar B")
 }
@@ -112,7 +112,7 @@ func TestContactMove(t *testing.T) {
 }
 
 // collectEventUIDs returns just the UID set for a calendar, in a windowed list.
-func collectEventUIDs(t *testing.T, token string, calID uint, rangeQS string) []string {
+func collectEventUIDs(t *testing.T, token string, calUUID string, rangeQS string) []string {
 	t.Helper()
 	var resp struct {
 		Events []struct {
@@ -120,7 +120,7 @@ func collectEventUIDs(t *testing.T, token string, calID uint, rangeQS string) []
 		} `json:"events"`
 	}
 	code := doJSONRaw(t, http.MethodGet,
-		"/calendars/"+uintStr(calID)+"/events/"+rangeQS, token, nil, &resp)
+		"/calendars/"+calUUID+"/events/"+rangeQS, token, nil, &resp)
 	require.Equal(t, http.StatusOK, code)
 	out := make([]string, 0, len(resp.Events))
 	for _, e := range resp.Events {

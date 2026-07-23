@@ -19,14 +19,14 @@ import (
 // window past its first occurrence.
 func TestRecurringEventVisibleInLaterWindow(t *testing.T) {
 	token := registerAndLogin(t, "rrule-window@example.test", "rruleSecret!123", "Rrule Window User")
-	calID, _ := createCalendar(t, token, "Recurring Window", "#123456")
+	_, calUUID := createCalendar(t, token, "Recurring Window", "#123456")
 
 	start := time.Date(2033, 1, 3, 9, 0, 0, 0, time.UTC) // a Monday
 	var ev struct {
 		ID string `json:"id"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary":    "Weekly standup",
 			"start":      start.Format(time.RFC3339),
@@ -42,18 +42,18 @@ func TestRecurringEventVisibleInLaterWindow(t *testing.T) {
 	occ8 := start.Add(56 * 24 * time.Hour)
 	rangeQS := fmt.Sprintf("?start=%s&end=%s&expand=true",
 		occ8.Add(-time.Hour).Format(time.RFC3339), occ8.Add(2*time.Hour).Format(time.RFC3339))
-	got := listEvents(t, token, calID, rangeQS)
+	got := listEvents(t, token, calUUID, rangeQS)
 	require.Lenf(t, got, 1, "recurring event must remain visible 8 weeks later, got %d", len(got))
 
 	// scope=this_and_future at start+14d should shrink recurrence_end_time so
 	// the later window now returns nothing.
 	splitRID := start.Add(14 * 24 * time.Hour).UTC().Format("20060102T150405Z")
 	status, raw := restCall(t, http.MethodDelete,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=%s", calID, ev.ID, splitRID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this_and_future&recurrence_id=%s", calUUID, ev.ID, splitRID),
 		token, nil)
 	require.Equalf(t, http.StatusNoContent, status, "this_and_future delete: %s", errorMessage(raw))
 
-	after := listEvents(t, token, calID, rangeQS)
+	after := listEvents(t, token, calUUID, rangeQS)
 	assert.Lenf(t, after, 0, "after terminating the series, later window must be empty (got %d)", len(after))
 }
 
@@ -66,7 +66,7 @@ func TestRecurringEventVisibleInLaterWindow(t *testing.T) {
 // REST-created) to reach that gap.
 func TestNonDTENDEventsVisibleInWindow(t *testing.T) {
 	token := registerAndLogin(t, "no-dtend-window@example.test", "rruleSecret!123", "NoDtend User")
-	calID, calUUID := createCalendar(t, token, "No DTEND Cal", "#0f0f0f")
+	_, calUUID := createCalendar(t, token, "No DTEND Cal", "#0f0f0f")
 
 	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" +
 		// DURATION only, no DTEND.
@@ -80,7 +80,7 @@ func TestNonDTENDEventsVisibleInWindow(t *testing.T) {
 	require.Equalf(t, http.StatusOK, status, "import: %s", errorMessage(raw))
 
 	rangeQS := "?start=2035-06-01T00:00:00Z&end=2035-06-04T00:00:00Z&expand=true"
-	got := listEvents(t, token, calID, rangeQS)
+	got := listEvents(t, token, calUUID, rangeQS)
 	require.Lenf(t, got, 2, "both non-DTEND events must be listable in a covering window, got %d", len(got))
 }
 
@@ -92,7 +92,7 @@ func TestRESTCreatedEventHasETag(t *testing.T) {
 	token, username := registerAndLoginFull(t, email, "rruleSecret!123", "Rest Etag User")
 	_, appPassword := createAppPassword(t, token, "etag-test")
 
-	calID, calUUID := createCalendar(t, token, "Etag Cal", "#654321")
+	_, calUUID := createCalendar(t, token, "Etag Cal", "#654321")
 	calPath := calUUID + ".ics"
 
 	start := time.Date(2034, 2, 1, 9, 0, 0, 0, time.UTC)
@@ -100,7 +100,7 @@ func TestRESTCreatedEventHasETag(t *testing.T) {
 		ID string `json:"id"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary": "Etag test", "start": start.Format(time.RFC3339),
 			"end": start.Add(time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
@@ -113,7 +113,7 @@ func TestRESTCreatedEventHasETag(t *testing.T) {
 
 	// Update the summary; ETag must change.
 	status, raw := restCall(t, http.MethodPatch,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=all", calID, ev.ID), token,
+		fmt.Sprintf("/calendars/%s/events/%s?scope=all", calUUID, ev.ID), token,
 		map[string]any{"summary": "Etag test edited"})
 	require.Equalf(t, http.StatusOK, status, "update: %s", errorMessage(raw))
 
@@ -128,7 +128,7 @@ func TestRESTCreatedEventHasETag(t *testing.T) {
 // readable.
 func TestImportedEventReadableEverywhere(t *testing.T) {
 	token := registerAndLogin(t, "import-c2@example.test", "rruleSecret!123", "Import C2 User")
-	calID, calUUID := createCalendar(t, token, "Import C2 Cal", "#abcdef")
+	_, calUUID := createCalendar(t, token, "Import C2 Cal", "#abcdef")
 
 	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" +
 		"BEGIN:VEVENT\r\nUID:c2-one@x\r\nDTSTAMP:20340101T000000Z\r\nSUMMARY:First\r\nDTSTART:20350101T100000Z\r\nDTEND:20350101T110000Z\r\nEND:VEVENT\r\n" +
@@ -142,7 +142,7 @@ func TestImportedEventReadableEverywhere(t *testing.T) {
 	// Expanded list over a window containing both events must be 200 (was 500)
 	// and contain both.
 	rangeQS := "?start=2035-01-01T00:00:00Z&end=2035-01-03T00:00:00Z&expand=true"
-	got := listEvents(t, token, calID, rangeQS)
+	got := listEvents(t, token, calUUID, rangeQS)
 	require.Lenf(t, got, 2, "both imported events must be listable when expanded, got %d", len(got))
 }
 
