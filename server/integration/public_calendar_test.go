@@ -33,7 +33,7 @@ func TestPublicCalendar(t *testing.T) {
 		PublicURL *string `json:"public_url"`
 		Token     *string `json:"token"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/public", token,
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/public", token,
 		map[string]bool{"enabled": true}, &enable)
 	require.Equal(t, http.StatusOK, code)
 	assert.True(t, enable.Enabled)
@@ -63,7 +63,7 @@ func TestPublicCalendar(t *testing.T) {
 		PublicURL *string `json:"public_url"`
 		Token     *string `json:"token"`
 	}
-	code = doJSONRaw(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/public", token, nil, &statusResp)
+	code = doJSONRaw(t, http.MethodGet, "/calendars/"+calUUID+"/public", token, nil, &statusResp)
 	require.Equal(t, http.StatusOK, code)
 	assert.True(t, statusResp.Enabled)
 	require.NotNil(t, statusResp.Token)
@@ -73,7 +73,7 @@ func TestPublicCalendar(t *testing.T) {
 	var regen struct {
 		Token *string `json:"token"`
 	}
-	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/public/regenerate", token, nil, &regen)
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/public/regenerate", token, nil, &regen)
 	require.Equal(t, http.StatusOK, code)
 	require.NotNil(t, regen.Token)
 	require.NotEmpty(t, *regen.Token)
@@ -87,7 +87,7 @@ func TestPublicCalendar(t *testing.T) {
 	assert.Contains(t, string(body), "UID:"+eventUID, "new token must serve the same calendar content")
 
 	// --- Disable takes the feed offline -----------------------------------
-	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/public", token,
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/public", token,
 		map[string]bool{"enabled": false}, &enable)
 	require.Equal(t, http.StatusOK, code)
 	assert.False(t, enable.Enabled)

@@ -50,7 +50,7 @@
         <!-- Sharing Tab -->
         <TabPanel value="sharing">
           <div class="pt-4">
-            <CalendarSharing v-if="calendar" :calendar-id="calendar.id" />
+            <CalendarSharing v-if="calendar" :calendar-id="calendar.uuid" />
           </div>
         </TabPanel>
 

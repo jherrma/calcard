@@ -68,7 +68,7 @@ The WebDAV auth handler (`adapter/webdav/handler.go`) resolves the Basic Auth pr
 
 - Register a fresh user for any test that writes data — share a server, not users. Use `registerAndLoginFull(t, email, password, displayName)`.
 - For anything that needs DAV creds, call `createAppPassword(t, token, name)` — it returns `(username, appPassword)`.
-- Calendar paths use UUID: `/api/v1/calendars/{uuid}`, and events under `/api/v1/calendars/{calendar_id}/events` use the numeric id. Address book paths use the numeric id throughout. **Sharing and public-calendar endpoints** (`/calendars/:id/shares`, `/calendars/:id/public`, etc.) use the **numeric** calendar id too, even though the sibling CRUD routes on the same group use the UUID — a known inconsistency baked into `routes.go`.
+- Calendar paths use UUID: `/api/v1/calendars/{uuid}`. **Sharing and public-calendar endpoints** (`/calendars/:id/shares`, `/calendars/:id/public`, etc.) now also use the calendar **UUID** (#52) — matching the sibling CRUD routes; the old numeric form 404s. Events under `/api/v1/calendars/{calendar_id}/events` still use the numeric id (events canonicalization is a separate PR). Address book paths use the numeric id throughout.
 - `GET /calendars/:id/events` filters on `start_time` / `end_time` — pass an explicit `?start=...&end=...` wide window when you want to list everything.
 - The DAV URL for a calendar is `/dav/{username}/calendars/{calendar.Path}/` where `Path` is `{uuid}.ics` for calendars created through the server. For address books `Path` is a standalone UUID. Both come back in the list endpoints.
 - Use `t.Run(...)` when you want subtests. State can be shared via a pointer-receiver struct as `flow_test.go` demonstrates.

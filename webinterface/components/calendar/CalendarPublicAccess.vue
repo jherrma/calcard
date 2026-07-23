@@ -70,7 +70,7 @@ watch(() => props.calendar, async (cal) => {
   isPublic.value = !!cal.public_enabled;
   publicUrl.value = null;
   try {
-    const status = await api<PublicAccessStatus>(`/api/v1/calendars/${cal.id}/public`);
+    const status = await api<PublicAccessStatus>(`/api/v1/calendars/${cal.uuid}/public`);
     isPublic.value = status.enabled;
     publicUrl.value = status.public_url || null;
   } catch {
@@ -81,7 +81,7 @@ watch(() => props.calendar, async (cal) => {
 const togglePublic = async () => {
   try {
     const response = await api<PublicAccessStatus>(
-      `/api/v1/calendars/${props.calendar?.id}/public`,
+      `/api/v1/calendars/${props.calendar?.uuid}/public`,
       {
         method: 'POST',
         body: { enabled: isPublic.value },
@@ -115,7 +115,7 @@ const confirmRegenerate = () => {
 const regenerateUrl = async () => {
   try {
     const response = await api<PublicAccessStatus>(
-      `/api/v1/calendars/${props.calendar?.id}/public/regenerate`,
+      `/api/v1/calendars/${props.calendar?.uuid}/public/regenerate`,
       { method: 'POST' }
     );
     publicUrl.value = response.public_url || null;
