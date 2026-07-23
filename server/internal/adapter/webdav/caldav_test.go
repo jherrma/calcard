@@ -110,7 +110,14 @@ func TestCalDAV(t *testing.T) {
 		resp, err := app.Test(req, davTestTimeout)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
-		assert.Contains(t, resp.Header.Get("DAV"), "calendar-access")
+		dav := resp.Header.Get("DAV")
+		assert.Contains(t, dav, "calendar-access")
+		// #67: this is a sync-only server — it must NOT advertise CalDAV
+		// scheduling (RFC 6638), which is unimplemented. Advertising a
+		// capability we don't back would make clients attempt invitation flows
+		// that silently do nothing. Lock the honest capability set here.
+		assert.NotContains(t, dav, "calendar-auto-schedule")
+		assert.NotContains(t, dav, "calendar-schedule")
 	})
 
 	t.Run("PROPFIND /dav/testuser/", func(t *testing.T) {
