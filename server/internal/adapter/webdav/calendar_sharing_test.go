@@ -2,7 +2,6 @@ package webdav
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,7 +55,7 @@ func setupSharingTest(t *testing.T) (*fiber.App, database.Database, *user.User, 
 	updateShareUC := sharingUC.NewUpdateCalendarShareUseCase(shareRepo, calendarRepo)
 	revokeShareUC := sharingUC.NewRevokeCalendarShareUseCase(shareRepo, calendarRepo)
 
-	shareHandler := adapterhttp.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC)
+	shareHandler := adapterhttp.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC, calendarRepo)
 
 	// Suppress unused variable error if strictly checked
 	_ = shareHandler
@@ -124,7 +123,7 @@ func TestCalendarSharingIntegration(t *testing.T) {
 
 	// Setup Handler
 	createShareUC := sharingUC.NewCreateCalendarShareUseCase(shareRepo, calendarRepo, userRepo)
-	shareHandler := adapterhttp.NewCalendarShareHandler(createShareUC, nil, nil, nil)
+	shareHandler := adapterhttp.NewCalendarShareHandler(createShareUC, nil, nil, nil, calendarRepo)
 
 	// We need to inject the handler into the app, but the app is already built in setupTestApp.
 	// We can define a new route on the existing app.
@@ -147,7 +146,7 @@ func TestCalendarSharingIntegration(t *testing.T) {
 
 	// 2. Share Calendar
 	reqBody := `{"user_identifier": "recipient@example.com", "permission": "read-write"}`
-	req := httptest.NewRequest("POST", "/api/test-sharing/"+fmt.Sprint(cal.ID)+"/shares", strings.NewReader(reqBody))
+	req := httptest.NewRequest("POST", "/api/test-sharing/"+cal.UUID+"/shares", strings.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req, davTestTimeout)
 	require.NoError(t, err)

@@ -116,7 +116,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
-	shareHandler := http.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC)
+	shareHandler := http.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC, calendarRepo)
 	abShareHandler := http.NewAddressBookShareHandler(createABShareUC, listABShareUC, updateABShareUC, revokeABShareUC)
 	healthHandler := http.NewHealthHandler(db)
 
@@ -124,7 +124,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	enablePublicUC := calendarusecase.NewEnablePublicUseCase(calendarRepo, cfg.BaseURL)
 	getPublicStatusUC := calendarusecase.NewGetPublicStatusUseCase(calendarRepo, cfg.BaseURL)
 	regenerateTokenUC := calendarusecase.NewRegenerateTokenUseCase(calendarRepo, cfg.BaseURL)
-	calendarPublicHandler := http.NewCalendarPublicHandler(enablePublicUC, getPublicStatusUC, regenerateTokenUC)
+	calendarPublicHandler := http.NewCalendarPublicHandler(enablePublicUC, getPublicStatusUC, regenerateTokenUC, calendarRepo)
 	publicCalendarHandler := http.NewPublicCalendarHandler(calendarRepo)
 
 	// Public Routes

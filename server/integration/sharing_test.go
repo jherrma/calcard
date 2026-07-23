@@ -26,7 +26,7 @@ func TestCalendarSharing(t *testing.T) {
 	targetToken, _ := registerAndLoginFull(t, targetEmail, password, "Share Target")
 
 	// --- Owner creates a calendar the test will share ---------------------
-	calID, calUUID := createCalendar(t, ownerToken, "Shared Work", "#445566")
+	_, calUUID := createCalendar(t, ownerToken, "Shared Work", "#445566")
 
 	// --- Before sharing: target cannot modify the owner's calendar --------
 	// PATCH /calendars/:uuid goes through UpdateCalendarUseCase which verifies
@@ -54,7 +54,7 @@ func TestCalendarSharing(t *testing.T) {
 			Email string `json:"email"`
 		} `json:"shared_with"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken, map[string]string{
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/shares", ownerToken, map[string]string{
 		"user_identifier": targetEmail,
 		"permission":      "read-write",
 	}, &createResp)
@@ -74,7 +74,7 @@ func TestCalendarSharing(t *testing.T) {
 			} `json:"shared_with"`
 		} `json:"shares"`
 	}
-	code = doJSONRaw(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/shares", ownerToken, nil, &listResp)
+	code = doJSONRaw(t, http.MethodGet, "/calendars/"+calUUID+"/shares", ownerToken, nil, &listResp)
 	require.Equal(t, http.StatusOK, code)
 	require.Len(t, listResp.Shares, 1)
 	assert.Equal(t, targetEmail, listResp.Shares[0].SharedWith.Email)
@@ -117,13 +117,13 @@ func TestCalendarSharing(t *testing.T) {
 	var updated struct {
 		Permission string `json:"permission"`
 	}
-	code = doJSONRaw(t, http.MethodPatch, "/calendars/"+uintStr(calID)+"/shares/"+shareUUID, ownerToken,
+	code = doJSONRaw(t, http.MethodPatch, "/calendars/"+calUUID+"/shares/"+shareUUID, ownerToken,
 		map[string]string{"permission": "read"}, &updated)
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "read", updated.Permission)
 
 	// --- Owner revokes the share ------------------------------------------
-	status, raw := restCall(t, http.MethodDelete, "/calendars/"+uintStr(calID)+"/shares/"+shareUUID, ownerToken, nil)
+	status, raw := restCall(t, http.MethodDelete, "/calendars/"+calUUID+"/shares/"+shareUUID, ownerToken, nil)
 	require.Equalf(t, http.StatusNoContent, status, "revoke share: %s", errorMessage(raw))
 
 	// --- Target no longer sees the calendar -------------------------------
@@ -136,7 +136,7 @@ func TestCalendarSharing(t *testing.T) {
 	// --- Re-sharing the same (calendar, user) pair must work (H6) ---------
 	// Revoke soft-deleted the row before the fix, and the composite unique
 	// index (calendar_id, shared_with_id) then permanently blocked re-sharing.
-	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken, map[string]string{
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/shares", ownerToken, map[string]string{
 		"user_identifier": targetEmail,
 		"permission":      "read",
 	}, &createResp)
@@ -317,7 +317,7 @@ func TestSharedCalendarCalDAVVisible(t *testing.T) {
 		ID string `json:"id"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/shares", ownerToken, map[string]string{
+		"/calendars/"+calUUID+"/shares", ownerToken, map[string]string{
 			"user_identifier": targetEmail,
 			"permission":      "read-write",
 		}, &shareResp)
@@ -560,13 +560,13 @@ func TestCalendarDeleteRevokesShares(t *testing.T) {
 	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Ghost Cal Sharee")
 
 	// Owner needs more than one calendar (the last one can't be deleted).
-	calID, calUUID := createCalendar(t, ownerToken, "Doomed Calendar", "#abcdef")
+	_, calUUID := createCalendar(t, ownerToken, "Doomed Calendar", "#abcdef")
 	createCalendar(t, ownerToken, "Keeper Calendar", "#fedcba")
 
 	var shareResp struct {
 		ID string `json:"id"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken,
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/shares", ownerToken,
 		map[string]string{"user_identifier": shareeEmail, "permission": "read"}, &shareResp)
 	require.Equal(t, http.StatusCreated, code)
 	require.True(t, calendarVisibleTo(t, shareeToken, calUUID), "sharee should see the shared calendar")
@@ -581,8 +581,8 @@ func TestCalendarDeleteRevokesShares(t *testing.T) {
 		"deleted calendar must not linger as a ghost in the sharee's list")
 
 	// And a new calendar can still be shared with the same user.
-	newCalID, newUUID := createCalendar(t, ownerToken, "Fresh Calendar", "#0a0a0a")
-	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(newCalID)+"/shares", ownerToken,
+	_, newUUID := createCalendar(t, ownerToken, "Fresh Calendar", "#0a0a0a")
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+newUUID+"/shares", ownerToken,
 		map[string]string{"user_identifier": shareeEmail, "permission": "read"}, &shareResp)
 	require.Equal(t, http.StatusCreated, code, "must be able to share a new calendar with the same user")
 	assert.True(t, calendarVisibleTo(t, shareeToken, newUUID), "sharee should see the freshly shared calendar")
@@ -682,7 +682,7 @@ func TestSharedCalendarEventPermissions(t *testing.T) {
 	ownerToken := registerAndLogin(t, ownerEmail, password, "Evt Owner")
 	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Evt Sharee")
 
-	calID, _ := createCalendar(t, ownerToken, "Team Calendar", "#123456")
+	calID, calUUID := createCalendar(t, ownerToken, "Team Calendar", "#123456")
 	eventsPath := "/calendars/" + uintStr(calID) + "/events/"
 	rangeQS := "?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z&expand=false"
 	start := time.Date(2032, 3, 1, 9, 0, 0, 0, time.UTC)
@@ -705,7 +705,7 @@ func TestSharedCalendarEventPermissions(t *testing.T) {
 	var shareResp struct {
 		ID string `json:"id"`
 	}
-	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/shares", ownerToken,
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/shares", ownerToken,
 		map[string]string{"user_identifier": shareeEmail, "permission": "read-write"}, &shareResp)
 	require.Equal(t, http.StatusCreated, code)
 	shareUUID := shareResp.ID
@@ -736,7 +736,7 @@ func TestSharedCalendarEventPermissions(t *testing.T) {
 	var updated struct {
 		Permission string `json:"permission"`
 	}
-	code = doJSONRaw(t, http.MethodPatch, "/calendars/"+uintStr(calID)+"/shares/"+shareUUID, ownerToken,
+	code = doJSONRaw(t, http.MethodPatch, "/calendars/"+calUUID+"/shares/"+shareUUID, ownerToken,
 		map[string]string{"permission": "read"}, &updated)
 	require.Equal(t, http.StatusOK, code)
 
@@ -758,4 +758,40 @@ func TestSharedCalendarEventPermissions(t *testing.T) {
 
 	status, _ = restCall(t, http.MethodDelete, eventsPath+evID, shareeToken, nil)
 	assert.Equal(t, http.StatusForbidden, status, "read-only sharee delete must be 403")
+}
+
+// TestCalendarShareAndPublicRequireUUID locks the #52 contract for the calendar
+// family: the sharing and public-access endpoints now take the calendar UUID
+// (matching the sibling CRUD routes), and the old numeric id is rejected with a
+// 404 (not leaked as 400/403), so the identifier form can't silently drift back.
+func TestCalendarShareAndPublicRequireUUID(t *testing.T) {
+	password := "uuidContract!123"
+	ownerToken := registerAndLogin(t, "uuidcontract-owner@example.test", password, "UUID Contract Owner")
+	shareeEmail := "uuidcontract-sharee@example.test"
+	registerAndLogin(t, shareeEmail, password, "UUID Contract Sharee")
+
+	calID, calUUID := createCalendar(t, ownerToken, "UUID Contract Cal", "#101010")
+
+	// shares: the UUID works; the numeric id must 404.
+	var shareResp struct {
+		ID string `json:"id"`
+	}
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/shares", ownerToken,
+		map[string]string{"user_identifier": shareeEmail, "permission": "read"}, &shareResp)
+	require.Equal(t, http.StatusCreated, code, "share via UUID must succeed")
+
+	status, _ := restCall(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/shares", ownerToken, nil)
+	assert.Equal(t, http.StatusNotFound, status, "numeric calendar id must 404 on /shares (UUID-only now)")
+
+	// public: the UUID works; the numeric id must 404.
+	var enable struct {
+		Enabled bool `json:"enabled"`
+	}
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/public", ownerToken,
+		map[string]bool{"enabled": true}, &enable)
+	require.Equal(t, http.StatusOK, code, "enable public via UUID must succeed")
+	assert.True(t, enable.Enabled)
+
+	status, _ = restCall(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/public", ownerToken, nil)
+	assert.Equal(t, http.StatusNotFound, status, "numeric calendar id must 404 on /public (UUID-only now)")
 }
