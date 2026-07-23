@@ -1,0 +1,15 @@
+# Build context is the repo root (see server/Dockerfile). Keep it small: the web
+# stage runs a clean `pnpm install`, so node_modules/.nuxt/.output must not be
+# uploaded (~hundreds of MB), and the server never needs git/data/docs here.
+.git
+.gitignore
+webinterface/node_modules
+webinterface/.nuxt
+webinterface/.output
+webinterface/dist
+server/data
+server/bin
+server/tmp
+**/*.log
+*.md
+stories/

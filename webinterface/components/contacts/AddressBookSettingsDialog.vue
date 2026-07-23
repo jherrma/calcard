@@ -116,7 +116,10 @@ watch(() => props.visible, (vis) => {
 
 const carddavUrl = computed(() => {
   if (!props.addressBook) return '';
-  const base = (config.public.apiBaseUrl as string) || '';
+  // Same-origin builds have an empty apiBaseUrl; fall back to the page origin so
+  // the DAV URL shown to the user is absolute and copy-pasteable (#99). Client-
+  // only page (ssr: false), so window is always available.
+  const base = (config.public.apiBaseUrl as string) || window.location.origin;
   const username = authStore.user?.username || 'me';
   return `${base}/dav/${username}/addressbooks/${props.addressBook.Path}/`;
 });
