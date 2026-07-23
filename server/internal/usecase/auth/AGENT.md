@@ -9,7 +9,7 @@ This directory contains the business logic for user authentication and authoriza
 - **Login** (`login.go`): Authenticates users via email and password. Generates access/refresh JWT tokens via `TokenProvider`.
 - **Register** (`register.go`): Handles new user creation, password hashing, and triggering verification emails. When SMTP is not configured, users are auto-activated.
 - **Verify** (`verify.go`): Verifies email addresses via token.
-- **Refresh** (`refresh.go`): Exchanges a valid refresh token for a new access token.
+- **Refresh** (`refresh.go`): Exchanges a valid refresh token for a new access token AND rotates the refresh token (OWASP refresh-token rotation, #75). Every login opens a token "family" (`RefreshToken.FamilyID`); each refresh revokes the presented token (setting `ReplacedByHash` to its successor) and mints a fresh one via `RefreshTokenRepository.Rotate` (atomic). Presenting an already-revoked token is reuse detection: within a short grace window (`rotationGrace`, 15s) it's treated as a benign multi-tab race and simply rejected; outside the window (or a replayed stolen token) it revokes the entire family via `RevokeFamily`. Legacy pre-migration tokens carry an empty `FamilyID` and are only ever rejected as a single token — `RevokeFamily` refuses an empty family id so unrelated users are never logged out. Detected reuse is recorded as a `refresh_token_reuse` security event via `SecurityLogger` (Warn level), including cases where the `RevokeFamily` containment call itself fails.
 - **Logout** (`logout.go`): Revokes refresh tokens to end a session.
 
 ### Password Management

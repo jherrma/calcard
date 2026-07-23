@@ -121,6 +121,16 @@ func (m *mockRefreshTokenRepo) DeleteByUserID(ctx context.Context, userID uint) 
 	return args.Error(0)
 }
 
+func (m *mockRefreshTokenRepo) Rotate(ctx context.Context, oldHash string, newToken *user.RefreshToken) error {
+	args := m.Called(ctx, oldHash, newToken)
+	return args.Error(0)
+}
+
+func (m *mockRefreshTokenRepo) RevokeFamily(ctx context.Context, familyID string) error {
+	args := m.Called(ctx, familyID)
+	return args.Error(0)
+}
+
 type mockTokenProvider struct {
 	mock.Mock
 }

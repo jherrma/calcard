@@ -18,6 +18,9 @@ export interface LoginResponse {
 
 export interface RefreshResponse {
   access_token: string;
+  // The backend rotates the refresh token on every use, so a fresh refresh
+  // token is returned that MUST replace the one that was presented (#75).
+  refresh_token: string;
   token_type: string;
   expires_at: number;
 }

@@ -212,12 +212,21 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 	}
 
 	hash := uc.tokenProvider.HashToken(refreshToken)
+
+	// Open a fresh token family so OAuth logins get the same rotation/reuse
+	// protection as password logins (#75).
+	familyID, err := uc.tokenProvider.GenerateRefreshToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token family id: %w", err)
+	}
+
 	rt := &user.RefreshToken{
 		UserID:    u.ID,
 		TokenHash: hash,
 		ExpiresAt: time.Now().Add(uc.config.JWT.RefreshExpiry),
 		UserAgent: userAgent,
 		IP:        ip,
+		FamilyID:  familyID,
 	}
 
 	if err := uc.refreshTokenRepo.Create(ctx, rt); err != nil {

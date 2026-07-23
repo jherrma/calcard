@@ -61,7 +61,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	registerUC := authusecase.NewRegisterUseCase(userRepo, calendarRepo, addressBookRepo, emailService, cfg)
 	verifyUC := authusecase.NewVerifyUseCase(userRepo)
 	loginUC := authusecase.NewLoginUseCase(userRepo, tokenRepo, jwtManager, cfg, securityLogger)
-	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager)
+	refreshUC := authusecase.NewRefreshUseCase(tokenRepo, jwtManager, cfg.JWT.RefreshExpiry, securityLogger)
 	logoutUC := authusecase.NewLogoutUseCase(tokenRepo, jwtManager)
 	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager, securityLogger)
 	forgotPasswordUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, emailService, cfg.JWT.ResetExpiry)

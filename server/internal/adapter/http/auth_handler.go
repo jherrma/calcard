@@ -182,7 +182,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 // @Accept       json
 // @Produce      json
 // @Param        request  body      object{refresh_token=string}  true  "Refresh token"
-// @Success      200      {object}  object{access_token=string,token_type=string,expires_at=int}
+// @Success      200      {object}  object{access_token=string,refresh_token=string,token_type=string,expires_at=int}
 // @Failure      400      {object}  ErrorResponseBody
 // @Failure      401      {object}  ErrorResponseBody  "Invalid refresh token"
 // @Router       /auth/refresh [post]
@@ -199,10 +199,14 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 		return UnauthorizedResponse(c, "Invalid or expired refresh token")
 	}
 
+	// The refresh token is rotated on every use: the client MUST replace the
+	// token it presented with res.RefreshToken or its next refresh will present
+	// a now-revoked token (#75).
 	return SuccessResponse(c, fiber.Map{
-		"access_token": res.AccessToken,
-		"token_type":   "Bearer",
-		"expires_at":   res.ExpiresAt.Unix(),
+		"access_token":  res.AccessToken,
+		"refresh_token": res.RefreshToken,
+		"token_type":    "Bearer",
+		"expires_at":    res.ExpiresAt.Unix(),
 	})
 }
 

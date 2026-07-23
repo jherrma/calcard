@@ -1,5 +1,16 @@
 import type { User, LoginResponse, RefreshResponse } from "~/types/auth";
 
+// Single source of truth for the refresh-token cookie attributes. A useCookie()
+// handle serializes WRITES with its own options (options are not remembered per
+// cookie name), so every writer must pass these — an options-less write would
+// silently downgrade the cookie to a session cookie without Secure/SameSite.
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: false, // client JS must read it to perform the refresh
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  maxAge: 60 * 60 * 24 * 7, // 7 days
+} as const;
+
 interface AuthState {
   user: User | null;
   accessToken: string | null;
@@ -41,12 +52,7 @@ export const useAuthStore = defineStore("auth", {
       this.isAdmin = response.user.is_admin || false;
 
       // Store refresh token in cookie
-      const refreshCookie = useCookie("refresh_token", {
-        httpOnly: false, // Client needs to access it for refresh
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-      });
+      const refreshCookie = useCookie("refresh_token", REFRESH_COOKIE_OPTIONS);
       refreshCookie.value = response.refresh_token;
 
       // Schedule token refresh
@@ -88,7 +94,7 @@ export const useAuthStore = defineStore("auth", {
     },
 
     async refreshToken() {
-      // If a refresh is already in flight, await the same one (single-flight).
+      // Per-tab single-flight: concurrent 401s in THIS tab share one refresh.
       if (this.refreshPromise) return this.refreshPromise;
 
       const refreshCookie = useCookie("refresh_token");
@@ -98,12 +104,26 @@ export const useAuthStore = defineStore("auth", {
         return;
       }
 
-      this.refreshPromise = (async () => {
+      // performRefresh does the actual token exchange. It re-reads the cookie
+      // at call time so that, when run under the cross-tab lock, it always
+      // presents the freshest token (another tab may have just rotated it).
+      const performRefresh = async () => {
+        // Fresh useCookie() call re-parses document.cookie → picks up a rotation
+        // performed by another tab while we were queued behind the lock. The
+        // options must match setAuth's, or the write-back below downgrades the
+        // cookie to an attribute-less session cookie.
+        const cookie = useCookie("refresh_token", REFRESH_COOKIE_OPTIONS);
+        const presented = cookie.value;
+        if (!presented) {
+          this.clearAuth();
+          navigateTo("/auth/login");
+          return;
+        }
         try {
           const api = useApi();
           const response = await api<RefreshResponse>("/api/v1/auth/refresh", {
             method: "POST",
-            body: { refresh_token: refreshCookie.value },
+            body: { refresh_token: presented },
             // The refresh request must never be auto-retried (it must not trigger
             // another refresh); the onResponseError guard skips it, and this
             // disables ofetch's own retry for it too.
@@ -111,12 +131,32 @@ export const useAuthStore = defineStore("auth", {
           });
 
           this.accessToken = response.access_token;
+          // The backend ROTATES the refresh token on every use: persist the new
+          // one over the presented (now-revoked) one, or the next refresh would
+          // present a dead token and log the user out (#75).
+          cookie.value = response.refresh_token;
           this.scheduleTokenRefresh(response.expires_at);
         } catch {
           // Refresh failed (revoked/expired): drop auth and go to login instead
           // of looping on more refresh attempts.
           this.clearAuth();
           navigateTo("/auth/login");
+        }
+      };
+
+      this.refreshPromise = (async () => {
+        try {
+          // Cross-tab serialization via the Web Locks API: only one tab runs a
+          // refresh at a time, so tabs can't race and rotate each other's tokens
+          // into a revoked state. Degrade gracefully where locks are unavailable
+          // (older browsers, SSR) by refreshing directly.
+          const locks =
+            typeof navigator !== "undefined" ? navigator.locks : undefined;
+          if (locks && typeof locks.request === "function") {
+            await locks.request("caldav-auth-refresh", performRefresh);
+          } else {
+            await performRefresh();
+          }
         } finally {
           this.refreshPromise = null;
         }
