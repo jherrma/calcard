@@ -2,16 +2,23 @@ package importexport
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 )
+
+// contactPageSize bounds how many contacts are loaded per ListObjects call
+// while exporting an address book. Paging keeps peak memory proportional to a
+// single page (including any hydrated PHOTO blobs) instead of the whole book:
+// loading everything at once (limit -1) is what made a large account balloon
+// memory during export.
+const contactPageSize = 100
 
 // BackupExportUseCase handles full user data backup export
 type BackupExportUseCase struct {
@@ -27,10 +34,28 @@ func NewBackupExportUseCase(calendarRepo calendar.CalendarRepository, addressBoo
 	}
 }
 
-// Execute generates a ZIP backup of all user data
-func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint) ([]byte, string, error) {
-	buf := new(bytes.Buffer)
-	zipWriter := zip.NewWriter(buf)
+// Filename returns the download filename for a backup archive. It depends only
+// on the current date, so the HTTP handler can compute it up front to set the
+// Content-Disposition header BEFORE streaming starts — once the response body
+// begins streaming, the status line and headers are already committed and can
+// no longer change.
+func (uc *BackupExportUseCase) Filename() string {
+	return fmt.Sprintf("caldav-backup-%s.zip", time.Now().Format("2006-01-02"))
+}
+
+// Execute streams a ZIP backup of all the user's data to w and returns the
+// download filename (the same value Filename reports). Rather than buffering
+// the whole archive in memory, each collection's ZIP entry is written as it is
+// read, and contacts are paged (contactPageSize at a time) so peak memory stays
+// proportional to a single page instead of the entire account.
+//
+// Because output is streamed, a mid-stream read/write failure cannot change an
+// already-sent HTTP status: the archive is simply truncated at the point of
+// failure. Such an error is returned so the caller can log it — a truncated ZIP
+// is the accepted failure mode here.
+func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint, w io.Writer) (string, error) {
+	archiveName := uc.Filename()
+	zipWriter := zip.NewWriter(w)
 
 	metadata := ExportMetadata{
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
@@ -47,7 +72,7 @@ func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint) ([]byte
 	// Export calendars
 	calendars, err := uc.calendarRepo.ListByUserID(ctx, userID)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to list calendars: %w", err)
+		return archiveName, fmt.Errorf("failed to list calendars: %w", err)
 	}
 
 	for _, cal := range calendars {
@@ -59,12 +84,16 @@ func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint) ([]byte
 		// Build iCalendar content
 		icalContent := buildICalendarExport(cal, objects)
 
-		filename := uniqueZipEntry(usedNames, "calendars", sanitizeFilename(cal.Name), "ics")
-		w, err := zipWriter.Create(filename)
+		entryName := uniqueZipEntry(usedNames, "calendars", sanitizeFilename(cal.Name), "ics")
+		zw, err := zipWriter.Create(entryName)
 		if err != nil {
 			continue
 		}
-		w.Write([]byte(icalContent))
+		if _, err := io.WriteString(zw, icalContent); err != nil {
+			// The write target is the client stream; a failure here means the
+			// archive is already truncated. Stop and report it.
+			return archiveName, fmt.Errorf("failed to write calendar %q: %w", cal.Name, err)
+		}
 
 		metadata.Calendars = append(metadata.Calendars, CalendarMetadata{
 			Name:       cal.Name,
@@ -77,57 +106,78 @@ func (uc *BackupExportUseCase) Execute(ctx context.Context, userID uint) ([]byte
 	// Export address books
 	addressBooks, err := uc.addressBookRepo.ListByUserID(ctx, userID)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to list address books: %w", err)
+		return archiveName, fmt.Errorf("failed to list address books: %w", err)
 	}
 
 	for _, ab := range addressBooks {
-		objects, _, err := uc.addressBookRepo.ListObjects(ctx, ab.ID, -1, 0, "name", "asc")
-		if err != nil {
-			continue // Skip address books with errors
-		}
-
-		// Build vCard content
-		var vcardContent strings.Builder
-		for _, obj := range objects {
-			vcardContent.WriteString(obj.VCardData)
-			if !strings.HasSuffix(obj.VCardData, "\n") {
-				vcardContent.WriteString("\r\n")
+		// Page through the contacts, writing each vCard straight into the ZIP
+		// entry as it is read. The entry is created lazily on the first
+		// successful page so a book whose very first read fails is skipped
+		// entirely (preserving the prior "skip books with errors" behavior)
+		// rather than leaving behind an empty entry.
+		var zw io.Writer
+		contactCount := 0
+		offset := 0
+		for {
+			objects, _, err := uc.addressBookRepo.ListObjects(ctx, ab.ID, contactPageSize, offset, "name", "asc")
+			if err != nil {
+				break // Read error: stop paging this book.
 			}
+			if zw == nil {
+				entryName := uniqueZipEntry(usedNames, "addressbooks", sanitizeFilename(ab.Name), "vcf")
+				created, cerr := zipWriter.Create(entryName)
+				if cerr != nil {
+					break
+				}
+				zw = created
+			}
+			for i := range objects {
+				data := objects[i].VCardData
+				if _, err := io.WriteString(zw, data); err != nil {
+					return archiveName, fmt.Errorf("failed to write contact data: %w", err)
+				}
+				if !strings.HasSuffix(data, "\n") {
+					if _, err := io.WriteString(zw, "\r\n"); err != nil {
+						return archiveName, fmt.Errorf("failed to write contact data: %w", err)
+					}
+				}
+			}
+			contactCount += len(objects)
+			if len(objects) < contactPageSize {
+				break // Short page: we've read the whole book.
+			}
+			offset += contactPageSize
 		}
-
-		filename := uniqueZipEntry(usedNames, "addressbooks", sanitizeFilename(ab.Name), "vcf")
-		w, err := zipWriter.Create(filename)
-		if err != nil {
-			continue
+		if zw == nil {
+			continue // First read (or entry creation) failed; nothing written.
 		}
-		w.Write([]byte(vcardContent.String()))
 
 		metadata.AddressBooks = append(metadata.AddressBooks, AddressBookMetadata{
 			Name:         ab.Name,
-			ContactCount: len(objects),
+			ContactCount: contactCount,
 		})
 	}
 
 	// Export metadata
 	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to marshal metadata: %w", err)
+		return archiveName, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
-	w, err := zipWriter.Create("metadata.json")
+	mw, err := zipWriter.Create("metadata.json")
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create metadata file: %w", err)
+		return archiveName, fmt.Errorf("failed to create metadata file: %w", err)
 	}
-	w.Write(metadataJSON)
+	if _, err := mw.Write(metadataJSON); err != nil {
+		return archiveName, fmt.Errorf("failed to write metadata: %w", err)
+	}
 
-	// Close ZIP writer
+	// Close the ZIP writer to flush the central directory. Without this the
+	// streamed archive would be unreadable.
 	if err := zipWriter.Close(); err != nil {
-		return nil, "", fmt.Errorf("failed to finalize ZIP: %w", err)
+		return archiveName, fmt.Errorf("failed to finalize ZIP: %w", err)
 	}
 
-	// Generate filename
-	filename := fmt.Sprintf("caldav-backup-%s.zip", time.Now().Format("2006-01-02"))
-
-	return buf.Bytes(), filename, nil
+	return archiveName, nil
 }
 
 // buildICalendarExport builds iCalendar content from a calendar and its objects
