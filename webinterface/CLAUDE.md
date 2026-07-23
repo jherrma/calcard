@@ -1,6 +1,6 @@
 # Web Interface (Frontend)
 
-The web interface is a **Nuxt 3 SPA** (single-page application) providing a browser-based UI for the CalDAV/CardDAV server. It uses Vue 3 Composition API with TypeScript in strict mode.
+The web interface is a **Nuxt 4 SPA** (single-page application) providing a browser-based UI for the CalDAV/CardDAV server. It uses Vue 3 Composition API with TypeScript in strict mode.
 
 ## Architecture Overview
 

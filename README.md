@@ -99,7 +99,7 @@ If you modify the API handlers, you need to regenerate the Swagger documentation
 
 ## Web Interface
 
-The project includes a modern web interface built with Nuxt 3.
+The project includes a modern web interface built with Nuxt 4.
 
 ### Prerequisites
 
