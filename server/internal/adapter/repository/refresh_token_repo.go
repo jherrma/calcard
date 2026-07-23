@@ -84,7 +84,7 @@ func (r *gormRefreshTokenRepo) Rotate(ctx context.Context, oldHash string, newTo
 
 // RevokeFamily revokes every still-live token whose family_id matches. It
 // refuses an empty familyID outright: legacy pre-rotation rows carry
-// family_id='' and a blanket revoke of that value would nuke unrelated users'
+// family_id=” and a blanket revoke of that value would nuke unrelated users'
 // sessions (see #75). The caller treats a legacy token as a single-token reject.
 func (r *gormRefreshTokenRepo) RevokeFamily(ctx context.Context, familyID string) error {
 	if familyID == "" {

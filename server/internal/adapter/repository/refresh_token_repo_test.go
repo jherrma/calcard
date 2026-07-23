@@ -108,7 +108,7 @@ func TestRevokeFamily_RevokesEntireLineage(t *testing.T) {
 }
 
 // TestRevokeFamily_RefusesEmptyFamily is the critical cross-user safety guard:
-// legacy rows carry family_id='' and a blanket revoke of that value would log
+// legacy rows carry family_id=” and a blanket revoke of that value would log
 // out unrelated users. RevokeFamily("") must error and touch nothing.
 func TestRevokeFamily_RefusesEmptyFamily(t *testing.T) {
 	repo, db := newRefreshTokenTestRepo(t)
