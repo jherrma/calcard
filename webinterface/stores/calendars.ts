@@ -79,22 +79,28 @@ export const useCalendarStore = defineStore('calendars', {
 
       try {
         const api = useApi();
-        const allEvents: CalendarEvent[] = [];
 
-        // Fetch events for all calendars so toggling visibility doesn't require refetching
-        for (const calId of this.calendars.map((c: Calendar) => c.id)) {
-          try {
-            const response = await api<{ events: CalendarEvent[] }>(
-              `/api/v1/calendars/${calId}/events?start=${start.toISOString()}&end=${end.toISOString()}`
-            );
-            if (response.events) {
-              allEvents.push(...response.events);
-            }
-          } catch (e) {
-            // Continue with other calendars if one fails
-            console.warn(`Failed to load events for calendar ${calId}`, e);
+        // Fetch every calendar's events IN PARALLEL (was N sequential round-trips,
+        // which visibly lagged month navigation with several calendars). All
+        // calendars are fetched — not just visible ones — so toggling visibility
+        // doesn't require a refetch. allSettled preserves the previous
+        // continue-on-error behaviour: one failing calendar doesn't block others.
+        const results = await Promise.allSettled(
+          this.calendars.map((c: Calendar) =>
+            api<{ events: CalendarEvent[] }>(
+              `/api/v1/calendars/${c.id}/events?start=${start.toISOString()}&end=${end.toISOString()}`
+            )
+          )
+        );
+
+        const allEvents: CalendarEvent[] = [];
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled') {
+            if (r.value.events) allEvents.push(...r.value.events);
+          } else {
+            console.warn(`Failed to load events for calendar ${this.calendars[i]?.id}`, r.reason);
           }
-        }
+        });
 
         this.events = allEvents;
       } catch (e: unknown) {

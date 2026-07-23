@@ -83,6 +83,25 @@ describe('fetchContacts paging loop', () => {
     expect(apiMock).toHaveBeenCalledTimes(2);
   });
 
+  it('fetches all address books concurrently, not one book at a time (#22)', async () => {
+    const store = useContactsStore();
+    store.addressBooks = [book(1), book(2), book(3)];
+
+    // Never-resolving promises: a serial loop would issue only book 1's first
+    // page and await it, so exactly ONE call would be in flight here. The
+    // parallel version dispatches all three books' first pages up front.
+    const resolvers: Array<(v: ReturnType<typeof page>) => void> = [];
+    apiMock.mockImplementation(() => new Promise((res) => { resolvers.push(res); }));
+
+    const p = store.fetchContacts();
+    expect(apiMock).toHaveBeenCalledTimes(3);
+
+    // Each book returns a single empty (short) page → its paging loop ends.
+    resolvers.forEach((res) => res(page([], 0, 0)));
+    await p;
+    expect(store.contacts).toHaveLength(0);
+  });
+
   it('warns and continues when one book rejects, still loading the others', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // Book 1 fails outright; book 2 returns a single short page.
