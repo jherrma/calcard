@@ -38,6 +38,12 @@ interface CalendarApi {
 interface PageVm {
   changeView: (view: string | null | undefined) => void;
   calendarRef: { getApi: () => CalendarApi } | undefined;
+  calendarOptions: {
+    slotMinTime?: string;
+    slotMaxTime?: string;
+    scrollTime?: string;
+    [k: string]: unknown;
+  };
 }
 
 async function mountPage() {
@@ -89,5 +95,22 @@ describe('calendar page changeView guard (#26)', () => {
     vm.changeView('listWeek');
 
     expect(api.changeView).not.toHaveBeenCalled();
+  });
+});
+
+// SCOPE: the time-axis window on week/day views (#28). The old options clamped
+// the axis to 06:00–22:00, hiding events outside those hours with no scroll
+// access. The fix shows the full day and only scrolls the viewport to the
+// morning. REVERT PROOF: restore slotMinTime '06:00:00' / slotMaxTime '22:00:00'
+// and these assertions fail.
+describe('calendar time-axis window (#28)', () => {
+  it('exposes the full 24h day and scrolls to the morning instead of clamping 06:00–22:00', async () => {
+    const { vm } = await mountPage();
+
+    const opts = vm.calendarOptions;
+    expect(opts.slotMinTime).toBe('00:00:00');
+    expect(opts.slotMaxTime).toBe('24:00:00');
+    // Viewport still opens around the morning hours.
+    expect(opts.scrollTime).toBe('07:00:00');
   });
 });
