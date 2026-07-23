@@ -305,8 +305,8 @@ func TestSharedCalendarCalDAVVisible(t *testing.T) {
 
 	// Owner creates a calendar + seeds one event so the sharee has something
 	// to discover via PROPFIND / GET.
-	calID, calUUID := createCalendar(t, ownerToken, "TeamSchedule", "#336699")
-	seedUID, _ := createSeededEvent(t, ownerToken, calID, "TeamSchedule", 0)
+	_, calUUID := createCalendar(t, ownerToken, "TeamSchedule", "#336699")
+	seedUID, _ := createSeededEvent(t, ownerToken, calUUID, "TeamSchedule", 0)
 	// The owner addresses this calendar as {uuid}.ics; since #47 the sharee
 	// sees it advertised under the bare UUID so a share can never collide
 	// with one of their own collection paths.
@@ -385,7 +385,7 @@ func TestSharedCalendarCalDAVVisible(t *testing.T) {
 	}
 	rangeQS := "?start=2030-01-01T00:00:00Z&end=2031-12-31T23:59:59Z&expand=false"
 	code = doJSONRaw(t, http.MethodGet,
-		"/calendars/"+uintStr(calID)+"/events/"+rangeQS, ownerToken, nil, &events)
+		"/calendars/"+calUUID+"/events/"+rangeQS, ownerToken, nil, &events)
 	require.Equal(t, http.StatusOK, code)
 	seen := false
 	for _, ev := range events.Events {
@@ -682,8 +682,8 @@ func TestSharedCalendarEventPermissions(t *testing.T) {
 	ownerToken := registerAndLogin(t, ownerEmail, password, "Evt Owner")
 	shareeToken, _ := registerAndLoginFull(t, shareeEmail, password, "Evt Sharee")
 
-	calID, calUUID := createCalendar(t, ownerToken, "Team Calendar", "#123456")
-	eventsPath := "/calendars/" + uintStr(calID) + "/events/"
+	_, calUUID := createCalendar(t, ownerToken, "Team Calendar", "#123456")
+	eventsPath := "/calendars/" + calUUID + "/events/"
 	rangeQS := "?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z&expand=false"
 	start := time.Date(2032, 3, 1, 9, 0, 0, 0, time.UTC)
 
@@ -729,7 +729,7 @@ func TestSharedCalendarEventPermissions(t *testing.T) {
 		"end": start.Add(49 * time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
 	}, &created)
 	require.Equal(t, http.StatusCreated, code, "read-write sharee must be able to create events")
-	require.GreaterOrEqual(t, len(collectEventUIDs(t, ownerToken, calID, rangeQS)), 2,
+	require.GreaterOrEqual(t, len(collectEventUIDs(t, ownerToken, calUUID, rangeQS)), 2,
 		"owner must see the event the sharee created")
 
 	// --- Owner downgrades the share to read-only --------------------------

@@ -37,10 +37,10 @@ func TestExportImportRoundtrip(t *testing.T) {
 
 	seededEvents := map[string]map[string]string{} // calName -> UID -> summary
 	for _, calName := range []string{"Trip Cal A", "Trip Cal B"} {
-		calID, _ := createCalendar(t, token, calName, "#112233")
+		_, calUUID := createCalendar(t, token, calName, "#112233")
 		seededEvents[calName] = map[string]string{}
 		for i := 0; i < 3; i++ {
-			uid, summary := createSeededEvent(t, token, calID, calName, i)
+			uid, summary := createSeededEvent(t, token, calUUID, calName, i)
 			seededEvents[calName][uid] = summary
 		}
 	}
@@ -215,7 +215,7 @@ func createAddressBook(t *testing.T, token, name string) uint {
 
 // createSeededEvent makes an event with a deterministic summary and returns
 // (uid, summary).
-func createSeededEvent(t *testing.T, token string, calendarID uint, calName string, idx int) (uid, summary string) {
+func createSeededEvent(t *testing.T, token string, calUUID string, calName string, idx int) (uid, summary string) {
 	t.Helper()
 	summary = fmt.Sprintf("%s event %d", calName, idx)
 	start := time.Date(2030, 6, 1+idx, 9, 0, 0, 0, time.UTC)
@@ -231,7 +231,7 @@ func createSeededEvent(t *testing.T, token string, calendarID uint, calName stri
 		UID     string `json:"uid"`
 		Summary string `json:"summary"`
 	}
-	path := "/calendars/" + uintStr(calendarID) + "/events/"
+	path := "/calendars/" + calUUID + "/events/"
 	code := doJSONRaw(t, http.MethodPost, path, token, body, &ev)
 	require.Equal(t, http.StatusCreated, code, "create event in %s", calName)
 	require.NotEmpty(t, ev.UID)
@@ -439,7 +439,7 @@ func listEventsForSeededCalendars(t *testing.T, token string, seeded map[string]
 				Summary string `json:"summary"`
 			} `json:"events"`
 		}
-		code := doJSONRaw(t, http.MethodGet, "/calendars/"+uintStr(entry.ID)+"/events/"+rangeQS, token, nil, &resp)
+		code := doJSONRaw(t, http.MethodGet, "/calendars/"+entry.UUID+"/events/"+rangeQS, token, nil, &resp)
 		if code != http.StatusOK {
 			continue
 		}
@@ -471,7 +471,7 @@ func collectEventsByCalendarName(t *testing.T, token string, seeded map[string]m
 				Summary string `json:"summary"`
 			} `json:"events"`
 		}
-		status, raw := restCall(t, http.MethodGet, "/calendars/"+uintStr(entry.ID)+"/events/"+rangeQS, token, nil)
+		status, raw := restCall(t, http.MethodGet, "/calendars/"+entry.UUID+"/events/"+rangeQS, token, nil)
 		require.Equal(t, http.StatusOK, status, "list events for %s: %s", calName, string(raw))
 		require.NoError(t, json.Unmarshal(raw, &resp))
 		out[calName] = map[string]string{}

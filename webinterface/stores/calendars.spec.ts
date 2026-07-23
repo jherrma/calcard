@@ -111,18 +111,21 @@ describe('stringification invariants (guards the number-vs-string Set bug #11/#1
 });
 
 describe('moveEvent', () => {
-  it('calls the move endpoint with the target calendar id', async () => {
+  it('maps numeric calendar ids to UUIDs in the path and target body (#52)', async () => {
     apiMock.mockResolvedValueOnce(undefined);
     const store = useCalendarStore();
+    // Callers still pass numeric ids; the store resolves them to UUIDs via the
+    // loaded calendar list, matching the API's UUID-only /calendars/:id contract.
+    store.calendars = [cal({ id: 1 }), cal({ id: 2 })]; // uuids uuid-1 / uuid-2
 
     await store.moveEvent('1', 'ev-9', '2');
 
     expect(apiMock).toHaveBeenCalledTimes(1);
     const [url, opts] = apiMock.mock.calls[0]!;
-    expect(url).toBe('/api/v1/calendars/1/events/ev-9/move');
+    expect(url).toBe('/api/v1/calendars/uuid-1/events/ev-9/move');
     expect(opts).toMatchObject({
       method: 'POST',
-      body: { target_calendar_id: '2' },
+      body: { target_calendar_id: 'uuid-2' },
     });
   });
 });

@@ -23,7 +23,7 @@ func TestCalendarExportEndpoint(t *testing.T) {
 	password := "exportSecret!123"
 	token := registerAndLogin(t, email, password, "Export User")
 
-	calID, calUUID := createCalendar(t, token, "Exportable", "#112233")
+	_, calUUID := createCalendar(t, token, "Exportable", "#112233")
 
 	// Seed one event so we have something to look for in the feed.
 	start := time.Date(2032, 4, 15, 10, 0, 0, 0, time.UTC)
@@ -33,7 +33,7 @@ func TestCalendarExportEndpoint(t *testing.T) {
 		Summary string `json:"summary"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary":  "Exportable Event",
 			"start":    start.Format(time.RFC3339),
