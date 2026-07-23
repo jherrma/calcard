@@ -22,7 +22,7 @@ func TestRecurringEventDeleteThis(t *testing.T) {
 	password := "rruleSecret!123"
 	token := registerAndLogin(t, email, password, "Rrule This User")
 
-	calID, _ := createCalendar(t, token, "Recurring This", "#998877")
+	_, calUUID := createCalendar(t, token, "Recurring This", "#998877")
 
 	// Start on a specific Monday so recurrence-id timestamps stay aligned.
 	start := time.Date(2033, 5, 2, 10, 0, 0, 0, time.UTC)
@@ -32,7 +32,7 @@ func TestRecurringEventDeleteThis(t *testing.T) {
 		UID string `json:"uid"` // iCalendar UID — returned for reference
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary":  "Weekly standup",
 			"start":    start.Format(time.RFC3339),
@@ -49,7 +49,7 @@ func TestRecurringEventDeleteThis(t *testing.T) {
 
 	// List across a window that covers all four instances.
 	rangeQS := "?start=2033-05-01T00:00:00Z&end=2033-06-01T00:00:00Z&expand=true"
-	before := listEvents(t, token, calID, rangeQS)
+	before := listEvents(t, token, calUUID, rangeQS)
 	require.Lenf(t, before, count,
 		"seeded recurrence should produce %d instances, got %d", count, len(before))
 
@@ -70,14 +70,14 @@ func TestRecurringEventDeleteThis(t *testing.T) {
 
 	// DELETE scope=this&recurrence_id=<occurrence 2>.
 	status, raw := restCall(t, http.MethodDelete,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this&recurrence_id=%s",
-			calID, ev.ID, targetRID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this&recurrence_id=%s",
+			calUUID, ev.ID, targetRID),
 		token, nil)
 	require.Equalf(t, http.StatusNoContent, status, "delete occurrence: %s", errorMessage(raw))
 
 	// After the delete, the list must return exactly count-1 instances,
 	// and the specific recurrence_id we excluded must not show up.
-	after := listEvents(t, token, calID, rangeQS)
+	after := listEvents(t, token, calUUID, rangeQS)
 	assert.Lenf(t, after, count-1,
 		"after scope=this delete one instance must be removed (got %d)", len(after))
 	for _, inst := range after {
@@ -94,7 +94,7 @@ func TestRecurringEventDeleteThisAndFuture(t *testing.T) {
 	password := "rruleSecret!123"
 	token := registerAndLogin(t, email, password, "Rrule Future User")
 
-	calID, _ := createCalendar(t, token, "Recurring Future", "#aabbcc")
+	_, calUUID := createCalendar(t, token, "Recurring Future", "#aabbcc")
 
 	start := time.Date(2033, 7, 4, 14, 0, 0, 0, time.UTC)
 	var ev struct {
@@ -102,7 +102,7 @@ func TestRecurringEventDeleteThisAndFuture(t *testing.T) {
 		UID string `json:"uid"` // iCalendar UID — returned for reference
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary":  "Sprint review",
 			"start":    start.Format(time.RFC3339),
@@ -117,20 +117,20 @@ func TestRecurringEventDeleteThisAndFuture(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 
 	rangeQS := "?start=2033-07-01T00:00:00Z&end=2033-08-10T00:00:00Z&expand=true"
-	before := listEvents(t, token, calID, rangeQS)
+	before := listEvents(t, token, calUUID, rangeQS)
 	require.Len(t, before, 4)
 
 	// Terminate at occurrence 3 (two weeks after start).
 	splitRID := start.Add(14 * 24 * time.Hour).UTC().Format("20060102T150405Z")
 
 	status, raw := restCall(t, http.MethodDelete,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=%s",
-			calID, ev.ID, splitRID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this_and_future&recurrence_id=%s",
+			calUUID, ev.ID, splitRID),
 		token, nil)
 	require.Equalf(t, http.StatusNoContent, status, "delete future: %s", errorMessage(raw))
 
 	// After the truncation only the first two occurrences should remain.
-	after := listEvents(t, token, calID, rangeQS)
+	after := listEvents(t, token, calUUID, rangeQS)
 	assert.Lenf(t, after, 2,
 		"scope=this_and_future must retain only the two occurrences before the split (got %d)",
 		len(after))
@@ -153,7 +153,7 @@ func TestRecurringEventUpdateThis(t *testing.T) {
 	password := "rruleSecret!123"
 	token := registerAndLogin(t, email, password, "Rrule Update This")
 
-	calID, _ := createCalendar(t, token, "Update This", "#aa11ee")
+	_, calUUID := createCalendar(t, token, "Update This", "#aa11ee")
 
 	start := time.Date(2033, 8, 1, 9, 0, 0, 0, time.UTC)
 	count := 4
@@ -162,7 +162,7 @@ func TestRecurringEventUpdateThis(t *testing.T) {
 		UID string `json:"uid"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary":  "Original weekly",
 			"start":    start.Format(time.RFC3339),
@@ -184,12 +184,12 @@ func TestRecurringEventUpdateThis(t *testing.T) {
 	// PATCH with scope=this — only the targeted occurrence should change.
 	newSummary := "Edited just this one"
 	status, raw := restCall(t, http.MethodPatch,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this&recurrence_id=%s",
-			calID, ev.ID, targetRID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this&recurrence_id=%s",
+			calUUID, ev.ID, targetRID),
 		token, map[string]any{"summary": newSummary})
 	require.Equalf(t, http.StatusOK, status, "update occurrence: %s", errorMessage(raw))
 
-	after := listEventsDetailed(t, token, calID, rangeQS)
+	after := listEventsDetailed(t, token, calUUID, rangeQS)
 	assert.Lenf(t, after, count,
 		"scope=this must not change instance count (got %d)", len(after))
 
@@ -221,7 +221,7 @@ func TestRecurringEventUpdateThis(t *testing.T) {
 			Start        time.Time `json:"start"`
 		} `json:"events"`
 	}
-	code = doJSONRaw(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/events/"+rangeQS, token, nil, &detail)
+	code = doJSONRaw(t, http.MethodGet, "/calendars/"+calUUID+"/events/"+rangeQS, token, nil, &detail)
 	require.Equal(t, http.StatusOK, code)
 	wantStart := start.Add(7 * 24 * time.Hour) // occurrence 2's real start
 	var checkedStart bool
@@ -247,7 +247,7 @@ func TestRecurringEventUpdateThisAndFuture(t *testing.T) {
 	password := "rruleSecret!123"
 	token := registerAndLogin(t, email, password, "Rrule Update Future")
 
-	calID, _ := createCalendar(t, token, "Update Future", "#3344aa")
+	_, calUUID := createCalendar(t, token, "Update Future", "#3344aa")
 
 	start := time.Date(2033, 10, 3, 15, 0, 0, 0, time.UTC) // a Monday
 	var ev struct {
@@ -255,7 +255,7 @@ func TestRecurringEventUpdateThisAndFuture(t *testing.T) {
 		UID string `json:"uid"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary":  "Team sync",
 			"start":    start.Format(time.RFC3339),
@@ -277,12 +277,12 @@ func TestRecurringEventUpdateThisAndFuture(t *testing.T) {
 	newSummary := "Renamed from here on"
 
 	status, raw := restCall(t, http.MethodPatch,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=%s",
-			calID, ev.ID, splitRID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this_and_future&recurrence_id=%s",
+			calUUID, ev.ID, splitRID),
 		token, map[string]any{"summary": newSummary})
 	require.Equalf(t, http.StatusOK, status, "split & update future: %s", errorMessage(raw))
 
-	after := listEventsDetailed(t, token, calID, rangeQS)
+	after := listEventsDetailed(t, token, calUUID, rangeQS)
 	assert.Lenf(t, after, 4,
 		"split must preserve the original instance count (got %d)", len(after))
 
@@ -313,7 +313,7 @@ func TestRecurringEventUpdateThisAndFuture(t *testing.T) {
 
 // listEventsDetailed mirrors listEvents but also surfaces the Summary field
 // so the scoped-update tests can assert per-instance values.
-func listEventsDetailed(t *testing.T, token string, calID uint, rangeQS string) []struct {
+func listEventsDetailed(t *testing.T, token string, calUUID string, rangeQS string) []struct {
 	UID          string `json:"uid"`
 	RecurrenceID string `json:"recurrence_id"`
 	Summary      string `json:"summary"`
@@ -327,7 +327,7 @@ func listEventsDetailed(t *testing.T, token string, calID uint, rangeQS string) 
 		} `json:"events"`
 	}
 	code := doJSONRaw(t, http.MethodGet,
-		"/calendars/"+uintStr(calID)+"/events/"+rangeQS, token, nil, &resp)
+		"/calendars/"+calUUID+"/events/"+rangeQS, token, nil, &resp)
 	require.Equal(t, http.StatusOK, code)
 	return resp.Events
 }
@@ -342,13 +342,13 @@ func TestThisAndFutureGarbageRecurrenceID(t *testing.T) {
 	password := "rruleSecret!123"
 	token := registerAndLogin(t, email, password, "Rrule Garbage User")
 
-	calID, _ := createCalendar(t, token, "Garbage Recurrence", "#334455")
+	_, calUUID := createCalendar(t, token, "Garbage Recurrence", "#334455")
 
 	start := time.Date(2034, 5, 1, 10, 0, 0, 0, time.UTC) // a Monday
 	var ev struct {
 		ID string `json:"id"`
 	}
-	code := doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/events/", token, map[string]any{
+	code := doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/events/", token, map[string]any{
 		"summary": "Weekly standup", "start": start.Format(time.RFC3339),
 		"end": start.Add(time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": false,
 		"recurrence": map[string]any{"frequency": "WEEKLY", "count": 4},
@@ -356,29 +356,29 @@ func TestThisAndFutureGarbageRecurrenceID(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 
 	rangeQS := "?start=2034-04-01T00:00:00Z&end=2034-07-01T00:00:00Z&expand=true"
-	require.Len(t, listEvents(t, token, calID, rangeQS), 4)
+	require.Len(t, listEvents(t, token, calUUID, rangeQS), 4)
 
 	// Garbage recurrence_id on a this_and_future update → 400.
 	status, raw := restCall(t, http.MethodPatch,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=not-a-date", calID, ev.ID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this_and_future&recurrence_id=not-a-date", calUUID, ev.ID),
 		token, map[string]any{"summary": "Hijack"})
 	assert.Equalf(t, http.StatusBadRequest, status, "garbage recurrence_id update must be 400: %s", errorMessage(raw))
 
 	// Garbage recurrence_id on a this_and_future delete → 400.
 	status, raw = restCall(t, http.MethodDelete,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=not-a-date", calID, ev.ID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this_and_future&recurrence_id=not-a-date", calUUID, ev.ID),
 		token, nil)
 	assert.Equalf(t, http.StatusBadRequest, status, "garbage recurrence_id delete must be 400: %s", errorMessage(raw))
 
 	// The series must be completely intact — nothing got wiped.
-	assert.Len(t, listEvents(t, token, calID, rangeQS), 4, "series must survive the rejected operations")
+	assert.Len(t, listEvents(t, token, calUUID, rangeQS), 4, "series must survive the rejected operations")
 
 	// An all-day weekly series can still be split via this_and_future.
 	allDayStart := time.Date(2034, 6, 5, 0, 0, 0, 0, time.UTC)
 	var allDay struct {
 		ID string `json:"id"`
 	}
-	code = doJSONRaw(t, http.MethodPost, "/calendars/"+uintStr(calID)+"/events/", token, map[string]any{
+	code = doJSONRaw(t, http.MethodPost, "/calendars/"+calUUID+"/events/", token, map[string]any{
 		"summary": "All day series", "start": allDayStart.Format(time.RFC3339),
 		"end": allDayStart.Add(24 * time.Hour).Format(time.RFC3339), "timezone": "UTC", "all_day": true,
 		"recurrence": map[string]any{"frequency": "DAILY", "count": 4},
@@ -387,16 +387,16 @@ func TestThisAndFutureGarbageRecurrenceID(t *testing.T) {
 
 	// This June window captures only the all-day series (the weekly one is in May).
 	adRange := "?start=2034-06-01T00:00:00Z&end=2034-06-30T00:00:00Z&expand=true"
-	require.Len(t, listEvents(t, token, calID, adRange), 4, "all-day series should produce 4 occurrences")
+	require.Len(t, listEvents(t, token, calUUID, adRange), 4, "all-day series should produce 4 occurrences")
 
 	// Split the all-day series at the 3rd occurrence (June 7). The recurrence_id
 	// the list hands out is what a client passes back.
 	splitRID := allDayStart.Add(2 * 24 * time.Hour).UTC().Format("20060102T150405Z")
 	status, raw = restCall(t, http.MethodDelete,
-		fmt.Sprintf("/calendars/%d/events/%s?scope=this_and_future&recurrence_id=%s", calID, allDay.ID, splitRID),
+		fmt.Sprintf("/calendars/%s/events/%s?scope=this_and_future&recurrence_id=%s", calUUID, allDay.ID, splitRID),
 		token, nil)
 	require.Equalf(t, http.StatusNoContent, status, "all-day this_and_future split must succeed: %s", errorMessage(raw))
-	assert.Len(t, listEvents(t, token, calID, adRange), 2, "all-day split must retain only the two occurrences before June 7")
+	assert.Len(t, listEvents(t, token, calUUID, adRange), 2, "all-day split must retain only the two occurrences before June 7")
 }
 
 // TestAllDayRecurrenceUntilIsDateValue is the end-to-end regression guard for
@@ -415,7 +415,7 @@ func TestAllDayRecurrenceUntilIsDateValue(t *testing.T) {
 	password := "rruleSecret!123"
 	token := registerAndLogin(t, email, password, "Rrule AllDay Until")
 
-	calID, calUUID := createCalendar(t, token, "AllDay Until", "#5566aa")
+	_, calUUID := createCalendar(t, token, "AllDay Until", "#5566aa")
 
 	// Weekly all-day series. DTSTART 2035-01-06 and the chosen end date
 	// 2035-02-03 are 28 days (4 weeks) apart, so the end date is a genuine
@@ -427,7 +427,7 @@ func TestAllDayRecurrenceUntilIsDateValue(t *testing.T) {
 		UID string `json:"uid"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(calID)+"/events/", token,
+		"/calendars/"+calUUID+"/events/", token,
 		map[string]any{
 			"summary":  "All-day weekly",
 			"start":    start.Format(time.RFC3339),
@@ -445,7 +445,7 @@ func TestAllDayRecurrenceUntilIsDateValue(t *testing.T) {
 	// The expansion must include the chosen end date (Feb 3) itself: five
 	// weekly occurrences Jan 6, 13, 20, 27, Feb 3.
 	rangeQS := "?start=2035-01-01T00:00:00Z&end=2035-02-28T00:00:00Z&expand=true"
-	instances := listEvents(t, token, calID, rangeQS)
+	instances := listEvents(t, token, calUUID, rangeQS)
 	assert.Lenf(t, instances, 5,
 		"all-day series ending 2035-02-03 must expand to 5 occurrences (got %d)", len(instances))
 	foundEndDate := false
@@ -484,7 +484,7 @@ func TestAllDayRecurrenceUntilIsDateValue(t *testing.T) {
 // listEvents is a thin wrapper around GET /calendars/:id/events returning
 // the decoded events payload. Used by the recurrence tests to count the
 // remaining instances after a scoped delete.
-func listEvents(t *testing.T, token string, calID uint, rangeQS string) []struct {
+func listEvents(t *testing.T, token string, calUUID string, rangeQS string) []struct {
 	UID          string `json:"uid"`
 	RecurrenceID string `json:"recurrence_id"`
 } {
@@ -496,7 +496,7 @@ func listEvents(t *testing.T, token string, calID uint, rangeQS string) []struct
 		} `json:"events"`
 	}
 	code := doJSONRaw(t, http.MethodGet,
-		"/calendars/"+uintStr(calID)+"/events/"+rangeQS, token, nil, &resp)
+		"/calendars/"+calUUID+"/events/"+rangeQS, token, nil, &resp)
 	require.Equal(t, http.StatusOK, code)
 	return resp.Events
 }

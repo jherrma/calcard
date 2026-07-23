@@ -219,7 +219,7 @@ func (s *flowState) createEvent(t *testing.T) {
 		UID     string `json:"uid"`
 		Summary string `json:"summary"`
 	}
-	path := "/calendars/" + uintStr(s.calendarID) + "/events/"
+	path := "/calendars/" + s.calendarUUID + "/events/"
 	code := doJSONRaw(t, http.MethodPost, path, s.adminToken, reqBody, &ev)
 	require.Equal(t, http.StatusCreated, code)
 	require.NotEmpty(t, ev.ID, "event should have a UUID")
@@ -236,14 +236,14 @@ func (s *flowState) updateEvent(t *testing.T) {
 	var ev struct {
 		Summary string `json:"summary"`
 	}
-	path := "/calendars/" + uintStr(s.calendarID) + "/events/" + s.eventID
+	path := "/calendars/" + s.calendarUUID + "/events/" + s.eventID
 	code := doJSONRaw(t, http.MethodPatch, path, s.adminToken, reqBody, &ev)
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, newSummary, ev.Summary)
 }
 
 func (s *flowState) deleteEvent(t *testing.T) {
-	path := "/calendars/" + uintStr(s.calendarID) + "/events/" + s.eventID
+	path := "/calendars/" + s.calendarUUID + "/events/" + s.eventID
 	status, _ := restCall(t, http.MethodDelete, path, s.adminToken, nil)
 	require.Equal(t, http.StatusNoContent, status)
 

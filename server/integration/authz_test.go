@@ -28,7 +28,7 @@ func TestAuthorizationBoundaries(t *testing.T) {
 	bobToken, _ := registerAndLoginFull(t, "authz-bob@example.test", password, "Bob")
 
 	// Alice creates a calendar, an event, an address book, and a contact.
-	aliceCalID, aliceCalUUID := createCalendar(t, aliceToken, "Alice's Calendar", "#ff0000")
+	_, aliceCalUUID := createCalendar(t, aliceToken, "Alice's Calendar", "#ff0000")
 
 	startT := time.Date(2031, 10, 1, 9, 0, 0, 0, time.UTC)
 	endT := startT.Add(time.Hour)
@@ -37,7 +37,7 @@ func TestAuthorizationBoundaries(t *testing.T) {
 		UID string `json:"uid"`
 	}
 	code := doJSONRaw(t, http.MethodPost,
-		"/calendars/"+uintStr(aliceCalID)+"/events/", aliceToken,
+		"/calendars/"+aliceCalUUID+"/events/", aliceToken,
 		map[string]any{
 			"summary":  "Alice's secret meeting",
 			"start":    startT.Format(time.RFC3339),
@@ -62,7 +62,7 @@ func TestAuthorizationBoundaries(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 
 	// Bob needs his own calendar in-hand for the event-move hijack attempt.
-	bobCalID, _ := createCalendar(t, bobToken, "Bob's Calendar", "#0000ff")
+	_, bobCalUUID := createCalendar(t, bobToken, "Bob's Calendar", "#0000ff")
 
 	// ------ Calendar-level boundaries ------------------------------------
 
@@ -97,26 +97,26 @@ func TestAuthorizationBoundaries(t *testing.T) {
 
 	t.Run("Bob cannot list events in Alice's calendar", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodGet,
-			"/calendars/"+uintStr(aliceCalID)+"/events/?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z",
+			"/calendars/"+aliceCalUUID+"/events/?start=2000-01-01T00:00:00Z&end=2099-12-31T23:59:59Z",
 			bobToken, nil)
 		assert.Equal(t, http.StatusNotFound, status,
 			"Bob must not be able to list Alice's events using her numeric calendar id")
 	})
 	t.Run("Bob cannot GET a specific event in Alice's calendar", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodGet,
-			"/calendars/"+uintStr(aliceCalID)+"/events/"+ev.ID, bobToken, nil)
+			"/calendars/"+aliceCalUUID+"/events/"+ev.ID, bobToken, nil)
 		assert.Equal(t, http.StatusNotFound, status)
 	})
 	t.Run("Bob cannot PATCH an event in Alice's calendar", func(t *testing.T) {
 		newSummary := "Hijacked by Bob"
 		status, _ := restCall(t, http.MethodPatch,
-			"/calendars/"+uintStr(aliceCalID)+"/events/"+ev.ID, bobToken,
+			"/calendars/"+aliceCalUUID+"/events/"+ev.ID, bobToken,
 			map[string]any{"summary": newSummary})
 		assert.Equal(t, http.StatusNotFound, status)
 	})
 	t.Run("Bob cannot DELETE Alice's event", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodDelete,
-			"/calendars/"+uintStr(aliceCalID)+"/events/"+ev.ID, bobToken, nil)
+			"/calendars/"+aliceCalUUID+"/events/"+ev.ID, bobToken, nil)
 		assert.Equal(t, http.StatusNotFound, status)
 
 		// Alice's event must still be there.
@@ -124,14 +124,14 @@ func TestAuthorizationBoundaries(t *testing.T) {
 			Summary string `json:"summary"`
 		}
 		code := doJSONRaw(t, http.MethodGet,
-			"/calendars/"+uintStr(aliceCalID)+"/events/"+ev.ID, aliceToken, nil, &got)
+			"/calendars/"+aliceCalUUID+"/events/"+ev.ID, aliceToken, nil, &got)
 		require.Equal(t, http.StatusOK, code)
 		assert.Equal(t, "Alice's secret meeting", got.Summary, "Alice's event must survive Bob's delete attempt")
 	})
 	t.Run("Bob cannot move Alice's event into Bob's calendar", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodPost,
-			"/calendars/"+uintStr(aliceCalID)+"/events/"+ev.ID+"/move", bobToken,
-			map[string]string{"target_calendar_id": uintStr(bobCalID)})
+			"/calendars/"+aliceCalUUID+"/events/"+ev.ID+"/move", bobToken,
+			map[string]string{"target_calendar_id": bobCalUUID})
 		assert.Equal(t, http.StatusNotFound, status)
 	})
 
