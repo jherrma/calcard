@@ -39,7 +39,7 @@
             v-slot="{ href, navigate }"
           >
             <a
-              :href="href"
+              :href="href ?? undefined"
               @click="navigate"
               :class="[
                 'flex items-center gap-2 px-3 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
@@ -67,7 +67,7 @@
                 v-slot="{ href, navigate }"
               >
                 <a
-                  :href="href"
+                  :href="href ?? undefined"
                   @click="navigate"
                   :class="[
                     'flex items-center gap-3 px-3 py-2.5 rounded-full text-sm font-medium transition-all duration-200',
