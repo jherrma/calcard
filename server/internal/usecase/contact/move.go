@@ -29,15 +29,28 @@ func (uc *MoveUseCase) Execute(ctx context.Context, userID uint, contactUUID str
 
 	sourceID := obj.AddressBookID
 
-	// 2. Verify ownership of the source. Loaded before the already-there check
-	// so the response can carry the book's UUID: FromAddressObject builds the
-	// photo URL from obj.AddressBook.UUID (#52), and GetObjectByUUID doesn't
-	// preload the association (it feeds the move save path — see its comment).
+	// 2. Verify WRITE access to the source. Permission-based rather than
+	// owner-only (#53) so a read-write sharee can move contacts out of a book
+	// shared with them — the handler already gated the request, and re-checking
+	// here keeps the use case safe for any other caller (defense in depth).
+	//
+	// The book itself is loaded before the already-there check so the response
+	// can carry its UUID: FromAddressObject builds the photo URL from
+	// obj.AddressBook.UUID (#52), and GetObjectByUUID doesn't preload the
+	// association (it feeds the move save path — see its comment).
+	sourcePerm, err := uc.repo.GetUserPermission(ctx, sourceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !sourcePerm.CanWrite() {
+		return nil, fmt.Errorf("source address book not found or access denied")
+	}
+
 	sourceAB, err := uc.repo.GetByID(ctx, sourceID)
 	if err != nil {
 		return nil, err
 	}
-	if sourceAB == nil || sourceAB.UserID != userID {
+	if sourceAB == nil {
 		return nil, fmt.Errorf("source address book not found or access denied")
 	}
 
@@ -48,11 +61,21 @@ func (uc *MoveUseCase) Execute(ctx context.Context, userID uint, contactUUID str
 		return FromAddressObject(obj), nil
 	}
 
+	// Write access on the target too — a read-only share must not become a
+	// dumping ground.
+	targetPerm, err := uc.repo.GetUserPermission(ctx, targetAddressBookID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !targetPerm.CanWrite() {
+		return nil, fmt.Errorf("target address book not found or access denied")
+	}
+
 	targetAB, err := uc.repo.GetByID(ctx, targetAddressBookID)
 	if err != nil {
 		return nil, err
 	}
-	if targetAB == nil || targetAB.UserID != userID {
+	if targetAB == nil {
 		return nil, fmt.Errorf("target address book not found or access denied")
 	}
 

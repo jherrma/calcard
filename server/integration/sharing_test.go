@@ -143,11 +143,11 @@ func TestCalendarSharing(t *testing.T) {
 	require.Equalf(t, http.StatusCreated, code, "must be able to re-share the same calendar with the same user after revoke")
 }
 
-// TestAddressBookSharing walks the same lifecycle for address books. The
-// REST list endpoint currently does not include shared address books (there's
-// a known TODO in `addressbook.ListUseCase`), so visibility on the target
-// side is checked through the share-list endpoint and via CardDAV PROPFIND
-// on the home set, which *does* enumerate shared address books.
+// TestAddressBookSharing walks the same lifecycle for address books, checking
+// visibility on the target side through the share-list endpoint and via CardDAV
+// PROPFIND on the home set. (The REST list endpoint enumerates shared books too
+// — see TestSharedAddressBookRESTVisible — but the DAV assertion here is worth
+// keeping: it's the path real clients take.)
 func TestAddressBookSharing(t *testing.T) {
 	ownerEmail := "absharing-owner@example.test"
 	targetEmail := "absharing-target@example.test"

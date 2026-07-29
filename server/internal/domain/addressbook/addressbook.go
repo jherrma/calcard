@@ -9,6 +9,34 @@ import (
 	"gorm.io/gorm"
 )
 
+// AddressBookPermission represents a user's effective access level on an
+// address book. Mirrors calendar.CalendarPermission so both collection types
+// are authorized the same way (#53): the REST layer used to gate contacts on
+// ownership alone, which locked read-write sharees out of the web UI even
+// though CardDAV honored their share.
+type AddressBookPermission int
+
+const (
+	// PermissionNone means the book doesn't exist, or exists but is neither
+	// owned by nor shared with the user. Callers treat it as "not found" so
+	// existence isn't leaked across users.
+	PermissionNone AddressBookPermission = iota
+	PermissionRead
+	PermissionReadWrite
+	PermissionOwner
+)
+
+// CanRead reports whether the permission grants any access at all.
+func (p AddressBookPermission) CanRead() bool {
+	return p != PermissionNone
+}
+
+// CanWrite reports whether the permission grants write access — the owner, or
+// a sharee whose share is "read-write".
+func (p AddressBookPermission) CanWrite() bool {
+	return p == PermissionOwner || p == PermissionReadWrite
+}
+
 type AddressBook struct {
 	ID          uint   `gorm:"primaryKey"`
 	UUID        string `gorm:"uniqueIndex;size:36;not null"`

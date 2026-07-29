@@ -134,7 +134,7 @@
                   <label class="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">Import to Address Book</label>
                   <Select
                     v-model="selectedAddressBook"
-                    :options="contactsStore.addressBooks"
+                    :options="contactsStore.writableAddressBooks"
                     option-label="Name"
                     placeholder="Select an address book"
                     class="w-full"
@@ -208,7 +208,7 @@
                   <label class="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">Address Book</label>
                   <Select
                     v-model="exportAddressBook"
-                    :options="contactsStore.addressBooks"
+                    :options="contactsStore.ownedAddressBooks"
                     option-label="Name"
                     placeholder="Select an address book"
                     class="w-full"

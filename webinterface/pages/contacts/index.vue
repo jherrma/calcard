@@ -44,6 +44,7 @@
           label="Add Contact"
           class="lg:hidden"
           size="small"
+          :disabled="contactsStore.writableAddressBooks.length === 0"
           @click="navigateTo('/contacts/new')"
         />
       </div>
@@ -79,6 +80,7 @@
             v-if="!contactsStore.searchQuery"
             label="Add Contact"
             icon="pi pi-plus"
+            :disabled="contactsStore.writableAddressBooks.length === 0"
             @click="navigateTo('/contacts/new')"
           />
         </div>
@@ -105,6 +107,7 @@
                 <ContactListItem
                   :contact="item.contact!"
                   :search-query="contactsStore.searchQuery"
+                  :readonly="!contactsStore.canWriteAddressBook(item.contact!.addressbook_id)"
                   @click="selectContact"
                   @edit="handleEdit"
                   @delete="handleDelete"

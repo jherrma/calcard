@@ -21,6 +21,12 @@ type AddressBookListItem struct {
 	*addressbook.AddressBook
 	Shared bool              `json:"shared"`
 	Owner  *AddressBookOwner `json:"owner,omitempty"`
+	// Permission is the caller's effective access level: "owner" for owned
+	// books, or the share's "read" / "read-write". The frontend needs it to
+	// disable edit controls on read-only shares (#53) — without it the UI would
+	// offer writes the API then refuses with a 403. Mirrors the field
+	// calendar.CalendarWithEventCount already exposes.
+	Permission string `json:"permission"`
 }
 
 type ListUseCase struct {
@@ -50,6 +56,7 @@ func (uc *ListUseCase) Execute(ctx context.Context, userID uint) ([]*AddressBook
 		result = append(result, &AddressBookListItem{
 			AddressBook: &ab,
 			Shared:      false,
+			Permission:  "owner",
 		})
 	}
 
@@ -75,6 +82,9 @@ func (uc *ListUseCase) Execute(ctx context.Context, userID uint) ([]*AddressBook
 		result = append(result, &AddressBookListItem{
 			AddressBook: &ab,
 			Shared:      true,
+			// The share row already carries the granted level, so no extra
+			// GetUserPermission round-trip per book is needed here.
+			Permission: s.Permission,
 			Owner: &AddressBookOwner{
 				ID:          ab.User.UUID,
 				DisplayName: ab.User.DisplayName,

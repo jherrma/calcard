@@ -47,6 +47,14 @@ type Repository interface {
 	DeleteObjectByUUID(ctx context.Context, uuid string) error
 	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
 
+	// GetUserPermission resolves a user's effective permission on an address
+	// book, accounting for both ownership and shares (#53). Returns
+	// PermissionNone — never an error — when the book is missing or the user
+	// has no share on it, so callers can treat "no access" and "not found"
+	// identically without leaking existence. Mirrors
+	// calendar.CalendarRepository.GetUserPermission.
+	GetUserPermission(ctx context.Context, addressBookID, userID uint) (AddressBookPermission, error)
+
 	// CountContactsByUserID counts all contacts across all address books for a user
 	CountContactsByUserID(ctx context.Context, userID uint) (int64, error)
 

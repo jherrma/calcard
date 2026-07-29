@@ -7,6 +7,19 @@ export interface AddressBook {
   Description: string;
   CreatedAt: string;
   UpdatedAt: string;
+  // Sharing metadata (#53). Note these three are snake_case while the fields
+  // above are PascalCase — the backend embeds the raw GORM model and adds these
+  // as tagged JSON fields; see the "AddressBook vs Calendar field naming" note
+  // in CLAUDE.md. Mirrors what Calendar already exposes.
+  /** True when another user shared this book with you (you are not the owner). */
+  shared?: boolean;
+  /** Your effective access level: 'owner' | 'read-write' | 'read'. */
+  permission?: string;
+  /** Present only on shared books, so the UI can render "Shared by <name>". */
+  owner?: {
+    id: string;
+    display_name: string;
+  };
 }
 
 export interface ContactEmail {

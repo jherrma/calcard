@@ -21,13 +21,21 @@ func NewContactImportUseCase(addressBookRepo addressbook.Repository) *ContactImp
 
 // Execute imports contacts from vCard data
 func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addressBookID uint, data []byte, opts ImportOptions) (*ImportResult, error) {
-	// Get address book and verify ownership
-	ab, err := uc.addressBookRepo.GetByID(ctx, addressBookID)
+	// Verify WRITE access to the target book. Permission-based rather than
+	// owner-only (#53) so importing a .vcf into a read-write shared book works —
+	// otherwise a sharee could add contacts one at a time but not in bulk, which
+	// is the same capability with a different button.
+	perm, err := uc.addressBookRepo.GetUserPermission(ctx, addressBookID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("address book not found")
 	}
-	if ab == nil || ab.UserID != userID {
+	if !perm.CanWrite() {
 		return nil, fmt.Errorf("access denied")
+	}
+
+	ab, err := uc.addressBookRepo.GetByID(ctx, addressBookID)
+	if err != nil || ab == nil {
+		return nil, fmt.Errorf("address book not found")
 	}
 
 	// Default options

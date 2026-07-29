@@ -16,7 +16,7 @@
             v-if="contact && !isLoading"
             ref="contactFormRef"
             :contact="contact"
-            :address-books="contactsStore.addressBooks"
+            :address-books="contactsStore.writableAddressBooks"
             :is-submitting="isSubmitting"
             :hide-actions="true"
             @submit="handleSubmit"
@@ -84,6 +84,15 @@ onMounted(async () => {
     const ab = contactsStore.getAddressBookByNumericId(abIdParam);
     if (!ab) {
       loadError.value = 'Address book not found';
+      isLoading.value = false;
+      return;
+    }
+
+    // Reached directly by URL on a read-only shared book, the form would render
+    // with an unselectable address book and the PATCH would 403 anyway (#53).
+    // Say so up front instead.
+    if (!contactsStore.canWriteAddressBook(ab.ID)) {
+      loadError.value = 'You have read-only access to this address book';
       isLoading.value = false;
       return;
     }

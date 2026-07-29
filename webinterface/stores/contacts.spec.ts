@@ -174,3 +174,63 @@ describe('groupedContacts letter bucketing', () => {
     expect(store.availableLetters).toEqual(['#', 'A', 'B', 'E', 'O', 'Z']);
   });
 });
+
+describe('address book permissions (#53)', () => {
+  // A shared book, as GET /api/v1/addressbooks now returns it: the raw GORM
+  // fields stay PascalCase while the sharing metadata is snake_case.
+  function sharedBook(id: number, permission: string, name = `Shared ${id}`): AddressBook {
+    return { ...book(id, name), shared: true, permission, owner: { id: 'u-9', display_name: 'Alice' } };
+  }
+
+  it('writableAddressBooks keeps owned books and read-write shares, drops read-only shares', () => {
+    const store = useContactsStore();
+    store.addressBooks = [
+      book(1, 'Mine'),
+      sharedBook(2, 'read'),
+      sharedBook(3, 'read-write'),
+    ];
+
+    const writable = store.writableAddressBooks.map((ab) => ab.ID);
+    expect(writable).toEqual([1, 3]);
+  });
+
+  it('owned/shared getters partition the list', () => {
+    const store = useContactsStore();
+    store.addressBooks = [book(1), sharedBook(2, 'read'), sharedBook(3, 'read-write')];
+
+    expect(store.ownedAddressBooks.map((ab) => ab.ID)).toEqual([1]);
+    expect(store.sharedAddressBooks.map((ab) => ab.ID)).toEqual([2, 3]);
+  });
+
+  it('canWriteAddressBook gates per book, accepting the numeric-string id contacts carry', () => {
+    const store = useContactsStore();
+    store.addressBooks = [book(1), sharedBook(2, 'read'), sharedBook(3, 'read-write')];
+
+    // Own book: writable. Contacts carry addressbook_id as a numeric STRING,
+    // so both forms must resolve.
+    expect(store.canWriteAddressBook(1)).toBe(true);
+    expect(store.canWriteAddressBook('1')).toBe(true);
+
+    // Read-only share: not writable — this is the gate every edit control uses.
+    expect(store.canWriteAddressBook(2)).toBe(false);
+    expect(store.canWriteAddressBook('2')).toBe(false);
+
+    // Read-write share: writable. Before #53 the REST API refused these, so the
+    // UI hid the controls; now both agree.
+    expect(store.canWriteAddressBook(3)).toBe(true);
+
+    // Unknown id: assume writable rather than disabling the UI on a book that
+    // simply hasn't loaded yet — the API remains the real gate.
+    expect(store.canWriteAddressBook(999)).toBe(true);
+  });
+
+  it('treats a shared book with a missing permission as read-only', () => {
+    const store = useContactsStore();
+    // Defensive: an older backend (or a truncated payload) omits `permission`.
+    // Failing closed keeps us from offering writes that would 403.
+    store.addressBooks = [{ ...book(4), shared: true }];
+
+    expect(store.canWriteAddressBook(4)).toBe(false);
+    expect(store.writableAddressBooks).toHaveLength(0);
+  });
+});
