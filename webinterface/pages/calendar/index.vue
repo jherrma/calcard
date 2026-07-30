@@ -75,6 +75,19 @@
     @created="handleCalendarCreated"
   />
 
+  <!-- Share Dialog — the sidebar "Share" action goes straight here rather than
+       into the settings dialog's sharing tab (story 043). -->
+  <SharingShareDialog
+    :visible="showShareDialog"
+    resource-type="calendar"
+    :resource-uuid="shareCalendar?.uuid"
+    :resource-name="shareCalendar?.name"
+    :can-manage="!shareCalendar?.shared"
+    :public-enabled="shareCalendar?.public_enabled"
+    @update:visible="showShareDialog = $event"
+    @changed="handleCalendarUpdated"
+  />
+
   <!-- Calendar Settings Dialog -->
   <CalendarSettingsDialog
     :visible="showCalendarSettingsDialog"
@@ -116,6 +129,8 @@ const showAddCalendarDialog = ref(false);
 const showCalendarSettingsDialog = ref(false);
 const settingsCalendar = ref<Calendar | null>(null);
 const settingsInitialTab = ref<string | undefined>();
+const showShareDialog = ref(false);
+const shareCalendar = ref<Calendar | null>(null);
 
 // Dialog state
 const showDetailDialog = ref(false);
@@ -325,9 +340,8 @@ const openCalendarSettings = (calendar: Calendar) => {
 };
 
 const openCalendarSharing = (calendar: Calendar) => {
-  settingsCalendar.value = calendar;
-  settingsInitialTab.value = 'sharing';
-  showCalendarSettingsDialog.value = true;
+  shareCalendar.value = calendar;
+  showShareDialog.value = true;
 };
 
 const handleDeleteCalendar = (calendar: Calendar) => {

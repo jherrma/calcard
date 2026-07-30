@@ -47,20 +47,31 @@
           </div>
         </TabPanel>
 
-        <!-- Sharing Tab -->
+        <!-- Sharing Tab — same panel the standalone share dialog uses (story 043) -->
         <TabPanel value="sharing">
           <div class="pt-4">
-            <CalendarSharing v-if="calendar" :calendar-id="calendar.uuid" />
+            <SharingSharePanel
+              v-if="calendar"
+              resource-type="calendar"
+              :resource-uuid="calendar.uuid"
+              :can-manage="!calendar.shared"
+              @changed="$emit('updated')"
+            />
           </div>
         </TabPanel>
 
         <!-- Public Access Tab -->
         <TabPanel value="public">
           <div class="pt-4">
-            <CalendarPublicAccess
-              :calendar="calendar"
-              @updated="$emit('updated')"
+            <SharingPublicLinkPanel
+              v-if="calendar && !calendar.shared"
+              :calendar-uuid="calendar.uuid"
+              :public-enabled="calendar.public_enabled"
+              @changed="$emit('updated')"
             />
+            <Message v-else-if="calendar" severity="info" :closable="false">
+              Only the owner of this calendar can publish it.
+            </Message>
           </div>
         </TabPanel>
 

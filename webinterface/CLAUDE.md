@@ -50,6 +50,10 @@ webinterface/
 │   │   ├── ContactsSidebar.vue    # Address book list with checkboxes
 │   │   ├── ContactListItem.vue    # Single contact row (avatar, name, email, actions)
 │   │   └── AlphabetNavigation.vue # A-Z letter strip for quick scrolling
+│   ├── sharing/                   # Resource-agnostic sharing UI (story 043)
+│   │   ├── SharePanel.vue         # → <SharingSharePanel>  list/invite/change/revoke, BOTH resource kinds
+│   │   ├── PublicLinkPanel.vue    # → <SharingPublicLinkPanel>  calendar public link (calendars only)
+│   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
 │       ├── AppHeader.vue          # Top bar with hamburger toggle
 │       ├── AppSidebar.vue         # Main navigation sidebar (Calendar, Contacts, Settings)
@@ -59,7 +63,9 @@ webinterface/
 ├── stores/                  # Pinia stores (state + getters + actions)
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
-│   └── contacts.ts          # Address book + contact state, search, sorting, letter grouping
+│   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
+│   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
+│                            #   `sharedWithMe` derived from the two list endpoints (story 043)
 ├── composables/
 │   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
 │   └── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
@@ -146,6 +152,29 @@ The contacts page (`pages/contacts/index.vue`) uses a custom list layout:
 - **AlphabetNavigation**: A-Z letter strip. Only letters with contacts are clickable. Clicking scrolls to that section.
 - **Contact detail**: Full contact details live on the route page `pages/contacts/[id]/index.vue` (navigated to when a contact is selected).
 - **Virtual scrolling**: Manual implementation with computed offsets and a scroll container.
+
+### Sharing (story 043)
+
+`stores/sharing.ts` is the single entry point; the three `components/sharing/*` components are thin
+views over it. Constraints that shaped it — all imposed by the API:
+
+- **One store, both resource kinds.** `/api/v1/calendars/:uuid/shares` and
+  `/api/v1/addressbooks/:uuid/shares` are byte-for-byte identical in request and response, so
+  `shareCollectionUrl(type, uuid)` is the only thing that differs. Both are keyed on the resource
+  **UUID** (#52) — a numeric id gives a 404.
+- **These endpoints return raw JSON**, not the `{ status, data }` envelope: `GET` → `{ shares: [...] }`,
+  `POST`/`PATCH` → the bare share object, `DELETE` → 204.
+- **Errors carry `{ "error": "..." }`, not `{ "message": ... }`** like the auth handlers. Use
+  `shareErrorMessage()`; reading `Error.message` yields ofetch's useless `[POST] …: 400 Bad Request`.
+- **There is no user-search endpoint.** Invite by `user_identifier`, which the backend resolves as an
+  email *or* a username. Nothing to autocomplete against.
+- **There is no `/shared-with-me` endpoint.** `GET /calendars` and `GET /addressbooks` already return
+  shared resources carrying `shared` / `permission` / `owner` (#53); `sharedWithMe` derives from those.
+- **Share management is owner-only** — a sharee gets 404 from every share endpoint. Never render it
+  for a resource with `shared === true`; pass `:can-manage="!resource.shared"`.
+- **Public links are calendars-only and have no DELETE route.** `POST …/public` with
+  `{ enabled: false }` is how you disable (it also clears the token, so re-enabling mints a new URL).
+  `GET …/public` is the *only* source of the public URL — the token is `json:"-"` on the domain model.
 
 ### Type System Gotchas
 
