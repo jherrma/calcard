@@ -84,6 +84,13 @@ func (m *mockRepo) CountContactsByUserID(ctx context.Context, userID uint) (int6
 	return 0, nil
 }
 
+// GetUserPermission: the export use case doesn't consult permissions, so a
+// fixed owner keeps this mock satisfying the interface without affecting the
+// assertions below.
+func (m *mockRepo) GetUserPermission(ctx context.Context, addressBookID, userID uint) (addressbook.AddressBookPermission, error) {
+	return addressbook.PermissionOwner, nil
+}
+
 func TestExportUseCase_Execute(t *testing.T) {
 	repo := new(mockRepo)
 	uc := addressbookuc.NewExportUseCase(repo)

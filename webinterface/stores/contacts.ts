@@ -72,6 +72,24 @@ export const useContactsStore = defineStore('contacts', {
     availableLetters(): string[] {
       return Array.from(this.groupedContacts.keys()).sort();
     },
+
+    ownedAddressBooks(state: ContactsState): AddressBook[] {
+      return state.addressBooks.filter((ab: AddressBook) => !ab.shared);
+    },
+
+    sharedAddressBooks(state: ContactsState): AddressBook[] {
+      return state.addressBooks.filter((ab: AddressBook) => ab.shared);
+    },
+
+    // Books the user may write to: everything they own, plus shares granted at
+    // 'read-write' (#53). Every write control in the contacts UI keys off this —
+    // offering an edit button for a read-only share just earns a 403. Mirrors
+    // calendars.writableCalendars.
+    writableAddressBooks(state: ContactsState): AddressBook[] {
+      return state.addressBooks.filter(
+        (ab: AddressBook) => !ab.shared || ab.permission === 'read-write'
+      );
+    },
   },
 
   actions: {
@@ -218,6 +236,16 @@ export const useContactsStore = defineStore('contacts', {
 
     getAddressBookByNumericId(id: string): AddressBook | undefined {
       return this.addressBooks.find((ab: AddressBook) => String(ab.ID) === id);
+    },
+
+    // Whether the user may write to a specific book, by numeric id — the form
+    // contacts carry in `addressbook_id`. Used to gate per-contact edit/delete
+    // controls (#53). An unknown id is treated as writable so a not-yet-loaded
+    // book doesn't silently disable the whole UI; the API is the real gate.
+    canWriteAddressBook(id: string | number): boolean {
+      const ab = this.addressBooks.find((b: AddressBook) => String(b.ID) === String(id));
+      if (!ab) return true;
+      return !ab.shared || ab.permission === 'read-write';
     },
 
     // Map an address book's numeric id (what contacts and the sidebar carry) to

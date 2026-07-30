@@ -20,7 +20,13 @@
             <!-- Header -->
             <div class="flex items-center justify-between mb-6">
               <h2 class="text-xl font-semibold text-surface-900 dark:text-surface-100">Contact</h2>
-              <div class="flex items-center gap-4">
+              <!-- Read-only shared book: the API refuses both writes with a
+                   403, so state the reason rather than offering them (#53). -->
+              <div v-if="isReadOnly" class="flex items-center gap-2 text-sm text-surface-500">
+                <i class="pi pi-lock text-xs" />
+                <span>Read-only</span>
+              </div>
+              <div v-else class="flex items-center gap-4">
                 <button
                   class="text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
                   @click="navigateTo(`/contacts/${contactId}/edit?ab=${abIdParam}`)"
@@ -180,6 +186,11 @@ const numericAbId = ref<number | null>(null);
 // The photo endpoint requires a Bearer token, which an <img> can't send, so
 // fetch it via the authenticated client and render the resulting blob URL.
 const photoSrc = useAuthedImage(() => contact.value?.photo_url);
+
+// Read-only iff this contact lives in a book shared with us at 'read' (#53).
+const isReadOnly = computed(
+  () => numericAbId.value !== null && !contactsStore.canWriteAddressBook(numericAbId.value)
+);
 
 onMounted(async () => {
   try {

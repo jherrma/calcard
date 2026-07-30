@@ -33,8 +33,9 @@
       </div>
     </div>
 
-    <!-- Hover actions -->
-    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+    <!-- Hover actions. Hidden entirely on a read-only shared address book (#53):
+         the API refuses these writes with a 403, so showing them is a dead end. -->
+    <div v-if="!readonly" class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
       <button
         class="p-1.5 rounded hover:bg-surface-200 dark:hover:bg-surface-700 text-surface-500 hover:text-surface-700 dark:hover:text-surface-300"
         title="Edit"
@@ -60,6 +61,8 @@ import HighlightText from '~/components/common/HighlightText.vue';
 const props = defineProps<{
   contact: Contact;
   searchQuery?: string;
+  /** Suppresses the edit/delete actions — set for read-only shared books (#53). */
+  readonly?: boolean;
 }>();
 
 defineEmits<{

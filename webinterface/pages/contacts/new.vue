@@ -15,7 +15,7 @@
           <ContactsContactForm
             v-if="!isLoadingAbs"
             ref="contactFormRef"
-            :address-books="contactsStore.addressBooks"
+            :address-books="contactsStore.writableAddressBooks"
             :is-submitting="isSubmitting"
             :hide-actions="true"
             @submit="handleSubmit"

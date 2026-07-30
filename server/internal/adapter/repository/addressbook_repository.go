@@ -9,6 +9,7 @@ import (
 
 	"github.com/emersion/go-vcard"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"gorm.io/gorm"
 )
 
@@ -50,6 +51,42 @@ func (r *AddressBookRepository) GetByID(ctx context.Context, id uint) (*addressb
 		return nil, err
 	}
 	return &ab, nil
+}
+
+// GetUserPermission resolves the user's effective permission on an address
+// book: ownership first, then the share table (#53). A missing book or a user
+// with no share yields PermissionNone with a nil error — callers map that to a
+// 404 rather than distinguishing "gone" from "not yours". Deliberately mirrors
+// CalendarRepository.GetUserPermission, including reading the share's raw
+// "read"/"read-write" string.
+func (r *AddressBookRepository) GetUserPermission(ctx context.Context, addressBookID, userID uint) (addressbook.AddressBookPermission, error) {
+	var ab addressbook.AddressBook
+	if err := r.db.WithContext(ctx).First(&ab, addressBookID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return addressbook.PermissionNone, nil
+		}
+		return addressbook.PermissionNone, err
+	}
+
+	if ab.UserID == userID {
+		return addressbook.PermissionOwner, nil
+	}
+
+	var share sharing.AddressBookShare
+	err := r.db.WithContext(ctx).
+		Where("address_book_id = ? AND shared_with_id = ?", addressBookID, userID).
+		First(&share).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return addressbook.PermissionNone, nil
+		}
+		return addressbook.PermissionNone, err
+	}
+
+	if share.Permission == "read-write" {
+		return addressbook.PermissionReadWrite, nil
+	}
+	return addressbook.PermissionRead, nil
 }
 
 func (r *AddressBookRepository) GetByUUID(ctx context.Context, uuid string) (*addressbook.AddressBook, error) {

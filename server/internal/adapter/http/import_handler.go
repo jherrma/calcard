@@ -71,11 +71,20 @@ func (h *ImportHandler) ImportContact(c fiber.Ctx) error {
 	}
 
 	// The :id path segment is the address book's UUID (#52); resolve it to the
-	// internal numeric id (missing → 404, so existence isn't leaked). The import
-	// use case still enforces ownership via userID.
+	// internal numeric id (missing → 404, so existence isn't leaked). Access is
+	// permission-based (#53): a read-write sharee may import, a read-only sharee
+	// gets an honest 403, and a book they can't see at all stays a 404. The
+	// import use case re-checks the same permission.
 	ab, err := h.addressBookRepo.GetByUUID(c.Context(), c.Params("id"))
 	if err != nil || ab == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
+	perm, err := h.addressBookRepo.GetUserPermission(c.Context(), ab.ID, userID)
+	if err != nil || !perm.CanRead() {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
+	if !perm.CanWrite() {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "You have read-only access to this address book"})
 	}
 
 	// Get import options

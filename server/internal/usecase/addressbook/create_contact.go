@@ -27,12 +27,24 @@ func NewCreateContactUseCase(repo addressbook.Repository) *CreateContactUseCase 
 }
 
 func (uc *CreateContactUseCase) Execute(ctx context.Context, input CreateContactInput) (*addressbook.AddressObject, error) {
-	// 1. Verify the address book exists and belongs to the caller.
+	// 1. Verify the caller may WRITE to the address book. Permission-based
+	// rather than owner-only (#53): a read-write sharee creating a contact via
+	// REST must be accepted here, or the handler's permission check would pass
+	// while this use case still rejected the write. GetUserPermission returns
+	// PermissionNone for a missing book, so this also covers non-existence.
+	perm, err := uc.repo.GetUserPermission(ctx, input.AddressBookID, input.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !perm.CanWrite() {
+		return nil, fmt.Errorf("address book not found or access denied")
+	}
+
 	ab, err := uc.repo.GetByID(ctx, input.AddressBookID)
 	if err != nil {
 		return nil, err
 	}
-	if ab == nil || ab.UserID != input.UserID {
+	if ab == nil {
 		return nil, fmt.Errorf("address book not found or access denied")
 	}
 
