@@ -32,7 +32,7 @@
         v-slot="{ href, navigate, isActive, isExactActive }"
       >
         <a
-          :href="href"
+          :href="href ?? undefined"
           @click="navigate"
           :class="[
             'flex items-center gap-3 px-3 py-2.5 rounded-full text-sm font-medium transition-all duration-200',
