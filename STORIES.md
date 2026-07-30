@@ -55,7 +55,6 @@ All backend stories are implemented.
 | 045 | Error Handling & Loading States            | Pending |
 | 046 | Dark Mode & Theming                        | Pending |
 | 047 | Accessibility (a11y)                       | Pending |
-| 048 | Keyboard Navigation                        | Pending |
 | 049 | Responsive Design & Mobile Optimization    | Pending |
 | 050 | PWA & Push Notifications                   | Pending |
 
@@ -67,11 +66,10 @@ All backend stories are implemented.
 | 043 | Sharing Management UI                      | Pending |
 | 100 | Remote Calendar Subscriptions              | Pending |
 | 101 | Open Source Attribution                    | Pending |
-| 102 | LDAP Authentication                        | Pending |
 | 103 | Event Default Settings                     | Pending |
 | 104 | MCP Server Integration                     | Pending |
 
 ## Summary
 
-- **Implemented**: 41 / 59
-- **Pending**: 18 / 59
+- **Implemented**: 41 / 57
+- **Pending**: 16 / 57
