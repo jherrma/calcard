@@ -1,0 +1,325 @@
+{
+  "generator": "server/tools/genlicenses (go run ./tools/genlicenses)",
+  "note": "License detection is best-effort; \"unknown\" means it could not be determined automatically, not that the package is unlicensed.",
+  "count": 53,
+  "packages": [
+    {
+      "name": "github.com/KyleBanks/depth",
+      "version": "v1.2.1",
+      "license": "MIT",
+      "url": "https://github.com/KyleBanks/depth"
+    },
+    {
+      "name": "github.com/andybalholm/brotli",
+      "version": "v1.2.2",
+      "license": "MIT",
+      "url": "https://github.com/andybalholm/brotli"
+    },
+    {
+      "name": "github.com/caarlos0/env/v10",
+      "version": "v10.0.0",
+      "license": "MIT",
+      "url": "https://github.com/caarlos0/env"
+    },
+    {
+      "name": "github.com/coreos/go-oidc/v3",
+      "version": "v3.20.0",
+      "license": "Apache-2.0",
+      "url": "https://github.com/coreos/go-oidc"
+    },
+    {
+      "name": "github.com/emersion/go-ical",
+      "version": "v0.0.0-20250609112844-439c63cef608",
+      "license": "MIT",
+      "url": "https://github.com/emersion/go-ical"
+    },
+    {
+      "name": "github.com/emersion/go-vcard",
+      "version": "v0.0.0-20260618161152-d854b7e0e2d3",
+      "license": "MIT",
+      "url": "https://github.com/emersion/go-vcard"
+    },
+    {
+      "name": "github.com/emersion/go-webdav",
+      "version": "v0.7.0",
+      "license": "MIT",
+      "url": "https://github.com/emersion/go-webdav"
+    },
+    {
+      "name": "github.com/go-jose/go-jose/v4",
+      "version": "v4.1.4",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-jose/go-jose"
+    },
+    {
+      "name": "github.com/go-openapi/jsonpointer",
+      "version": "v1.0.0",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/jsonpointer"
+    },
+    {
+      "name": "github.com/go-openapi/jsonreference",
+      "version": "v1.0.0",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/jsonreference"
+    },
+    {
+      "name": "github.com/go-openapi/spec",
+      "version": "v0.22.9",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/spec"
+    },
+    {
+      "name": "github.com/go-openapi/swag/conv",
+      "version": "v0.27.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/swag"
+    },
+    {
+      "name": "github.com/go-openapi/swag/jsonutils",
+      "version": "v0.27.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/swag"
+    },
+    {
+      "name": "github.com/go-openapi/swag/loading",
+      "version": "v0.27.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/swag"
+    },
+    {
+      "name": "github.com/go-openapi/swag/pools",
+      "version": "v0.27.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/swag"
+    },
+    {
+      "name": "github.com/go-openapi/swag/stringutils",
+      "version": "v0.27.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/swag"
+    },
+    {
+      "name": "github.com/go-openapi/swag/typeutils",
+      "version": "v0.27.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/swag"
+    },
+    {
+      "name": "github.com/go-openapi/swag/yamlutils",
+      "version": "v0.27.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/go-openapi/swag"
+    },
+    {
+      "name": "github.com/gofiber/fiber/v3",
+      "version": "v3.4.0",
+      "license": "MIT",
+      "url": "https://github.com/gofiber/fiber"
+    },
+    {
+      "name": "github.com/gofiber/schema",
+      "version": "v1.8.3",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/gofiber/schema"
+    },
+    {
+      "name": "github.com/gofiber/utils/v2",
+      "version": "v2.3.0",
+      "license": "MIT",
+      "url": "https://github.com/gofiber/utils"
+    },
+    {
+      "name": "github.com/golang-jwt/jwt/v5",
+      "version": "v5.3.1",
+      "license": "MIT",
+      "url": "https://github.com/golang-jwt/jwt"
+    },
+    {
+      "name": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/google/uuid"
+    },
+    {
+      "name": "github.com/jackc/pgpassfile",
+      "version": "v1.0.0",
+      "license": "MIT",
+      "url": "https://github.com/jackc/pgpassfile"
+    },
+    {
+      "name": "github.com/jackc/pgservicefile",
+      "version": "v0.0.0-20240606120523-5a60cdf6a761",
+      "license": "MIT",
+      "url": "https://github.com/jackc/pgservicefile"
+    },
+    {
+      "name": "github.com/jackc/pgx/v5",
+      "version": "v5.10.0",
+      "license": "MIT",
+      "url": "https://github.com/jackc/pgx"
+    },
+    {
+      "name": "github.com/jackc/puddle/v2",
+      "version": "v2.2.2",
+      "license": "MIT",
+      "url": "https://github.com/jackc/puddle"
+    },
+    {
+      "name": "github.com/jinzhu/inflection",
+      "version": "v1.0.0",
+      "license": "MIT",
+      "url": "https://github.com/jinzhu/inflection"
+    },
+    {
+      "name": "github.com/jinzhu/now",
+      "version": "v1.1.5",
+      "license": "MIT",
+      "url": "https://github.com/jinzhu/now"
+    },
+    {
+      "name": "github.com/joho/godotenv",
+      "version": "v1.5.1",
+      "license": "MIT",
+      "url": "https://github.com/joho/godotenv"
+    },
+    {
+      "name": "github.com/klauspost/compress",
+      "version": "v1.19.1",
+      "license": "unknown",
+      "url": "https://github.com/klauspost/compress"
+    },
+    {
+      "name": "github.com/mattn/go-colorable",
+      "version": "v0.1.15",
+      "license": "MIT",
+      "url": "https://github.com/mattn/go-colorable"
+    },
+    {
+      "name": "github.com/mattn/go-isatty",
+      "version": "v0.0.23",
+      "license": "MIT",
+      "url": "https://github.com/mattn/go-isatty"
+    },
+    {
+      "name": "github.com/mattn/go-sqlite3",
+      "version": "v1.14.48",
+      "license": "MIT",
+      "url": "https://github.com/mattn/go-sqlite3"
+    },
+    {
+      "name": "github.com/philhofer/fwd",
+      "version": "v1.2.0",
+      "license": "MIT",
+      "url": "https://github.com/philhofer/fwd"
+    },
+    {
+      "name": "github.com/swaggo/swag",
+      "version": "v1.16.6",
+      "license": "MIT",
+      "url": "https://github.com/swaggo/swag"
+    },
+    {
+      "name": "github.com/teambition/rrule-go",
+      "version": "v1.8.2",
+      "license": "MIT",
+      "url": "https://github.com/teambition/rrule-go"
+    },
+    {
+      "name": "github.com/tinylib/msgp",
+      "version": "v1.6.4",
+      "license": "MIT",
+      "url": "https://github.com/tinylib/msgp"
+    },
+    {
+      "name": "github.com/valyala/bytebufferpool",
+      "version": "v1.0.0",
+      "license": "MIT",
+      "url": "https://github.com/valyala/bytebufferpool"
+    },
+    {
+      "name": "github.com/valyala/fasthttp",
+      "version": "v1.72.0",
+      "license": "MIT",
+      "url": "https://github.com/valyala/fasthttp"
+    },
+    {
+      "name": "go.yaml.in/yaml/v3",
+      "version": "v3.0.4",
+      "license": "unknown",
+      "url": "https://pkg.go.dev/go.yaml.in/yaml/v3"
+    },
+    {
+      "name": "golang.org/x/crypto",
+      "version": "v0.54.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/crypto"
+    },
+    {
+      "name": "golang.org/x/mod",
+      "version": "v0.38.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/mod"
+    },
+    {
+      "name": "golang.org/x/net",
+      "version": "v0.57.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/net"
+    },
+    {
+      "name": "golang.org/x/oauth2",
+      "version": "v0.36.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/oauth2"
+    },
+    {
+      "name": "golang.org/x/sync",
+      "version": "v0.22.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/sync"
+    },
+    {
+      "name": "golang.org/x/sys",
+      "version": "v0.47.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/sys"
+    },
+    {
+      "name": "golang.org/x/text",
+      "version": "v0.40.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/text"
+    },
+    {
+      "name": "golang.org/x/tools",
+      "version": "v0.48.0",
+      "license": "BSD-3-Clause",
+      "url": "https://pkg.go.dev/golang.org/x/tools"
+    },
+    {
+      "name": "gopkg.in/yaml.v3",
+      "version": "v3.0.1",
+      "license": "unknown",
+      "url": "https://gopkg.in/yaml.v3"
+    },
+    {
+      "name": "gorm.io/driver/postgres",
+      "version": "v1.6.0",
+      "license": "MIT",
+      "url": "https://pkg.go.dev/gorm.io/driver/postgres"
+    },
+    {
+      "name": "gorm.io/driver/sqlite",
+      "version": "v1.6.0",
+      "license": "MIT",
+      "url": "https://pkg.go.dev/gorm.io/driver/sqlite"
+    },
+    {
+      "name": "gorm.io/gorm",
+      "version": "v1.31.2",
+      "license": "MIT",
+      "url": "https://pkg.go.dev/gorm.io/gorm"
+    }
+  ]
+}

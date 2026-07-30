@@ -19,6 +19,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	"github.com/jherrma/caldav-server/internal/infrastructure/email"
 	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
+	aboutusecase "github.com/jherrma/caldav-server/internal/usecase/about"
 	addressbookusecase "github.com/jherrma/caldav-server/internal/usecase/addressbook"
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
@@ -119,6 +120,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	shareHandler := http.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC, calendarRepo)
 	abShareHandler := http.NewAddressBookShareHandler(createABShareUC, listABShareUC, updateABShareUC, revokeABShareUC, addressBookRepo)
 	healthHandler := http.NewHealthHandler(db)
+	aboutHandler := http.NewAboutHandler(aboutusecase.NewListOpenSourceUseCase())
 
 	// Public Calendar Use Cases
 	enablePublicUC := calendarusecase.NewEnablePublicUseCase(calendarRepo, cfg.BaseURL)
@@ -141,6 +143,15 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// System Routes (public - needed by frontend before auth)
 	systemGroup := v1.Group("/system")
 	systemGroup.Get("/settings", systemHandler.Settings)
+
+	// About Routes (Protected) — open-source attribution (#101). The story asks
+	// for authenticated access, which also keeps the exact versions of every
+	// linked Go library out of anonymous reach. Note this is NOT a secrecy
+	// guarantee for the project's dependencies as a whole: the npm half of the
+	// list is a static SPA asset (public/open-source.json) and is therefore
+	// served unauthenticated like every other frontend asset.
+	aboutGroup := v1.Group("/about", http.Authenticate(jwtManager, userRepo))
+	aboutGroup.Get("/open-source", aboutHandler.OpenSource)
 
 	// Auth Routes
 	authGroup := v1.Group("/auth")

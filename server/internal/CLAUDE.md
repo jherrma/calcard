@@ -29,6 +29,7 @@ This directory contains the core business logic and implementation details of th
   - `user/` — Get/update profile, delete account.
   - `sharing/` — Calendar and address book share create/list/update/revoke.
   - `importexport/` — Calendar import, contact import, backup export.
+  - `about/` — Open-source attribution list (embedded, generated manifest).
 - **Dependencies**: Only depends on `domain`.
 
 ### [adapter/](adapter/)

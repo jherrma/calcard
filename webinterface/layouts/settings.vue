@@ -142,6 +142,7 @@ const navItems: SettingsNavItem[] = [
   { to: '/settings/carddav-credentials', label: 'CardDAV Credentials', icon: 'pi pi-id-card' },
   { to: '/settings/connections', label: 'Connected Accounts', icon: 'pi pi-link' },
   { to: '/settings/import-export', label: 'Import & Export', icon: 'pi pi-arrow-right-arrow-left' },
+  { to: '/settings/about', label: 'Open Source', icon: 'pi pi-info-circle' },
   { to: '/settings/admin', label: 'Admin Console', icon: 'pi pi-shield', admin: true },
   { to: '/settings/danger', label: 'Danger Zone', icon: 'pi pi-exclamation-triangle', danger: true },
 ];
