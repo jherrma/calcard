@@ -51,7 +51,7 @@ All backend stories are implemented.
 | 039 | Calendar and Address Book Settings         | Done    |
 | 040 | Client Setup Instructions Page             | Done    |
 | 041 | Import/Export UI                           | Done    |
-| 044 | Global Search                              | Pending |
+| 044 | Global Search                              | Done    |
 | 045 | Error Handling & Loading States            | Pending |
 | 046 | Dark Mode & Theming                        | Pending |
 | 047 | Accessibility (a11y)                       | Pending |

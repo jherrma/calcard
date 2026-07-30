@@ -110,6 +110,7 @@ definePageMeta({
 const calendarStore = useCalendarStore();
 const toast = useAppToast();
 const confirm = useConfirm();
+const route = useRoute();
 
 const calendarRef = ref<InstanceType<typeof FullCalendar>>();
 const showAddCalendarDialog = ref(false);
@@ -135,7 +136,68 @@ onMounted(async () => {
   if (currentDateRange.value) {
     await calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
   }
+  // Calendars must be loaded first: resolving an event by id maps the numeric
+  // calendar id in the link to the calendar's UUID (#52).
+  await applyDeepLink();
 });
+
+/**
+ * Deep link from global search (story 044):
+ *   /calendar?date=YYYY-MM-DD&event=<event id>&cal=<numeric calendar id>[&recurrence=<recurrence_id>]
+ * Jumps the view to that date and opens the event's detail dialog.
+ *
+ * Watched (not just read once on mount) because the header search lives in the
+ * layout: picking a result while already on /calendar changes only the query, which
+ * does not remount this page.
+ */
+const applyDeepLink = async () => {
+  const q = route.query;
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  const dateParam = str(q.date);
+  const eventParam = str(q.event);
+  const calParam = str(q.cal);
+  const recurrenceParam = str(q.recurrence);
+
+  if (!dateParam && !eventParam) return;
+
+  if (dateParam) {
+    // Parsed as local midnight (a bare 'YYYY-MM-DD' would be read as UTC and can
+    // land on the previous day west of Greenwich).
+    const target = new Date(`${dateParam}T00:00:00`);
+    if (!Number.isNaN(target.getTime())) {
+      calendarStore.setCurrentDate(target);
+      // On first load FullCalendar hasn't mounted yet (it sits behind ClientOnly)
+      // and picks the date up via initialDate; afterwards gotoDate is needed.
+      calendarRef.value?.getApi().gotoDate(target);
+    }
+  }
+
+  if (eventParam) {
+    // Prefer the loaded occurrence so a recurring instance opens with its own
+    // start/end; fall back to fetching the series when that range isn't loaded.
+    const local = calendarStore.events.find(
+      e => e.id === eventParam && (e.recurrence_id || '') === recurrenceParam
+    );
+    if (local) {
+      selectedEvent.value = local;
+      showDetailDialog.value = true;
+    } else if (calParam) {
+      try {
+        selectedEvent.value = await calendarStore.getEvent(calParam, eventParam);
+        showDetailDialog.value = true;
+      } catch {
+        toast.error('Could not open that event');
+      }
+    }
+  }
+
+  // Consume the params. Without this, choosing the same search result twice would
+  // be a no-op (identical route → no navigation, no watcher) and a page reload
+  // would silently reopen the dialog.
+  await navigateTo({ path: '/calendar', query: {} }, { replace: true });
+};
+
+watch(() => route.query, () => { applyDeepLink(); });
 
 // Get calendar color
 const getCalendarColor = (calendarId: number) => {
