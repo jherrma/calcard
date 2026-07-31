@@ -75,6 +75,19 @@
     @created="handleCalendarCreated"
   />
 
+  <!-- Share Dialog — the sidebar "Share" action goes straight here rather than
+       into the settings dialog's sharing tab (story 043). -->
+  <SharingShareDialog
+    :visible="showShareDialog"
+    resource-type="calendar"
+    :resource-uuid="shareCalendar?.uuid"
+    :resource-name="shareCalendar?.name"
+    :can-manage="!shareCalendar?.shared"
+    :public-enabled="shareCalendar?.public_enabled"
+    @update:visible="showShareDialog = $event"
+    @changed="handleCalendarUpdated"
+  />
+
   <!-- Calendar Settings Dialog -->
   <CalendarSettingsDialog
     :visible="showCalendarSettingsDialog"
@@ -100,6 +113,7 @@ import EventDetailDialog from '~/components/calendar/EventDetailDialog.vue';
 import EventCreateDialog from '~/components/calendar/EventCreateDialog.vue';
 import EventEditDialog from '~/components/calendar/EventEditDialog.vue';
 import { useCalendarStore } from '~/stores/calendars';
+import { usePreferencesStore } from '~/stores/preferences';
 import type { Calendar, CalendarEvent } from '~/types/calendar';
 
 definePageMeta({
@@ -108,14 +122,18 @@ definePageMeta({
 });
 
 const calendarStore = useCalendarStore();
+const preferencesStore = usePreferencesStore();
 const toast = useAppToast();
 const confirm = useConfirm();
+const route = useRoute();
 
 const calendarRef = ref<InstanceType<typeof FullCalendar>>();
 const showAddCalendarDialog = ref(false);
 const showCalendarSettingsDialog = ref(false);
 const settingsCalendar = ref<Calendar | null>(null);
 const settingsInitialTab = ref<string | undefined>();
+const showShareDialog = ref(false);
+const shareCalendar = ref<Calendar | null>(null);
 
 // Dialog state
 const showDetailDialog = ref(false);
@@ -131,10 +149,101 @@ const currentDateRange = ref<{ start: Date; end: Date } | null>(null);
 
 // Fetch calendars on mount, then refetch events (datesSet may fire before calendars load)
 onMounted(async () => {
-  await calendarStore.fetchCalendars();
+  // Preferences drive the 12h/24h display and the defaults EventForm snapshots at
+  // setup time, so they must be in the store before any create dialog can open
+  // (story 103). ensureLoaded() never rejects, so it can't break this mount.
+  await Promise.all([calendarStore.fetchCalendars(), preferencesStore.ensureLoaded()]);
   if (currentDateRange.value) {
     await calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
   }
+  // Calendars must be loaded first: resolving an event by id maps the numeric
+  // calendar id in the link to the calendar's UUID (#52).
+  await applyDeepLink().catch((e: unknown) => console.warn('Deep link failed', e));
+});
+
+/** Query params owned by the deep link — stripped once consumed, nothing else is. */
+const DEEP_LINK_PARAMS = ['date', 'event', 'cal', 'recurrence'];
+
+/**
+ * Deep link from global search (story 044):
+ *   /calendar?date=YYYY-MM-DD&event=<event id>&cal=<numeric calendar id>[&recurrence=<recurrence_id>]
+ * Jumps the view to that date and opens the event's detail dialog.
+ *
+ * Watched (not just read once on mount) because the header search lives in the
+ * layout: picking a result while already on /calendar changes only the query, which
+ * does not remount this page.
+ */
+const applyDeepLink = async () => {
+  const q = route.query;
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  const dateParam = str(q.date);
+  const eventParam = str(q.event);
+  const calParam = str(q.cal);
+  const recurrenceParam = str(q.recurrence);
+
+  if (!dateParam && !eventParam) return;
+
+  // Parsed as local midnight (a bare 'YYYY-MM-DD' would be read as UTC and can
+  // land on the previous day west of Greenwich).
+  const target = dateParam ? new Date(`${dateParam}T00:00:00`) : null;
+  const validTarget = target && !Number.isNaN(target.getTime()) ? target : null;
+
+  if (validTarget) {
+    calendarStore.setCurrentDate(validTarget);
+    // On first load FullCalendar hasn't mounted yet (it sits behind ClientOnly)
+    // and picks the date up via initialDate; afterwards gotoDate is needed.
+    calendarRef.value?.getApi().gotoDate(validTarget);
+  }
+
+  if (eventParam) {
+    // Prefer the loaded occurrence so a recurring instance opens with its own
+    // start/end.
+    const local = calendarStore.events.find(
+      e => e.id === eventParam && (e.recurrence_id || '') === recurrenceParam
+    );
+    if (local) {
+      selectedEvent.value = local;
+      showDetailDialog.value = true;
+    } else if (calParam) {
+      // NOT loaded: the target date is usually outside the range FullCalendar has
+      // fetched (the refetch triggered by gotoDate is async and hasn't landed), so
+      // `events` legitimately misses. GET /events/:id is no help for a recurring
+      // series — it returns the MASTER and ignores any recurrence hint — which used
+      // to open a dialog showing the first occurrence's date while the grid sat on
+      // the clicked one. Resolve the occurrence from the expanded day instead, and
+      // only fall back to the single-event endpoint for non-recurring links.
+      try {
+        const resolved = recurrenceParam && validTarget
+          ? await calendarStore.fetchEventOccurrence(calParam, eventParam, recurrenceParam, validTarget)
+          : await calendarStore.getEvent(calParam, eventParam);
+        if (resolved) {
+          selectedEvent.value = resolved;
+          showDetailDialog.value = true;
+        } else {
+          // The occurrence was deleted or moved since the search results were built.
+          toast.warn('That event occurrence no longer exists');
+        }
+      } catch {
+        toast.error('Could not open that event');
+      }
+    }
+  }
+
+  // Consume ONLY the deep-link params — anything else on /calendar belongs to
+  // another feature. Without this, choosing the same search result twice would be
+  // a no-op (identical route → no navigation, no watcher) and a page reload would
+  // silently reopen the dialog.
+  const rest = Object.fromEntries(
+    Object.entries(route.query).filter(([key]) => !DEEP_LINK_PARAMS.includes(key))
+  );
+  await navigateTo({ path: '/calendar', query: rest }, { replace: true });
+};
+
+// Floating promise: nothing awaits the watcher, so swallow rejections explicitly
+// (an aborted navigation inside applyDeepLink would otherwise surface as an
+// unhandled rejection).
+watch(() => route.query, () => {
+  applyDeepLink().catch((e: unknown) => console.warn('Deep link failed', e));
 });
 
 // Get calendar color
@@ -168,6 +277,8 @@ const mappedEvents = computed(() =>
   }))
 );
 
+const is12h = computed(() => preferencesStore.timeFormat === '12h');
+
 // FullCalendar options
 const calendarOptions = computed<CalendarOptions>(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
@@ -188,6 +299,19 @@ const calendarOptions = computed<CalendarOptions>(() => ({
   eventDrop: handleEventDrop,
   eventResize: handleEventResize,
   datesSet: handleDatesSet,
+
+  // Time display follows the user's 12h/24h preference (story 103). Both formats
+  // are spelled out because FullCalendar's defaults differ per view.
+  slotLabelFormat: {
+    hour: 'numeric' as const,
+    minute: '2-digit' as const,
+    hour12: is12h.value,
+  },
+  eventTimeFormat: {
+    hour: 'numeric' as const,
+    minute: '2-digit' as const,
+    hour12: is12h.value,
+  },
 
   // Display options
   nowIndicator: true,
@@ -325,9 +449,8 @@ const openCalendarSettings = (calendar: Calendar) => {
 };
 
 const openCalendarSharing = (calendar: Calendar) => {
-  settingsCalendar.value = calendar;
-  settingsInitialTab.value = 'sharing';
-  showCalendarSettingsDialog.value = true;
+  shareCalendar.value = calendar;
+  showShareDialog.value = true;
 };
 
 const handleDeleteCalendar = (calendar: Calendar) => {

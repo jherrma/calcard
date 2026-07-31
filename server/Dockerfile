@@ -10,6 +10,11 @@ WORKDIR /web
 COPY webinterface/package.json webinterface/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY webinterface/ .
+# Refresh the npm attribution manifest from the installed node_modules (#101).
+# Tolerant on purpose: public/open-source.json is committed and up to date, so a
+# generator hiccup must not break the image — it only means the manifest stays at
+# its committed state.
+RUN pnpm run gen:licenses || echo "WARNING: frontend license generation failed; using the committed public/open-source.json"
 # NUXT_PUBLIC_API_BASE_URL deliberately NOT set -> apiBaseUrl '' -> same-origin.
 RUN pnpm generate
 
@@ -26,6 +31,11 @@ RUN go mod download
 
 # Build
 COPY server/ .
+# Refresh the Go attribution manifest that internal/usecase/about embeds (#101).
+# Tolerant on purpose: the manifest is committed, so the endpoint works even if
+# this step is skipped or the module cache lacks a LICENSE file — a failure here
+# only means the embedded list stays at its committed state.
+RUN go run ./tools/genlicenses || echo "WARNING: Go license generation failed; using the committed internal/usecase/about/open_source_go.json"
 # Install and run swag
 RUN go install github.com/swaggo/swag/cmd/swag@latest
 RUN /go/bin/swag init -g cmd/server/main.go --parseDependency --parseInternal

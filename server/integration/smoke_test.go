@@ -62,6 +62,58 @@ func TestAuthMethods(t *testing.T) {
 	assert.True(t, foundLocal, "auth/methods must include the local (email+password) method")
 }
 
+// TestAboutOpenSource verifies GET /about/open-source through the REAL route
+// table (#101). The handler-level tests in internal/adapter/http mount the
+// about group on a bare Fiber app, so they cannot catch a routing regression:
+// registerWebUI installs a catch-all `app.Get("/*")` for the SPA, and if that
+// were ever registered before the API group it would swallow this endpoint and
+// serve index.html with a 200. Hence the content assertions below — a 200 alone
+// would not prove the API answered.
+func TestAboutOpenSource(t *testing.T) {
+	t.Run("requires authentication", func(t *testing.T) {
+		status, _ := restCall(t, http.MethodGet, "/about/open-source", "", nil)
+		assert.Equal(t, http.StatusUnauthorized, status,
+			"the attribution list sits behind Authenticate")
+	})
+
+	t.Run("returns the embedded manifest", func(t *testing.T) {
+		token := registerAndLogin(t, "about-oss@example.test", "aboutSecret!123", "About User")
+
+		var manifest struct {
+			Generator string `json:"generator"`
+			Note      string `json:"note"`
+			Count     int    `json:"count"`
+			Packages  []struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+				License string `json:"license"`
+				URL     string `json:"url"`
+			} `json:"packages"`
+		}
+		code := doJSON(t, http.MethodGet, "/about/open-source", token, nil, &manifest)
+		require.Equal(t, http.StatusOK, code)
+
+		require.NotEmpty(t, manifest.Packages, "the embedded manifest must not be empty")
+		assert.Equal(t, len(manifest.Packages), manifest.Count, "count must match the list length")
+		assert.NotEmpty(t, manifest.Generator)
+		assert.NotEmpty(t, manifest.Note, "the note carries the \"unknown != unlicensed\" caveat")
+
+		// Fiber is linked into this very binary, so it must be attributed.
+		// Doubles as proof we got the real JSON rather than the SPA fallback.
+		found := false
+		for _, p := range manifest.Packages {
+			assert.NotEmpty(t, p.Name)
+			assert.NotEmpty(t, p.Version)
+			assert.NotEmpty(t, p.License, "license must be a value (possibly \"unknown\"), never empty")
+			assert.NotEmpty(t, p.URL)
+			if p.Name == "github.com/gofiber/fiber/v3" {
+				found = true
+			}
+		}
+		assert.True(t, found, "the manifest must attribute github.com/gofiber/fiber/v3")
+	})
+}
+
 // TestReadinessProbe verifies GET /ready returns 200. Unlike /health
 // (which only proves the process is alive), /ready pings the database.
 // Kubernetes and load-balancer health checks poll this endpoint — a

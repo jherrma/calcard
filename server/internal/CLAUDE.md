@@ -26,9 +26,10 @@ This directory contains the core business logic and implementation details of th
   - `addressbook/` — CRUD, create contact, export.
   - `contact/` — CRUD, search, move, photo handling, DTO mapping.
   - `apppassword/` — CRUD, CalDAV/CardDAV credential management.
-  - `user/` — Get/update profile, delete account.
+  - `user/` — Get/update profile, delete account, get/update preferences.
   - `sharing/` — Calendar and address book share create/list/update/revoke.
   - `importexport/` — Calendar import, contact import, backup export.
+  - `about/` — Open-source attribution list (embedded, generated manifest).
 - **Dependencies**: Only depends on `domain`.
 
 ### [adapter/](adapter/)

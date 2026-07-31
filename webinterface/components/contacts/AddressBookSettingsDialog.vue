@@ -28,10 +28,16 @@
           </div>
         </TabPanel>
 
-        <!-- Sharing Tab -->
+        <!-- Sharing Tab — same panel the standalone share dialog uses (story 043) -->
         <TabPanel value="sharing">
           <div class="pt-4">
-            <ContactsAddressBookSharing v-if="addressBook" :address-book-id="addressBook.UUID" />
+            <SharingSharePanel
+              v-if="addressBook"
+              resource-type="addressbook"
+              :resource-uuid="addressBook.UUID"
+              :can-manage="!addressBook.shared"
+              @changed="$emit('updated')"
+            />
           </div>
         </TabPanel>
 

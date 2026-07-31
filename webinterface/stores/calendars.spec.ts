@@ -190,3 +190,56 @@ describe('fetchEvents parallel loading (#22)', () => {
     warnSpy.mockRestore();
   });
 });
+
+// SCOPE: the sidebar filter must survive a refetch (story 043 review). The share
+// dialog calls fetchCalendars() after EVERY share mutation, so the old
+// "select all" reset re-checked calendars the user had hidden and flooded their
+// events back into the view mid-dialog.
+describe('fetchCalendars visibility preservation', () => {
+  it('shows everything on the FIRST load', async () => {
+    apiMock.mockResolvedValueOnce({ calendars: [cal({ id: 1 }), cal({ id: 2 })] });
+    const store = useCalendarStore();
+
+    await store.fetchCalendars();
+
+    expect([...store.visibleCalendarIds].sort()).toEqual(['1', '2']);
+  });
+
+  it('keeps calendars the user hid when the list is refetched', async () => {
+    apiMock.mockResolvedValueOnce({ calendars: [cal({ id: 1 }), cal({ id: 2 }), cal({ id: 3 })] });
+    const store = useCalendarStore();
+    await store.fetchCalendars();
+
+    store.toggleCalendarVisibility('2'); // user unchecks "Cal 2"
+
+    apiMock.mockResolvedValueOnce({ calendars: [cal({ id: 1 }), cal({ id: 2 }), cal({ id: 3 })] });
+    await store.fetchCalendars();
+
+    // REVERT PROOF: the old unconditional "select all" put '2' back.
+    expect([...store.visibleCalendarIds].sort()).toEqual(['1', '3']);
+  });
+
+  it('defaults a calendar it has never seen (e.g. one just shared with you) to visible', async () => {
+    apiMock.mockResolvedValueOnce({ calendars: [cal({ id: 1 })] });
+    const store = useCalendarStore();
+    await store.fetchCalendars();
+    store.toggleCalendarVisibility('1');
+
+    apiMock.mockResolvedValueOnce({ calendars: [cal({ id: 1 }), cal({ id: 7 })] });
+    await store.fetchCalendars();
+
+    expect(store.visibleCalendarIds.has('1')).toBe(false);
+    expect(store.visibleCalendarIds.has('7')).toBe(true);
+  });
+
+  it('forgets calendars that disappeared from the list', async () => {
+    apiMock.mockResolvedValueOnce({ calendars: [cal({ id: 1 }), cal({ id: 2 })] });
+    const store = useCalendarStore();
+    await store.fetchCalendars();
+
+    apiMock.mockResolvedValueOnce({ calendars: [cal({ id: 1 })] });
+    await store.fetchCalendars();
+
+    expect([...store.visibleCalendarIds]).toEqual(['1']);
+  });
+});

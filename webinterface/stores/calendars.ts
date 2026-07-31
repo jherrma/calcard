@@ -63,11 +63,25 @@ export const useCalendarStore = defineStore('calendars', {
     async fetchCalendars() {
       const api = useApi();
       try {
+        // A REFETCH must not clobber the sidebar filter (story 043 review): the
+        // share dialog refetches the list after every share mutation, and the
+        // old "select all" reset silently re-checked calendars the user had
+        // hidden — their events flooded back into the view mid-dialog. So: first
+        // load still shows everything, a refetch keeps each already-known
+        // calendar's state and defaults calendars we have not seen before
+        // (e.g. one just shared with us) to visible.
+        const knownIds = new Set(this.calendars.map((c: Calendar) => String(c.id)));
+        const previouslyVisible = this.visibleCalendarIds;
+        const isRefetch = knownIds.size > 0;
+
         const response = await api<{ calendars: Calendar[] }>('/api/v1/calendars');
         this.calendars = response.calendars || [];
 
-        // Initially show all calendars
-        this.visibleCalendarIds = new Set(this.calendars.map((c: Calendar) => String(c.id)));
+        this.visibleCalendarIds = new Set(
+          this.calendars
+            .map((c: Calendar) => String(c.id))
+            .filter((id: string) => !isRefetch || !knownIds.has(id) || previouslyVisible.has(id)),
+        );
       } catch (e: unknown) {
         this.error = (e as Error).message || 'Failed to load calendars';
       }
@@ -157,6 +171,40 @@ export const useCalendarStore = defineStore('calendars', {
     async getEvent(calendarId: string, eventId: string) {
       const api = useApi();
       return await api<CalendarEvent>(`/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`);
+    },
+
+    /**
+     * Resolve ONE occurrence of a (possibly recurring) event on a given day.
+     *
+     * GET /calendars/:uuid/events/:id returns the stored MASTER event and ignores
+     * any recurrence hint — so it cannot answer "the 15 September instance of this
+     * weekly series". The list endpoint does expand recurrences server-side, so ask
+     * it for the single day the occurrence falls on and pick the matching
+     * RECURRENCE-ID. Used by the global-search deep link (story 044), which can
+     * point at a date the calendar page has not loaded.
+     *
+     * Deliberately does NOT touch `events`: the page's loaded range belongs to
+     * whatever FullCalendar is showing, and this is a one-off lookup.
+     */
+    async fetchEventOccurrence(
+      calendarId: string,
+      eventId: string,
+      recurrenceId: string,
+      day: Date
+    ): Promise<CalendarEvent | null> {
+      const api = useApi();
+      // Local-midnight bounds ±1 day: an occurrence stored in another timezone can
+      // land just outside the local day, and over-fetching one day is cheap.
+      const start = new Date(day.getFullYear(), day.getMonth(), day.getDate() - 1);
+      const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 2);
+      const response = await api<{ events: CalendarEvent[] }>(
+        `/api/v1/calendars/${this.calendarUuid(calendarId)}/events?start=${start.toISOString()}&end=${end.toISOString()}`
+      );
+      return (
+        (response.events || []).find(
+          (e: CalendarEvent) => e.id === eventId && (e.recurrence_id || '') === recurrenceId
+        ) ?? null
+      );
     },
 
     async updateEvent(calendarId: string, eventId: string, data: EventFormData, scope?: string, recurrenceId?: string) {

@@ -63,7 +63,8 @@ onMounted(async () => {
         error.value = "Signed in, but loading your profile failed. Please try again.";
         return;
       }
-      navigateTo("/calendar", { replace: true });
+      // "/" is the dashboard, the app's landing page since story 042.
+      navigateTo("/", { replace: true });
     } catch (e: any) {
       error.value = "Failed to complete authentication. " + (e.message || "");
     }

@@ -18,6 +18,9 @@
       <!-- Spacer -->
       <div class="flex-1" />
 
+      <!-- Global search (story 044) — trigger + dialog live together in the component -->
+      <CommonGlobalSearch class="mr-1" />
+
       <!-- User menu -->
       <div class="relative" ref="menuRef">
         <button
@@ -112,6 +115,10 @@ const menuRef = ref<HTMLElement | null>(null);
 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
+    // `/` is the dashboard since story 042 (it used to be a bare redirect, which
+    // is why it had no title). Only the exact-match branch below can serve it —
+    // the startsWith loop skips '/' deliberately, or it would match every route.
+    '/': 'Dashboard',
     '/calendar': 'Calendar',
     '/contacts': 'Contacts',
     '/settings': 'Settings',

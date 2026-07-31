@@ -137,6 +137,18 @@
     @created="handleAddressBookCreated"
   />
 
+  <!-- Share Dialog — the sidebar "Share" action goes straight here rather than
+       into the settings dialog's sharing tab (story 043). -->
+  <SharingShareDialog
+    :visible="showShareDialog"
+    resource-type="addressbook"
+    :resource-uuid="shareAddressBook?.UUID"
+    :resource-name="shareAddressBook?.Name"
+    :can-manage="!shareAddressBook?.shared"
+    @update:visible="showShareDialog = $event"
+    @changed="handleAddressBookUpdated"
+  />
+
   <!-- Address Book Settings Dialog -->
   <ContactsAddressBookSettingsDialog
     :visible="showAddressBookSettingsDialog"
@@ -169,6 +181,8 @@ const showAddAddressBookDialog = ref(false);
 const showAddressBookSettingsDialog = ref(false);
 const settingsAddressBook = ref<AddressBook | null>(null);
 const settingsAbInitialTab = ref<string | undefined>();
+const showShareDialog = ref(false);
+const shareAddressBook = ref<AddressBook | null>(null);
 const listContainerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 
@@ -311,9 +325,8 @@ const openAddressBookSettings = (ab: AddressBook) => {
 };
 
 const openAddressBookSharing = (ab: AddressBook) => {
-  settingsAddressBook.value = ab;
-  settingsAbInitialTab.value = 'sharing';
-  showAddressBookSettingsDialog.value = true;
+  shareAddressBook.value = ab;
+  showShareDialog.value = true;
 };
 
 const handleDeleteAddressBook = (ab: AddressBook) => {

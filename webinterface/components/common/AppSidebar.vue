@@ -91,6 +91,9 @@ interface NavigationItem {
 }
 
 const navigation: NavigationItem[] = [
+  // '/' is the dashboard (story 042). The active-class expression above already
+  // special-cases it with isExactActive so it doesn't light up on every route.
+  { to: '/', label: 'Dashboard', icon: 'pi pi-th-large' },
   { to: '/calendar', label: 'Calendar', icon: 'pi pi-calendar' },
   { to: '/contacts', label: 'Contacts', icon: 'pi pi-users' },
 ];
