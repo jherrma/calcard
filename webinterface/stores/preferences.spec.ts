@@ -165,6 +165,55 @@ describe('ensureLoaded', () => {
   });
 });
 
+// The SPA never reloads between a logout and the next login, so the cached map
+// and the once-per-session latch must be droppable (story 103 review).
+describe('reset', () => {
+  it('clears the cache so the next ensureLoaded refetches for the new session', async () => {
+    apiMock
+      .mockResolvedValueOnce(envelope({ ...fullMap, [PREF_TIME_FORMAT]: '12h', [PREF_DEFAULT_EVENT_DURATION]: '30' }))
+      .mockResolvedValueOnce(envelope(fullMap));
+
+    const store = usePreferencesStore();
+    await store.ensureLoaded();
+    expect(store.timeFormat).toBe('12h');
+
+    store.reset();
+
+    // Back to defaults immediately — a component rendering between logout and
+    // the next load must not still see the previous user's values.
+    expect(store.preferences).toEqual(DEFAULT_PREFERENCES);
+    expect(store.isLoaded).toBe(false);
+    expect(store.isLoading).toBe(false);
+    expect(store.error).toBeNull();
+
+    await store.ensureLoaded();
+
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(store.timeFormat).toBe('24h');
+    expect(store.defaultEventDuration).toBe(60);
+  });
+
+  it('discards a response that arrives after the reset (logout mid-request)', async () => {
+    let resolve!: (v: unknown) => void;
+    apiMock.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+
+    const store = usePreferencesStore();
+    const pending = store.ensureLoaded();
+
+    // Logout happens while the GET is still in flight.
+    store.reset();
+    resolve(envelope({ ...fullMap, [PREF_TIME_FORMAT]: '12h' }));
+    await pending;
+
+    // The previous session's answer is dropped, latch included, so the next
+    // caller fetches again instead of inheriting it.
+    expect(store.preferences).toEqual(DEFAULT_PREFERENCES);
+    expect(store.timeFormat).toBe('24h');
+    expect(store.isLoaded).toBe(false);
+    expect(store.isLoading).toBe(false);
+  });
+});
+
 describe('updatePreferences', () => {
   it('PATCHes the given keys and adopts the returned map', async () => {
     apiMock.mockResolvedValueOnce(envelope({

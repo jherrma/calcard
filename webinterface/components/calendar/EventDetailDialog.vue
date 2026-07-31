@@ -119,14 +119,18 @@ const formatDateTime = (dateStr: string, allDay: boolean) => {
   }
   // hour12 is passed explicitly (not left to the locale) so the user's 12h/24h
   // preference wins over whatever their locale would default to (story 103).
+  const is12h = preferencesStore.timeFormat === '12h';
   return date.toLocaleString(undefined, {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-    hour: '2-digit',
+    // Hour width has to follow the format: '2-digit' with hour12 renders
+    // "01:05 PM" (nobody writes a leading zero in 12-hour time), while 'numeric'
+    // with hour12 off drops the leading zero in some locales (de-DE → "0:05").
+    hour: is12h ? 'numeric' : '2-digit',
     minute: '2-digit',
-    hour12: preferencesStore.timeFormat === '12h',
+    hour12: is12h,
   });
 };
 

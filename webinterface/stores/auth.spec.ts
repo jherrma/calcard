@@ -3,6 +3,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import { createTestingPinia } from '@pinia/testing';
 import { useAuthStore } from './auth';
+import {
+  usePreferencesStore,
+  DEFAULT_PREFERENCES,
+  PREF_DEFAULT_EVENT_DURATION,
+  PREF_TIME_FORMAT,
+} from './preferences';
 import type { LoginResponse, RefreshResponse } from '~/types/auth';
 
 // A minimal, valid login response. expires_at is in the PAST by default so
@@ -144,6 +150,36 @@ describe('refresh token rotation persistence (#75)', () => {
     // Exactly one refresh happened even though two callers raced.
     expect(apiMock).toHaveBeenCalledTimes(1);
     expect(cookies.get('refresh_token')?.value).toBe('refresh-token-2');
+  });
+});
+
+describe('logout drops per-user cached state (story 103)', () => {
+  // Logout and the following login are both client-side navigations, so Pinia is
+  // never torn down. clearAuth is the single chokepoint every logout path goes
+  // through (explicit logout, failed refresh, account deletion).
+  it('logout() resets the preferences store so the next user in the tab refetches', async () => {
+    apiMock
+      // 1) user A's preferences  2) the logout POST
+      .mockResolvedValueOnce({
+        preferences: { ...DEFAULT_PREFERENCES, [PREF_TIME_FORMAT]: '12h', [PREF_DEFAULT_EVENT_DURATION]: '30' },
+      })
+      .mockResolvedValueOnce({});
+
+    const prefs = usePreferencesStore();
+    await prefs.ensureLoaded();
+    expect(prefs.timeFormat).toBe('12h');
+    expect(prefs.defaultEventDuration).toBe(30);
+
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+    await store.logout();
+
+    // User B would otherwise be shown A's 12h/30-minute settings — and, because
+    // /settings/calendar diffs the form against the store, could not fix them.
+    expect(prefs.isLoaded).toBe(false);
+    expect(prefs.preferences).toEqual(DEFAULT_PREFERENCES);
+    expect(prefs.timeFormat).toBe('24h');
+    expect(prefs.defaultEventDuration).toBe(60);
   });
 });
 

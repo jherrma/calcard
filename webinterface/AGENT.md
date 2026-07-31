@@ -59,7 +59,8 @@ webinterface/
 ├── stores/                  # Pinia stores (state + getters + actions)
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
-│   └── contacts.ts          # Address book + contact state, search, sorting, letter grouping
+│   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
+│   └── preferences.ts       # User preferences (default event duration, all-day, 12h/24h time format)
 ├── composables/
 │   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
 │   └── useAppToast.ts       # Toast notification helpers (success/error/warn/info)

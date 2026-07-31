@@ -1,4 +1,5 @@
 import type { User, LoginResponse, RefreshResponse } from "~/types/auth";
+import { usePreferencesStore } from "~/stores/preferences";
 
 // Base refresh-token cookie attributes. A useCookie() handle serializes WRITES
 // with its OWN options (options are not remembered per cookie name), so every
@@ -224,6 +225,10 @@ export const useAuthStore = defineStore("auth", {
       refreshCookie.value = null;
       // Clear the companion choice cookie too, so a later login starts fresh.
       useCookie(REMEMBER_COOKIE).value = null;
+      // Drop per-user state cached OUTSIDE this store. Logout navigates
+      // client-side (no page reload), so Pinia survives and the next user in this
+      // tab would otherwise inherit the previous user's preferences (story 103).
+      usePreferencesStore().reset();
     },
 
     async initAuth() {

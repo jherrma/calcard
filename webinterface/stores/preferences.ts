@@ -42,6 +42,11 @@ interface PreferencesState {
 // reactive; it is always cleared in the chain's finally.
 let inflight: Promise<void> | null = null;
 
+// Bumped by reset() (i.e. on logout). fetchPreferences captures it before its
+// await and refuses to write state if it changed meanwhile, so a GET issued for
+// the PREVIOUS session can never land in the next one's store.
+let generation = 0;
+
 export const usePreferencesStore = defineStore('preferences', {
   state: (): PreferencesState => ({
     // Start from the defaults so anything reading a getter before the fetch
@@ -72,19 +77,28 @@ export const usePreferencesStore = defineStore('preferences', {
   actions: {
     async fetchPreferences() {
       const api = useApi();
+      const gen = generation;
       this.isLoading = true;
       this.error = null;
       try {
         const data = await api<PreferencesResponse>('/api/v1/users/me/preferences');
+        // A reset() (logout) while this was in flight means the response belongs
+        // to a session that no longer exists — drop it rather than seed the next
+        // user's store with it.
+        if (gen !== generation) return;
         // Merge onto the defaults: the server already fills every known key, but
         // a client that is ahead of the server must not end up with holes.
         this.preferences = { ...DEFAULT_PREFERENCES, ...(data?.preferences ?? {}) };
         this.isLoaded = true;
       } catch (e: any) {
-        this.error = e?.data?.message || 'Failed to load preferences';
+        // Still rethrows for a stale generation (the caller asked, so it gets an
+        // answer), but the state it would have written is no longer ours.
+        if (gen === generation) {
+          this.error = e?.data?.message || 'Failed to load preferences';
+        }
         throw e;
       } finally {
-        this.isLoading = false;
+        if (gen === generation) this.isLoading = false;
       }
     },
 
@@ -96,13 +110,33 @@ export const usePreferencesStore = defineStore('preferences', {
     async ensureLoaded() {
       if (this.isLoaded) return;
       if (!inflight) {
-        inflight = this.fetchPreferences()
+        const own: Promise<void> = this.fetchPreferences()
           .catch(() => {})
           .finally(() => {
-            inflight = null;
+            // Only clear our own handle: a reset() may already have dropped it
+            // and a later caller installed a fresh one for the new session.
+            if (inflight === own) inflight = null;
           });
+        inflight = own;
       }
       await inflight;
+    },
+
+    /**
+     * Drop the cached map and the once-per-session latch. Called from
+     * authStore.clearAuth(): logout and login are both client-side navigations,
+     * so nothing ever reloads the page and Pinia state would otherwise survive
+     * into the NEXT user's session — who would then be shown (and, because
+     * isDirty compares against the store, be unable to correct) the previous
+     * user's settings on /settings/calendar (story 103 review).
+     */
+    reset() {
+      generation++;
+      inflight = null;
+      this.preferences = { ...DEFAULT_PREFERENCES };
+      this.isLoaded = false;
+      this.isLoading = false;
+      this.error = null;
     },
 
     async updatePreferences(prefs: Record<string, string>) {
