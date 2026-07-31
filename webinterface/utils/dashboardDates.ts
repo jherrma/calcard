@@ -83,6 +83,41 @@ export function monthFromKey(key: string): Date | null {
   return new Date(Number(match[1]), Number(match[2]) - 1, 1);
 }
 
+/** A half-open month range: `[start, end)`, both local midnight on a 1st. */
+export interface MonthRange {
+  start: Date;
+  end: Date;
+}
+
+/**
+ * Collapse `YYYY-MM` keys into the fewest half-open `[start, end)` ranges,
+ * merging only months that actually touch. Unparseable keys are dropped and
+ * duplicates collapse.
+ *
+ * Non-contiguous months deliberately stay SEPARATE ranges instead of becoming
+ * one min..max span: the dashboard's loaded months can be far apart (the mini
+ * calendar lets the user jump years), and a single span would make every refresh
+ * request the whole distance between them.
+ */
+export function mergeMonthRanges(keys: string[]): MonthRange[] {
+  const months = keys
+    .map((key) => monthFromKey(key))
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const ranges: MonthRange[] = [];
+  for (const month of months) {
+    const last = ranges[ranges.length - 1];
+    if (last && last.end.getTime() === month.getTime()) {
+      last.end = startOfNextMonth(month); // contiguous — extend
+      continue;
+    }
+    if (last && month.getTime() < last.end.getTime()) continue; // duplicate key
+    ranges.push({ start: month, end: startOfNextMonth(month) });
+  }
+  return ranges;
+}
+
 /** Whole calendar days from `a` to `b` (negative when `b` is earlier). */
 export function dayDiff(a: Date, b: Date): number {
   // Rounding absorbs the 23h/25h DST days that would otherwise yield ±0.96.

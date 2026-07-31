@@ -7,6 +7,7 @@ import { useCalendarStore } from './calendars';
 import { useContactsStore } from './contacts';
 import type { Calendar, CalendarEvent } from '~/types/calendar';
 import type { AddressBook, Contact } from '~/types/contacts';
+import { monthKey } from '~/utils/dashboardDates';
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
 mockNuxtImport('useApi', () => () => apiMock);
@@ -76,7 +77,7 @@ beforeEach(() => {
   apiMock.mockReset();
 });
 
-describe('load()', () => {
+describe('refresh()', () => {
   it('hydrates calendars + address books, then one event range per calendar and one contact preview per book', async () => {
     const calendarStore = useCalendarStore();
     const contactsStore = useContactsStore();
@@ -92,7 +93,7 @@ describe('load()', () => {
 
     const store = useDashboardStore();
     store.now = NOW.getTime();
-    await store.load();
+    await store.refresh();
 
     expect(calendarStore.calendars).toHaveLength(2);
     expect(contactsStore.addressBooks).toHaveLength(1);
@@ -111,6 +112,27 @@ describe('load()', () => {
     expect(store.isLoadingEvents).toBe(false);
     expect(store.isLoadingContacts).toBe(false);
     expect(store.eventsIncomplete).toBe(false);
+  });
+
+  // The store outlives client-side route changes, so re-entering the dashboard
+  // has to re-read the events rather than trust the first visit's snapshot.
+  it('re-reads events on every visit, even when the months are already loaded', async () => {
+    apiMock.mockImplementation((url: string) => {
+      if (url === '/api/v1/calendars') return { calendars: [calendar(1)] };
+      if (url === '/api/v1/addressbooks') return { addressbooks: [] };
+      return { events: [event('created-elsewhere', new Date(2026, 6, 30, 15, 0), new Date(2026, 6, 30, 16, 0))] };
+    });
+
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+    // State as a previous visit left it.
+    store.loadedMonths = ['2026-07', '2026-08'];
+    store.events = [event('deleted-elsewhere', new Date(2026, 6, 30, 9, 0), new Date(2026, 6, 30, 10, 0))];
+
+    await store.refresh();
+
+    expect(eventUrls()).toHaveLength(1);
+    expect(store.events.map((e) => e.id)).toEqual(['created-elsewhere']);
   });
 });
 
@@ -184,6 +206,29 @@ describe('ensureMonths()', () => {
     expect(store.events.map((e) => e.id)).toEqual(['ok']);
     expect(store.eventsIncomplete).toBe(true);
     expect(warnSpy.mock.calls[0]![0]).toContain('Broken');
+    warnSpy.mockRestore();
+  });
+
+  it('gives the month claim back when no calendar answers, so the month is retried', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const calendarStore = useCalendarStore();
+    calendarStore.calendars = [calendar(1)];
+    apiMock.mockRejectedValueOnce(new Error('offline'));
+
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+    await store.ensureMonths(NOW, 1);
+
+    // Marked-before-await stops duplicate fetches, but a month that never
+    // arrived must not stay marked: it would look empty forever.
+    expect(store.loadedMonths).toEqual([]);
+    expect(store.eventsIncomplete).toBe(true);
+
+    apiMock.mockResolvedValue({ events: [event('retried', new Date(2026, 6, 30, 9, 0), new Date(2026, 6, 30, 10, 0))] });
+    await store.ensureMonths(NOW, 1);
+
+    expect(store.loadedMonths).toEqual(['2026-07']);
+    expect(store.events.map((e) => e.id)).toEqual(['retried']);
     warnSpy.mockRestore();
   });
 });
@@ -371,7 +416,7 @@ describe('fetchRecentContacts()', () => {
 });
 
 describe('reloadEvents()', () => {
-  it('replaces the event list so deletions made elsewhere disappear, and fills gap months', async () => {
+  it('replaces the events of the refetched window so deletions made elsewhere disappear', async () => {
     const calendarStore = useCalendarStore();
     calendarStore.calendars = [calendar(1)];
 
@@ -380,8 +425,7 @@ describe('reloadEvents()', () => {
     store.events = [
       event('deleted-since', new Date(2026, 6, 30, 9, 0), new Date(2026, 6, 30, 10, 0)),
     ];
-    // July and September loaded, August never visited.
-    store.loadedMonths = ['2026-07', '2026-09'];
+    store.loadedMonths = ['2026-07', '2026-08'];
 
     apiMock.mockResolvedValue({
       events: [event('still-there', new Date(2026, 6, 31, 9, 0), new Date(2026, 6, 31, 10, 0))],
@@ -390,16 +434,15 @@ describe('reloadEvents()', () => {
     await store.reloadEvents();
 
     expect(store.events.map((e) => e.id)).toEqual(['still-there']);
-    // One request spanning July→September (exclusive October), and the gap month
-    // now counts as loaded.
+    // July and August are contiguous → ONE request, ending exclusively on 1 Sep.
     const urls = eventUrls();
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain(new Date(2026, 6, 1).toISOString());
-    expect(urls[0]).toContain(new Date(2026, 9, 1).toISOString());
-    expect(store.loadedMonths).toEqual(['2026-07', '2026-08', '2026-09']);
+    expect(urls[0]).toContain(new Date(2026, 8, 1).toISOString());
+    expect(store.loadedMonths).toEqual(['2026-07', '2026-08']);
   });
 
-  it('falls back to the initial window when nothing has been loaded yet', async () => {
+  it('fetches the initial window when nothing has been loaded yet', async () => {
     const calendarStore = useCalendarStore();
     calendarStore.calendars = [calendar(1)];
     apiMock.mockResolvedValue({ events: [] });
@@ -409,5 +452,108 @@ describe('reloadEvents()', () => {
     await store.reloadEvents();
 
     expect(store.loadedMonths).toEqual(['2026-07', '2026-08']);
+  });
+
+  it('keeps what is on screen when every request fails instead of blanking the widgets', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const calendarStore = useCalendarStore();
+    calendarStore.calendars = [calendar(1), calendar(2)];
+
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+    store.loadedMonths = ['2026-07', '2026-08'];
+    store.events = [event('real', new Date(2026, 6, 30, 9, 0), new Date(2026, 6, 30, 10, 0))];
+
+    apiMock.mockRejectedValue(new Error('502'));
+    await store.reloadEvents();
+
+    // An outage must not read as "Nothing scheduled today".
+    expect(store.events.map((e) => e.id)).toEqual(['real']);
+    expect(store.loadedMonths).toEqual(['2026-07', '2026-08']);
+    expect(store.eventsIncomplete).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it('keeps a month that was loaded while the reload was in flight', async () => {
+    const calendarStore = useCalendarStore();
+    calendarStore.calendars = [calendar(1)];
+
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+    store.loadedMonths = ['2026-07', '2026-08'];
+
+    const october = event('october', new Date(2026, 9, 5, 9, 0), new Date(2026, 9, 5, 10, 0));
+    const octoberStart = new Date(2026, 9, 1).toISOString();
+    const held: Array<(value: { events: CalendarEvent[] }) => void> = [];
+    apiMock.mockImplementation((url: string) => {
+      // The mini calendar's own fetch answers at once; the reload hangs until we
+      // release it, which is the race this test exists for.
+      if (url.includes(octoberStart)) return { events: [october] };
+      return new Promise((res) => { held.push(res); });
+    });
+
+    const pending = store.reloadEvents();
+    // User pages the mini calendar to October while the reload is awaiting.
+    await store.setMiniMonth(new Date(2026, 9, 1));
+    expect(store.events.map((e) => e.id)).toEqual(['october']);
+
+    held[0]!({ events: [event('july', new Date(2026, 6, 30, 9, 0), new Date(2026, 6, 30, 10, 0))] });
+    await pending;
+
+    // October is outside the reload's window: its events and its loaded-month
+    // entry must both survive, or the month on screen would empty out with
+    // nothing left to trigger a refetch.
+    expect(store.events.map((e) => e.id).sort()).toEqual(['july', 'october']);
+    expect(store.loadedMonths).toEqual(['2026-07', '2026-08', '2026-10']);
+  });
+
+  it('splits far-apart months into separate ranges and prunes them once they leave the screen', async () => {
+    const calendarStore = useCalendarStore();
+    calendarStore.calendars = [calendar(1)];
+    apiMock.mockResolvedValue({ events: [] });
+
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+    store.loadedMonths = ['2020-01', '2026-07', '2026-08'];
+    store.miniMonthKey = '2020-01'; // the user paged years back
+    store.events = [
+      event('ancient', new Date(2020, 0, 15, 9, 0), new Date(2020, 0, 15, 10, 0)),
+    ];
+
+    await store.reloadEvents();
+
+    // Two ranges, NOT one 79-month span from 2020 to 2026.
+    const urls = eventUrls();
+    expect(urls).toHaveLength(2);
+    expect(urls.some((u) => u.includes(new Date(2020, 0, 1).toISOString()) && u.includes(new Date(2020, 1, 1).toISOString()))).toBe(true);
+    expect(urls.some((u) => u.includes(new Date(2026, 6, 1).toISOString()) && u.includes(new Date(2026, 8, 1).toISOString()))).toBe(true);
+    expect(store.loadedMonths).toEqual(['2020-01', '2026-07', '2026-08']);
+
+    // Back to the current month: 2020 is no longer worth keeping, so it is
+    // dropped from both lists and would simply be refetched if visited again.
+    apiMock.mockClear();
+    store.miniMonthKey = '2026-07';
+    store.events = [event('ancient', new Date(2020, 0, 15, 9, 0), new Date(2020, 0, 15, 10, 0))];
+    await store.reloadEvents();
+
+    expect(eventUrls()).toHaveLength(1);
+    expect(store.loadedMonths).toEqual(['2026-07', '2026-08']);
+    expect(store.events).toEqual([]);
+  });
+});
+
+describe('setMiniMonth()', () => {
+  it('follows the clock until the user navigates, then sticks', async () => {
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+
+    expect(monthKey(store.miniMonth)).toBe('2026-07');
+
+    // No calendars yet: the month still moves, there is just nothing to fetch.
+    await store.setMiniMonth(new Date(2026, 10, 1));
+    expect(monthKey(store.miniMonth)).toBe('2026-11');
+
+    store.now = new Date(2026, 7, 1, 10, 0).getTime();
+    expect(monthKey(store.miniMonth)).toBe('2026-11');
   });
 });

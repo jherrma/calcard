@@ -74,8 +74,9 @@
 
 <script setup lang="ts">
 const props = defineProps<{
-  /** The displayed month (local midnight on the 1st). Owned by the page so it
-      can make sure that month's events are fetched. */
+  /** The displayed month (local midnight on the 1st). Owned by the dashboard
+      store (`setMiniMonth`), which fetches that month and protects it from
+      being pruned by a background refresh. */
   month: Date;
   /** Local `YYYY-MM-DD` keys that have at least one event. */
   eventDayKeys: Set<string>;

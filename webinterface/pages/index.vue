@@ -79,13 +79,13 @@
       />
 
       <DashboardMiniCalendarCard
-        :month="miniMonth"
+        :month="dashboardStore.miniMonth"
         :event-day-keys="dashboardStore.eventDayKeys"
         :now="dashboardStore.now"
         :calendar-count="calendarStore.calendars.length"
-        :event-count="dashboardStore.eventCountInMonth(miniMonth)"
+        :event-count="dashboardStore.eventCountInMonth(dashboardStore.miniMonth)"
         :loading="dashboardStore.isLoadingEvents"
-        @update:month="changeMiniMonth"
+        @update:month="dashboardStore.setMiniMonth($event)"
         @select-date="openDay"
       />
 
@@ -151,9 +151,6 @@ const contactsStore = useContactsStore();
 const dashboardStore = useDashboardStore();
 
 const showCreateEventDialog = ref(false);
-// The month the mini calendar shows; the page owns it so it can make sure that
-// month's events are fetched before the day markers are read.
-const miniMonth = ref(startOfMonth(new Date()));
 
 const greeting = computed(() => {
   const name = authStore.user?.display_name || authStore.user?.username;
@@ -181,20 +178,17 @@ onMounted(async () => {
   clockTimer = setInterval(() => dashboardStore.tick(), CLOCK_INTERVAL_MS);
   refreshTimer = setInterval(() => dashboardStore.refresh(), REFRESH_INTERVAL_MS);
   dashboardStore.tick();
-  await dashboardStore.load();
+  // Mount and the background timer share one path on purpose: the store survives
+  // client-side navigation, so re-entering the dashboard must RE-READ the events
+  // rather than keep the first visit's snapshot (an event created on the calendar
+  // page in between would otherwise be missing from the agenda).
+  await dashboardStore.refresh();
 });
 
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer);
   if (refreshTimer) clearInterval(refreshTimer);
 });
-
-const changeMiniMonth = async (month: Date) => {
-  miniMonth.value = month;
-  // Fetch on demand: the initial load only covers this month and the next, so
-  // navigating further out would otherwise show a month with no markers.
-  await dashboardStore.ensureMonths(month, 1);
-};
 
 // Navigating into the calendar rather than opening a detail dialog here:
 // EventDetailDialog unconditionally offers Edit/Delete, which would 403 on a

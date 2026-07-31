@@ -30,6 +30,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
 │   └── docker-compose*.yml
 └── webinterface/            # Nuxt 4 SPA frontend
     ├── pages/               # File-based routing
+    │   ├── index.vue        # Dashboard — the landing page after login (story 042)
     │   ├── auth/            # Login, register, setup, forgot/reset password, OAuth callback, verify
     │   ├── calendar/        # Calendar view with FullCalendar
     │   └── contacts/        # Contact list with search, grouping, detail panel
@@ -37,9 +38,11 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
     │   ├── auth/            # PasswordStrength
     │   ├── calendar/        # CalendarSidebar, CalendarToolbar, EventForm, Event*Dialog, RecurrenceScopeDialog
     │   ├── contacts/        # ContactsSidebar, ContactListItem, AlphabetNavigation
+    │   ├── dashboard/       # WidgetCard, TodayAgendaCard, UpcomingEventsCard, MiniCalendarCard, RecentContacts*, QuickStatsCard
     │   └── common/          # AppHeader, AppSidebar, HighlightText, LoadingSpinner, SkeletonList
-    ├── stores/              # Pinia stores: auth, calendars, contacts
+    ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard
     ├── composables/         # useApi (fetch wrapper), useAppToast
+    ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, …
     ├── middleware/           # auth (requires login), guest (redirects if logged in)
     ├── layouts/             # default (sidebar + header), auth (centered card)
     ├── types/               # TypeScript interfaces: auth, calendar, contacts, api

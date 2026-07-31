@@ -55,21 +55,33 @@
             </span>
           </div>
 
-          <button
-            v-for="block in blocks"
-            :key="block.key"
-            type="button"
-            class="absolute left-12 right-0 flex flex-col justify-center overflow-hidden px-2 rounded-md text-left border-l-[3px] bg-surface-50 dark:bg-surface-800/70 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-            :style="{ top: `${block.top}px`, height: `${block.height}px`, borderLeftColor: block.color }"
-            @click="$emit('select', block.event)"
-          >
-            <span class="text-xs font-medium text-surface-900 dark:text-surface-100 truncate w-full">
-              {{ block.title }}
-            </span>
-            <span v-if="block.height >= 34" class="text-[10px] text-surface-500 dark:text-surface-400 truncate w-full">
-              {{ block.time }}
-            </span>
-          </button>
+          <!-- Blocks live in their own layer that starts where the hour labels
+               end, so a block's lane can be expressed as a plain percentage of
+               the layer's width. -->
+          <div class="absolute left-12 right-0 top-0 bottom-0">
+            <button
+              v-for="block in blocks"
+              :key="block.key"
+              type="button"
+              class="absolute flex flex-col justify-center overflow-hidden px-2 rounded-md text-left border-l-[3px] bg-surface-50 dark:bg-surface-800/70 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+              :style="{
+                top: `${block.top}px`,
+                height: `${block.height}px`,
+                left: block.left,
+                width: block.width,
+                borderLeftColor: block.color,
+              }"
+              :title="`${block.title} · ${block.time}`"
+              @click="$emit('select', block.event)"
+            >
+              <span class="text-xs font-medium text-surface-900 dark:text-surface-100 truncate w-full">
+                {{ block.title }}
+              </span>
+              <span v-if="block.height >= 34" class="text-[10px] text-surface-500 dark:text-surface-400 truncate w-full">
+                {{ block.time }}
+              </span>
+            </button>
+          </div>
 
           <!-- Current-time indicator -->
           <div
@@ -96,6 +108,8 @@ const HOUR_HEIGHT = 48;
 const MIN_BLOCK_HEIGHT = 22;
 /** Never show fewer than this many hours of context around the events. */
 const MIN_HOURS_VISIBLE = 5;
+/** Gutter in px between two side-by-side (overlapping) blocks. */
+const LANE_GAP = 2;
 
 const props = defineProps<{
   allDayEvents: CalendarEvent[];
@@ -173,8 +187,16 @@ const hourMarks = computed(() =>
 );
 const hourLabel = (hour: number) => formatTimeOfDay(new Date(dayStartMs.value + hour * 3600000));
 
-const blocks = computed(() =>
-  props.timedEvents.flatMap((event) => {
+/**
+ * Positioned blocks for today's timed events.
+ *
+ * Concurrent events are split into side-by-side lanes: with every block pinned
+ * to the full width, the one drawn last covered the one underneath completely,
+ * so a double-booked hour showed a single title while the badge counted two —
+ * and the hidden event could not be clicked at all.
+ */
+const blocks = computed(() => {
+  const positioned = props.timedEvents.flatMap((event) => {
     const bounds = eventBounds(event.start, event.end);
     if (!bounds) return [];
     const startHours = toDayHours(bounds.start);
@@ -190,8 +212,19 @@ const blocks = computed(() =>
       height: Math.max((endHours - startHours) * HOUR_HEIGHT, MIN_BLOCK_HEIGHT),
       time: `${formatTimeOfDay(start)} – ${formatTimeOfDay(end)}`,
     }];
-  })
-);
+  });
+
+  const lanes = assignAgendaLanes(positioned);
+  return positioned.map((block, i) => {
+    const { lane, lanes: count } = lanes[i]!;
+    return {
+      ...block,
+      left: `${(lane / count) * 100}%`,
+      // A gutter so adjacent lanes read as two blocks rather than one wide one.
+      width: `calc(${100 / count}% - ${LANE_GAP}px)`,
+    };
+  });
+});
 
 const nowHours = computed(() => toDayHours(props.now));
 const nowVisible = computed(() => nowHours.value >= range.value.first && nowHours.value <= range.value.last);

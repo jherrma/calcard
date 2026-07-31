@@ -8,6 +8,7 @@ import {
   dayKey,
   dayKeysBetween,
   eventBounds,
+  mergeMonthRanges,
   minutesIntoDay,
   monthFromKey,
   monthKey,
@@ -26,6 +27,27 @@ describe('day/month keys', () => {
     const d = new Date(2026, 6, 5, 23, 30); // 5 Jul 2026, local
     expect(dayKey(d)).toBe('2026-07-05');
     expect(monthKey(d)).toBe('2026-07');
+  });
+
+  it('merges contiguous month keys and keeps distant ones apart', () => {
+    const ranges = mergeMonthRanges(['2026-08', '2026-07', '2020-01']);
+
+    // Sorted, July+August collapsed into one half-open range, January 2020 on
+    // its own — a single min..max span would have covered six years.
+    expect(ranges).toHaveLength(2);
+    expect(ranges[0]!.start.getTime()).toBe(new Date(2020, 0, 1).getTime());
+    expect(ranges[0]!.end.getTime()).toBe(new Date(2020, 1, 1).getTime());
+    expect(ranges[1]!.start.getTime()).toBe(new Date(2026, 6, 1).getTime());
+    expect(ranges[1]!.end.getTime()).toBe(new Date(2026, 8, 1).getTime());
+  });
+
+  it('bridges a year boundary, collapses duplicates and drops junk keys', () => {
+    const ranges = mergeMonthRanges(['2026-12', '2027-01', '2026-12', 'nope']);
+
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0]!.start.getTime()).toBe(new Date(2026, 11, 1).getTime());
+    expect(ranges[0]!.end.getTime()).toBe(new Date(2027, 1, 1).getTime());
+    expect(mergeMonthRanges([])).toEqual([]);
   });
 
   it('round-trips a month key back to local midnight on the 1st', () => {

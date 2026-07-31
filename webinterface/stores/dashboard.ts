@@ -1,5 +1,7 @@
 import type { Calendar, CalendarEvent } from '~/types/calendar';
 import type { AddressBook, Contact } from '~/types/contacts';
+// Type-only: the FUNCTIONS in utils/ are auto-imported, exported interfaces are not.
+import type { MonthRange } from '~/utils/dashboardDates';
 import { useCalendarStore } from '~/stores/calendars';
 import { useContactsStore } from '~/stores/contacts';
 
@@ -25,6 +27,28 @@ export const RECENT_CONTACTS_LIMIT = 6;
 export const INITIAL_MONTHS = 2;
 
 /**
+ * Months a refresh keeps alive.
+ *
+ * The widgets themselves only read the current month and the next (agenda,
+ * upcoming horizon, "events this month"); every other month in `events` is there
+ * purely because the mini calendar was pointed at it. So a refresh keeps the
+ * displayed month plus its immediate neighbours — paging one step then needs no
+ * fetch — and DROPS everything else from both `events` and `loadedMonths`.
+ *
+ * Dropping is what bounds the work: month navigation appends for as long as the
+ * user clicks, and without pruning a user who paged back to 2020 would make
+ * every later refresh re-request the whole span since. A pruned month leaves
+ * `loadedMonths` too, so navigating back to it simply fetches it again.
+ */
+function retainedMonthKeys(now: number, focus: Date): Set<string> {
+  const current = startOfMonth(new Date(now));
+  const keys = new Set<string>();
+  for (let i = 0; i < INITIAL_MONTHS; i++) keys.add(monthKey(addMonths(current, i)));
+  for (let i = -1; i <= 1; i++) keys.add(monthKey(addMonths(focus, i)));
+  return keys;
+}
+
+/**
  * Identity of a fetched event. Expanded occurrences of a recurring series all
  * carry the same backend `id` and differ only by `recurrence_id`/`start` (see
  * the composite FullCalendar id on the calendar page), so all three go into the
@@ -44,6 +68,13 @@ interface DashboardState {
   events: CalendarEvent[];
   /** `YYYY-MM` keys already fetched, so month navigation doesn't refetch. */
   loadedMonths: string[];
+  /**
+   * `YYYY-MM` the mini calendar is showing, or `''` for "whichever month `now`
+   * is in". The STORE owns it (rather than the page) because a refresh has to
+   * know which month is on screen: that month must never be pruned or replaced
+   * with stale data behind the user's back.
+   */
+  miniMonthKey: string;
   recentContacts: Contact[];
   /** Sum of every address book's reported `Total` (not the fetched slice size). */
   totalContacts: number;
@@ -67,6 +98,7 @@ export const useDashboardStore = defineStore('dashboard', {
   state: (): DashboardState => ({
     events: [],
     loadedMonths: [],
+    miniMonthKey: '',
     recentContacts: [],
     totalContacts: 0,
     eventLoads: 0,
@@ -79,6 +111,16 @@ export const useDashboardStore = defineStore('dashboard', {
   getters: {
     isLoadingEvents(state: DashboardState): boolean {
       return state.eventLoads > 0;
+    },
+
+    /**
+     * Month the mini calendar shows, as local midnight on the 1st. Until the
+     * user navigates it follows the clock, so a dashboard left open over a month
+     * boundary rolls over instead of sticking on the month it was opened in.
+     */
+    miniMonth(state: DashboardState): Date {
+      const parsed = state.miniMonthKey ? monthFromKey(state.miniMonthKey) : null;
+      return parsed ?? startOfMonth(new Date(state.now));
     },
 
     /** Events overlapping the current local day, earliest first. */
@@ -155,29 +197,29 @@ export const useDashboardStore = defineStore('dashboard', {
       this.now = Date.now();
     },
 
-    /**
-     * First load: calendars + address books, then the event window and the
-     * recent-contacts preview in parallel. `fetchCalendars`/`fetchAddressBooks`
-     * swallow their own failures into their store's `error`, so this never
-     * rejects — a dead calendars call just leaves the widgets empty.
-     */
-    async load() {
-      const calendarStore = useCalendarStore();
-      const contactsStore = useContactsStore();
-
-      await Promise.all([calendarStore.fetchCalendars(), contactsStore.fetchAddressBooks()]);
-
-      await Promise.all([
-        this.ensureMonths(new Date(this.now), INITIAL_MONTHS),
-        this.fetchRecentContacts(),
-      ]);
+    /** Point the mini calendar at `month` and make sure its events are loaded. */
+    async setMiniMonth(month: Date) {
+      this.miniMonthKey = monthKey(month);
+      // Fetch on demand: the initial window only covers this month and the next,
+      // so navigating further out would otherwise show a month with no markers.
+      await this.ensureMonths(month, 1);
     },
 
     /**
-     * Re-read everything currently on screen. Unlike a naive reset this does NOT
-     * clear `events` first: the fetched result REPLACES the list in one step, so
-     * deletions made elsewhere disappear without the widgets blinking through an
-     * empty state (this runs on a background timer as well as the refresh button).
+     * Re-read everything on screen: calendars + address books, then events and
+     * the recent-contacts preview in parallel. `fetchCalendars`/`fetchAddressBooks`
+     * swallow their own failures into their store's `error`, so this never
+     * rejects — a dead calendars call just leaves the widgets empty.
+     *
+     * Mount uses this same path (the page calls it from `onMounted`). It used to
+     * have a separate `load()` that only filled in MISSING months, which meant
+     * re-entering the dashboard — the Pinia store outlives client-side route
+     * changes — refreshed contacts but showed a stale event snapshot from the
+     * first visit: an event created on the calendar page was missing from the
+     * agenda, and a deleted one still listed, until the 5-minute timer fired.
+     *
+     * Unlike a naive reset this does NOT clear `events` first; the fetched result
+     * replaces the list in one step, so nothing blinks through an empty state.
      */
     async refresh() {
       this.eventsIncomplete = false;
@@ -191,33 +233,69 @@ export const useDashboardStore = defineStore('dashboard', {
     },
 
     /**
-     * Refetch every month already loaded and replace the event list. Loaded
-     * months may be non-contiguous (the user can jump around in the mini
-     * calendar); refetching the whole min..max span in one request per calendar
-     * is cheaper than one request per gap, and fills the gaps as a side effect.
+     * Refetch the months worth keeping (see {@link retainedMonthKeys}) and
+     * replace those months' events, so anything changed or deleted elsewhere
+     * shows up. Contiguous months go out as one range per calendar; a month the
+     * user jumped to years away is its own range rather than one giant span.
      */
     async reloadEvents() {
-      const anchors = this.loadedMonths
-        .map((key: string) => monthFromKey(key))
-        .filter((d): d is Date => d !== null)
-        .sort((a: Date, b: Date) => a.getTime() - b.getTime());
-      if (anchors.length === 0) {
-        await this.ensureMonths(new Date(this.now), INITIAL_MONTHS);
-        return;
+      const current = startOfMonth(new Date(this.now));
+      const focus = this.miniMonth;
+      const retained = retainedMonthKeys(this.now, focus);
+
+      // Ask for what the widgets need whether or not it is already loaded (this
+      // month, the next, and the month on screen — the clock may have rolled into
+      // a month nothing ever fetched), plus every retained month we do hold.
+      const targets = new Set<string>();
+      for (let i = 0; i < INITIAL_MONTHS; i++) targets.add(monthKey(addMonths(current, i)));
+      targets.add(monthKey(focus));
+      for (const key of this.loadedMonths) {
+        if (retained.has(key)) targets.add(key);
       }
 
-      const start = startOfMonth(anchors[0]!);
-      const end = startOfNextMonth(anchors[anchors.length - 1]!);
-      const fresh = await this.fetchEventRange(start, end);
-      if (fresh === null) return; // no calendars to ask; keep what we have
+      const before = new Set(this.loadedMonths);
+      const ranges = mergeMonthRanges([...targets]);
+      const results = await Promise.all(ranges.map((r: MonthRange) => this.fetchEventRange(r.start, r.end)));
 
-      this.events = fresh;
-      // Everything between the ends is loaded now, including any gap months.
-      const keys: string[] = [];
-      for (let cursor = start; cursor.getTime() < end.getTime(); cursor = startOfNextMonth(cursor)) {
-        keys.push(monthKey(cursor));
+      // Nothing usable came back — no calendars to ask, or every request failed
+      // (offline, API 502). Keep what is on screen: replacing it with the empty
+      // result would turn an outage into "Nothing scheduled today", a lie the
+      // user cannot distinguish from an actually empty calendar. `eventsIncomplete`
+      // has been set by then, so the page shows its warning banner.
+      const refreshed = ranges.filter((_, i) => results[i] !== null);
+      if (refreshed.length === 0) return;
+
+      // Months that appeared WHILE we were awaiting: the user paged the mini
+      // calendar and `ensureMonths` merged that month's events after our snapshot.
+      // They are outside this reload's window, so they have to survive it — a
+      // wholesale replace would both drop those events and unmark the month,
+      // leaving a month on screen that nothing would ever refetch.
+      const late = this.loadedMonths.filter((key: string) => !before.has(key) && !targets.has(key));
+      const keptKeys = [...new Set([...targets, ...late])].sort();
+
+      const fetchedSpans = refreshed.map((r: MonthRange) => ({ start: r.start.getTime(), end: r.end.getTime() }));
+      const keptSpans = mergeMonthRanges(keptKeys).map((r: MonthRange) => ({
+        start: r.start.getTime(),
+        end: r.end.getTime(),
+      }));
+
+      const fresh: CalendarEvent[] = [];
+      for (const result of results) {
+        if (result) fresh.push(...result);
       }
-      this.loadedMonths = keys;
+
+      // An already-held event survives only OUTSIDE the refetched spans (inside
+      // them the fresh result is authoritative) and only while its month is still
+      // kept. A range whose request failed keeps its old events for now; the next
+      // refresh recomputes the same targets and retries it.
+      this.events = this.events.filter((e: CalendarEvent) => {
+        const bounds = eventBounds(e.start, e.end);
+        if (!bounds) return false;
+        if (fetchedSpans.some((s) => overlaps(bounds, s.start, s.end))) return false;
+        return keptSpans.some((s) => overlaps(bounds, s.start, s.end));
+      });
+      this.mergeEvents(fresh);
+      this.loadedMonths = keptKeys;
     },
 
     /**
@@ -237,19 +315,31 @@ export const useDashboardStore = defineStore('dashboard', {
 
       // Mark before awaiting so two overlapping callers (mount and a month
       // change) can't fetch the same month twice.
-      this.loadedMonths.push(...missing.map((m: Date) => monthKey(m)));
+      const claimed = missing.map((m: Date) => monthKey(m));
+      this.loadedMonths.push(...claimed);
 
       const start = startOfMonth(missing[0]!);
       const end = startOfNextMonth(missing[missing.length - 1]!);
       const fetched = await this.fetchEventRange(start, end);
-      if (fetched) this.mergeEvents(fetched);
+      if (fetched === null) {
+        // Nothing answered. Give the claim back, or an empty month would look
+        // loaded forever and never be retried when the user returns to it.
+        const failed = new Set(claimed);
+        this.loadedMonths = this.loadedMonths.filter((key: string) => !failed.has(key));
+        return;
+      }
+      this.mergeEvents(fetched);
     },
 
     /**
      * One request per calendar for `[start, end)`, IN PARALLEL. `allSettled` (not
      * `all`) so a single failing calendar — a share revoked mid-session, say —
      * degrades to a "some events could not be loaded" note instead of blanking
-     * every widget. Returns null when there are no calendars to query.
+     * every widget.
+     *
+     * Returns null for "no usable answer": either there was no calendar to ask,
+     * or EVERY request failed. Callers must not treat that as an empty result —
+     * an offline refresh would otherwise wipe the whole dashboard.
      */
     async fetchEventRange(start: Date, end: Date): Promise<CalendarEvent[] | null> {
       const calendarStore = useCalendarStore();
@@ -268,15 +358,17 @@ export const useDashboardStore = defineStore('dashboard', {
         );
 
         const events: CalendarEvent[] = [];
+        let answered = 0;
         results.forEach((r, i) => {
           if (r.status === 'fulfilled') {
+            answered++;
             if (r.value.events) events.push(...r.value.events);
           } else {
             this.eventsIncomplete = true;
             console.warn(`Dashboard: failed to load events for calendar ${calendars[i]?.name}`, r.reason);
           }
         });
-        return events;
+        return answered === 0 ? null : events;
       } finally {
         this.eventLoads--;
       }
