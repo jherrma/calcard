@@ -80,6 +80,7 @@
 <script setup lang="ts">
 import type { CalendarEvent, RecurrenceRule } from '~/types/calendar';
 import { useCalendarStore } from '~/stores/calendars';
+import { usePreferencesStore } from '~/stores/preferences';
 import RecurrenceScopeDialog from '~/components/calendar/RecurrenceScopeDialog.vue';
 import { useConfirm } from 'primevue/useconfirm';
 
@@ -95,6 +96,7 @@ const emit = defineEmits<{
 }>();
 
 const calendarStore = useCalendarStore();
+const preferencesStore = usePreferencesStore();
 const confirm = useConfirm();
 const showScopeDialog = ref(false);
 
@@ -115,7 +117,17 @@ const formatDateTime = (dateStr: string, allDay: boolean) => {
   if (allDay) {
     return date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   }
-  return date.toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  // hour12 is passed explicitly (not left to the locale) so the user's 12h/24h
+  // preference wins over whatever their locale would default to (story 103).
+  return date.toLocaleString(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: preferencesStore.timeFormat === '12h',
+  });
 };
 
 const formatRecurrence = (rule?: RecurrenceRule) => {

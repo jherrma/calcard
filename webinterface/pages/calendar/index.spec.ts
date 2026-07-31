@@ -6,6 +6,7 @@ import { createTestingPinia } from '@pinia/testing';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import CalendarPage from './index.vue';
 import { useCalendarStore } from '~/stores/calendars';
+import { usePreferencesStore, PREF_TIME_FORMAT } from '~/stores/preferences';
 
 // SCOPE: the changeView() guard on the calendar page (#26). The view SelectButton
 // can deselect and emit `null`; before the fix changeView passed that straight to
@@ -58,7 +59,7 @@ async function mountPage() {
   // FullCalendar instance (it never mounts under a shallow ClientOnly stub).
   const api: CalendarApi = { changeView: vi.fn() };
   vm.calendarRef = { getApi: () => api };
-  return { wrapper, vm, api, store: useCalendarStore() };
+  return { wrapper, vm, api, store: useCalendarStore(), prefs: usePreferencesStore() };
 }
 
 beforeEach(() => {
@@ -112,5 +113,26 @@ describe('calendar time-axis window (#28)', () => {
     expect(opts.slotMaxTime).toBe('24:00:00');
     // Viewport still opens around the morning hours.
     expect(opts.scrollTime).toBe('07:00:00');
+  });
+});
+
+// SCOPE: the grid must actually follow the user's time_format preference (story
+// 103) — a setting that saves but changes nothing is not done.
+describe('calendar time format preference (story 103)', () => {
+  it('renders slot labels and event times in 24h by default', async () => {
+    const { vm } = await mountPage();
+
+    expect(vm.calendarOptions.slotLabelFormat).toMatchObject({ hour12: false });
+    expect(vm.calendarOptions.eventTimeFormat).toMatchObject({ hour12: false });
+  });
+
+  it('flips both formats to 12h when the preference says so', async () => {
+    const { vm, prefs } = await mountPage();
+
+    prefs.preferences = { ...prefs.preferences, [PREF_TIME_FORMAT]: '12h' };
+    await nextTick();
+
+    expect(vm.calendarOptions.slotLabelFormat).toMatchObject({ hour12: true });
+    expect(vm.calendarOptions.eventTimeFormat).toMatchObject({ hour12: true });
   });
 });

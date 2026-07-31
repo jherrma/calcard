@@ -79,3 +79,13 @@ export interface ChangePasswordResponse {
   message: string;
   access_token: string;
 }
+
+// User preferences (story 103). Values are strings on the wire because the
+// backend stores them in a generic key/value table; the preferences store parses
+// them into usable types.
+
+export type TimeFormat = '12h' | '24h';
+
+export interface PreferencesResponse {
+  preferences: Record<string, string>;
+}

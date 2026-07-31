@@ -50,7 +50,7 @@ JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", 
 | Auth | Login, register, verify, refresh, logout, forgot/reset password |
 | OAuth | Initiate, callback, link/unlink providers |
 | System | Settings (admin configured, SMTP enabled, registration enabled), auth methods |
-| User | Get/update profile, delete account |
+| User | Get/update profile, delete account, get/update preferences |
 | Calendars | CRUD, public sharing, export |
 | Events | CRUD, move between calendars |
 | Address Books | CRUD, export |

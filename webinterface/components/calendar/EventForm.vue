@@ -58,7 +58,7 @@
         v-model="form.start"
         :show-time="!form.all_day"
         :show-seconds="false"
-        hour-format="24"
+        :hour-format="hourFormat"
         date-format="yy-mm-dd"
         :invalid="!!errors.start"
       />
@@ -73,7 +73,7 @@
         v-model="form.end"
         :show-time="!form.all_day"
         :show-seconds="false"
-        hour-format="24"
+        :hour-format="hourFormat"
         date-format="yy-mm-dd"
         :invalid="!!errors.end"
       />
@@ -202,14 +202,21 @@
 <script setup lang="ts">
 import type { CalendarEvent, EventFormData, RecurrenceRule } from '~/types/calendar';
 import { useCalendarStore, toRFC3339 } from '~/stores/calendars';
+import { usePreferencesStore } from '~/stores/preferences';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   event?: CalendarEvent;
   initialStart?: Date;
   initialEnd?: Date;
   initialAllDay?: boolean;
   isSubmitting?: boolean;
-}>();
+}>(), {
+  // Vue casts an ABSENT Boolean prop to false, which would silently turn the
+  // "?? defaultAllDay preference" fallback below into dead code. Declaring an
+  // explicit `undefined` default opts out of that cast, so "the parent said
+  // nothing" stays distinguishable from "the parent said false" (story 103).
+  initialAllDay: undefined,
+});
 
 const emit = defineEmits<{
   submit: [data: EventFormData];
@@ -217,6 +224,7 @@ const emit = defineEmits<{
 }>();
 
 const calendarStore = useCalendarStore();
+const preferencesStore = usePreferencesStore();
 
 const timezones = computed(() => {
   try {
@@ -255,6 +263,16 @@ const intervalLabel = computed(() => {
 
 // Form state
 const HOUR_MS = 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+
+// The user's configured default event length, in ms (story 103). Read as a
+// computed so a preference saved in another tab is picked up without a reload;
+// the initial form values below still snapshot it at setup time, which is why the
+// calendar page loads preferences before any create dialog can open.
+const durationMs = computed(() => preferencesStore.defaultEventDuration * MINUTE_MS);
+
+// DatePicker wants the string '12' / '24', not the '12h' / '24h' we persist.
+const hourFormat = computed(() => (preferencesStore.timeFormat === '12h' ? '12' : '24'));
 
 const defaultStart = () => {
   if (props.initialStart) return new Date(props.initialStart);
@@ -267,7 +285,7 @@ const defaultStart = () => {
 const defaultEnd = () => {
   if (props.initialEnd) return new Date(props.initialEnd);
   if (props.event) return new Date(props.event.end);
-  return new Date(defaultStart().getTime() + HOUR_MS);
+  return new Date(defaultStart().getTime() + durationMs.value);
 };
 
 const defaultCalendarId = () => {
@@ -281,7 +299,9 @@ const form = reactive({
   description: props.event?.description || '',
   location: props.event?.location || '',
   calendar_id: defaultCalendarId(),
-  all_day: props.event?.all_day ?? props.initialAllDay ?? false,
+  // Editing keeps the event's own flag; a drag-selection in the grid (initialAllDay)
+  // beats the preference because the user just expressed an explicit intent.
+  all_day: props.event?.all_day ?? props.initialAllDay ?? preferencesStore.defaultAllDay,
   start: defaultStart(),
   end: defaultEnd(),
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -294,16 +314,16 @@ watch(() => form.all_day, (newVal, oldVal) => {
     const start = new Date(form.start);
     start.setHours(now.getHours(), 0, 0, 0);
     form.start = start;
-    form.end = new Date(start.getTime() + HOUR_MS);
+    form.end = new Date(start.getTime() + durationMs.value);
   }
 });
 
-// When start time changes, set end to start + 1 hour
+// When start time changes, set end to start + the configured default duration
 // Watch the timestamp value to detect in-place Date mutations from DatePicker
 const isEditing = !!props.event;
 watch(() => form.start?.getTime(), (newTime, oldTime) => {
   if (!isEditing && newTime && newTime !== oldTime && !form.all_day) {
-    form.end = new Date(newTime + HOUR_MS);
+    form.end = new Date(newTime + durationMs.value);
   }
 });
 

@@ -58,6 +58,18 @@ type AppPasswordRepository interface {
 	CountByUserID(ctx context.Context, userID uint) (int64, error)
 }
 
+// UserPreferenceRepository defines the interface for user preference persistence
+type UserPreferenceRepository interface {
+	GetByUserID(ctx context.Context, userID uint) ([]UserPreference, error)
+	GetByKey(ctx context.Context, userID uint, key string) (*UserPreference, error)
+	// Upsert inserts the preference or, when (user_id, key) already exists,
+	// updates its value in a single statement. Implementations MUST be
+	// insert-or-update in one round trip: a read-then-write would let two
+	// concurrent PATCHes race into a unique-index violation.
+	Upsert(ctx context.Context, pref *UserPreference) error
+	Delete(ctx context.Context, userID uint, key string) error
+}
+
 type CardDAVCredentialRepository interface {
 	Create(ctx context.Context, cred *CardDAVCredential) error
 	GetByUUID(ctx context.Context, uuid string) (*CardDAVCredential, error)

@@ -13,13 +13,15 @@ import (
 )
 
 type UserHandler struct {
-	changePasswordUC *authusecase.ChangePasswordUseCase
-	getProfileUC     *userusecase.GetProfileUseCase
-	updateProfileUC  *userusecase.UpdateProfileUseCase
-	deleteAccountUC  *userusecase.DeleteAccountUseCase
-	calendarRepo     calendar.CalendarRepository
-	addressBookRepo  addressbook.Repository
-	appPasswordRepo  user.AppPasswordRepository
+	changePasswordUC    *authusecase.ChangePasswordUseCase
+	getProfileUC        *userusecase.GetProfileUseCase
+	updateProfileUC     *userusecase.UpdateProfileUseCase
+	deleteAccountUC     *userusecase.DeleteAccountUseCase
+	getPreferencesUC    *userusecase.GetPreferencesUseCase
+	updatePreferencesUC *userusecase.UpdatePreferencesUseCase
+	calendarRepo        calendar.CalendarRepository
+	addressBookRepo     addressbook.Repository
+	appPasswordRepo     user.AppPasswordRepository
 }
 
 func NewUserHandler(
@@ -27,18 +29,22 @@ func NewUserHandler(
 	getProfileUC *userusecase.GetProfileUseCase,
 	updateProfileUC *userusecase.UpdateProfileUseCase,
 	deleteAccountUC *userusecase.DeleteAccountUseCase,
+	getPreferencesUC *userusecase.GetPreferencesUseCase,
+	updatePreferencesUC *userusecase.UpdatePreferencesUseCase,
 	calendarRepo calendar.CalendarRepository,
 	addressBookRepo addressbook.Repository,
 	appPasswordRepo user.AppPasswordRepository,
 ) *UserHandler {
 	return &UserHandler{
-		changePasswordUC: changePasswordUC,
-		getProfileUC:     getProfileUC,
-		updateProfileUC:  updateProfileUC,
-		deleteAccountUC:  deleteAccountUC,
-		calendarRepo:     calendarRepo,
-		addressBookRepo:  addressBookRepo,
-		appPasswordRepo:  appPasswordRepo,
+		changePasswordUC:    changePasswordUC,
+		getProfileUC:        getProfileUC,
+		updateProfileUC:     updateProfileUC,
+		deleteAccountUC:     deleteAccountUC,
+		getPreferencesUC:    getPreferencesUC,
+		updatePreferencesUC: updatePreferencesUC,
+		calendarRepo:        calendarRepo,
+		addressBookRepo:     addressBookRepo,
+		appPasswordRepo:     appPasswordRepo,
 	}
 }
 
@@ -244,4 +250,75 @@ func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
 		"message":      "Password changed successfully",
 		"access_token": res.AccessToken,
 	})
+}
+
+// GetPreferences godoc
+// @Summary      Get user preferences
+// @Description  Get the current user's preferences. Keys the user has not set are returned with their default value.
+// @Tags         Users
+// @Produce      json
+// @Success      200  {object}  dto.PreferencesResponse
+// @Failure      401  {object}  ErrorResponseBody
+// @Failure      404  {object}  ErrorResponseBody
+// @Failure      500  {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /users/me/preferences [get]
+func (h *UserHandler) GetPreferences(c fiber.Ctx) error {
+	userUUID, ok := c.Locals("user_uuid").(string)
+	if !ok {
+		return UnauthorizedResponse(c, "Unauthorized")
+	}
+
+	prefs, err := h.getPreferencesUC.Execute(c.Context(), userUUID)
+	if err != nil {
+		if errors.Is(err, userusecase.ErrUserNotFound) {
+			return ErrorResponse(c, fiber.StatusNotFound, "User not found")
+		}
+		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to get preferences")
+	}
+
+	return SuccessResponse(c, dto.PreferencesResponse{Preferences: prefs})
+}
+
+// UpdatePreferences godoc
+// @Summary      Update user preferences
+// @Description  Upsert one or more preferences. Unknown keys and out-of-range values are rejected with 400; the full updated map is returned.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        preferences  body      dto.UpdatePreferencesRequest  true  "Preferences to set"
+// @Success      200          {object}  dto.PreferencesResponse
+// @Failure      400          {object}  ErrorResponseBody
+// @Failure      401          {object}  ErrorResponseBody
+// @Failure      404          {object}  ErrorResponseBody
+// @Failure      500          {object}  ErrorResponseBody
+// @Security     BearerAuth
+// @Router       /users/me/preferences [patch]
+func (h *UserHandler) UpdatePreferences(c fiber.Ctx) error {
+	var req dto.UpdatePreferencesRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequestResponse(c, "Invalid request body")
+	}
+
+	userUUID, ok := c.Locals("user_uuid").(string)
+	if !ok {
+		return UnauthorizedResponse(c, "Unauthorized")
+	}
+
+	prefs, err := h.updatePreferencesUC.Execute(c.Context(), userUUID, req.Preferences)
+	if err != nil {
+		// The validation sentinels carry the offending key and its allowed values,
+		// so the message is safe (and useful) to hand back verbatim.
+		if errors.Is(err, userusecase.ErrUnknownPreferenceKey) ||
+			errors.Is(err, userusecase.ErrInvalidPreferenceValue) ||
+			errors.Is(err, userusecase.ErrNoPreferencesGiven) {
+			return BadRequestResponse(c, err.Error())
+		}
+		if errors.Is(err, userusecase.ErrUserNotFound) {
+			return ErrorResponse(c, fiber.StatusNotFound, "User not found")
+		}
+		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update preferences")
+	}
+
+	return SuccessResponse(c, dto.PreferencesResponse{Preferences: prefs})
 }
