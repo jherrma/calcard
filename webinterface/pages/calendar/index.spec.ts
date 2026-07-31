@@ -7,6 +7,7 @@ import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import CalendarPage from './index.vue';
 import { useCalendarStore } from '~/stores/calendars';
 import { usePreferencesStore, PREF_TIME_FORMAT } from '~/stores/preferences';
+import type { CalendarEvent } from '~/types/calendar';
 
 // SCOPE: the changeView() guard on the calendar page (#26). The view SelectButton
 // can deselect and emit `null`; before the fix changeView passed that straight to
@@ -33,11 +34,25 @@ mockNuxtImport('useAppToast', () => {
   });
 });
 
+// Global search deep-links into this page via the route query (story 044), so the
+// route is mocked with a mutable object each test can rewrite before mounting.
+// Default {} keeps the pre-existing specs on the "no deep link" path.
+const { routeStub, navigateToMock } = vi.hoisted(() => ({
+  routeStub: { query: {} as Record<string, string> },
+  navigateToMock: vi.fn(),
+}));
+mockNuxtImport('useRoute', () => () => routeStub as never);
+mockNuxtImport('navigateTo', () => navigateToMock);
+
 interface CalendarApi {
   changeView: ReturnType<typeof vi.fn>;
+  gotoDate: ReturnType<typeof vi.fn>;
 }
 interface PageVm {
   changeView: (view: string | null | undefined) => void;
+  applyDeepLink: () => Promise<void>;
+  selectedEvent: CalendarEvent | null;
+  showDetailDialog: boolean;
   calendarRef: { getApi: () => CalendarApi } | undefined;
   calendarOptions: {
     slotMinTime?: string;
@@ -57,13 +72,15 @@ async function mountPage() {
   const vm = wrapper.vm as unknown as PageVm;
   // Inject a fake FullCalendar api so the happy path is observable without a real
   // FullCalendar instance (it never mounts under a shallow ClientOnly stub).
-  const api: CalendarApi = { changeView: vi.fn() };
+  const api: CalendarApi = { changeView: vi.fn(), gotoDate: vi.fn() };
   vm.calendarRef = { getApi: () => api };
   return { wrapper, vm, api, store: useCalendarStore(), prefs: usePreferencesStore() };
 }
 
 beforeEach(() => {
   vi.stubGlobal('$fetch', vi.fn());
+  routeStub.query = {};
+  navigateToMock.mockReset();
 });
 
 afterEach(() => {
@@ -96,6 +113,160 @@ describe('calendar page changeView guard (#26)', () => {
     vm.changeView('listWeek');
 
     expect(api.changeView).not.toHaveBeenCalled();
+  });
+});
+
+// SCOPE: the global-search deep link (story 044). /calendar?date=&event=&cal=
+// must jump the view to the date and open that event's detail dialog, then drop
+// the params so re-picking the same result (or a reload) behaves sanely.
+describe('global search deep link (story 044)', () => {
+  function occurrence(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
+    return {
+      id: 'ev-1',
+      calendar_id: 7,
+      uid: 'uid-1',
+      summary: 'Team Standup',
+      start: '2026-06-16T09:00:00+02:00',
+      end: '2026-06-16T09:30:00+02:00',
+      all_day: false,
+      is_recurring: false,
+      ...overrides,
+    };
+  }
+
+  // onMounted runs applyDeepLink once — that IS the first-load path, but it fires
+  // before a test can seed store.events, so reset the observers afterwards and let
+  // each test assert its own explicit invocation.
+  async function mountForDeepLink() {
+    const ctx = await mountPage();
+    vi.mocked(ctx.store.getEvent).mockReset();
+    vi.mocked(ctx.store.fetchEventOccurrence).mockReset();
+    vi.mocked(ctx.store.setCurrentDate).mockClear();
+    navigateToMock.mockReset();
+    return ctx;
+  }
+
+  it('does nothing without deep-link params', async () => {
+    const { vm, api, store } = await mountForDeepLink();
+
+    await vm.applyDeepLink();
+
+    expect(api.gotoDate).not.toHaveBeenCalled();
+    expect(store.getEvent).not.toHaveBeenCalled();
+    expect(navigateToMock).not.toHaveBeenCalled();
+    expect(vm.showDetailDialog).toBe(false);
+  });
+
+  it('jumps to the date, fetches the event and strips the params', async () => {
+    routeStub.query = { date: '2026-06-16', event: 'ev-1', cal: '7' };
+    const { vm, api, store } = await mountForDeepLink();
+    // No `recurrence` param: a plain event is resolved by id, which is what
+    // GET /events/:id can answer correctly.
+    vi.mocked(store.getEvent).mockResolvedValue(occurrence());
+
+    await vm.applyDeepLink();
+
+    // Parsed as LOCAL midnight — a bare 'YYYY-MM-DD' would be UTC and could land
+    // on the 15th west of Greenwich.
+    const jumped = api.gotoDate.mock.calls[0]![0] as Date;
+    expect([jumped.getFullYear(), jumped.getMonth(), jumped.getDate()]).toEqual([2026, 5, 16]);
+    expect(store.setCurrentDate).toHaveBeenCalled();
+    // The numeric calendar id from the link; the store maps it to the UUID (#52).
+    expect(store.getEvent).toHaveBeenCalledWith('7', 'ev-1');
+    expect(vm.showDetailDialog).toBe(true);
+    expect(navigateToMock).toHaveBeenCalledWith({ path: '/calendar', query: {} }, { replace: true });
+  });
+
+  // REVERT PROOF for the recurring deep link: the target date is normally OUTSIDE
+  // the range FullCalendar has fetched (the refetch that gotoDate triggers is async
+  // and lands later), so store.events misses and the old code fell through to
+  // getEvent — which returns the series MASTER because GET /events/:id does no
+  // recurrence expansion. That opened a dialog for 5 January while the grid sat on
+  // 15 September. The occurrence is now resolved from the expanded target day.
+  it('resolves a recurring occurrence from the target day instead of the series master', async () => {
+    routeStub.query = {
+      date: '2026-09-15',
+      event: 'ev-1',
+      cal: '7',
+      recurrence: '2026-09-15T07:00:00Z',
+    };
+    const { vm, store } = await mountForDeepLink();
+    // store.events holds the CURRENT month only — the September occurrence is absent.
+    store.events = [];
+    const resolved = occurrence({
+      start: '2026-09-15T09:00:00+02:00',
+      end: '2026-09-15T09:30:00+02:00',
+      recurrence_id: '2026-09-15T07:00:00Z',
+      is_recurring: true,
+    });
+    vi.mocked(store.fetchEventOccurrence).mockResolvedValue(resolved);
+
+    await vm.applyDeepLink();
+
+    expect(store.fetchEventOccurrence).toHaveBeenCalledWith(
+      '7',
+      'ev-1',
+      '2026-09-15T07:00:00Z',
+      expect.any(Date)
+    );
+    // The series master (getEvent) must NOT be what opens.
+    expect(store.getEvent).not.toHaveBeenCalled();
+    expect(vm.selectedEvent?.start).toBe('2026-09-15T09:00:00+02:00');
+    expect(vm.showDetailDialog).toBe(true);
+  });
+
+  it('warns instead of opening the wrong date when the occurrence is gone', async () => {
+    routeStub.query = {
+      date: '2026-09-15',
+      event: 'ev-1',
+      cal: '7',
+      recurrence: '2026-09-15T07:00:00Z',
+    };
+    const { vm, store } = await mountForDeepLink();
+    store.events = [];
+    vi.mocked(store.fetchEventOccurrence).mockResolvedValue(null);
+
+    await vm.applyDeepLink();
+
+    expect(vm.showDetailDialog).toBe(false);
+    expect(store.getEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps unrelated query params when consuming the deep link', async () => {
+    routeStub.query = { date: '2026-06-16', view: 'timeGridWeek' };
+    const { vm } = await mountForDeepLink();
+
+    await vm.applyDeepLink();
+
+    // Only the four deep-link params are stripped — a param another story adds must
+    // survive being consumed here.
+    expect(navigateToMock).toHaveBeenCalledWith(
+      { path: '/calendar', query: { view: 'timeGridWeek' } },
+      { replace: true }
+    );
+  });
+
+  it('prefers the already-loaded occurrence over refetching the series', async () => {
+    routeStub.query = {
+      date: '2026-06-16',
+      event: 'ev-1',
+      cal: '7',
+      recurrence: '2026-06-16T07:00:00Z',
+    };
+    const { vm, store } = await mountForDeepLink();
+    store.events = [
+      occurrence({ recurrence_id: '2026-06-15T07:00:00Z', summary: 'Wrong occurrence' }),
+      occurrence({ recurrence_id: '2026-06-16T07:00:00Z' }),
+    ];
+
+    await vm.applyDeepLink();
+
+    // Matching on id alone would have opened the 15th's occurrence (every expanded
+    // instance shares the series id).
+    expect(vm.selectedEvent?.recurrence_id).toBe('2026-06-16T07:00:00Z');
+    expect(vm.selectedEvent?.summary).toBe('Team Standup');
+    expect(store.getEvent).not.toHaveBeenCalled();
+    expect(vm.showDetailDialog).toBe(true);
   });
 });
 

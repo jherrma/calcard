@@ -33,19 +33,21 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
     │   ├── index.vue        # Dashboard — the landing page after login (story 042)
     │   ├── auth/            # Login, register, setup, forgot/reset password, OAuth callback, verify
     │   ├── calendar/        # Calendar view with FullCalendar
-    │   └── contacts/        # Contact list with search, grouping, detail panel
+    │   ├── contacts/        # Contact list with search, grouping, detail panel
+    │   └── search.vue       # Full global-search results page (?q=…)
     ├── components/
     │   ├── auth/            # PasswordStrength
     │   ├── calendar/        # CalendarSidebar, CalendarToolbar, EventForm, Event*Dialog, RecurrenceScopeDialog
     │   ├── contacts/        # ContactsSidebar, ContactListItem, AlphabetNavigation
     │   ├── dashboard/       # WidgetCard, TodayAgendaCard, UpcomingEventsCard, MiniCalendarCard, RecentContacts*, QuickStatsCard
-    │   └── common/          # AppHeader, AppSidebar, HighlightText, LoadingSpinner, SkeletonList
-    ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard
+    │   ├── sharing/         # SharePanel, PublicLinkPanel, ShareDialog (calendars + address books)
+    │   └── common/          # AppHeader, AppSidebar, GlobalSearch, Search*, HighlightText, LoadingSpinner, SkeletonList
+    ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard, preferences, search, sharing
     ├── composables/         # useApi (fetch wrapper), useAppToast
     ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, …
     ├── middleware/           # auth (requires login), guest (redirects if logged in)
     ├── layouts/             # default (sidebar + header), auth (centered card)
-    ├── types/               # TypeScript interfaces: auth, calendar, contacts, api
+    ├── types/               # TypeScript interfaces: auth, calendar, contacts, search, api
     └── plugins/             # PrimeVue service registration (ToastService, ConfirmationService)
 ```
 

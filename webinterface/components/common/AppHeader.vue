@@ -18,6 +18,9 @@
       <!-- Spacer -->
       <div class="flex-1" />
 
+      <!-- Global search (story 044) — trigger + dialog live together in the component -->
+      <CommonGlobalSearch class="mr-1" />
+
       <!-- User menu -->
       <div class="relative" ref="menuRef">
         <button
