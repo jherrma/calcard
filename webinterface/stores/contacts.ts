@@ -96,10 +96,23 @@ export const useContactsStore = defineStore('contacts', {
     async fetchAddressBooks() {
       const api = useApi();
       try {
+        // Mirrors calendars.fetchCalendars (story 043 review): a REFETCH — which
+        // the share dialog triggers after every share mutation — must not reset
+        // the sidebar selection and re-broaden a contact list the user had
+        // filtered. First load selects everything; afterwards each known book
+        // keeps its state and books we have not seen before default to selected.
+        const knownIds = new Set(this.addressBooks.map((ab: AddressBook) => ab.ID));
+        const previouslySelected = this.selectedAddressBookIds;
+        const isRefetch = knownIds.size > 0;
+
         const response = await api<{ addressbooks: AddressBook[] }>('/api/v1/addressbooks');
         this.addressBooks = response.addressbooks || [];
-        // Initially select all address books
-        this.selectedAddressBookIds = new Set(this.addressBooks.map((ab: AddressBook) => ab.ID));
+
+        this.selectedAddressBookIds = new Set(
+          this.addressBooks
+            .map((ab: AddressBook) => ab.ID)
+            .filter((id: number) => !isRefetch || !knownIds.has(id) || previouslySelected.has(id)),
+        );
       } catch (e: unknown) {
         this.error = (e as Error).message || 'Failed to load address books';
       }

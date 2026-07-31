@@ -54,6 +54,10 @@ webinterface/
 │   │   ├── ContactsSidebar.vue    # Address book list with checkboxes
 │   │   ├── ContactListItem.vue    # Single contact row (avatar, name, email, actions)
 │   │   └── AlphabetNavigation.vue # A-Z letter strip for quick scrolling
+│   ├── sharing/                   # Resource-agnostic sharing UI (story 043)
+│   │   ├── SharePanel.vue         # → <SharingSharePanel>  list/invite/change/revoke, BOTH resource kinds
+│   │   ├── PublicLinkPanel.vue    # → <SharingPublicLinkPanel>  calendar public link (calendars only)
+│   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
 │       ├── AppHeader.vue          # Top bar with hamburger toggle
 │       ├── AppSidebar.vue         # Main navigation sidebar (Calendar, Contacts, Settings)
@@ -64,7 +68,9 @@ webinterface/
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
-│   └── preferences.ts       # User preferences (default event duration, all-day, 12h/24h time format)
+│   ├── preferences.ts       # User preferences (default event duration, all-day, 12h/24h time format)
+│   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
+│                            #   `sharedWithMe` derived from the two list endpoints (story 043)
 ├── composables/
 │   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
@@ -153,6 +159,42 @@ The contacts page (`pages/contacts/index.vue`) uses a custom list layout:
 - **AlphabetNavigation**: A-Z letter strip. Only letters with contacts are clickable. Clicking scrolls to that section.
 - **Contact detail**: Full contact details live on the route page `pages/contacts/[id]/index.vue` (navigated to when a contact is selected).
 - **Virtual scrolling**: Manual implementation with computed offsets and a scroll container.
+
+### Sharing (story 043)
+
+`stores/sharing.ts` is the single entry point; the three `components/sharing/*` components are thin
+views over it. Constraints that shaped it — all imposed by the API:
+
+- **One store, both resource kinds.** `/api/v1/calendars/:uuid/shares` and
+  `/api/v1/addressbooks/:uuid/shares` are byte-for-byte identical in request and response, so
+  `shareCollectionUrl(type, uuid)` is the only thing that differs. Both are keyed on the resource
+  **UUID** (#52) — a numeric id gives a 404.
+- **These endpoints return raw JSON**, not the `{ status, data }` envelope: `GET` → `{ shares: [...] }`,
+  `POST`/`PATCH` → the bare share object, `DELETE` → 204.
+- **Errors carry `{ "error": "..." }`, not `{ "message": ... }`** like the auth handlers. Use
+  `shareErrorMessage()`; reading `Error.message` yields ofetch's useless `[POST] …: 400 Bad Request`.
+- **There is no user-search endpoint.** Invite by `user_identifier`, which the backend resolves as an
+  email *or* a username. Nothing to autocomplete against.
+- **There is no `/shared-with-me` endpoint.** `GET /calendars` and `GET /addressbooks` already return
+  shared resources carrying `shared` / `permission` / `owner` (#53); `sharedWithMe` derives from those.
+- **Share management is owner-only** — a sharee gets 404 from every share endpoint. Never render it
+  for a resource with `shared === true`; pass `:can-manage="!resource.shared"`.
+- **Public links are calendars-only and have no DELETE route.** `POST …/public` with
+  `{ enabled: false }` is how you disable (it also clears the token, so re-enabling mints a new URL).
+  `GET …/public` is the *only* source of the public URL — the token is `json:"-"` on the domain model.
+- **A failed read must never render as a fact.** Read actions swallow their failure into
+  `sharesError` / `publicError` (two fields, because both panels are mounted at once). Any view of
+  `shares` / `publicAccess` MUST render those errors, because an empty list after a failed load is
+  indistinguishable from "nothing is shared" — and "this calendar is private" is then a false
+  statement the owner will act on. Same rule on `pages/settings/sharing.vue`, which has to read
+  `calendarStore.error` / `contactsStore.error` back after the load, since neither list action rejects.
+- **The store holds exactly ONE resource at a time**, so `fetchShares` / `fetchPublicAccess` carry a
+  sequence token and discard superseded responses; mutations bump it too. `useApi`'s
+  retry-once-on-401 spends a whole refresh round-trip before re-issuing, so responses really do
+  arrive out of order.
+- **Refetching a list must not reset the user's view.** `changed` fires on every share mutation and
+  the pages refetch on it, so `fetchCalendars` / `fetchAddressBooks` preserve `visibleCalendarIds` /
+  `selectedAddressBookIds` for already-known resources (first load still selects everything).
 
 ### Type System Gotchas
 

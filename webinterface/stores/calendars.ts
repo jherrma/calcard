@@ -63,11 +63,25 @@ export const useCalendarStore = defineStore('calendars', {
     async fetchCalendars() {
       const api = useApi();
       try {
+        // A REFETCH must not clobber the sidebar filter (story 043 review): the
+        // share dialog refetches the list after every share mutation, and the
+        // old "select all" reset silently re-checked calendars the user had
+        // hidden — their events flooded back into the view mid-dialog. So: first
+        // load still shows everything, a refetch keeps each already-known
+        // calendar's state and defaults calendars we have not seen before
+        // (e.g. one just shared with us) to visible.
+        const knownIds = new Set(this.calendars.map((c: Calendar) => String(c.id)));
+        const previouslyVisible = this.visibleCalendarIds;
+        const isRefetch = knownIds.size > 0;
+
         const response = await api<{ calendars: Calendar[] }>('/api/v1/calendars');
         this.calendars = response.calendars || [];
 
-        // Initially show all calendars
-        this.visibleCalendarIds = new Set(this.calendars.map((c: Calendar) => String(c.id)));
+        this.visibleCalendarIds = new Set(
+          this.calendars
+            .map((c: Calendar) => String(c.id))
+            .filter((id: string) => !isRefetch || !knownIds.has(id) || previouslyVisible.has(id)),
+        );
       } catch (e: unknown) {
         this.error = (e as Error).message || 'Failed to load calendars';
       }
