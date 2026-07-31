@@ -39,6 +39,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	systemRepo := repository.NewSystemSettingRepository(db.DB())
 	resetRepo := repository.NewGORMPasswordResetRepository(db.DB())
 	appPwdRepo := repository.NewAppPasswordRepository(db.DB())
+	userPrefRepo := repository.NewUserPreferenceRepository(db.DB())
 
 	calendarRepo := repository.NewCalendarRepository(db.DB())
 	addressBookRepo := repository.NewAddressBookRepository(db.DB())
@@ -75,6 +76,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	getProfileUC := userusecase.NewGetProfileUseCase(userRepo)
 	updateProfileUC := userusecase.NewUpdateProfileUseCase(userRepo)
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
+	getPreferencesUC := userusecase.NewGetPreferencesUseCase(userRepo, userPrefRepo)
+	updatePreferencesUC := userusecase.NewUpdatePreferencesUseCase(userRepo, userPrefRepo)
 
 	// App Password Use Cases
 	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo, securityLogger)
@@ -113,7 +116,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	systemHandler := http.NewSystemHandler(cfg, userRepo, oauthManager)
-	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC, calendarRepo, addressBookRepo, appPwdRepo)
+	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC, getPreferencesUC, updatePreferencesUC, calendarRepo, addressBookRepo, appPwdRepo)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
@@ -215,6 +218,9 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	userGroup.Patch("/me", userHandler.UpdateProfile)
 	userGroup.Delete("/me", userHandler.DeleteAccount)
 	userGroup.Put("/me/password", userHandler.ChangePassword)
+	// Event/display defaults for the web UI (story 103).
+	userGroup.Get("/me/preferences", userHandler.GetPreferences)
+	userGroup.Patch("/me/preferences", userHandler.UpdatePreferences)
 
 	// Import/Export Use Cases
 	calendarImportUC := importexport.NewCalendarImportUseCase(calendarRepo)

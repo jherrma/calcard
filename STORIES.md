@@ -66,7 +66,7 @@ All backend stories are implemented.
 | 043 | Sharing Management UI                      | Pending |
 | 100 | Remote Calendar Subscriptions              | Pending |
 | 101 | Open Source Attribution                    | Done    |
-| 103 | Event Default Settings                     | Pending |
+| 103 | Event Default Settings                     | Done    |
 | 104 | MCP Server Integration                     | Pending |
 
 ## Summary

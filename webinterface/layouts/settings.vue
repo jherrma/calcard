@@ -137,6 +137,7 @@ interface SettingsNavItem {
 const navItems: SettingsNavItem[] = [
   { to: '/settings/profile', label: 'Profile', icon: 'pi pi-user' },
   { to: '/settings/password', label: 'Password', icon: 'pi pi-lock' },
+  { to: '/settings/calendar', label: 'Calendar', icon: 'pi pi-calendar-clock' },
   { to: '/settings/app-passwords', label: 'App Passwords', icon: 'pi pi-key' },
   { to: '/settings/caldav-credentials', label: 'CalDAV Credentials', icon: 'pi pi-calendar' },
   { to: '/settings/carddav-credentials', label: 'CardDAV Credentials', icon: 'pi pi-id-card' },

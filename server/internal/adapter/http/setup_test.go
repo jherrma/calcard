@@ -57,6 +57,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	calendarRepo := repository.NewCalendarRepository(db.DB())
 	addressBookRepo := repository.NewAddressBookRepository(db.DB())
 	appPwdRepo := repository.NewAppPasswordRepository(db.DB())
+	userPrefRepo := repository.NewUserPreferenceRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -92,6 +93,8 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	getProfileUC := userusecase.NewGetProfileUseCase(userRepo)
 	updateProfileUC := userusecase.NewUpdateProfileUseCase(userRepo)
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
+	getPreferencesUC := userusecase.NewGetPreferencesUseCase(userRepo, userPrefRepo)
+	updatePreferencesUC := userusecase.NewUpdatePreferencesUseCase(userRepo, userPrefRepo)
 
 	// App Password Use Cases
 	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo, securityLogger)
@@ -132,6 +135,8 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		getProfileUC,
 		updateProfileUC,
 		deleteAccountUC,
+		getPreferencesUC,
+		updatePreferencesUC,
 		calendarRepo,
 		addressBookRepo,
 		appPwdRepo,
@@ -192,6 +197,8 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	userGroup.Patch("/me", userHandler.UpdateProfile)
 	userGroup.Delete("/me", userHandler.DeleteAccount)
 	userGroup.Put("/me/password", userHandler.ChangePassword)
+	userGroup.Get("/me/preferences", userHandler.GetPreferences)
+	userGroup.Patch("/me/preferences", userHandler.UpdatePreferences)
 
 	// Calendar Routes
 	calendarGroup := api.Group("/calendars", Authenticate(jwtManager, userRepo))

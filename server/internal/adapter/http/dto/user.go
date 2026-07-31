@@ -71,6 +71,17 @@ type ListAppPasswordsResponse struct {
 	AppPasswords []AppPasswordResponse `json:"app_passwords"`
 }
 
+// PreferencesResponse represents the caller's preference map, defaults filled in
+type PreferencesResponse struct {
+	Preferences map[string]string `json:"preferences"`
+}
+
+// UpdatePreferencesRequest represents a partial update of the preference map.
+// Only the keys present are touched; unknown keys are rejected with 400.
+type UpdatePreferencesRequest struct {
+	Preferences map[string]string `json:"preferences"`
+}
+
 // ChangePasswordRequest represents variable for change password
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`

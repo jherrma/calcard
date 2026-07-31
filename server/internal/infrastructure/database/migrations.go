@@ -18,6 +18,7 @@ func Models() []interface{} {
 		&user.PasswordReset{},
 		&user.AppPassword{},
 		&user.OAuthConnection{},
+		&user.UserPreference{},
 		&domain.SystemSetting{},
 		&calendar.Calendar{},
 		&calendar.CalendarObject{},

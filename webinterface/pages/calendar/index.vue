@@ -100,6 +100,7 @@ import EventDetailDialog from '~/components/calendar/EventDetailDialog.vue';
 import EventCreateDialog from '~/components/calendar/EventCreateDialog.vue';
 import EventEditDialog from '~/components/calendar/EventEditDialog.vue';
 import { useCalendarStore } from '~/stores/calendars';
+import { usePreferencesStore } from '~/stores/preferences';
 import type { Calendar, CalendarEvent } from '~/types/calendar';
 
 definePageMeta({
@@ -108,6 +109,7 @@ definePageMeta({
 });
 
 const calendarStore = useCalendarStore();
+const preferencesStore = usePreferencesStore();
 const toast = useAppToast();
 const confirm = useConfirm();
 
@@ -131,7 +133,10 @@ const currentDateRange = ref<{ start: Date; end: Date } | null>(null);
 
 // Fetch calendars on mount, then refetch events (datesSet may fire before calendars load)
 onMounted(async () => {
-  await calendarStore.fetchCalendars();
+  // Preferences drive the 12h/24h display and the defaults EventForm snapshots at
+  // setup time, so they must be in the store before any create dialog can open
+  // (story 103). ensureLoaded() never rejects, so it can't break this mount.
+  await Promise.all([calendarStore.fetchCalendars(), preferencesStore.ensureLoaded()]);
   if (currentDateRange.value) {
     await calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
   }
@@ -168,6 +173,8 @@ const mappedEvents = computed(() =>
   }))
 );
 
+const is12h = computed(() => preferencesStore.timeFormat === '12h');
+
 // FullCalendar options
 const calendarOptions = computed<CalendarOptions>(() => ({
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
@@ -188,6 +195,19 @@ const calendarOptions = computed<CalendarOptions>(() => ({
   eventDrop: handleEventDrop,
   eventResize: handleEventResize,
   datesSet: handleDatesSet,
+
+  // Time display follows the user's 12h/24h preference (story 103). Both formats
+  // are spelled out because FullCalendar's defaults differ per view.
+  slotLabelFormat: {
+    hour: 'numeric' as const,
+    minute: '2-digit' as const,
+    hour12: is12h.value,
+  },
+  eventTimeFormat: {
+    hour: 'numeric' as const,
+    minute: '2-digit' as const,
+    hour12: is12h.value,
+  },
 
   // Display options
   nowIndicator: true,
