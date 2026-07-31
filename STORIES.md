@@ -62,7 +62,7 @@ All backend stories are implemented.
 
 | #   | Story                                      | Status  |
 | --- | ------------------------------------------ | ------- |
-| 042 | Dashboard Home Page                        | Pending |
+| 042 | Dashboard Home Page                        | Done    |
 | 043 | Sharing Management UI                      | Done    |
 | 100 | Remote Calendar Subscriptions              | Pending |
 | 101 | Open Source Attribution                    | Done    |

@@ -21,7 +21,7 @@ Pages (route-level views)
 ```
 webinterface/
 ├── pages/                   # File-based routing (each .vue → a route)
-│   ├── index.vue            # Root redirect
+│   ├── index.vue            # Dashboard: landing page after login (story 042) — NOT a redirect
 │   ├── auth/                # Authentication flows
 │   │   ├── login.vue        # Email/password + OAuth login
 │   │   ├── register.vue     # New account registration
@@ -54,6 +54,14 @@ webinterface/
 │   │   ├── ContactsSidebar.vue    # Address book list with checkboxes
 │   │   ├── ContactListItem.vue    # Single contact row (avatar, name, email, actions)
 │   │   └── AlphabetNavigation.vue # A-Z letter strip for quick scrolling
+│   ├── dashboard/                 # Dashboard widgets (story 042) → <DashboardWidgetCard> etc.
+│   │   ├── WidgetCard.vue         # Shared card shell (title, icon, badge, actions, footer)
+│   │   ├── TodayAgendaCard.vue    # Day timeline with lane-split overlapping events
+│   │   ├── UpcomingEventsCard.vue # Next 5-7 events with Today/Tomorrow labels
+│   │   ├── MiniCalendarCard.vue   # 6x7 month grid with event dots + month navigation
+│   │   ├── RecentContactsCard.vue # Most recently updated contacts
+│   │   ├── RecentContactRow.vue   # Single row of the above
+│   │   └── QuickStatsCard.vue     # Calendars / events this month / address books / contacts
 │   ├── sharing/                   # Resource-agnostic sharing UI (story 043)
 │   │   ├── SharePanel.vue         # → <SharingSharePanel>  list/invite/change/revoke, BOTH resource kinds
 │   │   ├── PublicLinkPanel.vue    # → <SharingPublicLinkPanel>  calendar public link (calendars only)
@@ -68,9 +76,14 @@ webinterface/
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
+│   ├── dashboard.ts         # Dashboard event window (loadedMonths), recent contacts, clock
 │   ├── preferences.ts       # User preferences (default event duration, all-day, 12h/24h time format)
 │   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
 │                            #   `sharedWithMe` derived from the two list endpoints (story 043)
+├── utils/                   # Auto-imported helpers (no import needed)
+│   ├── dashboardDates.ts    # Local-date primitives + month-range merging for the dashboard
+│   ├── agendaLayout.ts      # Lane assignment for overlapping blocks on the day timeline
+│   └── contactAvatar.ts     # Contact initials + deterministic avatar colour
 ├── composables/
 │   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)

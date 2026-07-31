@@ -192,7 +192,8 @@ const handleLogin = async () => {
       password: form.password,
       remember: form.remember,
     });
-    router.push("/calendar");
+    // "/" is the dashboard, the app's landing page since story 042.
+    router.push("/");
   } catch (e: any) {
     error.value = e.data?.message || "Invalid email or password";
   } finally {

@@ -6,8 +6,9 @@ export default defineNuxtRouteMiddleware(async () => {
     await authStore.initAuth();
   }
 
-  // If already authenticated, redirect to calendar (main app)
+  // If already authenticated, redirect to the dashboard (the app's landing page
+  // since story 042; "/" used to just bounce to /calendar).
   if (authStore.isAuthenticated) {
-    return navigateTo("/calendar");
+    return navigateTo("/");
   }
 });
