@@ -93,6 +93,12 @@ go run ./tools/genlicenses                    # Regenerate the open-source attri
 swag init -g cmd/server/main.go --parseDependency --parseInternal
 ```
 
+**Swagger annotations must use the importing file's aliases.** If a `@Success`/`@Param` type
+names a package differently than that file's import table does (e.g. `about.Foo` when the
+import is `aboutuc "…/usecase/about"`), swag cannot resolve it and exits 1 — aborting the whole
+run, so NO endpoint's docs regenerate. `Dockerfile` runs `swag init` without failure tolerance,
+so this also breaks `docker build`. No Go test catches it; verify by running the command above.
+
 ## Key Conventions
 
 - **Configuration**: Loaded from environment variables (`CALDAV_*`) and/or `config.yaml`. See `configs/config.yaml.example`.

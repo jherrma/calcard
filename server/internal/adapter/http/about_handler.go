@@ -5,9 +5,6 @@ import (
 	aboutuc "github.com/jherrma/caldav-server/internal/usecase/about"
 )
 
-// Referenced so swag emits the schema for the embedded manifest types (#101).
-var _ = aboutuc.OpenSourcePackage{}
-
 // AboutHandler serves project metadata (open-source attribution, story 101).
 type AboutHandler struct {
 	listOpenSourceUC *aboutuc.ListOpenSourceUseCase
@@ -18,12 +15,20 @@ func NewAboutHandler(listOpenSourceUC *aboutuc.ListOpenSourceUseCase) *AboutHand
 	return &AboutHandler{listOpenSourceUC: listOpenSourceUC}
 }
 
+// HAZARD (#101): the @Success type below must spell the use-case package with
+// THIS file's import alias — `aboutuc`, not `about`. swag resolves annotation
+// field types through the file's import table, and a name it cannot resolve
+// aborts the entire generation run with exit 1, not just this one endpoint.
+// Dockerfile runs `swag init` with no `|| true`, so getting this wrong breaks
+// `docker build` and every developer's `swag init` — and no Go/JS test catches
+// it, because none of them invoke swag.
+//
 // OpenSource godoc
 // @Summary      List backend open-source dependencies
 // @Description  Returns the attribution list for the Go modules linked into the server binary. The list is generated at build time (`go run ./tools/genlicenses`) and embedded in the binary, so no network access is involved. License detection is best-effort — a license of "unknown" means it could not be determined automatically, NOT that the package is unlicensed.
 // @Tags         About
 // @Produce      json
-// @Success      200  {object}  object{generator=string,note=string,count=int,packages=[]about.OpenSourcePackage}
+// @Success      200  {object}  object{generator=string,note=string,count=int,packages=[]aboutuc.OpenSourcePackage}
 // @Failure      401  {object}  ErrorResponseBody
 // @Failure      500  {object}  ErrorResponseBody
 // @Security     BearerAuth

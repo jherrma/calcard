@@ -9,11 +9,19 @@
  * network access, no lockfile parsing, no new devDependency.
  *
  * Scope: the transitive closure of the RUNTIME `dependencies` in
- * webinterface/package.json — i.e. what can end up in the shipped SPA.
- * devDependencies (vitest, eslint, prettier, …) are build tooling that is never
- * distributed, so attributing them would be noise. `optionalDependencies` are
- * skipped too: they are platform binaries (esbuild/@parcel/watcher builds) that
- * likewise never reach the browser.
+ * webinterface/package.json. Note what that is and is NOT — the boundary is the
+ * package.json section, not "what reaches the browser":
+ *   - It OVER-attributes. `nuxt` is a runtime dependency, so its own build-time
+ *     closure comes along: @babel/*, nitropack, chokidar, zigpty, … Harmless
+ *     (attributing more than you must never creates a compliance problem), and
+ *     pruning it would mean resolving the real bundle graph, which needs a build.
+ *   - It UNDER-attributes slightly. tailwindcss / @tailwindcss/postcss are
+ *     devDependencies yet do shape the shipped CSS. Their license text is not
+ *     redistributed by us, so this is acceptable.
+ *   - devDependencies (vitest, eslint, prettier, …) are excluded wholesale, and
+ *     `optionalDependencies` too (platform binaries like esbuild/@parcel/watcher).
+ * The `note` field written into the JSON says "runtime npm dependency closure"
+ * for exactly this reason — keep that wording honest if the scope ever changes.
  *
  * The license is taken from each package's DECLARED `license` field — for npm
  * that is the authoritative statement, unlike the Go side where we have to

@@ -96,6 +96,12 @@ go run ./tools/genlicenses                    # Regenerate the open-source attri
 swag init -g cmd/server/main.go --parseDependency --parseInternal
 ```
 
+**Swagger annotations must use the importing file's aliases.** If a `@Success`/`@Param` type
+names a package differently than that file's import table does (e.g. `about.Foo` when the
+import is `aboutuc "…/usecase/about"`), swag cannot resolve it and exits 1 — aborting the whole
+run, so NO endpoint's docs regenerate. `Dockerfile` runs `swag init` without failure tolerance,
+so this also breaks `docker build`. No Go test catches it; verify by running the command above.
+
 Integration tests are gated behind the `integration` build tag so they're excluded from the default run. They cover the first-boot flow, REST CRUD, the export/re-import roundtrip, and CalDAV/CardDAV protocol endpoints. See `integration/CLAUDE.md` for details.
 
 ## Key Conventions

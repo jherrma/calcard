@@ -85,6 +85,9 @@ func TestRepoURL(t *testing.T) {
 		{"github.com/stretchr/testify", "https://github.com/stretchr/testify"},
 		{"gitlab.com/group/project", "https://gitlab.com/group/project"},
 		{"gopkg.in/yaml.v3", "https://gopkg.in/yaml.v3"},
+		// Sourcehut: the host segment is git.sr.ht, and the user segment keeps
+		// its ~ prefix. Guards against the dead `case "sr.ht"` this replaced.
+		{"git.sr.ht/~sircmpwn/getopt", "https://git.sr.ht/~sircmpwn/getopt"},
 		// No well-known host: pkg.go.dev always resolves for a published module
 		// (and keeps the /vN suffix), whereas a guessed https:// URL would 404.
 		{"golang.org/x/crypto", "https://pkg.go.dev/golang.org/x/crypto"},

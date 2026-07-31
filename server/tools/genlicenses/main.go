@@ -361,7 +361,9 @@ func repoURL(modPath string) string {
 	trimmed := majorSuffix.ReplaceAllString(modPath, "")
 	parts := strings.Split(trimmed, "/")
 	switch parts[0] {
-	case "github.com", "gitlab.com", "bitbucket.org", "codeberg.org", "sr.ht":
+	// Sourcehut module paths are `git.sr.ht/~user/repo` — matching on a bare
+	// "sr.ht" would never fire, since parts[0] carries the git. prefix (#101).
+	case "github.com", "gitlab.com", "bitbucket.org", "codeberg.org", "git.sr.ht":
 		if len(parts) >= 3 {
 			return "https://" + strings.Join(parts[:3], "/")
 		}
