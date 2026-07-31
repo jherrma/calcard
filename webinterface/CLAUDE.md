@@ -33,8 +33,9 @@ webinterface/
 │   │       └── callback.vue # OAuth provider callback handler
 │   ├── calendar/
 │   │   └── index.vue        # FullCalendar view with event CRUD dialogs
-│   └── contacts/
-│       └── index.vue        # Contact list with search, grouping, detail panel
+│   ├── contacts/
+│   │   └── index.vue        # Contact list with search, grouping, detail panel
+│   └── search.vue           # Full global-search results page (?q=…), uncapped
 ├── components/              # Auto-imported by Nuxt (directory prefix = component name)
 │   ├── auth/
 │   │   └── PasswordStrength.vue   # → <AuthPasswordStrength>
@@ -51,15 +52,19 @@ webinterface/
 │   │   ├── ContactListItem.vue    # Single contact row (avatar, name, email, actions)
 │   │   └── AlphabetNavigation.vue # A-Z letter strip for quick scrolling
 │   └── common/
-│       ├── AppHeader.vue          # Top bar with hamburger toggle
+│       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
 │       ├── AppSidebar.vue         # Main navigation sidebar (Calendar, Contacts, Settings)
+│       ├── GlobalSearch.vue       # Cmd/Ctrl+K search palette (trigger + dialog)
+│       ├── SearchSectionHeader.vue # Category header + count for a search result group
+│       ├── SearchViewAll.vue      # "View all N …" link into /search
 │       ├── HighlightText.vue      # Search term highlighter using <mark> tags
 │       ├── LoadingSpinner.vue     # Centered spinner
 │       └── SkeletonList.vue       # Loading placeholder rows
 ├── stores/                  # Pinia stores (state + getters + actions)
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
-│   └── contacts.ts          # Address book + contact state, search, sorting, letter grouping
+│   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
+│   └── search.ts            # Global search fan-out (events/contacts/collections), cache, recents
 ├── composables/
 │   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
 │   └── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
@@ -73,7 +78,12 @@ webinterface/
 │   ├── auth.ts              # User, LoginResponse, RefreshResponse, SystemSettings, AuthMethod
 │   ├── calendar.ts          # Calendar, CalendarEvent, RecurrenceRule, EventFormData
 │   ├── contacts.ts          # AddressBook, Contact, ContactEmail/Phone/Address/URL
+│   ├── search.ts            # EventHit, ContactHit, SearchResults (global search)
 │   └── api.ts               # ApiResponse, ApiError, ValidationError, PaginatedResponse
+├── utils/                   # Auto-imported pure helpers (no Nuxt context needed)
+│   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
+│   ├── vcardDate.ts         # vCard date parsing/formatting
+│   └── searchFormat.ts      # Shared row labels for the search palette + results page
 ├── plugins/
 │   └── primevue-services.ts # Registers ConfirmationService (for useConfirm)
 ├── nuxt.config.ts           # Nuxt configuration, PrimeVue theme preset, module registration
@@ -146,6 +156,33 @@ The contacts page (`pages/contacts/index.vue`) uses a custom list layout:
 - **AlphabetNavigation**: A-Z letter strip. Only letters with contacts are clickable. Clicking scrolls to that section.
 - **Contact detail**: Full contact details live on the route page `pages/contacts/[id]/index.vue` (navigated to when a contact is selected).
 - **Virtual scrolling**: Manual implementation with computed offsets and a scroll container.
+
+### Global Search (story 044)
+
+`components/common/GlobalSearch.vue` lives in `AppHeader` and owns both the trigger and
+the palette dialog. `pages/search.vue` is the uncapped results page it links to.
+
+- **There is no `/api/v1/search` endpoint.** `stores/search.ts` fans out over the endpoints
+  that do exist: `GET /contacts/search?q=` (server-side) plus one
+  `GET /calendars/:uuid/events?start=&end=` per calendar over a ±6 month window
+  (`SEARCH_WINDOW_MONTHS`), filtered client-side. Calendars/address books are matched
+  against already-loaded state. Events outside that window are invisible to search.
+- **`requestSeq`** in the store drops responses from superseded queries; `reset()` bumps it
+  so closing the dialog invalidates in-flight work.
+- **The debounce cannot be cancelled.** vueuse's `useDebounceFn` exposes no cancel handle and
+  only re-arms when invoked again, so both the palette and the results page re-read the live
+  query inside the debounced callback and bail if it is no longer searchable. Never close over
+  the value that scheduled the timer.
+- **A failed leg is an error, not "no matches".** `store.error` is set when either leg fails
+  and is rendered as a banner ABOVE whatever the other legs found.
+- **Keyboard**: Cmd/Ctrl+K opens it from anywhere (window listener), Up/Down walk one flat
+  listbox across all categories, Enter opens the highlighted row, Tab/Shift+Tab jump between
+  categories. Rows are `role="option"` with `aria-activedescendant` on the input.
+- **Deep links**: choosing an event navigates to
+  `/calendar?date=&event=&cal=<numeric id>[&recurrence=<recurrence_id>]`. The calendar page
+  resolves a recurring occurrence with `calendarStore.fetchEventOccurrence()` — `GET
+  /events/:id` returns the series MASTER and does no recurrence expansion, so it must never be
+  used to open an occurrence. Contacts use the NUMERIC `?ab=` id (`Contact.addressbook_id`).
 
 ### Type System Gotchas
 

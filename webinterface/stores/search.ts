@@ -164,15 +164,22 @@ export const useSearchStore = defineStore('search', {
         const contactHits = contactsSettled.status === 'fulfilled' ? contactsSettled.value : [];
         const eventHits = eventsSettled.status === 'fulfilled' ? eventsSettled.value : [];
 
+        // A leg that failed is NOT "no matches" — an empty Contacts section after a
+        // 500 from /contacts/search reads as "this person isn't in my address book",
+        // which is worse than an error. So every failed leg is reported; the UI shows
+        // the message as a banner above whatever the other legs did find.
+        if (contactsSettled.status === 'rejected') {
+          console.warn('Contact search failed', contactsSettled.reason);
+        }
+        if (eventsSettled.status === 'rejected') {
+          console.warn('Event search failed', eventsSettled.reason);
+        }
         if (contactsSettled.status === 'rejected' && eventsSettled.status === 'rejected') {
           this.error = (contactsSettled.reason as Error)?.message || 'Search failed';
-        } else {
-          if (contactsSettled.status === 'rejected') {
-            console.warn('Contact search failed', contactsSettled.reason);
-          }
-          if (eventsSettled.status === 'rejected') {
-            console.warn('Event search failed', eventsSettled.reason);
-          }
+        } else if (contactsSettled.status === 'rejected') {
+          this.error = 'Contacts could not be searched — those results are missing.';
+        } else if (eventsSettled.status === 'rejected') {
+          this.error = 'Events could not be searched — those results are missing.';
         }
 
         const calendarStore = useCalendarStore();

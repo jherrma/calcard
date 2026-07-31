@@ -358,6 +358,61 @@ describe('event hits', () => {
   });
 });
 
+// A leg that ERRORED must never be presented as "no matches": an empty Contacts
+// section after a 500 reads as "this person isn't in my address book".
+describe('partial failure reporting', () => {
+  it('reports a failed contact search even though the event fan-out succeeded', async () => {
+    apiMock.mockImplementation((url: string) => {
+      if (url.includes('/contacts/search')) return Promise.reject(new Error('500 Internal Server Error'));
+      return Promise.resolve({ events: [event('e1', 1, 'Alice sync', '2026-06-16T09:00:00Z')] });
+    });
+
+    const store = useSearchStore();
+    useCalendarStore().calendars = [calendar(1)];
+
+    await store.search('alice');
+
+    expect(store.error).toBe('Contacts could not be searched — those results are missing.');
+    // The events that DID come back are still shown alongside the message.
+    expect(store.results.events.map((h) => h.event.id)).toEqual(['e1']);
+  });
+
+  it('reports a failed event fan-out even though contacts succeeded', async () => {
+    apiMock.mockImplementation((url: string) => {
+      if (url.includes('/contacts/search')) {
+        return Promise.resolve({ contacts: [contact('c1', 'Alice')], query: 'alice', count: 1 });
+      }
+      return Promise.reject(new Error('boom'));
+    });
+
+    const store = useSearchStore();
+    useCalendarStore().calendars = [calendar(1)];
+    useContactsStore().addressBooks = [book(1)];
+
+    await store.search('alice');
+
+    expect(store.error).toBe('Events could not be searched — those results are missing.');
+    expect(store.results.contacts).toHaveLength(1);
+  });
+
+  it('an account with no calendars plus a failed contact search is an error, not "no results"', async () => {
+    apiMock.mockImplementation((url: string) => {
+      if (url.includes('/contacts/search')) return Promise.reject(new Error('500'));
+      return Promise.resolve({ events: [] });
+    });
+
+    const store = useSearchStore();
+    useContactsStore().addressBooks = [book(1)];
+
+    await store.search('alice');
+
+    // Degenerate case: the events leg fulfils with [] (nothing to fan out to), so
+    // without per-leg reporting this rendered a bare "No results".
+    expect(store.error).not.toBeNull();
+    expect(store.hasResults).toBe(false);
+  });
+});
+
 describe('sortEventHits', () => {
   it('puts upcoming events first (soonest first), then past ones (most recent first)', () => {
     const hit = (id: string, start: string): EventHit => ({

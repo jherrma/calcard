@@ -159,6 +159,40 @@ export const useCalendarStore = defineStore('calendars', {
       return await api<CalendarEvent>(`/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`);
     },
 
+    /**
+     * Resolve ONE occurrence of a (possibly recurring) event on a given day.
+     *
+     * GET /calendars/:uuid/events/:id returns the stored MASTER event and ignores
+     * any recurrence hint — so it cannot answer "the 15 September instance of this
+     * weekly series". The list endpoint does expand recurrences server-side, so ask
+     * it for the single day the occurrence falls on and pick the matching
+     * RECURRENCE-ID. Used by the global-search deep link (story 044), which can
+     * point at a date the calendar page has not loaded.
+     *
+     * Deliberately does NOT touch `events`: the page's loaded range belongs to
+     * whatever FullCalendar is showing, and this is a one-off lookup.
+     */
+    async fetchEventOccurrence(
+      calendarId: string,
+      eventId: string,
+      recurrenceId: string,
+      day: Date
+    ): Promise<CalendarEvent | null> {
+      const api = useApi();
+      // Local-midnight bounds ±1 day: an occurrence stored in another timezone can
+      // land just outside the local day, and over-fetching one day is cheap.
+      const start = new Date(day.getFullYear(), day.getMonth(), day.getDate() - 1);
+      const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 2);
+      const response = await api<{ events: CalendarEvent[] }>(
+        `/api/v1/calendars/${this.calendarUuid(calendarId)}/events?start=${start.toISOString()}&end=${end.toISOString()}`
+      );
+      return (
+        (response.events || []).find(
+          (e: CalendarEvent) => e.id === eventId && (e.recurrence_id || '') === recurrenceId
+        ) ?? null
+      );
+    },
+
     async updateEvent(calendarId: string, eventId: string, data: EventFormData, scope?: string, recurrenceId?: string) {
       const api = useApi();
       const body: Record<string, unknown> = {

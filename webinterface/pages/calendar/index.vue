@@ -138,8 +138,11 @@ onMounted(async () => {
   }
   // Calendars must be loaded first: resolving an event by id maps the numeric
   // calendar id in the link to the calendar's UUID (#52).
-  await applyDeepLink();
+  await applyDeepLink().catch((e: unknown) => console.warn('Deep link failed', e));
 });
+
+/** Query params owned by the deep link — stripped once consumed, nothing else is. */
+const DEEP_LINK_PARAMS = ['date', 'event', 'cal', 'recurrence'];
 
 /**
  * Deep link from global search (story 044):
@@ -160,21 +163,21 @@ const applyDeepLink = async () => {
 
   if (!dateParam && !eventParam) return;
 
-  if (dateParam) {
-    // Parsed as local midnight (a bare 'YYYY-MM-DD' would be read as UTC and can
-    // land on the previous day west of Greenwich).
-    const target = new Date(`${dateParam}T00:00:00`);
-    if (!Number.isNaN(target.getTime())) {
-      calendarStore.setCurrentDate(target);
-      // On first load FullCalendar hasn't mounted yet (it sits behind ClientOnly)
-      // and picks the date up via initialDate; afterwards gotoDate is needed.
-      calendarRef.value?.getApi().gotoDate(target);
-    }
+  // Parsed as local midnight (a bare 'YYYY-MM-DD' would be read as UTC and can
+  // land on the previous day west of Greenwich).
+  const target = dateParam ? new Date(`${dateParam}T00:00:00`) : null;
+  const validTarget = target && !Number.isNaN(target.getTime()) ? target : null;
+
+  if (validTarget) {
+    calendarStore.setCurrentDate(validTarget);
+    // On first load FullCalendar hasn't mounted yet (it sits behind ClientOnly)
+    // and picks the date up via initialDate; afterwards gotoDate is needed.
+    calendarRef.value?.getApi().gotoDate(validTarget);
   }
 
   if (eventParam) {
     // Prefer the loaded occurrence so a recurring instance opens with its own
-    // start/end; fall back to fetching the series when that range isn't loaded.
+    // start/end.
     const local = calendarStore.events.find(
       e => e.id === eventParam && (e.recurrence_id || '') === recurrenceParam
     );
@@ -182,22 +185,46 @@ const applyDeepLink = async () => {
       selectedEvent.value = local;
       showDetailDialog.value = true;
     } else if (calParam) {
+      // NOT loaded: the target date is usually outside the range FullCalendar has
+      // fetched (the refetch triggered by gotoDate is async and hasn't landed), so
+      // `events` legitimately misses. GET /events/:id is no help for a recurring
+      // series — it returns the MASTER and ignores any recurrence hint — which used
+      // to open a dialog showing the first occurrence's date while the grid sat on
+      // the clicked one. Resolve the occurrence from the expanded day instead, and
+      // only fall back to the single-event endpoint for non-recurring links.
       try {
-        selectedEvent.value = await calendarStore.getEvent(calParam, eventParam);
-        showDetailDialog.value = true;
+        const resolved = recurrenceParam && validTarget
+          ? await calendarStore.fetchEventOccurrence(calParam, eventParam, recurrenceParam, validTarget)
+          : await calendarStore.getEvent(calParam, eventParam);
+        if (resolved) {
+          selectedEvent.value = resolved;
+          showDetailDialog.value = true;
+        } else {
+          // The occurrence was deleted or moved since the search results were built.
+          toast.warn('That event occurrence no longer exists');
+        }
       } catch {
         toast.error('Could not open that event');
       }
     }
   }
 
-  // Consume the params. Without this, choosing the same search result twice would
-  // be a no-op (identical route → no navigation, no watcher) and a page reload
-  // would silently reopen the dialog.
-  await navigateTo({ path: '/calendar', query: {} }, { replace: true });
+  // Consume ONLY the deep-link params — anything else on /calendar belongs to
+  // another feature. Without this, choosing the same search result twice would be
+  // a no-op (identical route → no navigation, no watcher) and a page reload would
+  // silently reopen the dialog.
+  const rest = Object.fromEntries(
+    Object.entries(route.query).filter(([key]) => !DEEP_LINK_PARAMS.includes(key))
+  );
+  await navigateTo({ path: '/calendar', query: rest }, { replace: true });
 };
 
-watch(() => route.query, () => { applyDeepLink(); });
+// Floating promise: nothing awaits the watcher, so swallow rejections explicitly
+// (an aborted navigation inside applyDeepLink would otherwise surface as an
+// unhandled rejection).
+watch(() => route.query, () => {
+  applyDeepLink().catch((e: unknown) => console.warn('Deep link failed', e));
+});
 
 // Get calendar color
 const getCalendarColor = (calendarId: number) => {
