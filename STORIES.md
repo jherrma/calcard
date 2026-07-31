@@ -71,5 +71,13 @@ All backend stories are implemented.
 
 ## Summary
 
-- **Implemented**: 41 / 57
-- **Pending**: 16 / 57
+- **Implemented**: 45 / 52
+- **Pending**: 7 / 52
+
+<!-- Counts are of the rows in the three tables above (29 backend + 17 frontend + 6
+     continuation = 52). The denominator used to read 57, which never matched the
+     tables — it kept counting stories that are not listed here (there is no 012,
+     and 048/102 were dropped). Recount from the tables when you change a status. -->
+
+Remaining: 045 Error Handling, 046 Dark Mode, 047 Accessibility, 049 Responsive,
+050 PWA, 100 Remote Calendar Subscriptions, 104 MCP Server Integration.
