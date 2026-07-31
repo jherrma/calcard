@@ -182,7 +182,6 @@ The contacts page (`pages/contacts/index.vue`) uses a custom list layout:
 - **Contact detail**: Full contact details live on the route page `pages/contacts/[id]/index.vue` (navigated to when a contact is selected).
 - **Virtual scrolling**: Manual implementation with computed offsets and a scroll container.
 
-<<<<<<< HEAD
 ### Sharing (story 043)
 
 `stores/sharing.ts` is the single entry point; the three `components/sharing/*` components are thin
@@ -218,7 +217,6 @@ views over it. Constraints that shaped it — all imposed by the API:
 - **Refetching a list must not reset the user's view.** `changed` fires on every share mutation and
   the pages refetch on it, so `fetchCalendars` / `fetchAddressBooks` preserve `visibleCalendarIds` /
   `selectedAddressBookIds` for already-known resources (first load still selects everything).
-=======
 ### Global Search (story 044)
 
 `components/common/GlobalSearch.vue` lives in `AppHeader` and owns both the trigger and
@@ -245,7 +243,6 @@ the palette dialog. `pages/search.vue` is the uncapped results page it links to.
   resolves a recurring occurrence with `calendarStore.fetchEventOccurrence()` — `GET
   /events/:id` returns the series MASTER and does no recurrence expansion, so it must never be
   used to open an occurrence. Contacts use the NUMERIC `?ab=` id (`Contact.addressbook_id`).
->>>>>>> feat/story-044-global-search
 
 ### Type System Gotchas
 
