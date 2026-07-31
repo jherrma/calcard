@@ -175,6 +175,19 @@ views over it. Constraints that shaped it — all imposed by the API:
 - **Public links are calendars-only and have no DELETE route.** `POST …/public` with
   `{ enabled: false }` is how you disable (it also clears the token, so re-enabling mints a new URL).
   `GET …/public` is the *only* source of the public URL — the token is `json:"-"` on the domain model.
+- **A failed read must never render as a fact.** Read actions swallow their failure into
+  `sharesError` / `publicError` (two fields, because both panels are mounted at once). Any view of
+  `shares` / `publicAccess` MUST render those errors, because an empty list after a failed load is
+  indistinguishable from "nothing is shared" — and "this calendar is private" is then a false
+  statement the owner will act on. Same rule on `pages/settings/sharing.vue`, which has to read
+  `calendarStore.error` / `contactsStore.error` back after the load, since neither list action rejects.
+- **The store holds exactly ONE resource at a time**, so `fetchShares` / `fetchPublicAccess` carry a
+  sequence token and discard superseded responses; mutations bump it too. `useApi`'s
+  retry-once-on-401 spends a whole refresh round-trip before re-issuing, so responses really do
+  arrive out of order.
+- **Refetching a list must not reset the user's view.** `changed` fires on every share mutation and
+  the pages refetch on it, so `fetchCalendars` / `fetchAddressBooks` preserve `visibleCalendarIds` /
+  `selectedAddressBookIds` for already-known resources (first load still selects everything).
 
 ### Type System Gotchas
 

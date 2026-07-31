@@ -60,26 +60,51 @@ interface SharingState {
   shares: Share[];
   isLoadingShares: boolean;
   isSaving: boolean;
+  /**
+   * Why the share list could not be loaded. MUST be rendered: an empty
+   * `shares` after a failed load is indistinguishable from "nothing is shared",
+   * and claiming a resource is private when we simply don't know is a lie the
+   * owner may act on.
+   */
+  sharesError: string | null;
   /** Public-link status of the calendar currently open. null until fetched. */
   publicAccess: PublicAccessStatus | null;
   isLoadingPublic: boolean;
-  error: string | null;
+  /**
+   * Why the public-link status could not be loaded. Separate from
+   * `sharesError` because both panels are mounted at once — a single field
+   * would let the public panel's failure surface as the share list's.
+   */
+  publicError: string | null;
+  /**
+   * Monotonic request tokens. The store holds exactly ONE resource's shares /
+   * public status, so a response that arrives after the UI moved on to another
+   * resource (or after a mutation wrote a fresher value) must be dropped rather
+   * than applied. useApi's retry-once-on-401 makes that reordering window wide:
+   * a request that hits an expired access token costs a refresh round-trip
+   * before it is re-issued, so a later request can easily resolve first.
+   */
+  sharesSeq: number;
+  publicSeq: number;
 }
 
 /**
  * One store for both resource kinds. Read actions swallow failures into
- * `error` (a 404 here just means "you are not the owner", which the UI renders
- * as an empty/blocked state); mutations THROW so the caller can toast the
- * server's reason and roll its optimistic UI back.
+ * `sharesError` / `publicError` (a 404 here just means "you are not the owner",
+ * which the UI renders as a blocked state); mutations THROW so the caller can
+ * toast the server's reason and roll its optimistic UI back.
  */
 export const useSharingStore = defineStore('sharing', {
   state: (): SharingState => ({
     shares: [],
     isLoadingShares: false,
     isSaving: false,
+    sharesError: null,
     publicAccess: null,
     isLoadingPublic: false,
-    error: null,
+    publicError: null,
+    sharesSeq: 0,
+    publicSeq: 0,
   }),
 
   getters: {
@@ -123,8 +148,9 @@ export const useSharingStore = defineStore('sharing', {
     /** Drop the previous resource's data so a reopened dialog never flashes stale state. */
     reset() {
       this.resetShares();
+      this.invalidatePublic();
       this.publicAccess = null;
-      this.isLoadingPublic = false;
+      this.publicError = null;
     },
 
     /**
@@ -133,25 +159,52 @@ export const useSharingStore = defineStore('sharing', {
      * a full reset from one would wipe the other's freshly fetched state.
      */
     resetShares() {
+      // Invalidate anything still in flight: without this, the previous
+      // resource's response would land afterwards and repopulate the list we
+      // just cleared, under the header of a DIFFERENT resource.
+      this.invalidateShares();
       this.shares = [];
-      this.error = null;
-      this.isLoadingShares = false;
+      this.sharesError = null;
       this.isSaving = false;
+    },
+
+    /**
+     * Discard an in-flight share fetch. Mutations call it because their own
+     * response is newer than a GET issued before them — letting that GET land
+     * would resurrect the pre-mutation list. Clearing the loading flag here is
+     * required: `fetchShares` refuses to clear a flag it no longer owns, so a
+     * superseded request would otherwise leave the spinner up forever.
+     */
+    invalidateShares() {
+      this.sharesSeq++;
+      this.isLoadingShares = false;
+    },
+
+    /** `invalidateShares` for the public-link half. */
+    invalidatePublic() {
+      this.publicSeq++;
+      this.isLoadingPublic = false;
     },
 
     async fetchShares(type: ShareResourceType, uuid: string) {
       const api = useApi();
+      const seq = ++this.sharesSeq;
       this.isLoadingShares = true;
-      this.error = null;
+      this.sharesError = null;
       try {
         const response = await api<ShareListResponse>(shareCollectionUrl(type, uuid));
+        if (seq !== this.sharesSeq) return; // superseded — another resource owns the state now
         this.shares = response.shares || [];
       } catch (e: unknown) {
-        // Includes the 404 a non-owner gets. Blank list + error is the honest state.
+        if (seq !== this.sharesSeq) return;
+        // Includes the 404 a non-owner gets. Blank list + error is the honest
+        // state — the UI must render the error INSTEAD of the empty state.
         this.shares = [];
-        this.error = shareErrorMessage(e, `Failed to load sharing settings`);
+        this.sharesError = shareErrorMessage(e, 'Failed to load sharing settings');
       } finally {
-        this.isLoadingShares = false;
+        // Only the newest request may clear the flag; a superseded one would
+        // otherwise hide the spinner of the request that replaced it.
+        if (seq === this.sharesSeq) this.isLoadingShares = false;
       }
     },
 
@@ -184,6 +237,7 @@ export const useSharingStore = defineStore('sharing', {
       }
 
       const api = useApi();
+      this.invalidateShares();
       this.isSaving = true;
       try {
         const share = await api<Share>(shareCollectionUrl(type, uuid), {
@@ -206,6 +260,7 @@ export const useSharingStore = defineStore('sharing', {
       permission: SharePermission,
     ): Promise<Share> {
       const api = useApi();
+      this.invalidateShares();
       this.isSaving = true;
       try {
         const updated = await api<Share>(`${shareCollectionUrl(type, uuid)}/${encodeURIComponent(shareId)}`, {
@@ -225,6 +280,7 @@ export const useSharingStore = defineStore('sharing', {
 
     async revokeShare(type: ShareResourceType, uuid: string, shareId: string) {
       const api = useApi();
+      this.invalidateShares();
       this.isSaving = true;
       try {
         await api(`${shareCollectionUrl(type, uuid)}/${encodeURIComponent(shareId)}`, { method: 'DELETE' });
@@ -239,11 +295,17 @@ export const useSharingStore = defineStore('sharing', {
     /**
      * Revoke every share at once. Revocations run in parallel and are settled
      * independently: one failure must not strand the others, so the successful
-     * ids are dropped from state and the count of failures is reported.
+     * ids are dropped from state and the count of failures is reported. The
+     * first rejection's reason is handed back too — a bare count leaves the user
+     * with "1 share could not be removed" and no idea why.
      */
-    async revokeAllShares(type: ShareResourceType, uuid: string): Promise<{ revoked: number; failed: number }> {
+    async revokeAllShares(
+      type: ShareResourceType,
+      uuid: string,
+    ): Promise<{ revoked: number; failed: number; reason: string | null }> {
       const api = useApi();
       const ids = this.shares.map((s: Share) => s.id);
+      this.invalidateShares();
       this.isSaving = true;
       try {
         const results = await Promise.allSettled(
@@ -253,8 +315,15 @@ export const useSharingStore = defineStore('sharing', {
         const failedIds = new Set(
           ids.filter((_: string, i: number) => results[i]?.status === 'rejected'),
         );
+        const firstRejection = results.find((r) => r.status === 'rejected');
+        const reason = firstRejection
+          ? shareErrorMessage(firstRejection.reason, 'the server rejected the request')
+          : null;
         this.shares = this.shares.filter((s: Share) => failedIds.has(s.id));
-        return { revoked: ids.length - failedIds.size, failed: failedIds.size };
+        // Keep the reason on state as well: the rows that survived are exactly
+        // the failures, so the panel can explain why they are still listed.
+        this.sharesError = reason;
+        return { revoked: ids.length - failedIds.size, failed: failedIds.size, reason };
       } finally {
         this.isSaving = false;
       }
@@ -262,16 +331,22 @@ export const useSharingStore = defineStore('sharing', {
 
     async fetchPublicAccess(calendarUuid: string) {
       const api = useApi();
+      const seq = ++this.publicSeq;
       this.isLoadingPublic = true;
+      this.publicError = null;
       try {
-        this.publicAccess = await api<PublicAccessStatus>(publicAccessUrl(calendarUuid));
+        const status = await api<PublicAccessStatus>(publicAccessUrl(calendarUuid));
+        if (seq !== this.publicSeq) return; // superseded by another calendar or by a mutation
+        this.publicAccess = status;
       } catch (e: unknown) {
+        if (seq !== this.publicSeq) return;
         // The status endpoint is the ONLY source of the public URL (the token is
-        // json:"-" on the domain model), so on failure we genuinely know nothing.
+        // json:"-" on the domain model), so on failure we genuinely know nothing
+        // and the panel must say so instead of implying "not public".
         this.publicAccess = null;
-        this.error = shareErrorMessage(e, 'Failed to load public access status');
+        this.publicError = shareErrorMessage(e, 'Failed to load public access status');
       } finally {
-        this.isLoadingPublic = false;
+        if (seq === this.publicSeq) this.isLoadingPublic = false;
       }
     },
 
@@ -282,6 +357,7 @@ export const useSharingStore = defineStore('sharing', {
      */
     async setPublicAccess(calendarUuid: string, enabled: boolean): Promise<PublicAccessStatus> {
       const api = useApi();
+      this.invalidatePublic();
       this.isSaving = true;
       try {
         const status = await api<PublicAccessStatus>(publicAccessUrl(calendarUuid), {
@@ -289,6 +365,7 @@ export const useSharingStore = defineStore('sharing', {
           body: { enabled },
         });
         this.publicAccess = status;
+        this.publicError = null;
         return status;
       } catch (e: unknown) {
         throw new Error(shareErrorMessage(e, 'Failed to update public access'));
@@ -300,12 +377,14 @@ export const useSharingStore = defineStore('sharing', {
     /** Mint a new token. The previous URL stops working immediately — confirm before calling. */
     async regeneratePublicToken(calendarUuid: string): Promise<PublicAccessStatus> {
       const api = useApi();
+      this.invalidatePublic();
       this.isSaving = true;
       try {
         const status = await api<PublicAccessStatus>(`${publicAccessUrl(calendarUuid)}/regenerate`, {
           method: 'POST',
         });
         this.publicAccess = status;
+        this.publicError = null;
         return status;
       } catch (e: unknown) {
         throw new Error(shareErrorMessage(e, 'Failed to regenerate the public link'));

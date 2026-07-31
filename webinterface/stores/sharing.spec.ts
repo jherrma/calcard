@@ -13,7 +13,7 @@ import {
 import { useAuthStore } from './auth';
 import { useCalendarStore } from './calendars';
 import { useContactsStore } from './contacts';
-import type { Share } from '~/types/sharing';
+import type { PublicAccessStatus, Share } from '~/types/sharing';
 import type { Calendar } from '~/types/calendar';
 import type { AddressBook } from '~/types/contacts';
 
@@ -115,7 +115,7 @@ describe('fetchShares', () => {
     expect(apiMock).toHaveBeenCalledWith('/api/v1/calendars/cal-uuid-1/shares');
     expect(store.shares).toHaveLength(1);
     expect(store.isLoadingShares).toBe(false);
-    expect(store.error).toBeNull();
+    expect(store.sharesError).toBeNull();
   });
 
   it('hits the addressbooks collection for an address book', async () => {
@@ -136,7 +136,7 @@ describe('fetchShares', () => {
     await store.fetchShares('calendar', 'cal-uuid-1');
 
     expect(store.shares).toEqual([]);
-    expect(store.error).toBe('not_found');
+    expect(store.sharesError).toBe('not_found');
     expect(store.isLoadingShares).toBe(false);
   });
 });
@@ -258,7 +258,7 @@ describe('revokeAllShares', () => {
     store.shares = [share('s1', 'a@example.com'), share('s2', 'b@example.com')];
     apiMock.mockResolvedValue(undefined);
 
-    await expect(store.revokeAllShares('calendar', 'cal-uuid-1')).resolves.toEqual({ revoked: 2, failed: 0 });
+    await expect(store.revokeAllShares('calendar', 'cal-uuid-1')).resolves.toEqual({ revoked: 2, failed: 0, reason: null });
     expect(store.shares).toEqual([]);
   });
 
@@ -270,7 +270,7 @@ describe('revokeAllShares', () => {
       .mockRejectedValueOnce(fetchError({ error: 'boom' }))
       .mockResolvedValueOnce(undefined);
 
-    await expect(store.revokeAllShares('calendar', 'cal-uuid-1')).resolves.toEqual({ revoked: 2, failed: 1 });
+    await expect(store.revokeAllShares('calendar', 'cal-uuid-1')).resolves.toEqual({ revoked: 2, failed: 1, reason: 'boom' });
     expect(store.shares.map((s) => s.id)).toEqual(['s2']);
     expect(store.isSaving).toBe(false);
   });
@@ -388,5 +388,102 @@ describe('reset', () => {
 
     store.reset();
     expect(store.publicAccess).toBeNull();
+  });
+});
+
+describe('out-of-order responses (request-sequence guard)', () => {
+  /** A promise whose settlement this test controls. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  }
+
+  it('drops a superseded share response instead of listing resource A under resource B', async () => {
+    const store = useSharingStore();
+    // Calendar A's GET stalls — exactly what useApi's retry-once-on-401 does: it
+    // awaits a token refresh before re-issuing the request.
+    const slowA = deferred<{ shares: Share[] }>();
+    apiMock.mockReturnValueOnce(slowA.promise);
+    const pendingA = store.fetchShares('calendar', 'cal-a');
+
+    // The dialog closes and reopens on calendar B, which answers immediately.
+    store.resetShares();
+    apiMock.mockResolvedValueOnce({ shares: [share('b1', 'b@example.com')] });
+    await store.fetchShares('calendar', 'cal-b');
+
+    // A finally lands. Without the guard it would overwrite B's list, telling the
+    // owner that two people have access to B who in fact have access to A.
+    slowA.resolve({ shares: [share('a1', 'a@example.com'), share('a2', 'a2@example.com')] });
+    await pendingA;
+
+    expect(store.shares.map((s) => s.id)).toEqual(['b1']);
+    expect(store.isLoadingShares).toBe(false);
+    expect(store.sharesError).toBeNull();
+  });
+
+  it('drops a superseded FAILURE too — B must not be blamed for A\'s error', async () => {
+    const store = useSharingStore();
+    const slowA = deferred<{ shares: Share[] }>();
+    apiMock.mockReturnValueOnce(slowA.promise);
+    const pendingA = store.fetchShares('calendar', 'cal-a');
+
+    store.resetShares();
+    apiMock.mockResolvedValueOnce({ shares: [share('b1', 'b@example.com')] });
+    await store.fetchShares('calendar', 'cal-b');
+
+    slowA.reject(fetchError({ error: 'calendar not found' }));
+    await pendingA;
+
+    expect(store.shares.map((s) => s.id)).toEqual(['b1']);
+    expect(store.sharesError).toBeNull();
+  });
+
+  it('lets a mutation win over a GET that was issued before it', async () => {
+    const store = useSharingStore();
+    const slowList = deferred<{ shares: Share[] }>();
+    apiMock.mockReturnValueOnce(slowList.promise);
+    const pendingList = store.fetchShares('calendar', 'cal-a');
+
+    const created = share('new', 'friend@example.com');
+    apiMock.mockResolvedValueOnce(created);
+    await store.createShare('calendar', 'cal-a', 'friend@example.com', 'read');
+
+    // The pre-mutation list must not resurrect and hide the share just created.
+    slowList.resolve({ shares: [] });
+    await pendingList;
+
+    expect(store.shares.map((s) => s.id)).toEqual(['new']);
+    expect(store.isLoadingShares).toBe(false);
+  });
+
+  it('keeps the two halves\' errors apart — a public failure is not a share failure', async () => {
+    const store = useSharingStore();
+    apiMock.mockRejectedValueOnce(fetchError({ error: 'public status unavailable' }));
+
+    await store.fetchPublicAccess('cal-uuid-1');
+
+    expect(store.publicError).toBe('public status unavailable');
+    // Both panels are mounted at once; a shared field would make the share list
+    // render the public panel's error.
+    expect(store.sharesError).toBeNull();
+    expect(store.publicAccess).toBeNull();
+  });
+
+  it('drops a superseded public-status response after the calendar was toggled', async () => {
+    const store = useSharingStore();
+    const slowStatus = deferred<PublicAccessStatus>();
+    apiMock.mockReturnValueOnce(slowStatus.promise);
+    const pendingStatus = store.fetchPublicAccess('cal-uuid-1');
+
+    apiMock.mockResolvedValueOnce({ enabled: true, public_url: 'https://x/public/calendar/new.ics' });
+    await store.setPublicAccess('cal-uuid-1', true);
+
+    slowStatus.resolve({ enabled: false, public_url: null });
+    await pendingStatus;
+
+    expect(store.publicAccess).toEqual({ enabled: true, public_url: 'https://x/public/calendar/new.ics' });
+    expect(store.isLoadingPublic).toBe(false);
   });
 });

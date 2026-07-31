@@ -8,6 +8,22 @@
     @update:visible="$emit('update:visible', $event)"
   >
     <div class="pt-2 space-y-6">
+      <!-- Explicit status line (story 043 AC "shows current share status"). The
+           two states are INDEPENDENT — a calendar can be shared with named
+           people and publicly linked at the same time — so this renders one tag
+           per fact rather than a single tri-state. Suppressed while the list is
+           unknown (loading, failed, or not ours to read): claiming "Private" on
+           no evidence is exactly the mistake the panels avoid. -->
+      <div
+        v-if="canManage && !store.isLoadingShares && !store.sharesError"
+        class="flex flex-wrap items-center gap-2"
+      >
+        <span class="text-sm text-surface-500">Status</span>
+        <Tag v-if="store.shares.length" severity="info" :value="`Shared with ${store.shares.length}`" />
+        <Tag v-if="isPublic" severity="warn" value="Public link" />
+        <Tag v-if="!store.shares.length && !isPublic" severity="secondary" value="Private" />
+      </div>
+
       <SharingSharePanel
         v-if="resourceUuid"
         :resource-type="resourceType"
@@ -58,6 +74,11 @@ defineEmits<{
 }>();
 
 const store = useSharingStore();
+
+// Address books have no public mode; for calendars the fetched status wins and
+// the list payload's public_enabled covers the window before it lands.
+const isPublic = computed(() =>
+  props.resourceType === 'calendar' && (store.publicAccess?.enabled ?? !!props.publicEnabled));
 
 const header = computed(() => {
   const kind = props.resourceType === 'calendar' ? 'calendar' : 'address book';

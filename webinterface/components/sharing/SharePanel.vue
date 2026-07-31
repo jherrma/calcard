@@ -67,47 +67,72 @@
           <ProgressSpinner style="width: 30px; height: 30px" />
         </div>
 
-        <div v-else-if="store.shares.length === 0" class="text-center py-8 text-surface-500 text-sm">
-          This {{ noun }} is private — nobody else can see it.
-        </div>
-
-        <div v-else class="space-y-2">
-          <div
-            v-for="share in store.shares"
-            :key="share.id"
-            class="flex flex-wrap items-center gap-3 p-3 bg-surface-50 dark:bg-surface-800 rounded-lg"
-          >
-            <Avatar
-              :label="initials(share)"
-              shape="circle"
-              class="bg-primary-100 text-primary-700"
-            />
-            <div class="flex-1 min-w-0">
-              <div class="font-medium text-surface-900 dark:text-surface-100 truncate">
-                {{ share.shared_with.display_name || share.shared_with.username }}
-              </div>
-              <div class="text-sm text-surface-500 truncate">{{ share.shared_with.email }}</div>
+        <template v-else>
+          <!-- A failed load leaves `shares` empty, which is indistinguishable
+               from "nothing is shared" — so the error must be shown and the
+               "private" claim below must be suppressed. Telling an owner their
+               calendar is private when the request merely failed invites them to
+               conclude their shares were lost. Also covers a partial bulk
+               revoke, where the rows that remain ARE the failures. -->
+          <Message v-if="store.sharesError" severity="error" :closable="false">
+            <div class="flex flex-wrap items-center gap-2">
+              <span>{{ store.sharesError }}</span>
+              <Button
+                label="Retry"
+                icon="pi pi-refresh"
+                severity="secondary"
+                size="small"
+                :disabled="store.isSaving"
+                @click="reload"
+              />
             </div>
-            <Select
-              :model-value="share.permission"
-              :options="permissionOptions"
-              option-label="label"
-              option-value="value"
-              class="w-36"
-              :disabled="store.isSaving"
-              @update:model-value="requestPermissionChange(share, $event as SharePermission)"
-            />
-            <Button
-              icon="pi pi-trash"
-              severity="danger"
-              text
-              rounded
-              title="Remove access"
-              :disabled="store.isSaving"
-              @click="confirmRemove(share)"
-            />
+          </Message>
+
+          <div
+            v-if="!store.sharesError && store.shares.length === 0"
+            class="text-center py-8 text-surface-500 text-sm"
+          >
+            This {{ noun }} is private — nobody else can see it.
           </div>
-        </div>
+
+          <div v-if="store.shares.length" class="space-y-2">
+            <div
+              v-for="share in store.shares"
+              :key="share.id"
+              class="flex flex-wrap items-center gap-3 p-3 bg-surface-50 dark:bg-surface-800 rounded-lg"
+            >
+              <Avatar
+                :label="initials(share)"
+                shape="circle"
+                class="bg-primary-100 text-primary-700"
+              />
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-surface-900 dark:text-surface-100 truncate">
+                  {{ share.shared_with.display_name || share.shared_with.username }}
+                </div>
+                <div class="text-sm text-surface-500 truncate">{{ share.shared_with.email }}</div>
+              </div>
+              <Select
+                :model-value="share.permission"
+                :options="permissionOptions"
+                option-label="label"
+                option-value="value"
+                class="w-36"
+                :disabled="store.isSaving"
+                @update:model-value="requestPermissionChange(share, $event as SharePermission)"
+              />
+              <Button
+                icon="pi pi-trash"
+                severity="danger"
+                text
+                rounded
+                title="Remove access"
+                :disabled="store.isSaving"
+                @click="confirmRemove(share)"
+              />
+            </div>
+          </div>
+        </template>
       </div>
     </template>
   </div>
@@ -153,6 +178,13 @@ watch(
   },
   { immediate: true },
 );
+
+/** Retry a failed load. Also the recovery path after a partial bulk revoke. */
+const reload = () => {
+  if (props.resourceUuid && props.canManage) {
+    store.fetchShares(props.resourceType, props.resourceUuid);
+  }
+};
 
 const initials = (share: Share) => {
   const source = share.shared_with.display_name || share.shared_with.username || share.shared_with.email;
@@ -240,9 +272,18 @@ const confirmRemoveAll = () => {
     acceptClass: 'p-button-danger',
     acceptLabel: 'Remove all',
     accept: async () => {
-      const { revoked, failed } = await store.revokeAllShares(props.resourceType, props.resourceUuid);
+      const { revoked, failed, reason } = await store.revokeAllShares(
+        props.resourceType,
+        props.resourceUuid,
+      );
       if (revoked) toast.success(`Removed ${revoked} of ${count} shares`, 'Removed');
-      if (failed) toast.error(`${failed} share${failed === 1 ? '' : 's'} could not be removed`);
+      // Name the server's reason: "1 share could not be removed" alone leaves
+      // the user with a row still in the list and no explanation for it.
+      if (failed) {
+        toast.error(
+          `${failed} share${failed === 1 ? '' : 's'} could not be removed${reason ? `: ${reason}` : ''}`,
+        );
+      }
       emit('changed');
     },
   });

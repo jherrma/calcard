@@ -19,6 +19,23 @@
       <ProgressSpinner style="width: 30px; height: 30px" />
     </div>
 
+    <!-- GET …/public is the only source of the public URL, so a failed status
+         call means we know nothing — say so instead of rendering a link-less
+         "public" panel (or, worse, an implied "not public"). -->
+    <Message v-else-if="store.publicError" severity="error" :closable="false">
+      <div class="flex flex-wrap items-center gap-2">
+        <span>{{ store.publicError }}</span>
+        <Button
+          label="Retry"
+          icon="pi pi-refresh"
+          severity="secondary"
+          size="small"
+          :disabled="store.isSaving"
+          @click="store.fetchPublicAccess(calendarUuid)"
+        />
+      </div>
+    </Message>
+
     <div v-else-if="enabled" class="space-y-4">
       <Message severity="warn" :closable="false">
         This calendar is public. Treat the link like a password: everyone it reaches sees your event
@@ -106,10 +123,25 @@ const togglePublic = async (next: boolean) => {
   }
 };
 
+// navigator.clipboard is UNDEFINED in a non-secure context, and this project's
+// docker-compose default is plain http:// on a LAN address — so the happy path
+// is not guaranteed here. Without the guard the click rejects unhandled: no
+// toast at all, and the user pastes whatever was in the clipboard before.
+const COPY_FAILED = 'Could not copy automatically — select the URL and copy it manually';
+
 const copyUrl = async () => {
   if (!publicUrl.value) return;
-  await navigator.clipboard.writeText(publicUrl.value);
-  toast.success('Link copied to clipboard');
+  // Over plain http the API is absent, not failing, so check before calling.
+  if (!navigator.clipboard) {
+    toast.error(COPY_FAILED);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(publicUrl.value);
+    toast.success('Link copied to clipboard');
+  } catch {
+    toast.error(COPY_FAILED);
+  }
 };
 
 const confirmRegenerate = () => {

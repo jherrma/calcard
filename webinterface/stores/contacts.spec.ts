@@ -234,3 +234,31 @@ describe('address book permissions (#53)', () => {
     expect(store.writableAddressBooks).toHaveLength(0);
   });
 });
+
+// SCOPE: mirrors the calendar-store guard (story 043 review). Inviting someone to
+// one address book refetches the list, which must not re-select every book and
+// re-broaden a contact list the user had filtered down.
+describe('fetchAddressBooks selection preservation', () => {
+  it('selects everything on the FIRST load', async () => {
+    apiMock.mockResolvedValueOnce({ addressbooks: [book(1), book(2)] });
+    const store = useContactsStore();
+
+    await store.fetchAddressBooks();
+
+    expect([...store.selectedAddressBookIds].sort()).toEqual([1, 2]);
+  });
+
+  it('keeps the user\'s deselection across a refetch, and adds books it has not seen', async () => {
+    apiMock.mockResolvedValueOnce({ addressbooks: [book(1), book(2)] });
+    const store = useContactsStore();
+    await store.fetchAddressBooks();
+
+    store.toggleAddressBook(2);
+
+    apiMock.mockResolvedValueOnce({ addressbooks: [book(1), book(2), book(5)] });
+    await store.fetchAddressBooks();
+
+    // REVERT PROOF: the old unconditional "select all" put 2 back.
+    expect([...store.selectedAddressBookIds].sort()).toEqual([1, 5]);
+  });
+});

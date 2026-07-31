@@ -9,8 +9,19 @@
     <CommonLoadingSpinner v-if="isLoading" />
 
     <template v-else>
+      <!-- Both list actions swallow failures, so `rows` is empty whether nothing
+           is shared OR nothing could be loaded. Rendering the empty state for a
+           failed load would assert "nothing has been shared with you" on no
+           evidence, so the error wins and offers a retry. -->
+      <Message v-if="loadError" severity="error" :closable="false">
+        <div class="flex flex-wrap items-center gap-3">
+          <span>{{ loadError }}</span>
+          <Button label="Retry" icon="pi pi-refresh" severity="secondary" size="small" @click="load" />
+        </div>
+      </Message>
+
       <div
-        v-if="rows.length === 0"
+        v-if="!loadError && rows.length === 0"
         class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-8 text-center"
       >
         <i class="pi pi-users text-3xl text-surface-300 dark:text-surface-600" />
@@ -21,7 +32,9 @@
         </p>
       </div>
 
-      <div v-else class="space-y-3">
+      <!-- Rows still render alongside an error: one list can fail while the
+           other succeeds, and hiding what DID load helps nobody. -->
+      <div v-if="rows.length" class="space-y-3">
         <div
           v-for="row in rows"
           :key="`${row.type}-${row.uuid}`"
@@ -76,19 +89,33 @@ const contactsStore = useContactsStore();
 const sharingStore = useSharingStore();
 
 const isLoading = ref(true);
+const loadError = ref<string | null>(null);
 
 // Derived from the two LIST endpoints: there is no /shared-with-me endpoint,
 // but every listed resource carries shared / permission / owner (#53).
 const rows = computed(() => sharingStore.sharedWithMe);
 
-onMounted(async () => {
+/**
+ * Neither fetchCalendars() nor fetchAddressBooks() rejects — both swallow the
+ * failure into their own store's `error` (the calendar and contacts pages rely
+ * on that). So clear those fields first and read them back afterwards; that is
+ * the only way this page can tell "nothing is shared" from "the load failed".
+ */
+const load = async () => {
+  isLoading.value = true;
+  loadError.value = null;
+  calendarStore.error = null;
+  contactsStore.error = null;
   try {
     await Promise.all([
       calendarStore.fetchCalendars(),
       contactsStore.fetchAddressBooks(),
     ]);
+    loadError.value = calendarStore.error || contactsStore.error || null;
   } finally {
     isLoading.value = false;
   }
-});
+};
+
+onMounted(load);
 </script>
