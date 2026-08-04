@@ -41,6 +41,34 @@ func NewEventHandler(
 	}
 }
 
+// eventResponseFromInstance renders one expanded occurrence as the wire DTO.
+// Shared by the per-calendar list and the unified search endpoint (#156) so an
+// occurrence looks identical whichever one returned it.
+func eventResponseFromInstance(inst calendar.EventInstance) dto.EventResponse {
+	resp := dto.EventResponse{
+		ID:           inst.ID,
+		CalendarID:   inst.CalendarID,
+		UID:          inst.UID,
+		Summary:      inst.Summary,
+		Description:  inst.Description,
+		Location:     inst.Location,
+		Start:        inst.Start,
+		End:          inst.End,
+		IsAllDay:     inst.IsAllDay,
+		RecurrenceID: &inst.RecurrenceID,
+	}
+	// Mirror the single-event Get predicate so the frontend can tell a
+	// recurring instance apart and show the recurrence scope dialog before
+	// a delete/edit hits the whole series.
+	if inst.Event != nil {
+		resp.IsRecurring = inst.Event.RecurrenceEndTime != nil
+	}
+	if *resp.RecurrenceID == "" {
+		resp.RecurrenceID = nil
+	}
+	return resp
+}
+
 // resolveCalendarID maps the :calendar_id path segment — a calendar UUID, the
 // canonical external identifier (#52) — to its internal numeric id. Returns
 // (0, false) when the UUID doesn't resolve; callers turn that into a 404 so
@@ -176,27 +204,7 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 
 	events := make([]dto.EventResponse, len(instances))
 	for i, inst := range instances {
-		events[i] = dto.EventResponse{
-			ID:           inst.ID,
-			CalendarID:   inst.CalendarID,
-			UID:          inst.UID,
-			Summary:      inst.Summary,
-			Description:  inst.Description,
-			Location:     inst.Location,
-			Start:        inst.Start,
-			End:          inst.End,
-			IsAllDay:     inst.IsAllDay,
-			RecurrenceID: &inst.RecurrenceID,
-		}
-		// Mirror the single-event Get predicate so the frontend can tell a
-		// recurring instance apart and show the recurrence scope dialog before
-		// a delete/edit hits the whole series.
-		if inst.Event != nil {
-			events[i].IsRecurring = inst.Event.RecurrenceEndTime != nil
-		}
-		if *events[i].RecurrenceID == "" {
-			events[i].RecurrenceID = nil
-		}
+		events[i] = eventResponseFromInstance(inst)
 	}
 
 	return c.JSON(dto.EventListResponse{

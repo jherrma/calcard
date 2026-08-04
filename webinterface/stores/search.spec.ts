@@ -2,17 +2,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import { createTestingPinia } from '@pinia/testing';
-import { eventSearchWindow, SEARCH_WINDOW_MONTHS, sortEventHits, useSearchStore } from './search';
+import { MIN_QUERY_LENGTH, SEARCH_LIMIT, toSearchResults, useSearchStore } from './search';
 import { useCalendarStore } from './calendars';
 import { useContactsStore } from './contacts';
 import type { Calendar, CalendarEvent } from '~/types/calendar';
 import type { AddressBook, Contact } from '~/types/contacts';
-import type { EventHit } from '~/types/search';
+import type { SearchApiResponse } from '~/types/search';
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
 mockNuxtImport('useApi', () => () => apiMock);
 
-// Frozen "now" so window boundaries and past/upcoming ordering are deterministic.
+// Frozen "now" so ordering assertions are deterministic.
 const NOW = new Date('2026-06-15T12:00:00Z');
 
 function calendar(id: number, name = `Calendar ${id}`, color = '#111111'): Calendar {
@@ -66,25 +66,56 @@ function contact(id: string, name: string, abId = 1): Contact {
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
+/** Builds a `GET /api/v1/search` payload, defaulting every group to empty. */
+function payload(partial: {
+  events?: { event: CalendarEvent; calendar_name?: string; calendar_color?: string; calendar_uuid?: string }[];
+  contacts?: { contact: Contact; addressbook_name?: string; addressbook_uuid?: string }[];
+  calendars?: Calendar[];
+  addressbooks?: AddressBook[];
+  hasMore?: Partial<Record<'events' | 'contacts' | 'calendars' | 'addressbooks', boolean>>;
+} = {}): SearchApiResponse {
+  const group = <T>(items: T[], has_more = false) => ({
+    items,
+    count: items.length,
+    has_more,
+    searched: true,
   });
-  return { promise, resolve };
+  return {
+    query: 'q',
+    types: ['events', 'contacts', 'calendars', 'addressbooks'],
+    limit: SEARCH_LIMIT,
+    offset: 0,
+    max_limit: 100,
+    events: group(
+      (partial.events || []).map((e) => ({
+        event: e.event,
+        calendar_uuid: e.calendar_uuid ?? 'cal-uuid-1',
+        calendar_name: e.calendar_name ?? 'Work',
+        calendar_color: e.calendar_color ?? '#ff0000',
+      })),
+      partial.hasMore?.events
+    ),
+    contacts: group(
+      (partial.contacts || []).map((c) => ({
+        contact: c.contact,
+        addressbook_uuid: c.addressbook_uuid ?? 'ab-uuid-1',
+        addressbook_name: c.addressbook_name ?? 'My Contacts',
+      })),
+      partial.hasMore?.contacts
+    ),
+    calendars: group(partial.calendars || [], partial.hasMore?.calendars),
+    addressbooks: group(partial.addressbooks || [], partial.hasMore?.addressbooks),
+  };
 }
 
-/** Routes the single api mock by URL: contacts search vs per-calendar event list. */
-function respond(handlers: {
-  contacts?: (url: string) => unknown;
-  events?: (url: string) => unknown;
-}) {
-  apiMock.mockImplementation((url: string) => {
-    if (url.includes('/contacts/search')) {
-      return Promise.resolve(handlers.contacts ? handlers.contacts(url) : { contacts: [], query: '', count: 0 });
-    }
-    return Promise.resolve(handlers.events ? handlers.events(url) : { events: [] });
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
+  return { promise, resolve, reject };
 }
 
 /**
@@ -120,7 +151,7 @@ afterEach(() => {
 
 describe('minimum query length', () => {
   it('clears results and issues no request below 2 characters', async () => {
-    respond({ contacts: () => ({ contacts: [contact('c1', 'Alice')], query: 'a', count: 1 }) });
+    apiMock.mockResolvedValue(payload({ contacts: [{ contact: contact('c1', 'Alice') }] }));
     const store = useSearchStore();
 
     await store.search('a');
@@ -129,6 +160,7 @@ describe('minimum query length', () => {
     expect(store.results.contacts).toEqual([]);
     expect(store.isLoading).toBe(false);
     expect(store.query).toBe('a');
+    expect(MIN_QUERY_LENGTH).toBe(2);
   });
 
   it('trims before measuring, so "  a " is still too short', async () => {
@@ -139,118 +171,56 @@ describe('minimum query length', () => {
   });
 });
 
-describe('stale-response guard', () => {
-  it('drops a slow earlier query that resolves after a newer one', async () => {
-    const slow = deferred<{ contacts: Contact[]; query: string; count: number }>();
-    const fast = deferred<{ contacts: Contact[]; query: string; count: number }>();
-
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) {
-        return url.includes('q=slow') ? slow.promise : fast.promise;
-      }
-      return Promise.resolve({ events: [] });
-    });
-
+describe('the single search request', () => {
+  it('hits /api/v1/search once with the query and the per-group limit', async () => {
+    apiMock.mockResolvedValue(payload());
     const store = useSearchStore();
-    const slowSearch = store.search('slow');
-    const fastSearch = store.search('fast');
 
-    // Newer query lands first…
-    fast.resolve({ contacts: [contact('fast-1', 'Fast Match')], query: 'fast', count: 1 });
-    await fastSearch;
-    expect(store.results.contacts.map((h) => h.contact.id)).toEqual(['fast-1']);
+    await store.search('standup');
 
-    // …then the superseded one, which must not clobber it.
-    slow.resolve({ contacts: [contact('slow-1', 'Slow Match')], query: 'slow', count: 1 });
-    await slowSearch;
-
-    expect(store.query).toBe('fast');
-    expect(store.results.contacts.map((h) => h.contact.id)).toEqual(['fast-1']);
-    expect(store.isLoading).toBe(false);
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    const url = apiMock.mock.calls[0]![0] as string;
+    expect(url).toContain('/api/v1/search');
+    expect(url).toContain('q=standup');
+    expect(url).toContain(`limit=${SEARCH_LIMIT}`);
   });
 
-  it('a stale response does not clear the spinner owned by the newer query', async () => {
-    const slow = deferred<{ contacts: Contact[]; query: string; count: number }>();
-    const pending = deferred<{ contacts: Contact[]; query: string; count: number }>();
-
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) {
-        return url.includes('q=slow') ? slow.promise : pending.promise;
-      }
-      return Promise.resolve({ events: [] });
-    });
-
-    const store = useSearchStore();
-    const slowSearch = store.search('slow');
-    store.search('newer'); // still in flight
-
-    slow.resolve({ contacts: [], query: 'slow', count: 0 });
-    await slowSearch;
-
-    expect(store.isLoading).toBe(true);
+  it('percent-encodes the query', async () => {
+    apiMock.mockResolvedValue(payload());
+    await useSearchStore().search('a & b');
+    expect(apiMock.mock.calls[0]![0] as string).toContain('q=a%20%26%20b');
   });
 
-  it('reset() invalidates an in-flight fan-out', async () => {
-    const inflight = deferred<{ contacts: Contact[]; query: string; count: number }>();
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) return inflight.promise;
-      return Promise.resolve({ events: [] });
-    });
-
-    const store = useSearchStore();
-    const search = store.search('alice');
-    store.reset();
-
-    inflight.resolve({ contacts: [contact('c1', 'Alice')], query: 'alice', count: 1 });
-    await search;
-
-    expect(store.query).toBe('');
-    expect(store.results.contacts).toEqual([]);
-    expect(store.isLoading).toBe(false);
+  // The whole point of #156: no ±6-month window is imposed, so the store must
+  // not send date bounds of its own.
+  it('sends no start/end bounds', async () => {
+    apiMock.mockResolvedValue(payload());
+    await useSearchStore().search('standup');
+    const url = apiMock.mock.calls[0]![0] as string;
+    expect(url).not.toContain('start=');
+    expect(url).not.toContain('end=');
   });
 
-  it('short-query clear also invalidates an in-flight fan-out', async () => {
-    const inflight = deferred<{ contacts: Contact[]; query: string; count: number }>();
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) return inflight.promise;
-      return Promise.resolve({ events: [] });
-    });
-
+  // Every hit is self-contained, so the palette works on a page that never
+  // loaded the calendar or contacts lists.
+  it('does not fetch the calendar or address book lists', async () => {
+    apiMock.mockResolvedValue(payload({ calendars: [calendar(1, 'Family')] }));
     const store = useSearchStore();
-    const search = store.search('alice');
-    await store.search(''); // user cleared the input
 
-    inflight.resolve({ contacts: [contact('c1', 'Alice')], query: 'alice', count: 1 });
-    await search;
+    await store.search('family');
 
-    expect(store.results.contacts).toEqual([]);
-  });
-});
-
-describe('contact hits', () => {
-  it('calls the contacts search endpoint with limit=200 and labels the address book', async () => {
-    respond({ contacts: () => ({ contacts: [contact('c1', 'Alice Adams', 2)], query: 'ali', count: 1 }) });
-
-    const store = useSearchStore();
-    useContactsStore().addressBooks = [book(1), book(2, 'Work')];
-
-    await store.search('ali');
-
-    const url = apiMock.mock.calls.map((c) => c[0] as string).find((u) => u.includes('/contacts/search'));
-    expect(url).toContain('q=ali');
-    expect(url).toContain('limit=200');
-    expect(store.results.contacts).toHaveLength(1);
-    // addressbook_id is a NUMERIC STRING matching AddressBook.ID, never the UUID.
-    expect(store.results.contacts[0]!.addressBookId).toBe('2');
-    expect(store.results.contacts[0]!.addressBookName).toBe('Work');
+    expect(apiMock.mock.calls.map((c) => c[0] as string)).toEqual([
+      expect.stringContaining('/api/v1/search'),
+    ]);
+    expect(store.results.calendars.map((c) => c.name)).toEqual(['Family']);
   });
 
-  it('does not touch the contacts page state (searchQuery / contacts list)', async () => {
-    respond({ contacts: () => ({ contacts: [contact('c1', 'Alice')], query: 'ali', count: 1 }) });
+  it('leaves the contacts page state untouched', async () => {
+    apiMock.mockResolvedValue(payload({ contacts: [{ contact: contact('c1', 'Alice') }] }));
 
     const contactsStore = useContactsStore();
-    contactsStore.addressBooks = [book(1)];
     contactsStore.contacts = [contact('page-1', 'Someone Else')];
+    useCalendarStore().calendars = [calendar(1)];
 
     await useSearchStore().search('ali');
 
@@ -259,261 +229,277 @@ describe('contact hits', () => {
   });
 });
 
-describe('event hits', () => {
-  it('scans every calendar over the bounded window', async () => {
-    respond({ events: () => ({ events: [] }) });
-
-    const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1), calendar(2)];
-
-    await store.search('anything');
-
-    const urls = apiMock.mock.calls.map((c) => c[0] as string).filter((u) => u.includes('/events'));
-    expect(urls).toHaveLength(2);
-    // One request per calendar, keyed on the calendar UUID (#52), not its numeric id.
-    expect(urls[0]).toContain('/api/v1/calendars/cal-uuid-1/events');
-    expect(urls[1]).toContain('/api/v1/calendars/cal-uuid-2/events');
-
-    const { start, end } = eventSearchWindow(NOW);
-    expect(urls[0]).toContain(`start=${start.toISOString()}`);
-    expect(urls[0]).toContain(`end=${end.toISOString()}`);
-  });
-
-  it('eventSearchWindow spans SEARCH_WINDOW_MONTHS either side of now', () => {
-    // Local-constructed date so the month arithmetic is timezone independent.
-    const { start, end } = eventSearchWindow(new Date(2026, 5, 15, 12, 0, 0));
-    expect(SEARCH_WINDOW_MONTHS).toBe(6);
-    expect([start.getFullYear(), start.getMonth()]).toEqual([2025, 11]);
-    expect([end.getFullYear(), end.getMonth()]).toEqual([2026, 11]);
-  });
-
-  it('matches summary, location and description but not unrelated events', async () => {
-    respond({
-      events: () => ({
+describe('mapping the response', () => {
+  it('carries calendar metadata from the server onto event hits', async () => {
+    apiMock.mockResolvedValue(
+      payload({
         events: [
-          event('e1', 1, 'Team Standup', '2026-06-16T09:00:00Z'),
-          event('e2', 1, 'Lunch', '2026-06-17T12:00:00Z', { location: 'Standup Cafe' }),
-          event('e3', 1, 'Retro', '2026-06-18T09:00:00Z', { description: 'replaces the standup' }),
-          event('e4', 1, 'Unrelated', '2026-06-19T09:00:00Z'),
+          {
+            event: event('e1', 7, 'Team Standup', '2026-06-16T09:00:00Z'),
+            calendar_name: 'Shared Family',
+            calendar_color: '#00ff00',
+            calendar_uuid: 'cal-uuid-9',
+          },
         ],
-      }),
-    });
-
-    const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1, 'Work', '#ff0000')];
-
-    await store.search('standup');
-
-    expect(store.results.events.map((h) => h.event.id)).toEqual(['e1', 'e2', 'e3']);
-    expect(store.results.events[0]!.calendarName).toBe('Work');
-    expect(store.results.events[0]!.calendarColor).toBe('#ff0000');
-    expect(store.results.events[0]!.calendarId).toBe('1');
-  });
-
-  it('gives recurring occurrences distinct keys', async () => {
-    respond({
-      events: () => ({
-        events: [
-          event('series', 1, 'Standup', '2026-06-16T09:00:00Z', { recurrence_id: '2026-06-16T09:00:00Z' }),
-          event('series', 1, 'Standup', '2026-06-17T09:00:00Z', { recurrence_id: '2026-06-17T09:00:00Z' }),
-        ],
-      }),
-    });
-
-    const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1)];
-
-    await store.search('standup');
-
-    const keys = store.results.events.map((h) => h.key);
-    expect(new Set(keys).size).toBe(2);
-  });
-
-  it('keeps results from the calendars that succeeded when one fails', async () => {
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) return Promise.resolve({ contacts: [], query: '', count: 0 });
-      if (url.includes('cal-uuid-1')) return Promise.reject(new Error('boom'));
-      return Promise.resolve({ events: [event('e2', 2, 'Standup', '2026-06-16T09:00:00Z')] });
-    });
-
-    const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1), calendar(2)];
-
-    await store.search('standup');
-
-    expect(store.error).toBeNull();
-    expect(store.results.events.map((h) => h.event.id)).toEqual(['e2']);
-  });
-
-  it('reports an error when every calendar AND the contact search fail', async () => {
-    apiMock.mockImplementation(() => Promise.reject(new Error('server down')));
-
-    const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1)];
-
-    await store.search('standup');
-
-    expect(store.error).toBe('server down');
-    expect(store.results.events).toEqual([]);
-  });
-});
-
-// A leg that ERRORED must never be presented as "no matches": an empty Contacts
-// section after a 500 reads as "this person isn't in my address book".
-describe('partial failure reporting', () => {
-  it('reports a failed contact search even though the event fan-out succeeded', async () => {
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) return Promise.reject(new Error('500 Internal Server Error'));
-      return Promise.resolve({ events: [event('e1', 1, 'Alice sync', '2026-06-16T09:00:00Z')] });
-    });
-
-    const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1)];
-
-    await store.search('alice');
-
-    expect(store.error).toBe('Contacts could not be searched — those results are missing.');
-    // The events that DID come back are still shown alongside the message.
-    expect(store.results.events.map((h) => h.event.id)).toEqual(['e1']);
-  });
-
-  it('reports a failed event fan-out even though contacts succeeded', async () => {
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) {
-        return Promise.resolve({ contacts: [contact('c1', 'Alice')], query: 'alice', count: 1 });
-      }
-      return Promise.reject(new Error('boom'));
-    });
-
-    const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1)];
-    useContactsStore().addressBooks = [book(1)];
-
-    await store.search('alice');
-
-    expect(store.error).toBe('Events could not be searched — those results are missing.');
-    expect(store.results.contacts).toHaveLength(1);
-  });
-
-  it('an account with no calendars plus a failed contact search is an error, not "no results"', async () => {
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) return Promise.reject(new Error('500'));
-      return Promise.resolve({ events: [] });
-    });
-
-    const store = useSearchStore();
-    useContactsStore().addressBooks = [book(1)];
-
-    await store.search('alice');
-
-    // Degenerate case: the events leg fulfils with [] (nothing to fan out to), so
-    // without per-leg reporting this rendered a bare "No results".
-    expect(store.error).not.toBeNull();
-    expect(store.hasResults).toBe(false);
-  });
-});
-
-describe('sortEventHits', () => {
-  it('puts upcoming events first (soonest first), then past ones (most recent first)', () => {
-    const hit = (id: string, start: string): EventHit => ({
-      key: id,
-      event: event(id, 1, id, start),
-      calendarId: '1',
-      calendarName: 'Work',
-      calendarColor: '#000',
-    });
-
-    const sorted = sortEventHits(
-      [
-        hit('past-old', '2026-01-01T09:00:00Z'),
-        hit('future-far', '2026-09-01T09:00:00Z'),
-        hit('past-recent', '2026-06-01T09:00:00Z'),
-        hit('future-near', '2026-06-16T09:00:00Z'),
-      ],
-      NOW.getTime()
+      })
     );
 
-    expect(sorted.map((h) => h.event.id)).toEqual(['future-near', 'future-far', 'past-recent', 'past-old']);
-  });
-});
+    const store = useSearchStore();
+    await store.search('standup');
 
-describe('calendars and address books', () => {
-  it('matches calendar and address book names/descriptions client-side', async () => {
-    respond({});
+    const hit = store.results.events[0]!;
+    expect(hit.calendarName).toBe('Shared Family');
+    expect(hit.calendarColor).toBe('#00ff00');
+    // The deep link uses the NUMERIC calendar id carried on the event itself.
+    expect(hit.calendarId).toBe('7');
+  });
+
+  it('falls back to a default colour when the calendar has none', () => {
+    const mapped = toSearchResults(
+      payload({ events: [{ event: event('e1', 1, 'X', '2026-06-16T09:00:00Z'), calendar_color: '' }] })
+    );
+    expect(mapped.events[0]!.calendarColor).toBe('#3b82f6');
+  });
+
+  it('gives recurring occurrences distinct keys', () => {
+    const mapped = toSearchResults(
+      payload({
+        events: [
+          { event: event('series', 1, 'Standup', '2026-06-16T09:00:00Z', { recurrence_id: '2026-06-16T09:00:00Z' }) },
+          { event: event('series', 1, 'Standup', '2026-06-17T09:00:00Z', { recurrence_id: '2026-06-17T09:00:00Z' }) },
+        ],
+      })
+    );
+    expect(new Set(mapped.events.map((h) => h.key)).size).toBe(2);
+  });
+
+  it('labels contacts with the address book name the server supplied', async () => {
+    apiMock.mockResolvedValue(
+      payload({ contacts: [{ contact: contact('c1', 'Alice Adams', 2), addressbook_name: 'Work' }] })
+    );
 
     const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1, 'Family'), calendar(2, 'Work')];
-    useContactsStore().addressBooks = [book(1, 'Family & Friends'), book(2, 'Vendors', 'family businesses')];
+    await store.search('ali');
 
+    // addressbook_id is a NUMERIC STRING matching AddressBook.ID, never the UUID.
+    expect(store.results.contacts[0]!.addressBookId).toBe('2');
+    expect(store.results.contacts[0]!.addressBookName).toBe('Work');
+  });
+
+  it('preserves the order the server ranked results in', async () => {
+    apiMock.mockResolvedValue(
+      payload({
+        events: [
+          { event: event('near', 1, 'Review soon', '2026-06-16T09:00:00Z') },
+          { event: event('far', 1, 'Review later', '2027-01-04T09:00:00Z') },
+          { event: event('past', 1, 'Review past', '2026-06-01T09:00:00Z') },
+        ],
+      })
+    );
+
+    const store = useSearchStore();
+    await store.search('review');
+
+    expect(store.results.events.map((h) => h.event.id)).toEqual(['near', 'far', 'past']);
+  });
+
+  it('tolerates missing groups in the payload', () => {
+    const mapped = toSearchResults({} as SearchApiResponse);
+    expect(mapped.events).toEqual([]);
+    expect(mapped.contacts).toEqual([]);
+    expect(mapped.calendars).toEqual([]);
+    expect(mapped.addressBooks).toEqual([]);
+    expect(mapped.hasMore).toEqual({ events: false, contacts: false, calendars: false, addressBooks: false });
+  });
+
+  it('exposes per-category truncation so a capped count can be shown as "N+"', async () => {
+    apiMock.mockResolvedValue(
+      payload({
+        events: [{ event: event('e1', 1, 'Sprint', '2026-06-16T09:00:00Z') }],
+        hasMore: { events: true },
+      })
+    );
+
+    const store = useSearchStore();
+    await store.search('sprint');
+
+    expect(store.results.hasMore.events).toBe(true);
+    expect(store.results.hasMore.contacts).toBe(false);
+  });
+
+  it('counts every category in totalCount and hasResults', async () => {
+    apiMock.mockResolvedValue(
+      payload({
+        events: [{ event: event('e1', 1, 'Family dinner', '2026-06-16T09:00:00Z') }],
+        calendars: [calendar(1, 'Family')],
+        addressbooks: [book(1, 'Family & Friends')],
+      })
+    );
+
+    const store = useSearchStore();
     await store.search('family');
 
-    expect(store.results.calendars.map((c) => c.name)).toEqual(['Family']);
-    expect(store.results.addressBooks.map((ab) => ab.Name)).toEqual(['Family & Friends', 'Vendors']);
     expect(store.hasResults).toBe(true);
     expect(store.totalCount).toBe(3);
   });
+});
 
-  it('loads calendars and address books when they are not in state yet', async () => {
-    apiMock.mockImplementation((url: string) => {
-      if (url === '/api/v1/calendars') return Promise.resolve({ calendars: [calendar(1, 'Family')] });
-      if (url === '/api/v1/addressbooks') return Promise.resolve({ addressbooks: [book(1, 'Family')] });
-      if (url.includes('/contacts/search')) return Promise.resolve({ contacts: [], query: '', count: 0 });
-      return Promise.resolve({ events: [] });
-    });
+// The guard is still required with one request: useApi retries once on a 401 and
+// spends a whole token refresh before re-issuing, so responses do arrive out of
+// order.
+describe('stale-response guard', () => {
+  it('drops a slow earlier query that resolves after a newer one', async () => {
+    const slow = deferred<SearchApiResponse>();
+    const fast = deferred<SearchApiResponse>();
+    apiMock.mockImplementation((url: string) =>
+      url.includes('q=slow') ? slow.promise : fast.promise
+    );
 
     const store = useSearchStore();
-    await store.search('family');
+    const slowSearch = store.search('slow');
+    const fastSearch = store.search('fast');
 
-    expect(store.results.calendars).toHaveLength(1);
-    expect(store.results.addressBooks).toHaveLength(1);
+    fast.resolve(payload({ contacts: [{ contact: contact('fast-1', 'Fast Match') }] }));
+    await fastSearch;
+    expect(store.results.contacts.map((h) => h.contact.id)).toEqual(['fast-1']);
+
+    slow.resolve(payload({ contacts: [{ contact: contact('slow-1', 'Slow Match') }] }));
+    await slowSearch;
+
+    expect(store.query).toBe('fast');
+    expect(store.results.contacts.map((h) => h.contact.id)).toEqual(['fast-1']);
+    expect(store.isLoading).toBe(false);
+  });
+
+  it('a stale response does not clear the spinner owned by the newer query', async () => {
+    const slow = deferred<SearchApiResponse>();
+    const pending = deferred<SearchApiResponse>();
+    apiMock.mockImplementation((url: string) =>
+      url.includes('q=slow') ? slow.promise : pending.promise
+    );
+
+    const store = useSearchStore();
+    const slowSearch = store.search('slow');
+    store.search('newer'); // still in flight
+
+    slow.resolve(payload());
+    await slowSearch;
+
+    expect(store.isLoading).toBe(true);
+  });
+
+  it('a stale FAILURE does not overwrite the newer query results', async () => {
+    const slow = deferred<SearchApiResponse>();
+    apiMock.mockImplementation((url: string) =>
+      url.includes('q=slow') ? slow.promise : Promise.resolve(payload({ contacts: [{ contact: contact('c1', 'Alice') }] }))
+    );
+
+    const store = useSearchStore();
+    const slowSearch = store.search('slow');
+    await store.search('alice');
+
+    slow.reject(new Error('boom'));
+    await slowSearch;
+
+    expect(store.error).toBeNull();
+    expect(store.results.contacts).toHaveLength(1);
+  });
+
+  it('reset() invalidates an in-flight request', async () => {
+    const inflight = deferred<SearchApiResponse>();
+    apiMock.mockImplementation(() => inflight.promise);
+
+    const store = useSearchStore();
+    const search = store.search('alice');
+    store.reset();
+
+    inflight.resolve(payload({ contacts: [{ contact: contact('c1', 'Alice') }] }));
+    await search;
+
+    expect(store.query).toBe('');
+    expect(store.results.contacts).toEqual([]);
+    expect(store.isLoading).toBe(false);
+  });
+
+  it('short-query clear also invalidates an in-flight request', async () => {
+    const inflight = deferred<SearchApiResponse>();
+    apiMock.mockImplementation(() => inflight.promise);
+
+    const store = useSearchStore();
+    const search = store.search('alice');
+    await store.search(''); // user cleared the input
+
+    inflight.resolve(payload({ contacts: [{ contact: contact('c1', 'Alice') }] }));
+    await search;
+
+    expect(store.results.contacts).toEqual([]);
+  });
+});
+
+// A failed search must never look like "nothing matched" — an empty Contacts
+// section after a 500 reads as "this person isn't in my address book".
+describe('failure reporting', () => {
+  it('surfaces the error and shows no results', async () => {
+    apiMock.mockRejectedValue(new Error('500 Internal Server Error'));
+
+    const store = useSearchStore();
+    await store.search('alice');
+
+    expect(store.error).toBe('500 Internal Server Error');
+    expect(store.hasResults).toBe(false);
+    expect(store.isLoading).toBe(false);
+  });
+
+  it('falls back to a generic message when the error carries none', async () => {
+    apiMock.mockRejectedValue(new Error(''));
+    const store = useSearchStore();
+    await store.search('alice');
+    expect(store.error).toBe('Search failed');
+  });
+
+  it('does not cache a failed search', async () => {
+    apiMock.mockRejectedValue(new Error('nope'));
+    const store = useSearchStore();
+
+    await store.search('ali');
+    await store.search('ali');
+
+    expect(apiMock.mock.calls.length).toBe(2);
   });
 });
 
 describe('session cache', () => {
-  it('serves a repeated query from cache without new requests', async () => {
-    respond({ contacts: () => ({ contacts: [contact('c1', 'Alice')], query: 'ali', count: 1 }) });
-
+  it('serves a repeated query from cache without a new request', async () => {
+    apiMock.mockResolvedValue(payload({ contacts: [{ contact: contact('c1', 'Alice') }] }));
     const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1)];
-    useContactsStore().addressBooks = [book(1)];
 
     await store.search('ali');
-    const callsAfterFirst = apiMock.mock.calls.length;
-
     await store.search('ALI'); // case-insensitive cache key
-    expect(apiMock.mock.calls.length).toBe(callsAfterFirst);
+
+    expect(apiMock.mock.calls.length).toBe(1);
     expect(store.results.contacts).toHaveLength(1);
   });
 
   it('re-queries once the entry has expired', async () => {
-    respond({ contacts: () => ({ contacts: [contact('c1', 'Alice')], query: 'ali', count: 1 }) });
-
+    apiMock.mockResolvedValue(payload({ contacts: [{ contact: contact('c1', 'Alice') }] }));
     const store = useSearchStore();
-    useContactsStore().addressBooks = [book(1)];
 
     await store.search('ali');
-    const callsAfterFirst = apiMock.mock.calls.length;
-
     vi.setSystemTime(new Date(NOW.getTime() + 120_000));
     await store.search('ali');
 
-    expect(apiMock.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+    expect(apiMock.mock.calls.length).toBe(2);
   });
 
-  it('does not cache a partially failed result set', async () => {
-    apiMock.mockImplementation((url: string) => {
-      if (url.includes('/contacts/search')) return Promise.reject(new Error('nope'));
-      return Promise.resolve({ events: [] });
-    });
-
+  it('clearCache forces the next identical query to re-request', async () => {
+    apiMock.mockResolvedValue(payload());
     const store = useSearchStore();
-    useCalendarStore().calendars = [calendar(1)];
 
     await store.search('ali');
-    const callsAfterFirst = apiMock.mock.calls.length;
-
+    store.clearCache();
     await store.search('ali');
-    expect(apiMock.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+
+    expect(apiMock.mock.calls.length).toBe(2);
   });
 });
 

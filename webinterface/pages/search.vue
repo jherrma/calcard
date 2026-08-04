@@ -16,8 +16,9 @@
     </div>
 
     <p v-if="isSearchable && !searchStore.isLoading" class="mt-3 text-xs text-surface-500">
-      {{ searchStore.totalCount }} {{ searchStore.totalCount === 1 ? 'result' : 'results' }}
-      for “{{ searchStore.query }}” · events are searched from {{ windowLabel }}.
+      {{ searchStore.totalCount }}{{ isCapped ? '+' : '' }}
+      {{ searchStore.totalCount === 1 && !isCapped ? 'result' : 'results' }}
+      for “{{ searchStore.query }}”<span v-if="isCapped"> · showing the first {{ SEARCH_LIMIT }} per category</span>.
     </p>
 
     <!-- A failed leg is reported above the results, never instead of them. -->
@@ -144,7 +145,7 @@
 <script setup lang="ts">
 import HighlightText from '~/components/common/HighlightText.vue';
 import SearchSectionHeader from '~/components/common/SearchSectionHeader.vue';
-import { MIN_QUERY_LENGTH, SEARCH_WINDOW_MONTHS, useSearchStore } from '~/stores/search';
+import { MIN_QUERY_LENGTH, SEARCH_LIMIT, useSearchStore } from '~/stores/search';
 import type { ContactHit, EventHit } from '~/types/search';
 import {
   contactMetaLine,
@@ -175,7 +176,10 @@ const initialQuery = typeof route.query.q === 'string' ? route.query.q : '';
 const query = ref(initialQuery);
 
 const isSearchable = computed(() => query.value.trim().length >= MIN_QUERY_LENGTH);
-const windowLabel = computed(() => `${SEARCH_WINDOW_MONTHS} months back to ${SEARCH_WINDOW_MONTHS} months ahead`);
+
+// The server caps each category, so a bare total would claim completeness it
+// cannot promise. When anything was truncated the count reads "N+".
+const isCapped = computed(() => Object.values(searchStore.results.hasMore).some(Boolean));
 
 const runSearch = useDebounceFn(() => {
   // Same fire-time re-read as the palette: useDebounceFn cannot be cancelled, so a

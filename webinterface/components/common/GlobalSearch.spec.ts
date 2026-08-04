@@ -100,7 +100,14 @@ function contactHit(id = 'ct-1', name = 'Alice Adams'): ContactHit {
 }
 
 function results(partial: Partial<SearchResults> = {}): SearchResults {
-  return { events: [], contacts: [], calendars: [], addressBooks: [], ...partial };
+  return {
+    events: [],
+    contacts: [],
+    calendars: [],
+    addressBooks: [],
+    hasMore: { events: false, contacts: false, calendars: false, addressBooks: false },
+    ...partial,
+  };
 }
 
 /** Puts the store in the "results for <query> are on screen" state. */

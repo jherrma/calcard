@@ -56,6 +56,16 @@ Contact management:
 - `photo.go` — Contact photo handling.
 - `mapper.go` — Contact-to-DTO mapping utilities.
 
+### [search/](search/)
+
+Unified cross-resource search (#156):
+
+- `search.go` — `GET /api/v1/search`: events (over the denormalized summary/location/description,
+  with **no implicit date bound**), contacts, calendars and address books, across every collection
+  the caller can read. Resolves readable collections through the calendar/address-book list use
+  cases so owner+share resolution (#53) stays in one place, and picks one representative
+  occurrence per matching recurring series (next one, or the last one for a finished series).
+
 ### [apppassword/](apppassword/)
 
 Application password management (for DAV client access):

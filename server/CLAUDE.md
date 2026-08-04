@@ -57,6 +57,7 @@ JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", 
 | Events | CRUD, move between calendars |
 | Address Books | CRUD, export |
 | Contacts | CRUD, search, move, photo |
+| Search | `GET /api/v1/search` — unified search over events (no date bound), contacts, calendars and address books (#156) |
 | Sharing | Calendar and address book share CRUD |
 | Credentials | App passwords, CalDAV/CardDAV credentials |
 | Import/Export | Calendar import (.ics), contact import (.vcf), full backup export |

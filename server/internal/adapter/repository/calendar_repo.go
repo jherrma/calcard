@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
@@ -284,12 +285,113 @@ func (r *CalendarRepository) ListEvents(ctx context.Context, calendarID uint, st
 	// recurrence_end_time holds the last occurrence's end (far-future for
 	// unbounded series). COALESCE keeps recurring events visible in windows
 	// past their first occurrence while leaving non-recurring rows unchanged.
+	// UTC-normalised for the same reason as SearchEvents: under SQLite these are
+	// TEXT columns compared lexicographically, so a bound carrying a non-UTC
+	// offset shifts the window by that offset. Callers currently pass RFC 3339
+	// with a Z, which is UTC by luck rather than by contract.
 	err := r.db.WithContext(ctx).
 		Where("calendar_id = ?", calendarID).
-		Where("start_time < ? AND COALESCE(recurrence_end_time, end_time) > ?", end, start).
+		Where("start_time < ? AND COALESCE(recurrence_end_time, end_time) > ?", end.UTC(), start.UTC()).
 		Order("start_time ASC, created_at ASC").
 		Find(&objects).Error
 	return objects, err
+}
+
+// SearchEvents implements the cross-calendar event text search behind
+// GET /api/v1/search (#156).
+//
+// It matches the denormalized summary/location/description columns — the same
+// three fields the old client-side scan filtered on — and NOT ical_data, so an
+// occurrence renamed through an exception override is found via its series
+// master's text rather than its own. Matching ical_data would also match UIDs,
+// timezone identifiers and attendee addresses, which is worse than the gap.
+//
+// Ordering is two index-friendly queries rather than one CASE expression,
+// because GORM's Order() cannot bind parameters: "live" objects (last
+// occurrence at or after the pivot) ascending by start time, then "past" ones
+// descending. Concatenating them and slicing gives a stable total order, with
+// id as the tie-breaker so equal timestamps cannot shuffle between pages.
+func (r *CalendarRepository) SearchEvents(ctx context.Context, q calendar.EventSearchQuery) ([]*calendar.CalendarObject, error) {
+	if len(q.CalendarIDs) == 0 || strings.TrimSpace(q.Text) == "" {
+		return nil, nil
+	}
+	if q.Limit <= 0 {
+		return nil, nil
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	// Enough rows that slicing at [offset:offset+limit] is correct even when the
+	// whole page comes from one of the two groups.
+	need := q.Offset + q.Limit
+
+	// EVERY time bound must be normalised to UTC before it becomes a bound
+	// parameter. Under SQLite these columns are TEXT ("2026-08-04 06:38:33+00:00")
+	// and comparison is LEXICOGRAPHIC, so the trailing offset is not honoured: a
+	// parameter carrying a +02:00 wall clock silently compares two hours off, and
+	// events land in the wrong half of the pivot. The other endpoints get away
+	// without this only because their bounds are parsed from RFC 3339 with a Z.
+	pivot := q.Pivot.UTC()
+	var start, end *time.Time
+	if q.Start != nil {
+		utc := q.Start.UTC()
+		start = &utc
+	}
+	if q.End != nil {
+		utc := q.End.UTC()
+		end = &utc
+	}
+
+	like := "%" + escapeLike(q.Text) + "%"
+	base := func() *gorm.DB {
+		db := r.db.WithContext(ctx).
+			Model(&calendar.CalendarObject{}).
+			Where("calendar_id IN ?", q.CalendarIDs).
+			// An object without a start time has no place on a timeline and is
+			// invisible to ListEvents too; keep both endpoints consistent.
+			Where("start_time IS NOT NULL").
+			Where(
+				"summary LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'",
+				like, like, like,
+			)
+		// Same overlap predicate as ListEvents: COALESCE keeps a recurring
+		// series visible in windows past its first occurrence.
+		if end != nil {
+			db = db.Where("start_time < ?", *end)
+		}
+		if start != nil {
+			db = db.Where("COALESCE(recurrence_end_time, end_time) > ?", *start)
+		}
+		return db
+	}
+
+	var live []*calendar.CalendarObject
+	if err := base().
+		Where("COALESCE(recurrence_end_time, end_time) >= ?", pivot).
+		Order("start_time ASC, id ASC").
+		Limit(need).
+		Find(&live).Error; err != nil {
+		return nil, err
+	}
+
+	results := live
+	// Only reach for past objects when the live ones don't already fill the page.
+	if len(results) < need {
+		var past []*calendar.CalendarObject
+		if err := base().
+			Where("COALESCE(recurrence_end_time, end_time) < ?", pivot).
+			Order("start_time DESC, id ASC").
+			Limit(need - len(results)).
+			Find(&past).Error; err != nil {
+			return nil, err
+		}
+		results = append(results, past...)
+	}
+
+	if q.Offset >= len(results) {
+		return nil, nil
+	}
+	return results[q.Offset:], nil
 }
 
 // RecordChange advances the calendar's sync token and writes a matching

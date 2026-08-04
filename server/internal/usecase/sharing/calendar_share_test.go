@@ -114,6 +114,9 @@ func (m *mockCalendarRepo) RecordChange(ctx context.Context, cid uint, path, uid
 func (m *mockCalendarRepo) ListEvents(ctx context.Context, cid uint, s, e time.Time) ([]*calendar.CalendarObject, error) {
 	return nil, nil
 }
+func (m *mockCalendarRepo) SearchEvents(ctx context.Context, q calendar.EventSearchQuery) ([]*calendar.CalendarObject, error) {
+	return nil, nil
+}
 func (m *mockCalendarRepo) GetCalendarObjectByUUID(ctx context.Context, u string) (*calendar.CalendarObject, error) {
 	return nil, nil
 }

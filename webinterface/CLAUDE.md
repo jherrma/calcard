@@ -222,19 +222,29 @@ views over it. Constraints that shaped it — all imposed by the API:
 `components/common/GlobalSearch.vue` lives in `AppHeader` and owns both the trigger and
 the palette dialog. `pages/search.vue` is the uncapped results page it links to.
 
-- **There is no `/api/v1/search` endpoint.** `stores/search.ts` fans out over the endpoints
-  that do exist: `GET /contacts/search?q=` (server-side) plus one
-  `GET /calendars/:uuid/events?start=&end=` per calendar over a ±6 month window
-  (`SEARCH_WINDOW_MONTHS`), filtered client-side. Calendars/address books are matched
-  against already-loaded state. Events outside that window are invisible to search.
+- **`GET /api/v1/search` is the single source of results (#156).** `stores/search.ts` issues ONE
+  request per query — `?q=&limit=100` — covering events, contacts, calendars and address books
+  across every collection the user can read, owned and shared. **There is no date window**: an
+  event two years out or two years back is findable. The old ±6-month per-calendar fan-out and
+  its `SEARCH_WINDOW_MONTHS` constant are gone.
+- **Hits are self-contained.** Each event item carries `calendar_uuid` / `calendar_name` /
+  `calendar_color` and each contact item its `addressbook_name`, so the palette needs neither the
+  calendar nor the contacts store loaded. Raw JSON, no `{ status, data }` envelope.
+- **A recurring series is ONE hit**, represented by the occurrence the server resolved (next one,
+  or the last one for a finished series) and carrying that occurrence's `recurrence_id`.
+- **Each group is capped and says so.** `limit` applies per category, the server clamps it to
+  `max_limit` (100), and each group reports `has_more` — surfaced as `results.hasMore.<category>`
+  so counts render as "N+" instead of claiming a total the server never promised.
 - **`requestSeq`** in the store drops responses from superseded queries; `reset()` bumps it
-  so closing the dialog invalidates in-flight work.
+  so closing the dialog invalidates in-flight work. Still needed with one request: `useApi`
+  retries once on a 401 and spends a whole token refresh before re-issuing.
 - **The debounce cannot be cancelled.** vueuse's `useDebounceFn` exposes no cancel handle and
   only re-arms when invoked again, so both the palette and the results page re-read the live
   query inside the debounced callback and bail if it is no longer searchable. Never close over
   the value that scheduled the timer.
-- **A failed leg is an error, not "no matches".** `store.error` is set when either leg fails
-  and is rendered as a banner ABOVE whatever the other legs found.
+- **A failure is an error, not "no matches".** `store.error` is set and rendered as a banner;
+  results are cleared. An empty Contacts section after a 500 would read as "this person isn't in
+  my address book", which is worse than an error.
 - **Keyboard**: Cmd/Ctrl+K opens it from anywhere (window listener), Up/Down walk one flat
   listbox across all categories, Enter opens the highlighted row, Tab/Shift+Tab jump between
   categories. Rows are `role="option"` with `aria-activedescendant` on the input.

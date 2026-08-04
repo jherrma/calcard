@@ -5,6 +5,32 @@ import (
 	"time"
 )
 
+// EventSearchQuery describes a text search over the denormalized event columns
+// of a set of calendars (#156). The caller resolves which calendars it may read
+// — the repository trusts CalendarIDs and never widens it.
+type EventSearchQuery struct {
+	// CalendarIDs limits the search to these calendars. An empty slice matches
+	// nothing (it is NOT "all calendars"), so a caller that resolved no
+	// readable calendar cannot accidentally search the whole table.
+	CalendarIDs []uint
+	// Text is matched case-insensitively as a substring of summary, location
+	// or description. LIKE wildcards in it are escaped, so it matches
+	// literally.
+	Text string
+	// Start/End optionally bound the search to objects overlapping the range.
+	// Both nil means no date bound at all — the point of #156.
+	Start *time.Time
+	End   *time.Time
+	// Pivot ("now") splits results into live and past: objects whose last
+	// occurrence is at or after Pivot come first, ordered by start time
+	// ascending (so an ongoing or still-recurring series leads, then the
+	// soonest upcoming one); past objects follow, most recently started first.
+	Pivot time.Time
+	// Limit/Offset paginate the concatenated (live, then past) ordering.
+	Limit  int
+	Offset int
+}
+
 // CalendarRepository defines the interface for calendar persistence
 type CalendarRepository interface {
 	// Create creates a new calendar
@@ -72,6 +98,12 @@ type CalendarRepository interface {
 
 	// ListEvents retrieves calendar objects within a time range
 	ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*CalendarObject, error)
+
+	// SearchEvents finds calendar objects across several calendars whose
+	// denormalized summary/location/description match q.Text, ordered as
+	// described on EventSearchQuery. It returns series masters, one row per
+	// stored object — expanding them into occurrences is the caller's job.
+	SearchEvents(ctx context.Context, q EventSearchQuery) ([]*CalendarObject, error)
 
 	// GetCalendarObjectByUUID retrieves a calendar object by UUID
 	GetCalendarObjectByUUID(ctx context.Context, uuid string) (*CalendarObject, error)
