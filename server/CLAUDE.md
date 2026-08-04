@@ -62,7 +62,7 @@ JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", 
 | Credentials | App passwords, CalDAV/CardDAV credentials |
 | Import/Export | Calendar import (.ics), contact import (.vcf), full backup export |
 | About | Open-source attribution list (`GET /api/v1/about/open-source`, authenticated) |
-| Docs | Swagger UI at `/docs`, JSON/YAML specs |
+| Docs | Swagger UI at `/api/docs`, DAV docs at `/api/docs/dav`, specs at `/api/v1/swagger.json` and `.yaml` |
 | Health | `GET /health` |
 
 **Exception**: AddressBook and Contact endpoints return raw JSON (not wrapped in `SuccessResponse`).
@@ -102,6 +102,13 @@ names a package differently than that file's import table does (e.g. `about.Foo`
 import is `aboutuc "…/usecase/about"`), swag cannot resolve it and exits 1 — aborting the whole
 run, so NO endpoint's docs regenerate. `Dockerfile` runs `swag init` without failure tolerance,
 so this also breaks `docker build`. No Go test catches it; verify by running the command above.
+
+**Regenerate and COMMIT `docs/` whenever you change a handler annotation.** `docs/embed.go`
+embeds `swagger.json`/`swagger.yaml`, so the committed files are what `/api/docs` serves — a stale
+file is a stale API doc, not a build artefact. Nothing enforces freshness: the Dockerfile re-runs
+`swag init` at image build, which hides the drift in Docker while the checked-in spec rots, and
+there is no CI. It had silently fallen three features behind before being regenerated on
+2026-08-04.
 
 Integration tests are gated behind the `integration` build tag so they're excluded from the default run. They cover the first-boot flow, REST CRUD, the export/re-import roundtrip, and CalDAV/CardDAV protocol endpoints. See `integration/CLAUDE.md` for details.
 

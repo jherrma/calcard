@@ -15,6 +15,60 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/about/open-source": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the attribution list for the Go modules linked into the server binary. The list is generated at build time (` + "`" + `go run ./tools/genlicenses` + "`" + `) and embedded in the binary, so no network access is involved. License detection is best-effort — a license of \"unknown\" means it could not be determined automatically, NOT that the package is unlicensed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "About"
+                ],
+                "summary": "List backend open-source dependencies",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "count": {
+                                    "type": "integer"
+                                },
+                                "generator": {
+                                    "type": "string"
+                                },
+                                "note": {
+                                    "type": "string"
+                                },
+                                "packages": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_about.OpenSourcePackage"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
         "/addressbooks": {
             "get": {
                 "security": [
@@ -232,6 +286,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
                     },
+                    "403": {
+                        "description": "Read-only access to the address book",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -354,6 +414,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
                     },
+                    "403": {
+                        "description": "Read-only access to the address book",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -401,6 +467,89 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Read-only access to the address book",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/addressbooks/{addressbook_id}/contacts/{contact_id}/move": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Move contact to another address book",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Move contact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source address book UUID",
+                        "name": "addressbook_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact UUID",
+                        "name": "contact_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target address book",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Read-only access to the source or target address book",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
@@ -528,6 +677,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
                     },
+                    "403": {
+                        "description": "Read-only access to the address book",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
                     "413": {
                         "description": "Photo too large",
                         "schema": {
@@ -581,6 +736,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Read-only access to the address book",
                         "schema": {
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
@@ -986,6 +1147,9 @@ const docTemplate = `{
                                 },
                                 "expires_at": {
                                     "type": "integer"
+                                },
+                                "refresh_token": {
+                                    "type": "string"
                                 },
                                 "token_type": {
                                     "type": "string"
@@ -1566,7 +1730,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Update scope (this, all, future)",
+                        "description": "Update scope (this, all, this_and_future)",
                         "name": "scope",
                         "in": "query"
                     },
@@ -1578,6 +1742,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateEventRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional ETag precondition; 412 on mismatch",
+                        "name": "If-Match",
+                        "in": "header"
                     }
                 ],
                 "responses": {
@@ -1589,6 +1759,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "412": {
+                        "description": "ETag precondition failed",
                         "schema": {
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
@@ -1629,7 +1805,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Delete scope (this, all, future)",
+                        "description": "Delete scope (this, all, this_and_future)",
                         "name": "scope",
                         "in": "query"
                     },
@@ -1638,11 +1814,23 @@ const docTemplate = `{
                         "description": "Recurrence ID (for recurring events)",
                         "name": "recurrence_id",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional ETag precondition; 412 on mismatch",
+                        "name": "If-Match",
+                        "in": "header"
                     }
                 ],
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "412": {
+                        "description": "ETag precondition failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
                     },
                     "500": {
                         "description": "Internal Server Error",
@@ -2037,7 +2225,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Search for contacts by query",
+                "description": "Searches every address book the caller can read — their own AND\nbooks shared with them (#162). It used to be owner-scoped, which\nmade a contact in a shared book vanish as soon as you searched\nfor it even though the same contact was listed and editable.\n\nThe optional addressbook_id narrows the search to one book, given\nas its UUID (#52). A UUID that is not among the readable books —\nunknown, deleted, or simply not shared with the caller — is a 404,\nso a narrowing request is never silently answered about other books.",
                 "produces": [
                     "application/json"
                 ],
@@ -2055,13 +2243,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Limit (default 20)",
+                        "description": "Limit (default 20, max 200)",
                         "name": "limit",
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "description": "Address Book ID filter",
+                        "type": "string",
+                        "description": "Restrict to one address book, by UUID",
                         "name": "addressbook_id",
                         "in": "query"
                     }
@@ -2079,60 +2267,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
-                        }
-                    }
-                }
-            }
-        },
-        "/contacts/{contact_id}/move": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Move contact to another address book",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Contacts"
-                ],
-                "summary": "Move contact",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Contact UUID",
-                        "name": "contact_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Target address book",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
+                    "404": {
+                        "description": "addressbook_id names a book the caller cannot read",
                         "schema": {
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
@@ -2182,6 +2318,88 @@ const docTemplate = `{
                         "description": "Internal error",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Searches events, contacts, calendars and address books for the authenticated user in one request.\n\nEvents are searched across every calendar the caller can read — owned and shared — over their\ndenormalized summary, location and description, with **no implicit date bound**: pass ` + "`" + `start` + "`" + `/` + "`" + `end` + "`" + `\nonly if a window is actually wanted. Contacts are searched across every readable address book,\nincluding books shared with the caller.\n\nEach matching recurring series is returned once, represented by the occurrence that best describes\nit: the first occurrence at or after now, or the last one for a series wholly in the past. The\noccurrence carries its own ` + "`" + `recurrence_id` + "`" + `, so a client can open it directly instead of the series\nmaster.\n\nRanking: upcoming occurrences first (soonest first), then past ones (most recent first). Contacts are\nordered by name, collections by the order the list endpoints return.\n\n` + "`" + `limit` + "`" + ` and ` + "`" + `offset` + "`" + ` apply per group and ` + "`" + `limit` + "`" + ` is capped at 100 (echoed as ` + "`" + `max_limit` + "`" + `); each group\nreports ` + "`" + `has_more` + "`" + ` rather than truncating silently.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Unified search",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search text (minimum 2 characters)",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated subset of events,contacts,calendars,addressbooks (default: all)",
+                        "name": "types",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum items per group (default 20, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items to skip per group (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional lower bound for events (RFC 3339)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional upper bound for events (RFC 3339)",
+                        "name": "end",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.SearchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
                     }
                 }
@@ -2398,6 +2616,110 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/preferences": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the current user's preferences. Keys the user has not set are returned with their default value.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get user preferences",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.PreferencesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upsert one or more preferences. Unknown keys and out-of-range values are rejected with 400; the full updated map is returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Update user preferences",
+                "parameters": [
+                    {
+                        "description": "Preferences to set",
+                        "name": "preferences",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdatePreferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.PreferencesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/internal_adapter_http.ErrorResponseBody"
                         }
@@ -2713,6 +3035,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.PreferencesResponse": {
+            "type": "object",
+            "properties": {
+                "preferences": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO": {
             "type": "object",
             "properties": {
@@ -2825,6 +3158,17 @@ const docTemplate = `{
                 },
                 "timezone": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdatePreferencesRequest": {
+            "type": "object",
+            "properties": {
+                "preferences": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -3223,7 +3567,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "accessToken": {
-                    "description": "encrypted",
+                    "description": "deprecated: no longer written; kept to avoid a destructive migration",
                     "type": "string"
                 },
                 "createdAt": {
@@ -3244,10 +3588,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "refreshToken": {
-                    "description": "encrypted",
+                    "description": "deprecated: no longer written; kept to avoid a destructive migration",
                     "type": "string"
                 },
                 "tokenExpiry": {
+                    "description": "deprecated: no longer written; kept to avoid a destructive migration",
                     "type": "string"
                 },
                 "updatedAt": {
@@ -3306,6 +3651,91 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_jherrma_caldav-server_internal_usecase_about.OpenSourcePackage": {
+            "type": "object",
+            "properties": {
+                "license": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookListItem": {
+            "type": "object",
+            "properties": {
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressObject"
+                    }
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "ctag": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookOwner"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "permission": {
+                    "description": "Permission is the caller's effective access level: \"owner\" for owned\nbooks, or the share's \"read\" / \"read-write\". The frontend needs it to\ndisable edit controls on read-only shares (#53) — without it the UI would\noffer writes the API then refuses with a 403. Mirrors the field\ncalendar.CalendarWithEventCount already exposes.",
+                    "type": "string"
+                },
+                "shared": {
+                    "type": "boolean"
+                },
+                "syncToken": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_user.User"
+                },
+                "userID": {
+                    "type": "integer"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookOwner": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCalDAVCredentialOutput": {
             "type": "object",
             "properties": {
@@ -3348,6 +3778,83 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarOwner": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarWithEventCount": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "description": "#RRGGBB",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "ctag": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "event_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarOwner"
+                },
+                "path": {
+                    "description": "URL path component",
+                    "type": "string"
+                },
+                "permission": {
+                    "description": "\"owner\" for owned; \"read\" / \"read-write\" for shared",
+                    "type": "string"
+                },
+                "public_enabled": {
+                    "type": "boolean"
+                },
+                "public_enabled_at": {
+                    "type": "string"
+                },
+                "shared": {
+                    "type": "boolean"
+                },
+                "supported_components": {
+                    "description": "\"VEVENT,VTODO\"",
+                    "type": "string"
+                },
+                "sync_token": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "uuid": {
                     "type": "string"
                 }
             }
@@ -3516,6 +4023,152 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "Human readable message"
+                }
+            }
+        },
+        "internal_adapter_http.SearchAddressBookGroup": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookListItem"
+                    }
+                },
+                "searched": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_adapter_http.SearchCalendarGroup": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarWithEventCount"
+                    }
+                },
+                "searched": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_adapter_http.SearchContactGroup": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_adapter_http.SearchContactItem"
+                    }
+                },
+                "searched": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_adapter_http.SearchContactItem": {
+            "type": "object",
+            "properties": {
+                "addressbook_name": {
+                    "type": "string"
+                },
+                "addressbook_uuid": {
+                    "type": "string"
+                },
+                "contact": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact"
+                }
+            }
+        },
+        "internal_adapter_http.SearchEventGroup": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_adapter_http.SearchEventItem"
+                    }
+                },
+                "searched": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_adapter_http.SearchEventItem": {
+            "type": "object",
+            "properties": {
+                "calendar_color": {
+                    "type": "string"
+                },
+                "calendar_name": {
+                    "type": "string"
+                },
+                "calendar_uuid": {
+                    "type": "string"
+                },
+                "event": {
+                    "$ref": "#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse"
+                }
+            }
+        },
+        "internal_adapter_http.SearchResponse": {
+            "type": "object",
+            "properties": {
+                "addressbooks": {
+                    "$ref": "#/definitions/internal_adapter_http.SearchAddressBookGroup"
+                },
+                "calendars": {
+                    "$ref": "#/definitions/internal_adapter_http.SearchCalendarGroup"
+                },
+                "contacts": {
+                    "$ref": "#/definitions/internal_adapter_http.SearchContactGroup"
+                },
+                "events": {
+                    "$ref": "#/definitions/internal_adapter_http.SearchEventGroup"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "max_limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

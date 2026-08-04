@@ -5,11 +5,29 @@
 **I want to** use the application with assistive technologies
 **So that** I can manage my calendars and contacts effectively regardless of my abilities
 
+## Implementation status (audited 2026-08-04)
+
+Partly built. `GlobalSearch.vue` is the strongest example — a real `role="listbox"` with
+`aria-activedescendant`, arrow/Tab navigation and `aria-selected` per row — and the layouts use
+proper landmarks. What remains, in rough order of value:
+
+- **No live regions anywhere** (`aria-live`, `role="status"`, `role="alert"` are absent), so
+  toasts, validation errors and search results are silent to a screen reader. Biggest gap.
+- **No skip link** and no `sr-only` utility class in the codebase at all.
+- **Accessible names are inconsistent**: 11 `aria-label`s against ~12 icon-only buttons, so some
+  icon buttons are unnamed. Needs a sweep, not a redesign.
+- **No `aria-hidden`** on decorative icons — every `pi pi-*` glyph is announced.
+- **Label association is uneven**: `EventForm.vue` pairs all 16 labels with ids, but
+  `ContactForm.vue` has 11 labels and only 4 ids, so most of its fields are unlabelled to AT.
+- **Not audited rather than known-missing**: contrast ratios, 200 % text resize, heading
+  hierarchy, tab order, reduced-motion. These need a browser + axe run; do that before assuming
+  they fail.
+
 ## Acceptance Criteria
 
 ### Screen Reader Support
 - [ ] All interactive elements have accessible names
-- [ ] Images have meaningful alt text
+- [x] Images have meaningful alt text — the only `<img>`s are contact photos; `:alt="contact.formatted_name"`
 - [ ] Icons with meaning have aria-labels
 - [ ] Decorative elements marked with aria-hidden
 - [ ] Form fields have associated labels
@@ -20,8 +38,8 @@
 - [ ] All functionality accessible via keyboard
 - [ ] Logical tab order throughout application
 - [ ] Skip links for main content
-- [ ] Focus trapped in modals/dialogs
-- [ ] Escape key closes modals
+- [x] Focus trapped in modals/dialogs — inherited from PrimeVue `Dialog`
+- [x] Escape key closes modals — inherited from PrimeVue `Dialog`
 - [ ] Arrow key navigation in menus and lists
 - [ ] Visible focus indicators on all elements
 
@@ -35,7 +53,7 @@
 
 ### Semantic HTML
 - [ ] Proper heading hierarchy (h1-h6)
-- [ ] Landmark regions (main, nav, aside)
+- [x] Landmark regions (main, nav, aside) — `layouts/default.vue`, `layouts/settings.vue`, `AppSidebar.vue`
 - [ ] Lists marked up as lists
 - [ ] Tables have proper headers
 - [ ] Buttons vs links used correctly
@@ -43,8 +61,8 @@
 
 ### ARIA Implementation
 - [ ] ARIA roles used appropriately
-- [ ] aria-expanded for collapsible sections
-- [ ] aria-selected for selections
+- [x] aria-expanded for collapsible sections — `AppHeader.vue` user menu, `GlobalSearch.vue`
+- [x] aria-selected for selections — `GlobalSearch.vue` result rows
 - [ ] aria-current for current page/date
 - [ ] aria-describedby for additional context
 - [ ] aria-live for dynamic updates

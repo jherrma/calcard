@@ -10,9 +10,9 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
 
 ```
 /
-├── Overview.md              # High-level project goals and features
-├── Technical Overview.md    # Detailed technical architecture
-├── Acceptance Criteria.md   # Full list of acceptance criteria
+├── README.md                # Quick start, deployment, API doc pointers
+├── CONFIGURATION.md         # Every YAML key and CALDAV_* environment variable
+├── STORIES.md               # Implementation tracker + the consolidated remaining-work list
 ├── stories/                 # User stories for implementation
 │   ├── backend/             # Backend stories (Go server)
 │   ├── continuation/        # Stories after core features are implemented
@@ -77,6 +77,11 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
 - `/webinterface/CLAUDE.md` - Frontend architecture and conventions
 
 **Always check relevant AGENT.md files when working in a specific area of the codebase.**
+
+These files ARE the architecture documentation. `Overview.md`, `Technical Overview.md` and
+`Acceptance Criteria.md` used to sit at the repo root and were deleted in `61f9e04` when their
+content was split into the per-directory `CLAUDE.md` / `AGENT.md` files above — don't cite or
+look for them. Feature status lives in `STORIES.md`; per-story detail in `stories/`.
 
 ## Development Commands
 

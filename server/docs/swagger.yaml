@@ -195,6 +195,13 @@ definitions:
     required:
     - target_calendar_id
     type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.PreferencesResponse:
+    properties:
+      preferences:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
   github_com_jherrma_caldav-server_internal_adapter_http_dto.RecurrenceRuleDTO:
     properties:
       by_day:
@@ -269,6 +276,13 @@ definitions:
         type: string
       timezone:
         type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdatePreferencesRequest:
+    properties:
+      preferences:
+        additionalProperties:
+          type: string
+        type: object
     type: object
   github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateProfileRequest:
     properties:
@@ -535,7 +549,7 @@ definitions:
   github_com_jherrma_caldav-server_internal_domain_user.OAuthConnection:
     properties:
       accessToken:
-        description: encrypted
+        description: 'deprecated: no longer written; kept to avoid a destructive migration'
         type: string
       createdAt:
         type: string
@@ -550,9 +564,10 @@ definitions:
         description: sub claim from OIDC
         type: string
       refreshToken:
-        description: encrypted
+        description: 'deprecated: no longer written; kept to avoid a destructive migration'
         type: string
       tokenExpiry:
+        description: 'deprecated: no longer written; kept to avoid a destructive migration'
         type: string
       updatedAt:
         type: string
@@ -591,6 +606,67 @@ definitions:
       uuid:
         type: string
     type: object
+  github_com_jherrma_caldav-server_internal_usecase_about.OpenSourcePackage:
+    properties:
+      license:
+        type: string
+      name:
+        type: string
+      url:
+        type: string
+      version:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookListItem:
+    properties:
+      contacts:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_addressbook.AddressObject'
+        type: array
+      createdAt:
+        type: string
+      ctag:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      owner:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookOwner'
+      path:
+        type: string
+      permission:
+        description: |-
+          Permission is the caller's effective access level: "owner" for owned
+          books, or the share's "read" / "read-write". The frontend needs it to
+          disable edit controls on read-only shares (#53) — without it the UI would
+          offer writes the API then refuses with a 403. Mirrors the field
+          calendar.CalendarWithEventCount already exposes.
+        type: string
+      shared:
+        type: boolean
+      syncToken:
+        type: string
+      updatedAt:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_user.User'
+      userID:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookOwner:
+    properties:
+      display_name:
+        type: string
+      id:
+        type: string
+    type: object
   github_com_jherrma_caldav-server_internal_usecase_apppassword.CreateCalDAVCredentialOutput:
     properties:
       created_at:
@@ -619,6 +695,58 @@ definitions:
       permission:
         type: string
       username:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarOwner:
+    properties:
+      display_name:
+        type: string
+      id:
+        type: string
+    type: object
+  github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarWithEventCount:
+    properties:
+      color:
+        description: '#RRGGBB'
+        type: string
+      created_at:
+        type: string
+      ctag:
+        type: string
+      description:
+        type: string
+      event_count:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      owner:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarOwner'
+      path:
+        description: URL path component
+        type: string
+      permission:
+        description: '"owner" for owned; "read" / "read-write" for shared'
+        type: string
+      public_enabled:
+        type: boolean
+      public_enabled_at:
+        type: string
+      shared:
+        type: boolean
+      supported_components:
+        description: '"VEVENT,VTODO"'
+        type: string
+      sync_token:
+        type: string
+      timezone:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+      uuid:
         type: string
     type: object
   github_com_jherrma_caldav-server_internal_usecase_calendar.CreateCalendarRequest:
@@ -731,6 +859,101 @@ definitions:
         example: Human readable message
         type: string
     type: object
+  internal_adapter_http.SearchAddressBookGroup:
+    properties:
+      count:
+        type: integer
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_addressbook.AddressBookListItem'
+        type: array
+      searched:
+        type: boolean
+    type: object
+  internal_adapter_http.SearchCalendarGroup:
+    properties:
+      count:
+        type: integer
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_calendar.CalendarWithEventCount'
+        type: array
+      searched:
+        type: boolean
+    type: object
+  internal_adapter_http.SearchContactGroup:
+    properties:
+      count:
+        type: integer
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/internal_adapter_http.SearchContactItem'
+        type: array
+      searched:
+        type: boolean
+    type: object
+  internal_adapter_http.SearchContactItem:
+    properties:
+      addressbook_name:
+        type: string
+      addressbook_uuid:
+        type: string
+      contact:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+    type: object
+  internal_adapter_http.SearchEventGroup:
+    properties:
+      count:
+        type: integer
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/internal_adapter_http.SearchEventItem'
+        type: array
+      searched:
+        type: boolean
+    type: object
+  internal_adapter_http.SearchEventItem:
+    properties:
+      calendar_color:
+        type: string
+      calendar_name:
+        type: string
+      calendar_uuid:
+        type: string
+      event:
+        $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse'
+    type: object
+  internal_adapter_http.SearchResponse:
+    properties:
+      addressbooks:
+        $ref: '#/definitions/internal_adapter_http.SearchAddressBookGroup'
+      calendars:
+        $ref: '#/definitions/internal_adapter_http.SearchCalendarGroup'
+      contacts:
+        $ref: '#/definitions/internal_adapter_http.SearchContactGroup'
+      events:
+        $ref: '#/definitions/internal_adapter_http.SearchEventGroup'
+      limit:
+        type: integer
+      max_limit:
+        type: integer
+      offset:
+        type: integer
+      query:
+        type: string
+      types:
+        items:
+          type: string
+        type: array
+    type: object
   internal_adapter_http.SuccessResponseBody:
     description: Success response body
     properties:
@@ -743,6 +966,44 @@ info:
   title: CalDAV/CardDAV Server API
   version: "1.0"
 paths:
+  /about/open-source:
+    get:
+      description: Returns the attribution list for the Go modules linked into the
+        server binary. The list is generated at build time (`go run ./tools/genlicenses`)
+        and embedded in the binary, so no network access is involved. License detection
+        is best-effort — a license of "unknown" means it could not be determined automatically,
+        NOT that the package is unlicensed.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              count:
+                type: integer
+              generator:
+                type: string
+              note:
+                type: string
+              packages:
+                items:
+                  $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_about.OpenSourcePackage'
+                type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: List backend open-source dependencies
+      tags:
+      - About
   /addressbooks:
     get:
       description: Get all address books for the user
@@ -878,6 +1139,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "403":
+          description: Read-only access to the address book
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "500":
           description: Internal Server Error
           schema:
@@ -906,6 +1171,10 @@ paths:
           description: No Content
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "403":
+          description: Read-only access to the address book
           schema:
             $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "500":
@@ -986,6 +1255,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "403":
+          description: Read-only access to the address book
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "404":
           description: Not Found
           schema:
@@ -997,6 +1270,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Update contact
+      tags:
+      - Contacts
+  /addressbooks/{addressbook_id}/contacts/{contact_id}/move:
+    post:
+      consumes:
+      - application/json
+      description: Move contact to another address book
+      parameters:
+      - description: Source address book UUID
+        in: path
+        name: addressbook_id
+        required: true
+        type: string
+      - description: Contact UUID
+        in: path
+        name: contact_id
+        required: true
+        type: string
+      - description: Target address book
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "403":
+          description: Read-only access to the source or target address book
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Move contact
       tags:
       - Contacts
   /addressbooks/{addressbook_id}/contacts/{contact_id}/photo:
@@ -1018,6 +1341,10 @@ paths:
           description: No Content
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "403":
+          description: Read-only access to the address book
           schema:
             $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "500":
@@ -1098,6 +1425,10 @@ paths:
           description: No Content
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "403":
+          description: Read-only access to the address book
           schema:
             $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "413":
@@ -1369,6 +1700,8 @@ paths:
                 type: string
               expires_at:
                 type: integer
+              refresh_token:
+                type: string
               token_type:
                 type: string
             type: object
@@ -1694,7 +2027,7 @@ paths:
         name: event_id
         required: true
         type: string
-      - description: Delete scope (this, all, future)
+      - description: Delete scope (this, all, this_and_future)
         in: query
         name: scope
         type: string
@@ -1702,9 +2035,17 @@ paths:
         in: query
         name: recurrence_id
         type: string
+      - description: Optional ETag precondition; 412 on mismatch
+        in: header
+        name: If-Match
+        type: string
       responses:
         "204":
           description: No Content
+        "412":
+          description: ETag precondition failed
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "500":
           description: Internal Server Error
           schema:
@@ -1766,7 +2107,7 @@ paths:
         in: query
         name: recurrence_id
         type: string
-      - description: Update scope (this, all, future)
+      - description: Update scope (this, all, this_and_future)
         in: query
         name: scope
         type: string
@@ -1776,6 +2117,10 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdateEventRequest'
+      - description: Optional ETag precondition; 412 on mismatch
+        in: header
+        name: If-Match
+        type: string
       produces:
       - application/json
       responses:
@@ -1785,6 +2130,10 @@ paths:
             $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.EventResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "412":
+          description: ETag precondition failed
           schema:
             $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "500":
@@ -2035,60 +2384,32 @@ paths:
       summary: Revoke CardDAV credential
       tags:
       - Credentials
-  /contacts/{contact_id}/move:
-    post:
-      consumes:
-      - application/json
-      description: Move contact to another address book
-      parameters:
-      - description: Contact UUID
-        in: path
-        name: contact_id
-        required: true
-        type: string
-      - description: Target address book
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.MoveContactRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_domain_contact.Contact'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
-      security:
-      - BearerAuth: []
-      summary: Move contact
-      tags:
-      - Contacts
   /contacts/search:
     get:
-      description: Search for contacts by query
+      description: |-
+        Searches every address book the caller can read — their own AND
+        books shared with them (#162). It used to be owner-scoped, which
+        made a contact in a shared book vanish as soon as you searched
+        for it even though the same contact was listed and editable.
+
+        The optional addressbook_id narrows the search to one book, given
+        as its UUID (#52). A UUID that is not among the readable books —
+        unknown, deleted, or simply not shared with the caller — is a 404,
+        so a narrowing request is never silently answered about other books.
       parameters:
       - description: Search query
         in: query
         name: q
         required: true
         type: string
-      - description: Limit (default 20)
+      - description: Limit (default 20, max 200)
         in: query
         name: limit
         type: integer
-      - description: Address Book ID filter
+      - description: Restrict to one address book, by UUID
         in: query
         name: addressbook_id
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -2098,6 +2419,10 @@ paths:
             $ref: '#/definitions/github_com_jherrma_caldav-server_internal_usecase_contact.SearchOutput'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: addressbook_id names a book the caller cannot read
           schema:
             $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
         "500":
@@ -2136,6 +2461,77 @@ paths:
       summary: Get public calendar feed
       tags:
       - Public
+  /search:
+    get:
+      description: |-
+        Searches events, contacts, calendars and address books for the authenticated user in one request.
+
+        Events are searched across every calendar the caller can read — owned and shared — over their
+        denormalized summary, location and description, with **no implicit date bound**: pass `start`/`end`
+        only if a window is actually wanted. Contacts are searched across every readable address book,
+        including books shared with the caller.
+
+        Each matching recurring series is returned once, represented by the occurrence that best describes
+        it: the first occurrence at or after now, or the last one for a series wholly in the past. The
+        occurrence carries its own `recurrence_id`, so a client can open it directly instead of the series
+        master.
+
+        Ranking: upcoming occurrences first (soonest first), then past ones (most recent first). Contacts are
+        ordered by name, collections by the order the list endpoints return.
+
+        `limit` and `offset` apply per group and `limit` is capped at 100 (echoed as `max_limit`); each group
+        reports `has_more` rather than truncating silently.
+      parameters:
+      - description: Search text (minimum 2 characters)
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: 'Comma-separated subset of events,contacts,calendars,addressbooks
+          (default: all)'
+        in: query
+        name: types
+        type: string
+      - description: Maximum items per group (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Items to skip per group (default 0)
+        in: query
+        name: offset
+        type: integer
+      - description: Optional lower bound for events (RFC 3339)
+        in: query
+        name: start
+        type: string
+      - description: Optional upper bound for events (RFC 3339)
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_adapter_http.SearchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Unified search
+      tags:
+      - Search
   /users/me:
     delete:
       consumes:
@@ -2276,6 +2672,74 @@ paths:
       security:
       - BearerAuth: []
       summary: Change password
+      tags:
+      - Users
+  /users/me/preferences:
+    get:
+      description: Get the current user's preferences. Keys the user has not set are
+        returned with their default value.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.PreferencesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get user preferences
+      tags:
+      - Users
+    patch:
+      consumes:
+      - application/json
+      description: Upsert one or more preferences. Unknown keys and out-of-range values
+        are rejected with 400; the full updated map is returned.
+      parameters:
+      - description: Preferences to set
+        in: body
+        name: preferences
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.UpdatePreferencesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jherrma_caldav-server_internal_adapter_http_dto.PreferencesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_adapter_http.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Update user preferences
       tags:
       - Users
 securityDefinitions:

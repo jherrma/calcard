@@ -5,19 +5,37 @@
 **I want to** have a fully functional and optimized experience on mobile, tablet, and desktop
 **So that** I can manage my calendars and contacts from any device
 
+## Implementation status (audited 2026-08-04)
+
+The responsive *layout* is done — the tracker's "Pending" overstates what is left. The drawer,
+breakpoints and the collapsing sidebar all exist. What remains is **touch and mobile-native
+behaviour**, none of which is present:
+
+- **No bottom navigation bar**, no swipe gestures (calendar paging, swipe-to-delete), no
+  pull-to-refresh, no long-press context menus.
+- **Touch targets are unaudited** against the 44×44 px floor, and PrimeVue's pill buttons are
+  smaller than that in several toolbars.
+- **Mobile calendar specifics** — day view as the default under `md`, compact event cards,
+  full-screen event details — are not implemented; the desktop month view is what a phone gets.
+- **Input types**: only `type="email"` appears anywhere, so phone/URL fields raise the wrong
+  keyboard on mobile. Cheap fix, real gain.
+- **No `loading="lazy"`** on the contact photos.
+- **Not audited rather than known-missing**: horizontal-scroll freedom, readability without zoom,
+  back-button behaviour, layout shift, 3G load time. Needs a device or emulator pass.
+
 ## Acceptance Criteria
 
 ### Responsive Layout
-- [ ] Fluid layout adapts to viewport sizes
-- [ ] Breakpoints: mobile (<768px), tablet (768-1024px), desktop (>1024px)
-- [ ] Sidebar collapses to hamburger menu on mobile
-- [ ] Navigation accessible on all screen sizes
+- [x] Fluid layout adapts to viewport sizes — Tailwind utilities throughout; 18 files carry responsive variants
+- [x] Breakpoints: mobile (<768px), tablet (768-1024px), desktop (>1024px) — Tailwind's default `md` (768px) / `lg` (1024px) match this exactly
+- [x] Sidebar collapses to hamburger menu on mobile — `layouts/default.vue` drawer + backdrop, toggled by `AppHeader`'s `@toggle-sidebar`
+- [x] Navigation accessible on all screen sizes — drawer on mobile, fixed `lg:pl-64` sidebar above 1024px; settings has its own scrollable tab bar under `lg`
 - [ ] No horizontal scrolling on mobile
 - [ ] Content readable without zooming
 
 ### Mobile Navigation
 - [ ] Bottom navigation bar on mobile
-- [ ] Hamburger menu for secondary navigation
+- [x] Hamburger menu for secondary navigation — same drawer
 - [ ] Swipe gestures for navigation (calendar)
 - [ ] Pull-to-refresh on lists
 - [ ] Back button behavior consistent with native apps
@@ -38,23 +56,23 @@
 - [ ] Easy date picker access
 
 ### Mobile Contacts
-- [ ] List view optimized for scrolling
+- [x] List view optimized for scrolling — the contacts page virtualises its list with computed offsets
 - [ ] Large touch targets for contact items
-- [ ] Quick actions (call, email) prominent
-- [ ] Search always accessible
-- [ ] Alphabet scroll indicator
+- [x] Quick actions (call, email) prominent — `mailto:` / `tel:` links on the contact detail page and the dashboard rows
+- [x] Search always accessible — global palette in the header (Cmd/Ctrl+K) plus the contacts page's own search field
+- [x] Alphabet scroll indicator — `components/contacts/AlphabetNavigation.vue`
 
 ### Mobile Forms
 - [ ] Full-screen form dialogs
 - [ ] Appropriate keyboard types (email, tel, etc.)
 - [ ] Date/time pickers mobile-optimized
-- [ ] Form validation inline
+- [x] Form validation inline — Vuelidate
 - [ ] Sticky submit buttons
 
 ### Performance
 - [ ] Fast initial load on 3G
 - [ ] Images lazy loaded
-- [ ] Skeleton screens during load
+- [x] Skeleton screens during load — `SkeletonList.vue`
 - [ ] Minimal layout shift
 
 ## Technical Details

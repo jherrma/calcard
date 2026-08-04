@@ -8,7 +8,7 @@ The server can be configured using a YAML file and/or environment variables. Env
 
 ### YAML File
 
-By default, the server looks for a configuration file specified by the `--config` flag or the `CALDAV_CONFIG_PATH` environment variable. A template is provided at [server/configs/config.yaml.example](file:///home/jherrmann/go/src/calcard/server/configs/config.yaml.example).
+By default, the server looks for a configuration file specified by the `--config` flag or the `CALDAV_CONFIG_PATH` environment variable. A template is provided at [server/configs/config.yaml.example](server/configs/config.yaml.example).
 
 ### Environment Variables
 
