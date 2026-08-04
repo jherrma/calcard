@@ -45,14 +45,15 @@ type Repository interface {
 	// converge. Used by the cross-book contact move use case.
 	MoveObject(ctx context.Context, object *AddressObject, sourceAddressBookID uint) error
 	DeleteObjectByUUID(ctx context.Context, uuid string) error
-	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
 
-	// SearchObjectsInBooks is SearchObjects over an explicit set of address
-	// books instead of "every book this user owns". The caller resolves which
-	// books it may read — including books merely shared with it (#53) — so the
-	// unified search endpoint (#156) can cover shared contacts, which the
-	// owner-scoped SearchObjects cannot. An empty slice matches nothing rather
-	// than everything.
+	// SearchObjectsInBooks searches contacts across an explicit set of address
+	// books. The caller resolves which books it may read — including books merely
+	// shared with it (#53) — and this is the ONLY contact-search entry point, so
+	// that resolution can't be bypassed. The owner-scoped predecessor
+	// (SearchObjects, filtered on address_books.user_id) was removed in #162: it
+	// could not reach a shared book, so a contact the caller could see and edit
+	// disappeared as soon as they searched for it. An empty slice matches nothing
+	// rather than everything.
 	SearchObjectsInBooks(ctx context.Context, addressBookIDs []uint, query string, limit, offset int) ([]AddressObject, error)
 
 	// GetUserPermission resolves a user's effective permission on an address

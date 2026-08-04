@@ -82,7 +82,7 @@ func setupContactHandlerTest(t *testing.T) (*fiber.App, database.Database, *user
 	contactGetUC := contactusecase.NewGetUseCase(abRepo)
 	contactUpdateUC := contactusecase.NewUpdateUseCase(abRepo)
 	contactDeleteUC := contactusecase.NewDeleteUseCase(abRepo)
-	contactSearchUC := contactusecase.NewSearchUseCase(abRepo)
+	contactSearchUC := contactusecase.NewSearchUseCase(abRepo, addressbookusecase.NewListUseCase(abRepo, repository.NewAddressBookShareRepository(db.DB())))
 	contactMoveUC := contactusecase.NewMoveUseCase(abRepo)
 	contactPhotoUC := contactusecase.NewPhotoUseCase(abRepo)
 

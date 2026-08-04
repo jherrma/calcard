@@ -52,7 +52,8 @@ func TestSoftDeletedAddressBookHidesContacts(t *testing.T) {
 	mkContact(doomed, "Zoe Doomed")
 
 	// Baseline: both contacts are visible.
-	results, err := repo.SearchObjects(ctx, 1, "Zoe", nil, 10)
+	books := []uint{keep.ID, doomed.ID}
+	results, err := repo.SearchObjectsInBooks(ctx, books, "Zoe", 10, 0)
 	assert.NoError(t, err)
 	assert.Len(t, results, 2)
 
@@ -63,8 +64,9 @@ func TestSoftDeletedAddressBookHidesContacts(t *testing.T) {
 	// Soft-delete one address book. Its AddressObject rows remain (no cascade).
 	assert.NoError(t, repo.Delete(ctx, doomed.ID))
 
-	// Search must now exclude the deleted book's contact.
-	results, err = repo.SearchObjects(ctx, 1, "Zoe", nil, 10)
+	// Search must now exclude the deleted book's contact — even though the caller
+	// still passes its id, because the book itself is gone.
+	results, err = repo.SearchObjectsInBooks(ctx, books, "Zoe", 10, 0)
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
 	if len(results) == 1 {

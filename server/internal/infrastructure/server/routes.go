@@ -347,7 +347,9 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	contactListUC := contactusecase.NewListUseCase(addressBookRepo)
 	contactUpdateUC := contactusecase.NewUpdateUseCase(addressBookRepo)
 	contactDeleteUC := contactusecase.NewDeleteUseCase(addressBookRepo)
-	contactSearchUC := contactusecase.NewSearchUseCase(addressBookRepo)
+	// abListUC supplies the readable-book corpus (owned + shared) that contact
+	// search runs over (#162).
+	contactSearchUC := contactusecase.NewSearchUseCase(addressBookRepo, abListUC)
 	contactMoveUC := contactusecase.NewMoveUseCase(addressBookRepo)
 	contactPhotoUC := contactusecase.NewPhotoUseCase(addressBookRepo)
 

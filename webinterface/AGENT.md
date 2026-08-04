@@ -145,7 +145,11 @@ The backend has two different response patterns:
 2. **AddressBook/Contact endpoints**: Return raw JSON (NOT wrapped). Specific shapes:
    - `GET /api/v1/addressbooks` → `{ "addressbooks": [...] }`
    - `GET /api/v1/addressbooks/:id/contacts` → `{ "Contacts": [...], "Total", "Limit", "Offset" }` (note capital `C` in `Contacts`)
-   - `GET /api/v1/contacts/search?q=...` → `{ "contacts": [...], "query", "count" }` (lowercase `c`)
+   - `GET /api/v1/contacts/search?q=...` → `{ "contacts": [...], "query", "count" }` (lowercase `c`).
+     The corpus is every address book the user can read, **shared ones included** (#162) — so the
+     contacts page and the global palette agree about whether a contact exists. `contacts` is
+     always an array, never `null`. Optional `addressbook_id` narrows to one book by UUID and
+     **404s** for a book the user can't read, rather than silently searching all of them.
    - `DELETE` endpoints → 204 No Content (no response body)
 
 ### Calendar Page Architecture
