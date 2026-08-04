@@ -695,6 +695,42 @@ func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, 
 	return objs, nil
 }
 
+// SearchObjectsInBooks searches the same denormalized contact columns as
+// SearchObjects, but over an explicit set of address books — the caller has
+// already resolved which ones it may read, so shared books are included (#156).
+// The result is deterministically ordered (name, then id) so paging is stable.
+func (r *AddressBookRepository) SearchObjectsInBooks(ctx context.Context, addressBookIDs []uint, query string, limit, offset int) ([]addressbook.AddressObject, error) {
+	if len(addressBookIDs) == 0 || strings.TrimSpace(query) == "" || limit <= 0 {
+		return nil, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var objs []addressbook.AddressObject
+	q := "%" + escapeLike(query) + "%"
+
+	err := r.db.WithContext(ctx).
+		// Same soft-delete guard as SearchObjects: the join is raw, so GORM's
+		// scope does not cover address_books (M7).
+		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
+		Where("address_objects.address_book_id IN ?", addressBookIDs).
+		Where("address_objects.formatted_name LIKE ? ESCAPE '\\' OR address_objects.email LIKE ? ESCAPE '\\' OR address_objects.phone LIKE ? ESCAPE '\\' OR address_objects.organization LIKE ? ESCAPE '\\' OR address_objects.given_name LIKE ? ESCAPE '\\' OR address_objects.family_name LIKE ? ESCAPE '\\'", q, q, q, q, q, q).
+		// Preload AddressBook so the DTO mapper can build the UUID-based photo URL (#52).
+		Preload("AddressBook").
+		Order("address_objects.formatted_name ASC, address_objects.id ASC").
+		Limit(limit).
+		Offset(offset).
+		Find(&objs).Error
+	if err != nil {
+		return nil, err
+	}
+	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
+		return nil, err
+	}
+	return objs, nil
+}
+
 // GetChangesSinceToken returns all changes since the given sync token.
 // If token is empty, returns all current objects as "created".
 func (r *AddressBookRepository) GetChangesSinceToken(ctx context.Context, addressBookID uint, token string) ([]*addressbook.SyncChangeLog, error) {

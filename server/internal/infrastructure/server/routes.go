@@ -27,6 +27,7 @@ import (
 	contactusecase "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
 	"github.com/jherrma/caldav-server/internal/usecase/importexport"
+	searchusecase "github.com/jherrma/caldav-server/internal/usecase/search"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
@@ -377,6 +378,12 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 
 	// Global Contact Search
 	v1.Get("/contacts/search", http.Authenticate(jwtManager, userRepo), contactHandler.Search)
+
+	// Unified Search (#156) — events (no date bound), contacts, calendars and
+	// address books in one request, across owned and shared collections.
+	searchUC := searchusecase.NewUseCase(calendarRepo, addressBookRepo, calendarListUC, abListUC)
+	searchHandler := http.NewSearchHandler(searchUC)
+	v1.Get("/search", http.Authenticate(jwtManager, userRepo), searchHandler.Search)
 
 	// CalDAV/CardDAV Routes
 	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo, shareRepo)

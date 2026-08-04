@@ -40,7 +40,14 @@ function eventHit(key: string, summary: string): EventHit {
 }
 
 function results(partial: Partial<SearchResults> = {}): SearchResults {
-  return { events: [], contacts: [], calendars: [], addressBooks: [], ...partial };
+  return {
+    events: [],
+    contacts: [],
+    calendars: [],
+    addressBooks: [],
+    hasMore: { events: false, contacts: false, calendars: false, addressBooks: false },
+    ...partial,
+  };
 }
 
 function mountPage() {

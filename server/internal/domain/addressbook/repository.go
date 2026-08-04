@@ -47,6 +47,14 @@ type Repository interface {
 	DeleteObjectByUUID(ctx context.Context, uuid string) error
 	SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]AddressObject, error)
 
+	// SearchObjectsInBooks is SearchObjects over an explicit set of address
+	// books instead of "every book this user owns". The caller resolves which
+	// books it may read — including books merely shared with it (#53) — so the
+	// unified search endpoint (#156) can cover shared contacts, which the
+	// owner-scoped SearchObjects cannot. An empty slice matches nothing rather
+	// than everything.
+	SearchObjectsInBooks(ctx context.Context, addressBookIDs []uint, query string, limit, offset int) ([]AddressObject, error)
+
 	// GetUserPermission resolves a user's effective permission on an address
 	// book, accounting for both ownership and shares (#53). Returns
 	// PermissionNone — never an error — when the book is missing or the user

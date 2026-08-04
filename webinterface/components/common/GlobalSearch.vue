@@ -147,7 +147,7 @@
             </button>
             <SearchViewAll
               v-if="isTruncated(searchStore.results.events)"
-              :label="`View all ${searchStore.results.events.length} events`"
+              :label="`View all ${totalLabel('events')} events`"
               @click="viewAll"
             />
           </section>
@@ -184,7 +184,7 @@
             </button>
             <SearchViewAll
               v-if="isTruncated(searchStore.results.contacts)"
-              :label="`View all ${searchStore.results.contacts.length} contacts`"
+              :label="`View all ${totalLabel('contacts')} contacts`"
               @click="viewAll"
             />
           </section>
@@ -215,7 +215,7 @@
             </button>
             <SearchViewAll
               v-if="isTruncated(searchStore.results.calendars)"
-              :label="`View all ${searchStore.results.calendars.length} calendars`"
+              :label="`View all ${totalLabel('calendars')} calendars`"
               @click="viewAll"
             />
           </section>
@@ -246,7 +246,7 @@
             </button>
             <SearchViewAll
               v-if="isTruncated(searchStore.results.addressBooks)"
-              :label="`View all ${searchStore.results.addressBooks.length} address books`"
+              :label="`View all ${totalLabel('addressBooks')} address books`"
               @click="viewAll"
             />
           </section>
@@ -263,9 +263,7 @@
         <div v-else class="flex flex-col items-center gap-2 p-8 text-center" data-testid="search-no-results">
           <i class="pi pi-search text-2xl text-surface-300 dark:text-surface-600" />
           <p class="text-sm text-surface-600 dark:text-surface-300">No results for “{{ searchStore.query }}”</p>
-          <p class="text-xs text-surface-400">
-            Try different keywords. Events are searched from {{ windowLabel }}.
-          </p>
+          <p class="text-xs text-surface-400">Try different keywords.</p>
         </div>
       </div>
     </Dialog>
@@ -276,7 +274,7 @@
 import HighlightText from '~/components/common/HighlightText.vue';
 import SearchSectionHeader from '~/components/common/SearchSectionHeader.vue';
 import SearchViewAll from '~/components/common/SearchViewAll.vue';
-import { MIN_QUERY_LENGTH, SEARCH_WINDOW_MONTHS, useSearchStore } from '~/stores/search';
+import { MIN_QUERY_LENGTH, useSearchStore } from '~/stores/search';
 import type { ContactHit, EventHit } from '~/types/search';
 import {
   contactMetaLine,
@@ -311,7 +309,6 @@ const isSearchable = computed(() => query.value.trim().length >= MIN_QUERY_LENGT
 // store last searched). Without this the "no results" state flashes for 300ms on
 // the first keystroke, quoting an empty query.
 const isPending = computed(() => isSearchable.value && searchStore.query !== query.value.trim());
-const windowLabel = computed(() => `${SEARCH_WINDOW_MONTHS} months back to ${SEARCH_WINDOW_MONTHS} months ahead`);
 
 // 300ms debounce (story 044). The store's requestSeq guard is what actually makes
 // this safe — debouncing only reduces the number of fan-outs, it cannot prevent an
@@ -389,6 +386,15 @@ function quick<T>(items: T[]): T[] {
 
 function isTruncated<T>(items: T[]): boolean {
   return items.length > QUICK_LIMIT;
+}
+
+/**
+ * How many matches "View all" leads to: "42", or "100+" when the server itself
+ * capped that category (#156). Never claim a total the server didn't promise.
+ */
+function totalLabel(category: Category): string {
+  const count = searchStore.results[category].length;
+  return searchStore.results.hasMore[category] ? `${count}+` : String(count);
 }
 
 /** How many rows of `category` are actually rendered (the quick view is capped). */
