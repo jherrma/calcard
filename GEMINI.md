@@ -10,11 +10,12 @@ This is a CalDAV/CardDAV server project with a Go backend and web interface. The
 
 ```
 /
-├── Overview.md              # High-level project goals and features
-├── Technical Overview.md    # Detailed technical architecture
-├── Acceptance Criteria.md   # Full list of acceptance criteria
+├── README.md                 # Quick start, deployment, API doc pointers
+├── CONFIGURATION.md          # Every YAML key and CALDAV_* environment variable
+├── STORIES.md                # Implementation tracker + consolidated remaining work
 ├── stories/                  # User stories for implementation
 │   ├── backend/              # Backend stories (Go server)
+│   ├── continuation/         # Stories added after the core features shipped
 │   └── frontend/             # Frontend stories (web interface)
 ├── server/                   # Go backend implementation
 │   ├── cmd/server/           # Application entrypoint

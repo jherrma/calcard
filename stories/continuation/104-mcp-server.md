@@ -8,6 +8,12 @@ Model Context Protocol (MCP) Server for AI-Assisted Calendar and Contact Managem
 
 As a user, I want CalCard to expose an MCP server so that AI assistants (Claude, etc.) can discover and interact with my calendars and contacts through a standardized protocol. This enables natural language calendar management, contact lookups, and scheduling workflows from any MCP-compatible client.
 
+## Implementation status (audited 2026-08-04)
+
+**Nothing implemented.** No `/mcp` route, no JSON-RPC transport. The tool surface it describes maps
+onto use cases that already exist (calendar/event/contact CRUD, unified search), so the work is
+the protocol layer plus per-session auth scoping — not new business logic.
+
 ## Acceptance Criteria
 
 ### MCP Server Endpoint

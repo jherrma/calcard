@@ -61,7 +61,7 @@ JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", 
 | Credentials | App passwords, CalDAV/CardDAV credentials |
 | Import/Export | Calendar import (.ics), contact import (.vcf), full backup export |
 | About | Open-source attribution list (`GET /api/v1/about/open-source`, authenticated) |
-| Docs | Swagger UI at `/docs`, JSON/YAML specs |
+| Docs | Swagger UI at `/api/docs`, DAV docs at `/api/docs/dav`, specs at `/api/v1/swagger.json` and `.yaml` |
 | Health | `GET /health` |
 
 **Exception**: AddressBook and Contact endpoints return raw JSON (not wrapped in `SuccessResponse`).

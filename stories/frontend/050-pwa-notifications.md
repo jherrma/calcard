@@ -5,6 +5,21 @@
 **I want to** install the application on my device and receive notifications for events
 **So that** I can access it like a native app and never miss important appointments
 
+## Implementation status (audited 2026-08-04)
+
+**Nothing implemented.** No PWA module or manifest, no service worker, no icons beyond
+`public/favicon.ico`, no notification permission flow, and no notification preferences (the
+`user_preferences` surface holds only `default_event_duration`, `default_all_day`, `time_format`).
+
+Two things the story understates:
+
+- **This is not frontend-only work.** Event reminders need a server-side scheduler and a delivery
+  channel (web push needs VAPID keys + a subscription store; email reminders would reuse the SMTP
+  sender, which is optional in this deployment). `VALARM` survives an iCal round-trip today
+  (`server/internal/domain/calendar/ical_util.go`) but nothing ever *fires* it.
+- **The offline half overlaps story 045's Offline Support group.** Pick one story to own the
+  connectivity indicator and the action queue, or they will be built twice.
+
 ## Acceptance Criteria
 
 ### Progressive Web App

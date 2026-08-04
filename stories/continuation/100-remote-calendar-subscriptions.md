@@ -8,6 +8,13 @@ Subscribe to Remote Calendars via URL
 
 As a user, I want to subscribe to external calendars via URL (WebCal/iCalendar feeds) so that I can view events from other services (e.g., Google Calendar, Outlook, sports schedules) that automatically stay synchronized with the remote source.
 
+## Implementation status (audited 2026-08-04)
+
+**Nothing implemented** — the word "subscription" does not appear anywhere in `server/internal`.
+Read-only calendars have no representation in the domain model yet either, so this needs the model
+change, a refresh scheduler, and a decision about how a failing feed surfaces in the UI before any
+endpoint work starts.
+
 ## Acceptance Criteria
 
 ### Calendar Subscription Creation

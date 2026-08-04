@@ -5,29 +5,49 @@
 **I want to** see clear feedback when actions are in progress or when errors occur
 **So that** I understand the system state and can take appropriate action
 
+## Implementation status (audited 2026-08-04)
+
+Largely built as a side effect of stories 031–044 — the tracker's "Pending" is misleading. Ticked
+boxes below were verified in the code; the rest is what actually remains:
+
+- **Global error boundary** — `error.vue` catches route-level errors, but no `NuxtErrorBoundary`
+  wraps the app, so a render error inside a page still blanks the view.
+- **Network connectivity indicator** and the whole **Offline Support** group — nothing exists
+  (`navigator.onLine` / `useOnline` are unused). This overlaps story 050's offline work; do them
+  together or not at all.
+- **Determinate progress** for import/export — the buttons show a spinner, not a percentage, and
+  the backend returns no progress channel, so this needs an API decision first.
+- **Automatic retry for transient failures** — `useApi` retries only on 401 (token refresh).
+  Deliberate so far; a blanket retry would double-submit non-idempotent calls.
+- **Undo for recent actions** — nothing; would need soft-delete or a command buffer.
+
+One caveat that already bit us (see `webinterface/CLAUDE.md`): store read actions swallow their
+errors into `store.error` instead of rejecting, so an empty list renders as a *fact* unless the
+view also renders that error. Any work on this story must keep that rule.
+
 ## Acceptance Criteria
 
 ### Loading States
-- [ ] Skeleton loaders for initial page loads
-- [ ] Inline loading spinners for button actions
+- [x] Skeleton loaders for initial page loads — `components/common/SkeletonList.vue`, used on the contacts page, the dashboard cards and the attribution list
+- [x] Inline loading spinners for button actions — PrimeVue `:loading` on ~23 pages/components
 - [ ] Progress bars for long operations (import/export)
-- [ ] Loading overlay for full-page transitions
-- [ ] Disabled state for buttons during loading
+- [x] Loading overlay for full-page transitions — `layouts/default.vue`, driven by `isNavigating`
+- [x] Disabled state for buttons during loading — `:loading` disables the button; several places also set `:disabled` explicitly
 - [ ] Loading text with elapsed time for long operations
 
 ### Error Handling
 - [ ] Global error boundary catches unhandled errors
-- [ ] Friendly error page with retry option
-- [ ] Toast notifications for API errors
-- [ ] Inline error messages for form validation
+- [x] Friendly error page with retry option — `error.vue`; it offers Go Home / Go Back, NOT a retry of the failed request
+- [x] Toast notifications for API errors — `composables/useAppToast.ts`
+- [x] Inline error messages for form validation — Vuelidate, `v$.field.$errors[0]?.$message`
 - [ ] Network connectivity indicator
 - [ ] Automatic retry for transient failures
 
 ### Empty States
-- [ ] Illustrated empty states for lists
-- [ ] Actionable empty states with CTA buttons
-- [ ] Contextual help in empty states
-- [ ] Different empty states for search vs no data
+- [x] Illustrated empty states for lists — icon + heading + hint, not custom illustrations
+- [x] Actionable empty states with CTA buttons — e.g. "Add Contact" on the contacts page, disabled when no writable book exists
+- [x] Contextual help in empty states — e.g. "Add your first contact to get started."
+- [x] Different empty states for search vs no data — "No contacts found" vs "No contacts yet"
 
 ### Offline Support
 - [ ] Offline indicator in header
@@ -36,8 +56,8 @@
 - [ ] Warning before destructive actions offline
 
 ### User Feedback
-- [ ] Success toasts for completed actions
-- [ ] Warning dialogs for destructive actions
+- [x] Success toasts for completed actions — `useAppToast().success(...)`
+- [x] Warning dialogs for destructive actions — PrimeVue `useConfirm()` in 14 pages/components
 - [ ] Progress feedback for multi-step operations
 - [ ] Undo option for recent actions
 

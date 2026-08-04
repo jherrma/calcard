@@ -67,16 +67,19 @@ For frontend development, run the SPA separately with `cd webinterface && pnpm d
 
 ## Documentation
 
-- **Configuration Reference**: [CONFIGURATION.md](file:///home/jherrmann/go/src/calcard/CONFIGURATION.md) - Detailed guide for all YAML and Environment parameters.
-- **Example Configuration**: [server/configs/config.yaml.example](file:///home/jherrmann/go/src/calcard/server/configs/config.yaml.example) - A complete example YAML file.
-- **Technical Overview**: [Technical Overview.md](file:///home/jherrmann/go/src/calcard/Technical Overview.md) - Deep dive into architecture and design choices.
+- **Configuration Reference**: [CONFIGURATION.md](CONFIGURATION.md) - Detailed guide for all YAML and Environment parameters.
+- **Example Configuration**: [server/configs/config.yaml.example](server/configs/config.yaml.example) - A complete example YAML file.
+- **Architecture**: [server/CLAUDE.md](server/CLAUDE.md) and the per-layer `CLAUDE.md` / `AGENT.md`
+  files under `server/internal/` - layering, request flow, and conventions. (These replaced the
+  former root-level `Technical Overview.md`.)
+- **Feature status**: [STORIES.md](STORIES.md) - what is implemented, what remains.
 
 ## API Documentation
 
 The server exposes an OpenAPI 3.1 specification and Swagger UI.
 
 - **Swagger UI**: Visit `/api/docs` (e.g., `http://localhost:8080/api/docs`)
-- **OpenAPI Spec**: Available at `/api/v1/openapi.json` or `/api/v1/openapi.yaml`
+- **OpenAPI Spec**: Available at `/api/v1/swagger.json` or `/api/v1/swagger.yaml`
 
 ### Generating Documentation
 

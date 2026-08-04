@@ -5,6 +5,27 @@
 **I want to** switch between light and dark themes
 **So that** I can use the application comfortably in different lighting conditions and according to my preferences
 
+## Implementation status (audited 2026-08-04)
+
+**The styling exists; the switch does not.** `nuxt.config.ts` sets
+`darkModeSelector: '.dark-mode'` and components carry **551 `dark:` utility usages** — but nothing
+in the frontend ever adds that class to the document, and `stores/preferences.ts` holds only
+`default_event_duration`, `default_all_day` and `time_format`. So every dark variant in the app is
+currently unreachable: no user has ever seen it, and none of the "Dark Mode Styles" boxes below can
+honestly be ticked even though the work behind them is mostly done.
+
+What remains is therefore small and well-defined:
+
+1. A `useTheme()` composable + toggle (light / dark / system) and a persisted preference.
+2. Setting `.dark-mode` on the root element early enough to avoid a flash.
+3. Then a pass over the existing `dark:` styles to confirm they actually hold up.
+
+Note the sketch below uses `.dark` and `[data-theme]`; the app is wired for **`.dark-mode`**
+(PrimeVue's `darkModeSelector`). Follow the code, not the sketch. The **Color Customization**
+group (accent picker, presets, per-user persistence) has no counterpart in the code at all and is
+the genuinely new work in this story — it also needs a preference key, since the story's
+localStorage-only approach would not follow the user across devices.
+
 ## Acceptance Criteria
 
 ### Theme Toggle
