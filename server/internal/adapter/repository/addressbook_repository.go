@@ -662,43 +662,12 @@ func (r *AddressBookRepository) recordAddressBookChange(tx *gorm.DB, addressBook
 	}).Error
 }
 
-func (r *AddressBookRepository) SearchObjects(ctx context.Context, userID uint, query string, addressBookID *uint, limit int) ([]addressbook.AddressObject, error) {
-	var objs []addressbook.AddressObject
-	q := "%" + escapeLike(query) + "%"
-
-	// Join with AddressBooks to filter by UserID
-	// And filter by query on denormalized fields
-	db := r.db.WithContext(ctx).
-		// GORM auto-applies the soft-delete scope to the primary model
-		// (address_objects) but NOT to a raw-joined table, so without this
-		// `deleted_at IS NULL` the contacts of a soft-deleted address book would
-		// still surface here (M7). Soft delete does not cascade to the objects.
-		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
-		Where("address_books.user_id = ?", userID)
-
-	if addressBookID != nil {
-		db = db.Where("address_objects.address_book_id = ?", *addressBookID)
-	}
-
-	err := db.Where("address_objects.formatted_name LIKE ? ESCAPE '\\' OR address_objects.email LIKE ? ESCAPE '\\' OR address_objects.phone LIKE ? ESCAPE '\\' OR address_objects.organization LIKE ? ESCAPE '\\' OR address_objects.given_name LIKE ? ESCAPE '\\' OR address_objects.family_name LIKE ? ESCAPE '\\'", q, q, q, q, q, q).
-		// Preload AddressBook so the DTO mapper can build the UUID-based photo URL (#52).
-		Preload("AddressBook").
-		Limit(limit).
-		Find(&objs).Error
-
-	if err != nil {
-		return nil, err
-	}
-	if err := r.hydrateObjectSlice(ctx, objs); err != nil {
-		return nil, err
-	}
-	return objs, nil
-}
-
-// SearchObjectsInBooks searches the same denormalized contact columns as
-// SearchObjects, but over an explicit set of address books — the caller has
-// already resolved which ones it may read, so shared books are included (#156).
-// The result is deterministically ordered (name, then id) so paging is stable.
+// SearchObjectsInBooks searches the denormalized contact columns over an
+// explicit set of address books — the caller has already resolved which ones it
+// may read, so books merely shared with it are included (#156, #162). It is the
+// only contact search: the owner-scoped variant it replaced silently excluded
+// shared books. The result is deterministically ordered (name, then id) so
+// paging is stable.
 func (r *AddressBookRepository) SearchObjectsInBooks(ctx context.Context, addressBookIDs []uint, query string, limit, offset int) ([]addressbook.AddressObject, error) {
 	if len(addressBookIDs) == 0 || strings.TrimSpace(query) == "" || limit <= 0 {
 		return nil, nil
@@ -711,8 +680,10 @@ func (r *AddressBookRepository) SearchObjectsInBooks(ctx context.Context, addres
 	q := "%" + escapeLike(query) + "%"
 
 	err := r.db.WithContext(ctx).
-		// Same soft-delete guard as SearchObjects: the join is raw, so GORM's
-		// scope does not cover address_books (M7).
+		// GORM auto-applies the soft-delete scope to the primary model
+		// (address_objects) but NOT to a raw-joined table, so without this
+		// `deleted_at IS NULL` the contacts of a soft-deleted address book would
+		// still surface here (M7). Soft delete does not cascade to the objects.
 		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
 		Where("address_objects.address_book_id IN ?", addressBookIDs).
 		Where("address_objects.formatted_name LIKE ? ESCAPE '\\' OR address_objects.email LIKE ? ESCAPE '\\' OR address_objects.phone LIKE ? ESCAPE '\\' OR address_objects.organization LIKE ? ESCAPE '\\' OR address_objects.given_name LIKE ? ESCAPE '\\' OR address_objects.family_name LIKE ? ESCAPE '\\'", q, q, q, q, q, q).

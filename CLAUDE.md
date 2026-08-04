@@ -128,7 +128,10 @@ cd server && docker-compose -f docker-compose.postgres.yml up     # PostgreSQL
 
 - `GET /api/v1/addressbooks` → `{ "addressbooks": [...] }`
 - `GET /api/v1/addressbooks/:id/contacts` → `{ "Contacts": [...], "Total", "Limit", "Offset" }` (capital C)
-- `GET /api/v1/contacts/search?q=...` → `{ "contacts": [...], "query", "count" }` (lowercase)
+- `GET /api/v1/contacts/search?q=...` → `{ "contacts": [...], "query", "count" }` (lowercase).
+  Searches every address book the caller can read — own **and shared** (#162). Optional
+  `addressbook_id` narrows to one book by UUID; a book they can't read is a **404**, never an
+  empty 200
 - `GET /api/v1/search?q=&types=&limit=&offset=` → grouped unified search (#156): `events`,
   `contacts`, `calendars`, `addressbooks`, each `{ items, count, has_more, searched }`. Raw JSON.
   Events have **no date bound** unless `start`/`end` are passed; `limit` is per group, capped at

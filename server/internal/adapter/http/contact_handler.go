@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -332,14 +333,23 @@ func (h *ContactHandler) Delete(c fiber.Ctx) error {
 
 // Search godoc
 // @Summary      Search contacts
-// @Description  Search for contacts by query
+// @Description  Searches every address book the caller can read — their own AND
+// @Description  books shared with them (#162). It used to be owner-scoped, which
+// @Description  made a contact in a shared book vanish as soon as you searched
+// @Description  for it even though the same contact was listed and editable.
+// @Description
+// @Description  The optional addressbook_id narrows the search to one book, given
+// @Description  as its UUID (#52). A UUID that is not among the readable books —
+// @Description  unknown, deleted, or simply not shared with the caller — is a 404,
+// @Description  so a narrowing request is never silently answered about other books.
 // @Tags         Contacts
 // @Produce      json
 // @Param        q               query     string   true   "Search query"
-// @Param        limit           query     integer  false  "Limit (default 20)"
-// @Param        addressbook_id  query     integer  false  "Address Book ID filter"
+// @Param        limit           query     integer  false  "Limit (default 20, max 200)"
+// @Param        addressbook_id  query     string   false  "Restrict to one address book, by UUID"
 // @Success      200             {object}  contactuc.SearchOutput
 // @Failure      400             {object}  ErrorResponseBody
+// @Failure      404             {object}  ErrorResponseBody  "addressbook_id names a book the caller cannot read"
 // @Failure      500             {object}  ErrorResponseBody
 // @Security     BearerAuth
 // @Router       /contacts/search [get]
@@ -359,32 +369,25 @@ func (h *ContactHandler) Search(c fiber.Ctx) error {
 		limit = maxPageLimit
 	}
 
-	// The optional addressbook_id filter is an address-book UUID (#52); resolve
-	// it to the internal numeric id, requiring read access. An unresolvable or
-	// inaccessible value simply leaves the filter unset (search stays user-wide)
-	// rather than erroring — it's an optional narrowing hint.
-	//
-	// Note the search corpus itself is still owner-scoped: SearchObjects filters
-	// by user_id, so contacts in books merely shared with the caller never match.
-	// Widening global search to shared books is deliberately out of scope here
-	// (#53 is about managing contacts in a book you were given access to); it
-	// needs its own repository-level change.
-	var abID *uint
-	if val := c.Query("addressbook_id"); val != "" {
-		if id, perm := h.addressBookByUUID(c, val); perm.CanRead() {
-			abID = &id
-		}
-	}
-
+	// The optional addressbook_id filter is an address-book UUID (#52). It is
+	// passed through unresolved: the use case owns permission resolution for this
+	// endpoint (it derives the searchable corpus from the readable books), so
+	// resolving access here as well would put the same rule in two places (#53).
 	input := contactuc.SearchInput{
-		UserID:        userID,
-		Query:         query,
-		Limit:         limit,
-		AddressBookID: abID,
+		UserID:          userID,
+		Query:           query,
+		Limit:           limit,
+		AddressBookUUID: c.Query("addressbook_id"),
 	}
 
 	output, err := h.searchUC.Execute(c.Context(), input)
 	if err != nil {
+		// A filter naming a book the caller cannot read is a 404 — the same
+		// answer an unknown UUID gets, so the status code doesn't reveal that
+		// the book exists.
+		if errors.Is(err, contactuc.ErrAddressBookNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 

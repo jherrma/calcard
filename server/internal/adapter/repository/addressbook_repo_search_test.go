@@ -13,111 +13,109 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSearchObjects(t *testing.T) {
-	// Setup DB
+// TestSearchObjectsInBooks covers the one contact-search corpus there is: an
+// explicit set of address books, resolved by the caller. It replaced the
+// owner-scoped SearchObjects in #162 — searching by user_id could never reach a
+// book that was merely shared with the caller, which is exactly the corpus the
+// rest of the app shows them.
+func TestSearchObjectsInBooks(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&addressbook.AddressBook{}, &addressbook.AddressObject{}, &addressbook.ContactPhoto{}, &addressbook.SyncChangeLog{})
+	assert.NoError(t, db.AutoMigrate(
+		&addressbook.AddressBook{}, &addressbook.AddressObject{},
+		&addressbook.ContactPhoto{}, &addressbook.SyncChangeLog{},
+	))
 
 	repo := repository.NewAddressBookRepository(db)
 	ctx := context.Background()
 
-	// Create AddressBooks
-	// Create AddressBooks
-	ab1 := &addressbook.AddressBook{
-		Name:      "Book1",
-		UserID:    1,
-		UUID:      uuid.New().String(),
-		Path:      "/book1",
-		SyncToken: "data:1",
-		CTag:      "123",
+	// Two books owned by DIFFERENT users: the repository must go purely by the
+	// ids it is handed, so ownership plays no part here.
+	mkBook := func(name, path string, userID uint) *addressbook.AddressBook {
+		ab := &addressbook.AddressBook{
+			Name: name, UserID: userID, UUID: uuid.New().String(),
+			Path: path, SyncToken: "data:1", CTag: "1",
+		}
+		assert.NoError(t, repo.Create(ctx, ab))
+		return ab
 	}
-	err = repo.Create(ctx, ab1)
-	assert.NoError(t, err)
-
-	ab2 := &addressbook.AddressBook{
-		Name:      "Book2",
-		UserID:    1,
-		UUID:      uuid.New().String(),
-		Path:      "/book2",
-		SyncToken: "data:2",
-		CTag:      "456",
-	}
-	err = repo.Create(ctx, ab2)
-	assert.NoError(t, err)
-
-	// Create Contacts
-	// Contact in Book1
-	c1 := &addressbook.AddressObject{
-		UUID:          uuid.New().String(),
-		AddressBookID: ab1.ID,
-		UID:           uuid.New().String(),
-		VCardData:     "BEGIN:VCARD\nFN:Alice Wonderland\nEND:VCARD",
-		FormattedName: "Alice Wonderland",
-		GivenName:     "Alice",
-		FamilyName:    "Wonderland",
-		Email:         "alice@example.com",
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-	err = repo.CreateObject(ctx, c1)
-	assert.NoError(t, err)
-
-	// Contact in Book2
-	c2 := &addressbook.AddressObject{
-		UUID:          uuid.New().String(),
-		AddressBookID: ab2.ID,
-		UID:           uuid.New().String(),
-		VCardData:     "BEGIN:VCARD\nFN:Alice Smith\nEND:VCARD",
-		FormattedName: "Alice Smith",
-		GivenName:     "Alice",
-		FamilyName:    "Smith",
-		Email:         "alice.smith@example.com",
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-	err = repo.CreateObject(ctx, c2)
-	assert.NoError(t, err)
-
-	// Contact in Book1 (No match)
-	c3 := &addressbook.AddressObject{
-		UUID:          uuid.New().String(),
-		AddressBookID: ab1.ID,
-		UID:           uuid.New().String(),
-		VCardData:     "BEGIN:VCARD\nFN:Bob Jones\nEND:VCARD",
-		FormattedName: "Bob Jones",
-		GivenName:     "Bob",
-		FamilyName:    "Jones",
-		Email:         "bob@example.com",
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-	err = repo.CreateObject(ctx, c3)
-	assert.NoError(t, err)
-
-	// Test 1: Global Search for "Alice" (Should return 2)
-	results, err := repo.SearchObjects(ctx, 1, "Alice", nil, 10)
-	assert.NoError(t, err)
-	assert.Len(t, results, 2)
-
-	// Test 2: Search for "Alice" in Book1 (Should return 1)
-	results, err = repo.SearchObjects(ctx, 1, "Alice", &ab1.ID, 10)
-	assert.NoError(t, err)
-	assert.Len(t, results, 1)
-	if len(results) > 0 {
-		assert.Equal(t, c1.ID, results[0].ID)
+	mkContact := func(ab *addressbook.AddressBook, fn, given, family, email string) *addressbook.AddressObject {
+		obj := &addressbook.AddressObject{
+			UUID: uuid.New().String(), AddressBookID: ab.ID, UID: uuid.New().String(),
+			VCardData:     "BEGIN:VCARD\nFN:" + fn + "\nEND:VCARD",
+			FormattedName: fn, GivenName: given, FamilyName: family, Email: email,
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		assert.NoError(t, repo.CreateObject(ctx, obj))
+		return obj
 	}
 
-	// Test 3: Search for "Alice" in Book2 (Should return 1)
-	results, err = repo.SearchObjects(ctx, 1, "Alice", &ab2.ID, 10)
-	assert.NoError(t, err)
-	assert.Len(t, results, 1)
-	if len(results) > 0 {
-		assert.Equal(t, c2.ID, results[0].ID)
-	}
+	own := mkBook("Book1", "/book1", 1)
+	other := mkBook("Book2", "/book2", 2)
 
-	// Test 4: Search for "Bob" in Book2 (Should return 0)
-	results, err = repo.SearchObjects(ctx, 1, "Bob", &ab2.ID, 10)
-	assert.NoError(t, err)
-	assert.Len(t, results, 0)
+	wonderland := mkContact(own, "Alice Wonderland", "Alice", "Wonderland", "alice@example.com")
+	smith := mkContact(other, "Alice Smith", "Alice", "Smith", "alice.smith@example.com")
+	mkContact(own, "Bob Jones", "Bob", "Jones", "bob@example.com")
+
+	t.Run("across both books", func(t *testing.T) {
+		results, err := repo.SearchObjectsInBooks(ctx, []uint{own.ID, other.ID}, "Alice", 10, 0)
+		assert.NoError(t, err)
+		assert.Len(t, results, 2)
+		// Ordered by formatted name, so paging is stable: Smith before Wonderland.
+		if len(results) == 2 {
+			assert.Equal(t, smith.ID, results[0].ID)
+			assert.Equal(t, wonderland.ID, results[1].ID)
+		}
+	})
+
+	t.Run("narrowed to one book", func(t *testing.T) {
+		results, err := repo.SearchObjectsInBooks(ctx, []uint{own.ID}, "Alice", 10, 0)
+		assert.NoError(t, err)
+		assert.Len(t, results, 1)
+		if len(results) == 1 {
+			assert.Equal(t, wonderland.ID, results[0].ID)
+		}
+
+		// The other book's owner never enters the query — only the id set does.
+		results, err = repo.SearchObjectsInBooks(ctx, []uint{other.ID}, "Alice", 10, 0)
+		assert.NoError(t, err)
+		assert.Len(t, results, 1)
+		if len(results) == 1 {
+			assert.Equal(t, smith.ID, results[0].ID)
+		}
+	})
+
+	t.Run("no match in the searched book", func(t *testing.T) {
+		results, err := repo.SearchObjectsInBooks(ctx, []uint{other.ID}, "Bob", 10, 0)
+		assert.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+
+	t.Run("empty id set matches nothing", func(t *testing.T) {
+		// The dangerous reading would be "no filter, so all books". A caller with
+		// access to nothing must get nothing.
+		results, err := repo.SearchObjectsInBooks(ctx, nil, "Alice", 10, 0)
+		assert.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+
+	t.Run("limit and offset page deterministically", func(t *testing.T) {
+		books := []uint{own.ID, other.ID}
+		first, err := repo.SearchObjectsInBooks(ctx, books, "Alice", 1, 0)
+		assert.NoError(t, err)
+		assert.Len(t, first, 1)
+		second, err := repo.SearchObjectsInBooks(ctx, books, "Alice", 1, 1)
+		assert.NoError(t, err)
+		assert.Len(t, second, 1)
+		if len(first) == 1 && len(second) == 1 {
+			assert.Equal(t, smith.ID, first[0].ID)
+			assert.Equal(t, wonderland.ID, second[0].ID)
+		}
+	})
+
+	t.Run("matches the other denormalized columns", func(t *testing.T) {
+		results, err := repo.SearchObjectsInBooks(ctx, []uint{own.ID}, "bob@example", 10, 0)
+		assert.NoError(t, err)
+		assert.Len(t, results, 1)
+	})
 }

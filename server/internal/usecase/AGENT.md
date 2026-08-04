@@ -51,7 +51,11 @@ Address book management:
 Contact management:
 
 - `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations.
-- `search.go` — Full-text contact search.
+- `search.go` — Contact search over every address book the caller can READ — owned plus shared —
+  resolved through `addressbook.ListUseCase` so owner+share resolution (#53) stays in one place.
+  It was owner-scoped until #162, which made a contact in a shared book vanish as soon as you
+  searched for it. The optional address-book filter (a UUID) narrows that set and returns
+  `ErrAddressBookNotFound` — a 404 — for anything outside it.
 - `move.go` — Move contact between address books.
 - `photo.go` — Contact photo handling.
 - `mapper.go` — Contact-to-DTO mapping utilities.
