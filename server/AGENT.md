@@ -100,6 +100,13 @@ import is `aboutuc "…/usecase/about"`), swag cannot resolve it and exits 1 —
 run, so NO endpoint's docs regenerate. `Dockerfile` runs `swag init` without failure tolerance,
 so this also breaks `docker build`. No Go test catches it; verify by running the command above.
 
+**Regenerate and COMMIT `docs/` whenever you change a handler annotation.** `docs/embed.go`
+embeds `swagger.json`/`swagger.yaml`, so the committed files are what `/api/docs` serves — a stale
+file is a stale API doc, not a build artefact. Nothing enforces freshness: the Dockerfile re-runs
+`swag init` at image build, which hides the drift in Docker while the checked-in spec rots, and
+there is no CI. It had silently fallen three features behind before being regenerated on
+2026-08-04.
+
 ## Key Conventions
 
 - **Configuration**: Loaded from environment variables (`CALDAV_*`) and/or `config.yaml`. See `configs/config.yaml.example`.

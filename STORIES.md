@@ -128,5 +128,11 @@ filed straight onto the tracker and never got a story file.
   React/Vite pseudo-code, and story 046's sketch uses `.dark` where the app is wired for
   `.dark-mode`. Read the code first; the `## Implementation status` sections added on 2026-08-04
   record what was actually verified.
-- `server/docs/swagger.*` is committed but stale. Regenerate with
-  `swag init -g cmd/server/main.go --parseDependency --parseInternal` from `server/`.
+- `server/docs/swagger.*` is committed AND embedded in the binary (`docs/embed.go`), so a stale
+  file is what `/api/docs` serves. It had drifted by three features (28 → 31 paths: `/search`,
+  `/about/open-source`, `/users/me/preferences`, and the contact-move route moving under its
+  address book) and was regenerated on 2026-08-04. Nothing enforces this — the Dockerfile re-runs
+  `swag init` at image build, which masks the drift in Docker while the committed file rots, and
+  there is no CI (`.github/` holds only CODEOWNERS). **Regenerate and commit whenever you touch a
+  handler annotation**: `swag init -g cmd/server/main.go --parseDependency --parseInternal` from
+  `server/`.
