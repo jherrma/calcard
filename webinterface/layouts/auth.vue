@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <div class="mt-8 text-center text-sm text-surface-500 dark:text-surface-500">
+    <div class="mt-8 text-center text-sm text-surface-500 dark:text-surface-400">
       &copy; {{ new Date().getFullYear() }} CalCard. All rights reserved.
     </div>
   </div>

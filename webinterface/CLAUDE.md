@@ -38,7 +38,7 @@ webinterface/
 │   ├── search.vue           # Full global-search results page (?q=…), uncapped
 │   └── settings/            # Profile, password, credentials, connections, import/export, admin, danger
 │       ├── about.vue        # Open Source Attribution (story 101)
-│       └── appearance.vue   # Theme picker (story 046)
+│       └── appearance.vue   # Theme + accent colour picker (story 046)
 ├── components/              # Auto-imported by Nuxt (directory prefix = component name)
 │   ├── about/
 │   │   └── OpenSourceList.vue     # → <AboutOpenSourceList>: filtered, incrementally rendered package list
@@ -83,7 +83,7 @@ webinterface/
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
 │   ├── dashboard.ts         # Dashboard event window (loadedMonths), recent contacts, clock
-│   ├── preferences.ts       # User preferences (default event duration, all-day, 12h/24h time format)
+│   ├── preferences.ts       # User preferences (event duration, all-day, time format, accent colour)
 │   ├── search.ts            # Global search fan-out (events/contacts/collections), cache, recents
 │   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
 │                            #   `sharedWithMe` derived from the two list endpoints (story 043)
@@ -91,6 +91,7 @@ webinterface/
 │   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
 │   ├── useTheme.ts          # Light/Dark/System state — SINGLETON, see Theming below
+│   ├── useAccentColor.ts    # Accent colour — SINGLETON, server-backed, see Theming below
 │   └── useOpenSourceAttribution.ts  # Loads both attribution manifests + filterOpenSourcePackages()
 ├── middleware/
 │   ├── auth.ts              # Requires authentication (redirects to /auth/login)
@@ -111,6 +112,7 @@ webinterface/
 │   ├── dashboardDates.ts    # Local-date primitives + month-range merging for the dashboard
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page
+│   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
@@ -306,6 +308,47 @@ pages) and from `pages/settings/appearance.vue`.
   would mean transitioning *from* the wrong colours, i.e. reintroducing the flash.
 - **`color-scheme` is set alongside the class**, which is what makes scrollbars, native form
   controls and the canvas behind the page follow the theme. There is no scrollbar CSS.
+- **`surface-*` was dead for the entire life of the repo.** It is used ~440 times but was never a
+  defined Tailwind colour, so every one of those utilities compiled to NOTHING — three quarters of
+  the app's `dark:` styling had no effect, and the surfaces you saw came from PrimeVue's component
+  CSS alone. It is now defined against CSS variables in `theme.css` carrying **PrimeVue's own
+  Material surface palette** (slate in light, zinc in dark, exactly as the preset defines it), so
+  the two systems cannot disagree. A missing colour produces no error, just no CSS, which is why
+  `utils/theme.spec.ts` asserts the scale exists and that every variable it references is defined.
+- **Muted text is `text-surface-500 dark:text-surface-400`.** Both halves of that pair matter:
+  surface-400 alone is 2.6:1 on a light card and surface-500 alone is 3.7:1 on a dark one, so
+  either on its own fails AA in one theme. 141 sites were missing the dark half and 11 had the pair
+  inverted (the worst of both). Contrast below AA now survives only where WCAG exempts it —
+  disabled controls and decorative empty-state icons (`text-surface-300 dark:text-surface-600`).
+
+### Accent colour (story 046)
+
+The second half of theming, and the one that persists DIFFERENTLY from the theme.
+
+- **The accent is a SERVER preference (`accent_color`), the theme is device-local.** The theme has
+  to apply on the login page before a token exists and before the first paint; the accent has
+  neither constraint and no reason to differ between a laptop and a phone. `utils/accent.ts` +
+  `composables/useAccentColor.ts`; the value lives in `stores/preferences.ts` like any other key.
+- **The server validates it by PATTERN, not by a closed set** — the first preference key that does.
+  See `patternPreferences` in `server/internal/domain/user/preference.go`. It is normalized
+  (trimmed, lower-cased) before validation and before storage, so `"#8B5CF6"` reads back as
+  `"#8b5cf6"` and the swatch row's equality check cannot be defeated by casing. Three-digit
+  shorthand is expanded CLIENT-side (`normalizeAccentColor`); the server rejects it.
+- **One hex drives two colour systems.** Tailwind `primary-*` reads `--accent-<shade>` CSS
+  variables holding `R G B` CHANNEL TRIPLETS — the triplet form is load-bearing, because the config
+  wraps them as `rgb(var(--accent-500) / <alpha-value>)` and the app really does use
+  `bg-primary-900/20`. PrimeVue gets the same ramp through `updatePrimaryPalette()`.
+- **The default ramp is Tailwind's blue spelled out, not generated.** `palette()` produces a good
+  scale but not an identical one (blue-700 comes out `#295bac` against Tailwind's `#1d4ed8`), so
+  generating the default would restyle every screen for users who never touch the setting.
+  `accentPalette()` special-cases it; custom colours are generated.
+- **There is a device-local CACHE (`calcard-accent`) that is a paint hint, never the truth.** It is
+  written only from a loaded server value, dropped on logout so the next account on a shared
+  machine does not inherit a colour, and deliberately NOT dropped at boot — `isAuthenticated` is
+  still false then because `initAuth()` has not run, and treating that as a logout wiped the cache
+  on every page load.
+- **A save applies optimistically and rolls back** if the server refuses, so the screen never shows
+  a colour the account does not have.
 
 ### Type System Gotchas
 

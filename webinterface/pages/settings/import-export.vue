@@ -49,12 +49,12 @@
                   <i class="pi pi-file text-2xl text-green-500" />
                   <div class="text-left">
                     <p class="font-medium text-surface-900 dark:text-surface-0">{{ calFile.name }}</p>
-                    <p class="text-sm text-surface-500">{{ formatFileSize(calFile.size) }}</p>
+                    <p class="text-sm text-surface-500 dark:text-surface-400">{{ formatFileSize(calFile.size) }}</p>
                   </div>
                   <Button icon="pi pi-times" severity="secondary" text rounded size="small" @click.stop="calFile = null" />
                 </div>
                 <div v-else>
-                  <i class="pi pi-calendar-plus text-3xl text-surface-400 dark:text-surface-500 mb-2 block" />
+                  <i class="pi pi-calendar-plus text-3xl text-surface-500 dark:text-surface-400 mb-2 block" />
                   <p class="text-surface-600 dark:text-surface-400">Drag and drop an .ics file here or click to browse</p>
                 </div>
               </div>
@@ -119,12 +119,12 @@
                   <i class="pi pi-file text-2xl text-green-500" />
                   <div class="text-left">
                     <p class="font-medium text-surface-900 dark:text-surface-0">{{ vcfFile.name }}</p>
-                    <p class="text-sm text-surface-500">{{ formatFileSize(vcfFile.size) }}</p>
+                    <p class="text-sm text-surface-500 dark:text-surface-400">{{ formatFileSize(vcfFile.size) }}</p>
                   </div>
                   <Button icon="pi pi-times" severity="secondary" text rounded size="small" @click.stop="vcfFile = null" />
                 </div>
                 <div v-else>
-                  <i class="pi pi-id-card text-3xl text-surface-400 dark:text-surface-500 mb-2 block" />
+                  <i class="pi pi-id-card text-3xl text-surface-500 dark:text-surface-400 mb-2 block" />
                   <p class="text-surface-600 dark:text-surface-400">Drag and drop a .vcf file here or click to browse</p>
                 </div>
               </div>

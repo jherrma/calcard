@@ -22,7 +22,7 @@
               <h2 class="text-xl font-semibold text-surface-900 dark:text-surface-100">Contact</h2>
               <!-- Read-only shared book: the API refuses both writes with a
                    403, so state the reason rather than offering them (#53). -->
-              <div v-if="isReadOnly" class="flex items-center gap-2 text-sm text-surface-500">
+              <div v-if="isReadOnly" class="flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400">
                 <i class="pi pi-lock text-xs" />
                 <span>Read-only</span>
               </div>
@@ -57,7 +57,7 @@
                 <span v-else>{{ initials }}</span>
               </div>
               <h3 class="text-xl font-semibold text-surface-900 dark:text-surface-100">{{ contact.formatted_name }}</h3>
-              <p v-if="contact.title || contact.organization" class="text-sm text-surface-500">
+              <p v-if="contact.title || contact.organization" class="text-sm text-surface-500 dark:text-surface-400">
                 <span v-if="contact.title">{{ contact.title }}</span>
                 <span v-if="contact.title && contact.organization"> at </span>
                 <span v-if="contact.organization">{{ contact.organization }}</span>
@@ -67,15 +67,15 @@
             <div class="space-y-6">
               <!-- Emails -->
               <section v-if="contact.emails?.length">
-                <h5 class="text-xs font-semibold uppercase text-surface-400 mb-2">Email</h5>
+                <h5 class="text-xs font-semibold uppercase text-surface-500 dark:text-surface-400 mb-2">Email</h5>
                 <div class="space-y-2">
                   <div v-for="(email, i) in contact.emails" :key="i" class="flex items-center gap-2">
-                    <i class="pi pi-envelope text-surface-400 text-sm" />
+                    <i class="pi pi-envelope text-surface-500 dark:text-surface-400 text-sm" />
                     <div class="flex-1 min-w-0">
                       <a :href="'mailto:' + email.value" class="text-sm text-primary-600 dark:text-primary-400 hover:underline truncate block">
                         {{ email.value }}
                       </a>
-                      <span class="text-xs text-surface-400 capitalize">{{ email.type }}</span>
+                      <span class="text-xs text-surface-500 dark:text-surface-400 capitalize">{{ email.type }}</span>
                     </div>
                   </div>
                 </div>
@@ -83,15 +83,15 @@
 
               <!-- Phones -->
               <section v-if="contact.phones?.length">
-                <h5 class="text-xs font-semibold uppercase text-surface-400 mb-2">Phone</h5>
+                <h5 class="text-xs font-semibold uppercase text-surface-500 dark:text-surface-400 mb-2">Phone</h5>
                 <div class="space-y-2">
                   <div v-for="(phone, i) in contact.phones" :key="i" class="flex items-center gap-2">
-                    <i class="pi pi-phone text-surface-400 text-sm" />
+                    <i class="pi pi-phone text-surface-500 dark:text-surface-400 text-sm" />
                     <div class="flex-1 min-w-0">
                       <a :href="'tel:' + phone.value" class="text-sm text-primary-600 dark:text-primary-400 hover:underline truncate block">
                         {{ phone.value }}
                       </a>
-                      <span class="text-xs text-surface-400 capitalize">{{ phone.type }}</span>
+                      <span class="text-xs text-surface-500 dark:text-surface-400 capitalize">{{ phone.type }}</span>
                     </div>
                   </div>
                 </div>
@@ -99,10 +99,10 @@
 
               <!-- Addresses -->
               <section v-if="contact.addresses?.length">
-                <h5 class="text-xs font-semibold uppercase text-surface-400 mb-2">Address</h5>
+                <h5 class="text-xs font-semibold uppercase text-surface-500 dark:text-surface-400 mb-2">Address</h5>
                 <div class="space-y-2">
                   <div v-for="(addr, i) in contact.addresses" :key="i" class="flex items-start gap-2">
-                    <i class="pi pi-map-marker text-surface-400 text-sm mt-0.5" />
+                    <i class="pi pi-map-marker text-surface-500 dark:text-surface-400 text-sm mt-0.5" />
                     <div>
                       <a
                         :href="mapsUrl(addr)"
@@ -119,7 +119,7 @@
                         </div>
                         <div v-if="addr.country" class="text-sm">{{ addr.country }}</div>
                       </a>
-                      <span class="text-xs text-surface-400 capitalize">{{ addr.type }}</span>
+                      <span class="text-xs text-surface-500 dark:text-surface-400 capitalize">{{ addr.type }}</span>
                     </div>
                   </div>
                 </div>
@@ -127,10 +127,10 @@
 
               <!-- URLs -->
               <section v-if="contact.urls?.length">
-                <h5 class="text-xs font-semibold uppercase text-surface-400 mb-2">Links</h5>
+                <h5 class="text-xs font-semibold uppercase text-surface-500 dark:text-surface-400 mb-2">Links</h5>
                 <div class="space-y-2">
                   <div v-for="(url, i) in contact.urls" :key="i" class="flex items-center gap-2">
-                    <i class="pi pi-link text-surface-400 text-sm" />
+                    <i class="pi pi-link text-surface-500 dark:text-surface-400 text-sm" />
                     <a :href="sanitizeUrl(url.value)" target="_blank" rel="noopener" class="text-sm text-primary-600 dark:text-primary-400 hover:underline truncate">
                       {{ url.value }}
                     </a>
@@ -140,16 +140,16 @@
 
               <!-- Birthday -->
               <section v-if="contact.birthday">
-                <h5 class="text-xs font-semibold uppercase text-surface-400 mb-2">Birthday</h5>
+                <h5 class="text-xs font-semibold uppercase text-surface-500 dark:text-surface-400 mb-2">Birthday</h5>
                 <div class="flex items-center gap-2">
-                  <i class="pi pi-calendar text-surface-400 text-sm" />
+                  <i class="pi pi-calendar text-surface-500 dark:text-surface-400 text-sm" />
                   <span class="text-sm text-surface-700 dark:text-surface-300">{{ contact.birthday }}</span>
                 </div>
               </section>
 
               <!-- Notes -->
               <section v-if="contact.notes">
-                <h5 class="text-xs font-semibold uppercase text-surface-400 mb-2">Notes</h5>
+                <h5 class="text-xs font-semibold uppercase text-surface-500 dark:text-surface-400 mb-2">Notes</h5>
                 <p class="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">{{ contact.notes }}</p>
               </section>
             </div>

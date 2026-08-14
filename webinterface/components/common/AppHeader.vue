@@ -3,7 +3,7 @@
     <div class="flex items-center justify-between h-16 px-4">
       <!-- Mobile menu button -->
       <button
-        class="lg:hidden p-2 rounded-md text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        class="lg:hidden p-2 rounded-md text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
         @click="$emit('toggle-sidebar')"
         aria-label="Toggle sidebar"
       >
@@ -40,7 +40,7 @@
           <span class="hidden sm:block text-sm font-medium text-surface-700 dark:text-surface-200 max-w-[150px] truncate">
             {{ authStore.user?.display_name || authStore.user?.username }}
           </span>
-          <i class="pi pi-chevron-down text-xs text-surface-500" />
+          <i class="pi pi-chevron-down text-xs text-surface-500 dark:text-surface-400" />
         </button>
 
         <!-- Dropdown menu -->
@@ -60,7 +60,7 @@
               <p class="text-sm font-medium text-surface-900 dark:text-surface-0 truncate">
                 {{ authStore.user?.display_name || authStore.user?.username }}
               </p>
-              <p class="text-xs text-surface-500 truncate">
+              <p class="text-xs text-surface-500 dark:text-surface-400 truncate">
                 {{ authStore.user?.email }}
               </p>
             </div>
@@ -70,7 +70,7 @@
               class="block px-4 py-2.5 text-sm text-surface-700 dark:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800"
               @click="userMenuOpen = false"
             >
-              <i class="pi pi-user mr-2 text-surface-500" />
+              <i class="pi pi-user mr-2 text-surface-500 dark:text-surface-400" />
               Profile
             </NuxtLink>
             <NuxtLink
@@ -78,7 +78,7 @@
               class="block px-4 py-2.5 text-sm text-surface-700 dark:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800"
               @click="userMenuOpen = false"
             >
-              <i class="pi pi-key mr-2 text-surface-500" />
+              <i class="pi pi-key mr-2 text-surface-500 dark:text-surface-400" />
               App Passwords
             </NuxtLink>
             <NuxtLink
@@ -86,7 +86,7 @@
               class="block px-4 py-2.5 text-sm text-surface-700 dark:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800"
               @click="userMenuOpen = false"
             >
-              <i class="pi pi-question-circle mr-2 text-surface-500" />
+              <i class="pi pi-question-circle mr-2 text-surface-500 dark:text-surface-400" />
               Help & Setup
             </NuxtLink>
             <div class="border-t border-surface-200 dark:border-surface-700 my-1"></div>

@@ -60,7 +60,7 @@ All backend stories are implemented.
 | 041 | Import/Export UI                           | Done    |
 | 044 | Global Search                              | Done    |
 | 045 | Error Handling & Loading States            | Partial |
-| 046 | Dark Mode & Theming                        | Partial |
+| 046 | Dark Mode & Theming                        | Done    |
 | 047 | Accessibility (a11y)                       | Partial |
 | 049 | Responsive Design & Mobile Optimization    | Partial |
 | 050 | PWA & Push Notifications                   | Pending |
@@ -78,9 +78,8 @@ All backend stories are implemented.
 
 ## Summary
 
-- **Done**: 45 / 52
-- **Partial**: 4 / 52 — 045 Error Handling, 046 Dark Mode (toggle done, accent colour open),
-  047 Accessibility, 049 Responsive
+- **Done**: 46 / 52
+- **Partial**: 3 / 52 — 045 Error Handling, 047 Accessibility, 049 Responsive
 - **Pending**: 3 / 52 — 050 PWA & Push, 100 Remote Calendar Subscriptions, 104 MCP Server
 
 <!-- Counts are of the rows in the three tables above (29 backend + 17 frontend + 6
@@ -98,7 +97,7 @@ filed straight onto the tracker and never got a story file.
 
 | Item | What is actually left |
 | --- | --- |
-| **047 Accessibility** (sweep) | Live regions (none exist), a skip link, `aria-label` on the ~1 in 2 icon-only buttons that lack one, `aria-hidden` on decorative icons, and `for`/`id` pairing in `ContactForm.vue`. Contrast / zoom / tab order need an axe pass before assuming they fail. Now worth doing in **both** themes, since dark mode is finally reachable. |
+| **047 Accessibility** (sweep) | Live regions (none exist), a skip link, `aria-label` on the ~1 in 2 icon-only buttons that lack one, `aria-hidden` on decorative icons, and `for`/`id` pairing in `ContactForm.vue`. **Colour contrast is now done** (story 046 audited and fixed every surface/text pair in both themes); zoom and tab order still need an axe pass, and it should run in both themes. |
 | **#160** Recently-viewed contacts | Frontend only: a per-device list feeding the dashboard widget. |
 | **#158** `GET /users/search` | Backend endpoint so share invites can autocomplete instead of requiring an exact email or username. Needs a privacy decision — it exposes an account directory. |
 
@@ -107,7 +106,6 @@ filed straight onto the tracker and never got a story file.
 | Item | What is actually left |
 | --- | --- |
 | **045 Error Handling** | A real `NuxtErrorBoundary`, a connectivity indicator, determinate import/export progress (needs an API decision), transient-failure retry, undo. |
-| **046 Dark Mode** (accent colour) | The light/dark/system toggle shipped; what is left is the optional accent-colour half — a picker with presets, palette generation for the PrimeVue and Tailwind primary scales, and a preference key. Unlike the theme it should probably be a *server* preference, so it follows the account rather than the device. Also open: a visual pass over the now-reachable dark styles (contrast, focus rings, elevation). |
 | **049 Responsive** | Touch and mobile-native behaviour: bottom nav, swipe paging, pull-to-refresh, 44 px touch targets, day-view default on phones, correct input types, lazy photos. The layout itself is done. |
 | **#159** `GET /events/upcoming` | Cross-calendar upcoming events with recurrence expansion — would replace the dashboard's per-calendar fan-out the way #156 replaced the search fan-out. |
 | **#157** Per-sharee visibility | Persistent hide/show of a shared collection, honoured over DAV too, without letting a sharee self-leave. Touches the sharing model. |
@@ -129,6 +127,9 @@ filed straight onto the tracker and never got a story file.
   React/Vite pseudo-code, and story 046's sketch uses `.dark` where the app is wired for
   `.dark-mode`. Read the code first; the `## Implementation status` sections added on 2026-08-04
   record what was actually verified.
+- Story 046's own audit note is worth reading before trusting any "this is styled" claim in the
+  other stories: two colour systems and ~440 utilities were silently compiling to nothing, which no
+  test and no amount of reading templates would have revealed. Check the BUILT css, not the source.
 - `webinterface/AGENT.md` has drifted from its `CLAUDE.md` twin: it predates stories 042/043, so it
   still calls `pages/index.vue` a "root redirect" and lists neither the dashboard nor the sharing
   components, and it has no Sharing section. Both files were updated for 046 on 2026-08-14, but the

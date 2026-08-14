@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
 )
@@ -51,14 +50,20 @@ func (uc *UpdatePreferencesUseCase) Execute(ctx context.Context, userUUID string
 	}
 	sort.Strings(keys)
 
+	// Canonical form is what gets validated AND what gets stored, so the table
+	// never ends up holding two spellings of one value (story 046: "#3B82F6"
+	// and "#3b82f6" are the same accent colour).
+	normalized := make(map[string]string, len(updates))
 	for _, k := range keys {
 		if !user.KnownPreferenceKey(k) {
 			return nil, fmt.Errorf("%w: %q", ErrUnknownPreferenceKey, k)
 		}
-		if !user.IsAllowedPreferenceValue(k, updates[k]) {
-			return nil, fmt.Errorf("%w: %q must be one of %s", ErrInvalidPreferenceValue, k,
-				strings.Join(user.AllowedPreferenceValues(k), ", "))
+		v := user.NormalizePreferenceValue(k, updates[k])
+		if !user.IsAllowedPreferenceValue(k, v) {
+			return nil, fmt.Errorf("%w: %q must be %s", ErrInvalidPreferenceValue, k,
+				user.PreferenceValueHint(k))
 		}
+		normalized[k] = v
 	}
 
 	u, err := uc.repo.GetByUUID(ctx, userUUID)
@@ -70,7 +75,7 @@ func (uc *UpdatePreferencesUseCase) Execute(ctx context.Context, userUUID string
 	}
 
 	for _, k := range keys {
-		pref := &user.UserPreference{UserID: u.ID, Key: k, Value: updates[k]}
+		pref := &user.UserPreference{UserID: u.ID, Key: k, Value: normalized[k]}
 		if err := uc.prefRepo.Upsert(ctx, pref); err != nil {
 			return nil, err
 		}

@@ -6,11 +6,13 @@ import type { PreferencesResponse, TimeFormat } from '~/types/settings';
 export const PREF_DEFAULT_EVENT_DURATION = 'default_event_duration';
 export const PREF_DEFAULT_ALL_DAY = 'default_all_day';
 export const PREF_TIME_FORMAT = 'time_format';
+export const PREF_ACCENT_COLOR = 'accent_color';
 
 export const DEFAULT_PREFERENCES: Record<string, string> = {
   [PREF_DEFAULT_EVENT_DURATION]: '60',
   [PREF_DEFAULT_ALL_DAY]: 'false',
   [PREF_TIME_FORMAT]: '24h',
+  [PREF_ACCENT_COLOR]: DEFAULT_ACCENT_COLOR,
 };
 
 /** Durations offered by the settings UI, in minutes. */
@@ -71,6 +73,17 @@ export const usePreferencesStore = defineStore('preferences', {
 
     timeFormat(state: PreferencesState): TimeFormat {
       return state.preferences[PREF_TIME_FORMAT] === '12h' ? '12h' : '24h';
+    },
+
+    /**
+     * The UI accent (story 046). Falls back rather than trusts, for the same
+     * reason `defaultEventDuration` does: the value is interpolated straight
+     * into CSS custom properties, and a row written by an older build — or by
+     * hand — must not be able to leave the app without a primary colour.
+     */
+    accentColor(state: PreferencesState): string {
+      const stored = state.preferences[PREF_ACCENT_COLOR];
+      return isAccentColor(stored) ? stored : DEFAULT_ACCENT_COLOR;
     },
   },
 

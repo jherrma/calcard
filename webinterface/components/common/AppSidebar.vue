@@ -14,7 +14,7 @@
         <span class="text-xl font-bold text-surface-900 dark:text-surface-0">CalCard</span>
       </NuxtLink>
       <button
-        class="lg:hidden p-2 -mr-2 rounded-md text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800"
+        class="lg:hidden p-2 -mr-2 rounded-md text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800"
         @click="$emit('close')"
       >
         <i class="pi pi-times" />

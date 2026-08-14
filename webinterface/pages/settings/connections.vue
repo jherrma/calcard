@@ -1,7 +1,7 @@
 <template>
   <div>
     <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">Connected Accounts</h2>
-    <p class="text-sm text-surface-500 mb-6">
+    <p class="text-sm text-surface-500 dark:text-surface-400 mb-6">
       Manage your linked external authentication providers. You can link additional providers or unlink existing ones.
     </p>
 
@@ -22,8 +22,8 @@
                 <i :class="[getProviderIcon(provider.provider), 'text-xl text-surface-600 dark:text-surface-400']" />
                 <div>
                   <div class="font-medium text-surface-900 dark:text-surface-0 capitalize">{{ provider.provider }}</div>
-                  <div class="text-sm text-surface-500">{{ provider.email }}</div>
-                  <div class="text-xs text-surface-400">Linked {{ formatDate(provider.linked_at) }}</div>
+                  <div class="text-sm text-surface-500 dark:text-surface-400">{{ provider.email }}</div>
+                  <div class="text-xs text-surface-500 dark:text-surface-400">Linked {{ formatDate(provider.linked_at) }}</div>
                 </div>
               </div>
               <Button
@@ -38,7 +38,7 @@
             </div>
           </div>
         </div>
-        <p v-if="!canUnlink" class="text-xs text-surface-400 mt-2">
+        <p v-if="!canUnlink" class="text-xs text-surface-500 dark:text-surface-400 mt-2">
           You cannot unlink your only authentication method. Set a password first.
         </p>
       </div>
@@ -57,7 +57,7 @@
                 <i :class="[method.icon || getProviderIcon(method.id), 'text-xl text-surface-600 dark:text-surface-400']" />
                 <div>
                   <div class="font-medium text-surface-900 dark:text-surface-0">{{ method.name }}</div>
-                  <div class="text-sm text-surface-500">Not linked</div>
+                  <div class="text-sm text-surface-500 dark:text-surface-400">Not linked</div>
                 </div>
               </div>
               <Button
@@ -78,7 +78,7 @@
         class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-8 text-center"
       >
         <i class="pi pi-link text-4xl text-surface-300 dark:text-surface-600 mb-3" />
-        <p class="text-surface-500">No external authentication providers are configured.</p>
+        <p class="text-surface-500 dark:text-surface-400">No external authentication providers are configured.</p>
       </div>
     </template>
   </div>

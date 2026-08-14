@@ -18,7 +18,7 @@
         v-if="canManage && !store.isLoadingShares && !store.sharesError"
         class="flex flex-wrap items-center gap-2"
       >
-        <span class="text-sm text-surface-500">Status</span>
+        <span class="text-sm text-surface-500 dark:text-surface-400">Status</span>
         <Tag v-if="store.shares.length" severity="info" :value="`Shared with ${store.shares.length}`" />
         <Tag v-if="isPublic" severity="warn" value="Public link" />
         <Tag v-if="!store.shares.length && !isPublic" severity="secondary" value="Private" />

@@ -55,6 +55,45 @@ describe('the dark-mode selector', () => {
     expect(config.darkMode).toEqual(['selector', `.${DARK_MODE_CLASS}`]);
   });
 
+  it('has a surface scale at all, wired to CSS variables', async () => {
+    // `surface-*` is used ~440 times in the templates but was never a defined
+    // Tailwind colour, so every one of those utilities compiled to NOTHING —
+    // three quarters of the app's dark styling did not exist. Nothing else in
+    // the suite would notice that happening again, because a missing colour
+    // produces no error, just no CSS.
+    const colors = (await import('~/tailwind.config')).default.theme?.extend?.colors as
+      | Record<string, Record<string, string>>
+      | undefined;
+
+    for (const shade of [0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]) {
+      expect(colors?.surface?.[shade], `surface-${shade}`)
+        .toBe(`rgb(var(--surface-${shade}) / <alpha-value>)`);
+    }
+    for (const shade of [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]) {
+      // `<alpha-value>` is not cosmetic: bg-primary-900/20 and bg-surface-900/50
+      // are both in use, and a bare var() would silently drop the opacity.
+      expect(colors?.primary?.[shade], `primary-${shade}`)
+        .toBe(`rgb(var(--accent-${shade}) / <alpha-value>)`);
+    }
+  });
+
+  it('defines every one of those variables in theme.css', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const css = readFileSync(join(process.cwd(), 'assets/css/theme.css'), 'utf8');
+
+    // A variable the config references but the stylesheet never defines is the
+    // same failure as before — a utility that resolves to nothing.
+    for (const shade of [0, 50, 500, 950]) {
+      expect(css, `--surface-${shade}`).toContain(`--surface-${shade}:`);
+    }
+    for (const shade of [50, 500, 950]) {
+      expect(css, `--accent-${shade}`).toContain(`--accent-${shade}:`);
+    }
+    // Surfaces swap neutral family with the theme (PrimeVue does the same).
+    expect(css).toContain(`html.${DARK_MODE_CLASS}`);
+  });
+
   it('is what PrimeVue and the FullCalendar overrides are written against', async () => {
     // Read as text rather than imported: nuxt.config.ts cannot be evaluated
     // here, and the CSS carries no exports. Vitest runs from webinterface/, and

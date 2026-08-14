@@ -4,7 +4,7 @@
 
     <!-- Query input. Mirrored into ?q= so a results page can be bookmarked/shared. -->
     <div class="relative">
-      <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 text-sm" />
+      <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-surface-500 dark:text-surface-400 text-sm" />
       <input
         v-model="query"
         type="text"
@@ -15,7 +15,7 @@
       >
     </div>
 
-    <p v-if="isSearchable && !searchStore.isLoading" class="mt-3 text-xs text-surface-500">
+    <p v-if="isSearchable && !searchStore.isLoading" class="mt-3 text-xs text-surface-500 dark:text-surface-400">
       {{ searchStore.totalCount }}{{ isCapped ? '+' : '' }}
       {{ searchStore.totalCount === 1 && !isCapped ? 'result' : 'results' }}
       for “{{ searchStore.query }}”<span v-if="isCapped"> · showing the first {{ SEARCH_LIMIT }} per category</span>.
@@ -31,14 +31,14 @@
       <span>{{ searchStore.error }}</span>
     </div>
 
-    <div v-if="searchStore.isLoading" class="flex items-center justify-center gap-3 p-10 text-surface-500">
+    <div v-if="searchStore.isLoading" class="flex items-center justify-center gap-3 p-10 text-surface-500 dark:text-surface-400">
       <ProgressSpinner style="width: 1.75rem; height: 1.75rem" stroke-width="4" />
       <span class="text-sm">Searching…</span>
     </div>
 
     <div v-else-if="!isSearchable" class="flex flex-col items-center gap-2 p-10 text-center">
       <i class="pi pi-search text-2xl text-surface-300 dark:text-surface-600" />
-      <p class="text-sm text-surface-500">Type at least {{ MIN_QUERY_LENGTH }} characters to search.</p>
+      <p class="text-sm text-surface-500 dark:text-surface-400">Type at least {{ MIN_QUERY_LENGTH }} characters to search.</p>
     </div>
 
     <!-- Full result set: NO per-category cap here — that is what separates this page
@@ -58,12 +58,12 @@
             <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
               <HighlightText :text="hit.event.summary || '(no title)'" :highlight="searchStore.query" />
             </span>
-            <span class="block text-xs text-surface-500 truncate">
+            <span class="block text-xs text-surface-500 dark:text-surface-400 truncate">
               {{ formatEventWhen(hit.event) }} · {{ hit.calendarName }}
             </span>
           </span>
           <Tag v-if="isPastEvent(hit.event)" value="Past" severity="secondary" class="flex-shrink-0 text-xs" />
-          <span v-else class="text-xs text-surface-500 flex-shrink-0">{{ eventRelativeLabel(hit.event) }}</span>
+          <span v-else class="text-xs text-surface-500 dark:text-surface-400 flex-shrink-0">{{ eventRelativeLabel(hit.event) }}</span>
         </button>
       </section>
 
@@ -86,7 +86,7 @@
             <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
               <HighlightText :text="hit.contact.formatted_name" :highlight="searchStore.query" />
             </span>
-            <span class="block text-xs text-surface-500 truncate">
+            <span class="block text-xs text-surface-500 dark:text-surface-400 truncate">
               <HighlightText :text="contactMetaLine(hit)" :highlight="searchStore.query" />
             </span>
           </span>
@@ -106,7 +106,7 @@
             <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
               <HighlightText :text="cal.name" :highlight="searchStore.query" />
             </span>
-            <span v-if="cal.description" class="block text-xs text-surface-500 truncate">
+            <span v-if="cal.description" class="block text-xs text-surface-500 dark:text-surface-400 truncate">
               <HighlightText :text="cal.description" :highlight="searchStore.query" />
             </span>
           </span>
@@ -121,12 +121,12 @@
           to="/contacts"
           class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800"
         >
-          <i class="pi pi-book text-surface-400 text-sm flex-shrink-0" />
+          <i class="pi pi-book text-surface-500 dark:text-surface-400 text-sm flex-shrink-0" />
           <span class="flex-1 min-w-0">
             <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
               <HighlightText :text="ab.Name" :highlight="searchStore.query" />
             </span>
-            <span v-if="ab.Description" class="block text-xs text-surface-500 truncate">
+            <span v-if="ab.Description" class="block text-xs text-surface-500 dark:text-surface-400 truncate">
               <HighlightText :text="ab.Description" :highlight="searchStore.query" />
             </span>
           </span>
@@ -137,7 +137,7 @@
     <div v-else class="flex flex-col items-center gap-2 p-10 text-center" data-testid="page-no-results">
       <i class="pi pi-search text-2xl text-surface-300 dark:text-surface-600" />
       <p class="text-sm text-surface-600 dark:text-surface-300">No results for “{{ searchStore.query }}”</p>
-      <p class="text-xs text-surface-400">Try different keywords or check the spelling.</p>
+      <p class="text-xs text-surface-500 dark:text-surface-400">Try different keywords or check the spelling.</p>
     </div>
   </div>
 </template>

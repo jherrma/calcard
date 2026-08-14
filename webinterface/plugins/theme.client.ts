@@ -13,4 +13,8 @@
  */
 export default defineNuxtPlugin(() => {
   useTheme();
+  // Same reasoning for the accent: it applies the cached colour before the
+  // first Vue render and starts watching the preferences store, so the app
+  // never paints blue and then repaints in the user's colour.
+  useAccentColor();
 });

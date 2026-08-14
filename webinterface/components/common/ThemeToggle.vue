@@ -3,7 +3,7 @@
     <button
       ref="triggerRef"
       type="button"
-      class="p-2 rounded-full text-surface-500 hover:text-surface-700 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
+      class="p-2 rounded-full text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
       :aria-label="triggerLabel"
       aria-haspopup="menu"
       :aria-expanded="open"
@@ -38,7 +38,7 @@
           @click="choose(option.value)"
           @keydown="onItemKeydown($event, index)"
         >
-          <i :class="[option.icon, 'text-surface-500']" aria-hidden="true" />
+          <i :class="[option.icon, 'text-surface-500 dark:text-surface-400']" aria-hidden="true" />
           <span class="flex-1 text-left">{{ option.label }}</span>
           <i
             v-if="option.value === themeMode"

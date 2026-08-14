@@ -71,7 +71,7 @@
           <div class="w-full border-t border-surface-200 dark:border-surface-800" />
         </div>
         <div class="relative flex justify-center text-sm">
-          <span class="px-2 bg-surface-0 dark:bg-surface-900 text-surface-500">Or continue with</span>
+          <span class="px-2 bg-surface-0 dark:bg-surface-900 text-surface-500 dark:text-surface-400">Or continue with</span>
         </div>
       </div>
 

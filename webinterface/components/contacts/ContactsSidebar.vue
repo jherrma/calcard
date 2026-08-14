@@ -15,7 +15,7 @@
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300">Address Books</h3>
         <button
-          class="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
+          class="text-surface-500 dark:text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
           @click="$emit('add-addressbook')"
         >
           <i class="pi pi-plus text-sm" />
@@ -33,9 +33,9 @@
             :binary="true"
             @update:model-value="$emit('select-all')"
           />
-          <i class="pi pi-address-book text-surface-500" />
+          <i class="pi pi-address-book text-surface-500 dark:text-surface-400" />
           <span class="flex-1 text-sm text-surface-700 dark:text-surface-300">All Contacts</span>
-          <span class="text-xs text-surface-400">{{ totalCount }}</span>
+          <span class="text-xs text-surface-500 dark:text-surface-400">{{ totalCount }}</span>
         </div>
 
         <!-- Individual address books -->
@@ -52,7 +52,7 @@
           />
           <i
             :class="ab.shared ? 'pi pi-users' : 'pi pi-book'"
-            class="text-surface-500"
+            class="text-surface-500 dark:text-surface-400"
             :title="sharedLabel(ab)"
           />
           <span class="flex-1 text-sm truncate text-surface-700 dark:text-surface-300" :title="sharedLabel(ab)">
@@ -62,11 +62,11 @@
                no way to tell why the edit controls are missing. -->
           <i
             v-if="isReadOnly(ab)"
-            class="pi pi-lock text-xs text-surface-400"
+            class="pi pi-lock text-xs text-surface-500 dark:text-surface-400"
             title="Read-only access"
           />
           <button
-            class="opacity-0 group-hover:opacity-100 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
+            class="opacity-0 group-hover:opacity-100 text-surface-500 dark:text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
             @click.stop="showMenu($event, ab)"
           >
             <i class="pi pi-ellipsis-v text-sm" />

@@ -2676,8 +2676,10 @@ paths:
       - Users
   /users/me/preferences:
     get:
-      description: Get the current user's preferences. Keys the user has not set are
-        returned with their default value.
+      description: 'Get the current user''s preferences. Keys the user has not set
+        are returned with their default value. Keys: `default_event_duration` (minutes,
+        one of 15/30/45/60/90/120/180/240/480), `default_all_day` (true/false), `time_format`
+        (12h/24h), `accent_color` (6-digit lowercase hex, e.g. `#3b82f6`).'
       produces:
       - application/json
       responses:
@@ -2706,7 +2708,10 @@ paths:
       consumes:
       - application/json
       description: Upsert one or more preferences. Unknown keys and out-of-range values
-        are rejected with 400; the full updated map is returned.
+        are rejected with 400 and NOTHING is written, so a batch never half-applies;
+        the full updated map is returned. Values are canonicalised before storage
+        — `accent_color` is lower-cased and trimmed, so `"#8B5CF6"` reads back as
+        `"#8b5cf6"`.
       parameters:
       - description: Preferences to set
         in: body

@@ -13,7 +13,7 @@
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300">My Calendars</h3>
         <button
-          class="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
+          class="text-surface-500 dark:text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
           @click="emit('add-calendar')"
         >
           <i class="pi pi-plus text-sm" />
@@ -37,7 +37,7 @@
           />
           <span class="flex-1 text-sm truncate text-surface-700 dark:text-surface-300">{{ calendar.name }}</span>
           <button
-            class="opacity-0 group-hover:opacity-100 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
+            class="opacity-0 group-hover:opacity-100 text-surface-500 dark:text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
             @click.stop="showCalendarMenu($event, calendar)"
           >
             <i class="pi pi-ellipsis-v text-sm" />
@@ -65,7 +65,7 @@
             />
             <div class="flex-1 min-w-0">
               <span class="text-sm truncate block text-surface-700 dark:text-surface-300">{{ calendar.name }}</span>
-              <span class="text-xs text-surface-500">{{ calendar.owner?.display_name }}</span>
+              <span class="text-xs text-surface-500 dark:text-surface-400">{{ calendar.owner?.display_name }}</span>
             </div>
           </div>
         </div>

@@ -13,6 +13,72 @@
  */
 
 /*
+ * Accent colour defaults (story 046).
+ *
+ * `R G B` channel triplets, not colours: tailwind.config.ts wraps them as
+ * `rgb(var(--accent-500) / <alpha-value>)` so opacity modifiers survive. These
+ * are Tailwind's blue scale verbatim — the value a user who never opens the
+ * setting sees — and `utils/accent.ts` overwrites them on <html> for anyone who
+ * picks something else.
+ */
+/*
+ * Surface scale (story 046).
+ *
+ * `surface-*` was used ~440 times in the templates but was NEVER a defined
+ * Tailwind colour, so every one of those utilities compiled to nothing — three
+ * quarters of the app's `dark:` styling had no effect whatsoever, and the
+ * surfaces you actually saw came from PrimeVue's component CSS alone.
+ *
+ * These values are PrimeVue's own Material surface palette, so the two systems
+ * cannot disagree: slate in light mode, zinc in dark, exactly as the preset
+ * defines it (`semantic.colorScheme.{light,dark}.surface`). Templates keep
+ * choosing the SHADE with their own `dark:` variants; this only swaps which
+ * neutral family those shades come from.
+ */
+:root {
+  --surface-0: 255 255 255;
+  --surface-50: 248 250 252;
+  --surface-100: 241 245 249;
+  --surface-200: 226 232 240;
+  --surface-300: 203 213 225;
+  --surface-400: 148 163 184;
+  --surface-500: 100 116 139;
+  --surface-600: 71 85 105;
+  --surface-700: 51 65 85;
+  --surface-800: 30 41 59;
+  --surface-900: 15 23 42;
+  --surface-950: 2 6 23;
+}
+
+html.dark-mode {
+  --surface-50: 250 250 250;
+  --surface-100: 244 244 245;
+  --surface-200: 228 228 231;
+  --surface-300: 212 212 216;
+  --surface-400: 161 161 170;
+  --surface-500: 113 113 122;
+  --surface-600: 82 82 91;
+  --surface-700: 63 63 70;
+  --surface-800: 39 39 42;
+  --surface-900: 24 24 27;
+  --surface-950: 9 9 11;
+}
+
+:root {
+  --accent-50: 239 246 255;
+  --accent-100: 219 234 254;
+  --accent-200: 191 219 254;
+  --accent-300: 147 197 253;
+  --accent-400: 96 165 250;
+  --accent-500: 59 130 246;
+  --accent-600: 37 99 235;
+  --accent-700: 29 78 216;
+  --accent-800: 30 64 175;
+  --accent-900: 30 58 138;
+  --accent-950: 23 37 84;
+}
+
+/*
  * Animate a theme switch, and ONLY a theme switch.
  *
  * `.theme-switching` is added by useTheme() for ~200ms around a change and then
@@ -43,11 +109,74 @@
  * inline script prevents for the class, one level further down. `color-scheme`
  * (set by applyResolvedTheme) already handles this in modern browsers; the
  * explicit rules cover the rest and keep the two in sync.
+ *
+ * Expressed through the surface variables so it tracks the palette above
+ * automatically, including the slate→zinc swap.
  */
 html {
-  background-color: #f8fafc; /* surface-50, matching the layout shells */
+  background-color: rgb(var(--surface-50));
 }
 
 html.dark-mode {
-  background-color: #020617; /* surface-950 */
+  background-color: rgb(var(--surface-950));
+}
+
+/*
+ * Text selection. Left to the browser it is a fixed blue that neither follows
+ * the accent nor has any guaranteed contrast against a dark surface — on the
+ * dark theme the default selection over light text was close to unreadable.
+ */
+::selection {
+  background-color: rgb(var(--accent-200));
+  color: rgb(var(--surface-900));
+}
+
+html.dark-mode ::selection {
+  background-color: rgb(var(--accent-800));
+  color: rgb(var(--surface-50));
+}
+
+/*
+ * Focus ring.
+ *
+ * A baseline for everything that does not already carry its own `focus:ring-*`
+ * utility — plain links, the skip target, PrimeVue internals. `:focus-visible`
+ * rather than `:focus`, so it appears for keyboard users without putting a ring
+ * around every clicked button.
+ *
+ * The ring is drawn in the accent with a surface-coloured gap, which is what
+ * keeps it visible in BOTH themes: a single dark outline vanishes on a dark
+ * surface, and a single light one vanishes on a light card.
+ */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent-500));
+  outline-offset: 2px;
+}
+
+/*
+ * Elevation in dark mode.
+ *
+ * Shadows are black at low alpha, which is all but invisible against a dark
+ * surface — cards, dialogs and dropdowns lose the separation from the page that
+ * the same shadow gives them in light mode. Deepening the alpha restores the
+ * cue without inventing a light-source that contradicts the rest of the UI.
+ *
+ * The selectors match the utilities the app actually uses (shadow-sm/lg on the
+ * shells and dropdowns) plus PrimeVue's card, whose shadow is set in the preset
+ * in nuxt.config.ts.
+ */
+html.dark-mode .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+}
+
+html.dark-mode .shadow-lg {
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.5),
+    0 4px 6px -4px rgb(0 0 0 / 0.5);
+}
+
+html.dark-mode .p-card {
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.5),
+    0 4px 6px -2px rgb(0 0 0 / 0.35);
 }

@@ -3,7 +3,7 @@
     <template #actions>
       <button
         type="button"
-        class="p-1.5 rounded-full text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800"
+        class="p-1.5 rounded-full text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800"
         title="Previous month"
         @click="shiftMonth(-1)"
       >
@@ -19,7 +19,7 @@
       </button>
       <button
         type="button"
-        class="p-1.5 rounded-full text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800"
+        class="p-1.5 rounded-full text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800"
         title="Next month"
         @click="shiftMonth(1)"
       >
@@ -31,7 +31,7 @@
       <span
         v-for="(name, i) in weekdayNames"
         :key="i"
-        class="text-[10px] font-semibold uppercase text-surface-400 dark:text-surface-500 py-1"
+        class="text-[10px] font-semibold uppercase text-surface-500 dark:text-surface-400 py-1"
       >
         {{ name }}
       </span>

@@ -1,7 +1,7 @@
 <template>
   <div>
     <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">{{ title }}</h2>
-    <p class="text-sm text-surface-500 mb-6">{{ description }}</p>
+    <p class="text-sm text-surface-500 dark:text-surface-400 mb-6">{{ description }}</p>
 
     <!-- Create button -->
     <div class="mb-6">
@@ -17,7 +17,7 @@
 
     <div v-else-if="credentials.length === 0" class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-8 text-center">
       <i :class="[icon, 'text-4xl text-surface-300 dark:text-surface-600 mb-3']" />
-      <p class="text-surface-500">No credentials yet. Create one to get started.</p>
+      <p class="text-surface-500 dark:text-surface-400">No credentials yet. Create one to get started.</p>
     </div>
 
     <div v-else class="space-y-3">
@@ -32,7 +32,7 @@
               <span class="font-medium text-surface-900 dark:text-surface-0">{{ cred.name }}</span>
               <Tag :value="cred.permission" :severity="cred.permission === 'read-write' ? 'success' : 'info'" />
             </div>
-            <div class="text-sm text-surface-500 space-y-0.5">
+            <div class="text-sm text-surface-500 dark:text-surface-400 space-y-0.5">
               <div><span class="font-medium">Username:</span> {{ cred.username }}</div>
               <div><span class="font-medium">Created:</span> {{ formatDate(cred.created_at) }}</div>
               <div v-if="cred.expires_at"><span class="font-medium">Expires:</span> {{ formatDate(cred.expires_at) }}</div>
@@ -40,7 +40,7 @@
                 <span class="font-medium">Last used:</span> {{ formatRelative(cred.last_used_at) }}
                 <span v-if="cred.last_used_ip"> from {{ cred.last_used_ip }}</span>
               </div>
-              <div v-else class="text-surface-400">Never used</div>
+              <div v-else class="text-surface-500 dark:text-surface-400">Never used</div>
             </div>
           </div>
           <Button
@@ -117,7 +117,7 @@
 
         <div class="flex flex-col gap-2">
           <label for="cred-expires" class="text-sm font-medium text-surface-700 dark:text-surface-300">
-            Expiration <span class="text-surface-400 font-normal">(optional)</span>
+            Expiration <span class="text-surface-500 dark:text-surface-400 font-normal">(optional)</span>
           </label>
           <DatePicker
             id="cred-expires"

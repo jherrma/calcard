@@ -12,7 +12,7 @@
       <span class="text-xs font-medium" :class="strengthTextColors[strength]">
         {{ strengthLabels[strength] || 'Enter password' }}
       </span>
-      <span v-if="strength > 0" class="text-xs text-surface-500">
+      <span v-if="strength > 0" class="text-xs text-surface-500 dark:text-surface-400">
         {{ strengthPercentage }}%
       </span>
     </div>

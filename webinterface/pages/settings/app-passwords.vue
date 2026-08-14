@@ -1,7 +1,7 @@
 <template>
   <div>
     <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">App Passwords</h2>
-    <p class="text-sm text-surface-500 mb-6">
+    <p class="text-sm text-surface-500 dark:text-surface-400 mb-6">
       App passwords allow third-party applications to access your account with specific scopes.
       They are separate from your main password.
     </p>
@@ -20,7 +20,7 @@
 
     <div v-else-if="appPasswords.length === 0" class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-8 text-center">
       <i class="pi pi-key text-4xl text-surface-300 dark:text-surface-600 mb-3" />
-      <p class="text-surface-500">No app passwords yet. Create one to get started.</p>
+      <p class="text-surface-500 dark:text-surface-400">No app passwords yet. Create one to get started.</p>
     </div>
 
     <div v-else class="space-y-3">
@@ -35,13 +35,13 @@
               <span class="font-medium text-surface-900 dark:text-surface-0">{{ ap.name }}</span>
               <Tag v-for="scope in ap.scopes" :key="scope" :value="scope" severity="info" />
             </div>
-            <div class="text-sm text-surface-500 space-y-0.5">
+            <div class="text-sm text-surface-500 dark:text-surface-400 space-y-0.5">
               <div><span class="font-medium">Created:</span> {{ formatDate(ap.created_at) }}</div>
               <div v-if="ap.last_used_at">
                 <span class="font-medium">Last used:</span> {{ formatRelative(ap.last_used_at) }}
                 <span v-if="ap.last_used_ip"> from {{ ap.last_used_ip }}</span>
               </div>
-              <div v-else class="text-surface-400">Never used</div>
+              <div v-else class="text-surface-500 dark:text-surface-400">Never used</div>
             </div>
           </div>
           <Button
