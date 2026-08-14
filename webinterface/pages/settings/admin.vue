@@ -5,7 +5,7 @@
     <div class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-8 text-center">
       <i class="pi pi-shield text-5xl text-surface-300 dark:text-surface-600 mb-4" />
       <h3 class="text-lg font-semibold text-surface-900 dark:text-surface-0 mb-2">Coming Soon</h3>
-      <p class="text-surface-500 mb-6">
+      <p class="text-surface-500 dark:text-surface-400 mb-6">
         The admin console is under development. The following features are planned:
       </p>
       <ul class="text-left max-w-md mx-auto space-y-2 text-sm text-surface-600 dark:text-surface-400">

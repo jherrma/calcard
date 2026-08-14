@@ -28,7 +28,7 @@
         </span>
         <span v-if="primaryPhone" class="truncate">{{ primaryPhone }}</span>
       </div>
-      <div v-if="contact.organization" class="text-xs text-surface-400 dark:text-surface-500 truncate">
+      <div v-if="contact.organization" class="text-xs text-surface-500 dark:text-surface-400 truncate">
         <HighlightText :text="contact.organization" :highlight="searchQuery" />
       </div>
     </div>
@@ -37,14 +37,14 @@
          the API refuses these writes with a 403, so showing them is a dead end. -->
     <div v-if="!readonly" class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
       <button
-        class="p-1.5 rounded hover:bg-surface-200 dark:hover:bg-surface-700 text-surface-500 hover:text-surface-700 dark:hover:text-surface-300"
+        class="p-1.5 rounded hover:bg-surface-200 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300"
         title="Edit"
         @click.stop="$emit('edit', contact)"
       >
         <i class="pi pi-pencil text-sm" />
       </button>
       <button
-        class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-surface-500 hover:text-red-600"
+        class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-surface-500 dark:text-surface-400 hover:text-red-600"
         title="Delete"
         @click.stop="$emit('delete', contact)"
       >

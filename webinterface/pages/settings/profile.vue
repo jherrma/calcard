@@ -9,15 +9,15 @@
       <div class="grid grid-cols-3 gap-4 mb-8">
         <div class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-4 text-center">
           <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">{{ profile.stats.calendar_count }}</div>
-          <div class="text-sm text-surface-500 mt-1">Calendars</div>
+          <div class="text-sm text-surface-500 dark:text-surface-400 mt-1">Calendars</div>
         </div>
         <div class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-4 text-center">
           <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">{{ profile.stats.contact_count }}</div>
-          <div class="text-sm text-surface-500 mt-1">Contacts</div>
+          <div class="text-sm text-surface-500 dark:text-surface-400 mt-1">Contacts</div>
         </div>
         <div class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-4 text-center">
           <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">{{ profile.stats.app_password_count }}</div>
-          <div class="text-sm text-surface-500 mt-1">App Passwords</div>
+          <div class="text-sm text-surface-500 dark:text-surface-400 mt-1">App Passwords</div>
         </div>
       </div>
 
@@ -41,7 +41,7 @@
               disabled
               class="w-full"
             />
-            <small class="text-surface-500">Email cannot be changed</small>
+            <small class="text-surface-500 dark:text-surface-400">Email cannot be changed</small>
           </div>
 
           <div class="flex flex-col gap-2">

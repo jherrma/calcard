@@ -19,7 +19,7 @@
       <div class="flex items-center gap-3 px-4 py-3 border-b border-surface-200 dark:border-surface-800 bg-surface-0 dark:bg-surface-900">
         <!-- Search -->
         <div class="relative flex-1 max-w-md">
-          <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 text-sm" />
+          <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-surface-500 dark:text-surface-400 text-sm" />
           <input
             v-model="searchInput"
             type="text"
@@ -75,7 +75,7 @@
           <p class="text-surface-600 dark:text-surface-400 mb-2">
             {{ contactsStore.searchQuery ? 'No contacts found' : 'No contacts yet' }}
           </p>
-          <p v-if="!contactsStore.searchQuery" class="text-sm text-surface-400 mb-4">Add your first contact to get started.</p>
+          <p v-if="!contactsStore.searchQuery" class="text-sm text-surface-500 dark:text-surface-400 mb-4">Add your first contact to get started.</p>
           <Button
             v-if="!contactsStore.searchQuery"
             label="Add Contact"

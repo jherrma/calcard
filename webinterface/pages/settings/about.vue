@@ -1,7 +1,7 @@
 <template>
   <div>
     <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">Open Source Attribution</h2>
-    <p class="text-sm text-surface-500 mb-6">
+    <p class="text-sm text-surface-500 dark:text-surface-400 mb-6">
       CalCard is built on the work of the open-source projects listed below. Select a package to
       open its repository.
     </p>
@@ -11,7 +11,7 @@
          PrimeVue's IconField is not in nuxt.config's component include list. -->
     <div class="mb-6 relative max-w-md">
       <label for="os-filter" class="sr-only">Filter packages by name</label>
-      <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 text-sm" />
+      <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-surface-500 dark:text-surface-400 text-sm" />
       <input
         id="os-filter"
         v-model="filter"

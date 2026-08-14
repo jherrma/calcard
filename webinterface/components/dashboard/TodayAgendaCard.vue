@@ -15,13 +15,13 @@
     <div v-else-if="total === 0" class="flex flex-col items-center gap-2 py-8 text-center">
       <i class="pi pi-check-circle text-3xl text-surface-300 dark:text-surface-600" />
       <p class="text-sm text-surface-600 dark:text-surface-400">Nothing scheduled today</p>
-      <p class="text-xs text-surface-400 dark:text-surface-500">{{ todayLabel }}</p>
+      <p class="text-xs text-surface-500 dark:text-surface-400">{{ todayLabel }}</p>
     </div>
 
     <div v-else class="space-y-3">
       <!-- All-day events sit above the timeline: they have no position on it. -->
       <div v-if="allDayEvents.length > 0" class="space-y-1">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">
           All day
         </p>
         <button
@@ -36,7 +36,7 @@
         </button>
       </div>
 
-      <div v-if="timedEvents.length === 0" class="text-xs text-surface-400 dark:text-surface-500">
+      <div v-if="timedEvents.length === 0" class="text-xs text-surface-500 dark:text-surface-400">
         No timed events today.
       </div>
 
@@ -50,7 +50,7 @@
             class="absolute left-0 right-0 border-t border-surface-200 dark:border-surface-800"
             :style="{ top: `${offsetForHour(hour)}px` }"
           >
-            <span class="absolute -top-2 left-0 w-11 text-[10px] tabular-nums text-surface-400 dark:text-surface-500">
+            <span class="absolute -top-2 left-0 w-11 text-[10px] tabular-nums text-surface-500 dark:text-surface-400">
               {{ hourLabel(hour) }}
             </span>
           </div>

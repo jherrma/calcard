@@ -1,7 +1,7 @@
 <template>
   <div>
     <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">Shared with me</h2>
-    <p class="text-sm text-surface-500 mb-6">
+    <p class="text-sm text-surface-500 dark:text-surface-400 mb-6">
       Calendars and address books that other people gave you access to. To share something of your
       own, open its menu in the calendar or contacts sidebar and pick <em>Share</em>.
     </p>
@@ -25,8 +25,8 @@
         class="bg-surface-0 dark:bg-surface-900 rounded-xl border border-surface-200 dark:border-surface-800 p-8 text-center"
       >
         <i class="pi pi-users text-3xl text-surface-300 dark:text-surface-600" />
-        <p class="text-surface-500 mt-3">Nothing has been shared with you yet.</p>
-        <p class="text-xs text-surface-400 mt-1">
+        <p class="text-surface-500 dark:text-surface-400 mt-3">Nothing has been shared with you yet.</p>
+        <p class="text-xs text-surface-500 dark:text-surface-400 mt-1">
           When someone shares a calendar or address book with you it shows up here, and in the
           sidebar of the matching page.
         </p>
@@ -47,10 +47,10 @@
                 class="w-3 h-3 rounded-full flex-shrink-0"
                 :style="{ backgroundColor: row.color || '#3788d8' }"
               />
-              <i v-else class="pi pi-book text-surface-500" />
+              <i v-else class="pi pi-book text-surface-500 dark:text-surface-400" />
               <div class="min-w-0">
                 <div class="font-medium text-surface-900 dark:text-surface-0 truncate">{{ row.name }}</div>
-                <div class="text-sm text-surface-500">
+                <div class="text-sm text-surface-500 dark:text-surface-400">
                   {{ row.type === 'calendar' ? 'Calendar' : 'Address book' }} · shared by {{ row.ownerName }}
                 </div>
               </div>
@@ -64,7 +64,7 @@
 
         <!-- Both omissions are backend gaps, not UI choices — see story 043's
              deferred list. Saying so beats a control that silently does nothing. -->
-        <p class="text-xs text-surface-400 pt-2">
+        <p class="text-xs text-surface-500 dark:text-surface-400 pt-2">
           Hiding a shared item, or leaving it, is not supported yet — ask the owner to revoke your
           access. You can still hide a shared calendar for the current session from the calendar
           sidebar.

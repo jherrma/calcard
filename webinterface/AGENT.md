@@ -36,7 +36,8 @@ webinterface/
 │   ├── contacts/
 │   │   └── index.vue        # Contact list with search, grouping, detail panel
 │   ├── search.vue           # Full global-search results page (?q=…), uncapped
-│   └── settings/            # Profile, password, credentials, connections, import/export, admin, danger
+│   └── settings/        # …
+│       └── appearance.vue   # Theme + accent colour picker (story 046)            # Profile, password, credentials, connections, import/export, admin, danger
 │       └── about.vue        # Open Source Attribution (story 101)
 ├── components/              # Auto-imported by Nuxt (directory prefix = component name)
 │   ├── about/
@@ -62,6 +63,7 @@ webinterface/
 │       ├── SearchSectionHeader.vue # Category header + count for a search result group
 │       ├── SearchViewAll.vue      # "View all N …" link into /search
 │       ├── HighlightText.vue      # Search term highlighter using <mark> tags
+│       ├── ThemeToggle.vue        # Light/Dark/System switcher (story 046)
 │       ├── LoadingSpinner.vue     # Centered spinner
 │       └── SkeletonList.vue       # Loading placeholder rows
 ├── stores/                  # Pinia stores (state + getters + actions)
@@ -69,12 +71,14 @@ webinterface/
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
 │   ├── dashboard.ts         # Dashboard event window (loadedMonths), recent contacts, clock
-│   ├── preferences.ts       # User preferences (default event duration, all-day, 12h/24h time format)
+│   ├── preferences.ts       # User preferences (event duration, all-day, time format, accent colour)
 │   ├── search.ts            # Global search fan-out (events/contacts/collections), cache, recents
 │   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link
 ├── composables/
 │   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
+│   ├── useTheme.ts          # Light/Dark/System state — SINGLETON, see Theming below
+│   ├── useAccentColor.ts    # Accent colour — SINGLETON, server-backed, see Theming below
 │   └── useOpenSourceAttribution.ts  # Loads both attribution manifests + filterOpenSourcePackages()
 ├── middleware/
 │   ├── auth.ts              # Requires authentication (redirects to /auth/login)
@@ -95,11 +99,20 @@ webinterface/
 │   ├── dashboardDates.ts    # Local-date primitives + month-range merging for the dashboard
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page
+│   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
+│   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
-│   └── primevue-services.ts # Registers ConfirmationService (for useConfirm)
+│   ├── primevue-services.ts # Registers ConfirmationService (for useConfirm)
+│   └── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
+├── assets/css/
+│   ├── tailwind.css         # Tailwind layer entry (@layer tailwind-base, primevue, …)
+│   ├── theme.css            # Unlayered: theme-switch transition + pre-paint background
+│   └── fullcalendar.css     # FullCalendar overrides, imported by pages/calendar/index.vue
+├── test/support/
+│   └── storage.ts           # In-memory localStorage for specs (see Testing)
 ├── nuxt.config.ts           # Nuxt configuration, PrimeVue theme preset, module registration
-├── tailwind.config.ts       # Tailwind CSS configuration
+├── tailwind.config.ts       # Tailwind CSS configuration (darkMode is keyed to .dark-mode)
 └── package.json             # Dependencies and scripts
 ```
 
@@ -210,6 +223,85 @@ the palette dialog. `pages/search.vue` is the uncapped results page it links to.
   /events/:id` returns the series MASTER and does no recurrence expansion, so it must never be
   used to open an occurrence. Contacts use the NUMERIC `?ab=` id (`Contact.addressbook_id`).
 
+### Theming (story 046)
+
+Light / Dark / System, switchable from the header on every shell (including the logged-out auth
+pages) and from `pages/settings/appearance.vue`.
+
+- **One class drives everything: `.dark-mode` on `<html>`.** Four places have to agree on it and
+  `utils/theme.spec.ts` asserts that they do: `tailwind.config.ts`
+  (`darkMode: ['selector', '.dark-mode']`), `nuxt.config.ts` (PrimeVue's `darkModeSelector`),
+  `assets/css/fullcalendar.css`, and `utils/theme.ts` itself.
+- **This was previously broken in two ways** — worth knowing, because the symptoms look like
+  ordinary styling bugs. `tailwind.config.ts` had no `darkMode` key, so Tailwind defaulted to
+  `media`: its ~550 `dark:` utilities followed the OS while PrimeVue followed a class nothing set,
+  and an OS-dark user got dark Tailwind surfaces behind light PrimeVue components. Separately,
+  `fullcalendar.css` targeted a bare `.dark`, so the dark calendar grid had never rendered at all.
+- **`useTheme()` is a module-level SINGLETON**, unlike every other composable here — the theme
+  belongs to the document, not to a component, and the header, the settings page and the boot
+  plugin all read and write the same state. It self-initializes on first call and is idempotent
+  after that. Specs therefore need `vi.resetModules()` + a dynamic `import()` per test, or state
+  leaks between them.
+- **`themeMode` is a writable computed whose setter is the only way in**, so persistence cannot be
+  forgotten by a caller assigning through `v-model`. `resolvedTheme` / `isDark` collapse `system`
+  against the live OS preference.
+- **The preference is device-local (localStorage), not a user preference on the server.** That is
+  deliberate: the theme has to apply on the login page before any token exists, and it has to
+  apply before the first paint, neither of which an API round-trip can do. It also means each
+  device keeps its own — which is usually what people want from a theme.
+- **No flash of the wrong theme.** An inline script in `app.head.script` (built in `nuxt.config.ts`)
+  sets the class synchronously before the stylesheet or the bundle load. It **imports its constants
+  from `utils/theme.ts`** so the storage key cannot drift, but its *logic* is necessarily duplicated
+  — keep it in step with `readStoredThemeMode` + `resolveTheme`. Anything that is not exactly
+  `'dark'` or `'light'` (junk, missing key) counts as `'system'` in both.
+- **Transitions are opt-in per switch**, not global: `useTheme()` adds `.theme-switching` for 200ms
+  around a change and `assets/css/theme.css` hangs the transition off that, under a
+  `prefers-reduced-motion` guard. It is deliberately NOT applied during startup — animating there
+  would mean transitioning *from* the wrong colours, i.e. reintroducing the flash.
+- **`color-scheme` is set alongside the class**, which is what makes scrollbars, native form
+  controls and the canvas behind the page follow the theme. There is no scrollbar CSS.
+- **`surface-*` was dead for the entire life of the repo.** It is used ~440 times but was never a
+  defined Tailwind colour, so every one of those utilities compiled to NOTHING — three quarters of
+  the app's `dark:` styling had no effect, and the surfaces you saw came from PrimeVue's component
+  CSS alone. It is now defined against CSS variables in `theme.css` carrying **PrimeVue's own
+  Material surface palette** (slate in light, zinc in dark, exactly as the preset defines it), so
+  the two systems cannot disagree. A missing colour produces no error, just no CSS, which is why
+  `utils/theme.spec.ts` asserts the scale exists and that every variable it references is defined.
+- **Muted text is `text-surface-500 dark:text-surface-400`.** Both halves of that pair matter:
+  surface-400 alone is 2.6:1 on a light card and surface-500 alone is 3.7:1 on a dark one, so
+  either on its own fails AA in one theme. 141 sites were missing the dark half and 11 had the pair
+  inverted (the worst of both). Contrast below AA now survives only where WCAG exempts it —
+  disabled controls and decorative empty-state icons (`text-surface-300 dark:text-surface-600`).
+
+### Accent colour (story 046)
+
+The second half of theming, and the one that persists DIFFERENTLY from the theme.
+
+- **The accent is a SERVER preference (`accent_color`), the theme is device-local.** The theme has
+  to apply on the login page before a token exists and before the first paint; the accent has
+  neither constraint and no reason to differ between a laptop and a phone. `utils/accent.ts` +
+  `composables/useAccentColor.ts`; the value lives in `stores/preferences.ts` like any other key.
+- **The server validates it by PATTERN, not by a closed set** — the first preference key that does.
+  See `patternPreferences` in `server/internal/domain/user/preference.go`. It is normalized
+  (trimmed, lower-cased) before validation and before storage, so `"#8B5CF6"` reads back as
+  `"#8b5cf6"` and the swatch row's equality check cannot be defeated by casing. Three-digit
+  shorthand is expanded CLIENT-side (`normalizeAccentColor`); the server rejects it.
+- **One hex drives two colour systems.** Tailwind `primary-*` reads `--accent-<shade>` CSS
+  variables holding `R G B` CHANNEL TRIPLETS — the triplet form is load-bearing, because the config
+  wraps them as `rgb(var(--accent-500) / <alpha-value>)` and the app really does use
+  `bg-primary-900/20`. PrimeVue gets the same ramp through `updatePrimaryPalette()`.
+- **The default ramp is Tailwind's blue spelled out, not generated.** `palette()` produces a good
+  scale but not an identical one (blue-700 comes out `#295bac` against Tailwind's `#1d4ed8`), so
+  generating the default would restyle every screen for users who never touch the setting.
+  `accentPalette()` special-cases it; custom colours are generated.
+- **There is a device-local CACHE (`calcard-accent`) that is a paint hint, never the truth.** It is
+  written only from a loaded server value, dropped on logout so the next account on a shared
+  machine does not inherit a colour, and deliberately NOT dropped at boot — `isAuthenticated` is
+  still false then because `initAuth()` has not run, and treating that as a logout wiped the cache
+  on every page load.
+- **A save applies optimistically and rolls back** if the server refuses, so the screen never shows
+  a colour the account does not have.
+
 ### Type System Gotchas
 
 **AddressBook vs Calendar field naming**: AddressBook types use GORM-style PascalCase (`ID`, `UUID`, `Name`, `CreatedAt`) because the backend returns raw GORM models. Calendar/Event types use snake_case (`id`, `name`, `created_at`) because they go through DTOs. This inconsistency comes from the backend — don't try to "fix" it on the frontend side.
@@ -262,7 +354,8 @@ Explicit imports from `@vueuse/core` or `pinia` will cause "module not found" er
 - **Framework**: Tailwind CSS 3 + PrimeVue 4.x Material preset.
 - **Colors**: Use `surface-*` scale (`surface-0` through `surface-950`). Always include `dark:` variants.
 - **Primary color**: Blue (`primary-50` through `primary-950`).
-- **Dark mode**: Toggled via `.dark-mode` class on the root element.
+- **Dark mode**: `.dark-mode` on `<html>`, driven by `useTheme()`. Tailwind and PrimeVue are both
+  keyed to that one class — see the **Theming (story 046)** section before touching either config.
 - **Icons**: PrimeIcons via `pi pi-*` classes (e.g., `pi pi-calendar`, `pi pi-users`, `pi pi-search`).
 - **Sidebar width**: `w-64` (256px). `hidden lg:flex` for responsive behavior.
 - **Border style**: `border-surface-200 dark:border-surface-800` for dividers.
@@ -334,6 +427,12 @@ pnpm gen:licenses               # Regenerate public/open-source.json (story 101)
 - **Mock auto-imports in tests** with `mockNuxtImport('useApi', () => …)` from `@nuxt/test-utils/runtime`. `$fetch` is a Nuxt global (not an unimport auto-import) — stub it with `vi.stubGlobal('$fetch', …)`.
 - **Store setup**: use `createTestingPinia({ stubActions: false })` from `@pinia/testing` (it sets the active pinia and keeps real action logic so you assert behavior, not that an action was called). Prefer importing this over `pinia` directly, which does not resolve under `vue-tsc`.
 - Keep specs hermetic: no network (mock `useApi`/`$fetch`), and shallow-mount heavy PrimeVue components (assert logic, not PrimeVue internals).
+- **`window.localStorage` does not work in this environment.** It is a plain empty object with no
+  `getItem`/`setItem`/`clear` — Node 22's built-in Web Storage shadows happy-dom's and stays inert
+  without `--localstorage-file` (hence the warning printed on every run). Use
+  `installMemoryStorage()` / `installThrowingStorage()` from `test/support/storage.ts`. The
+  throwing variant models Safari private mode and blocked cookies, where the property *access*
+  itself throws rather than returning null.
 
 The `NUXT_PUBLIC_API_BASE_URL` environment variable must point to the running backend (default: `http://localhost:8080`).
 

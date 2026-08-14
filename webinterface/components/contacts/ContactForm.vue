@@ -58,31 +58,31 @@
       <legend class="text-sm font-semibold text-surface-700 dark:text-surface-300 mb-1">Name</legend>
       <div class="grid grid-cols-2 gap-3">
         <div class="flex flex-col gap-1">
-          <label class="text-xs text-surface-500">Prefix</label>
+          <label class="text-xs text-surface-500 dark:text-surface-400">Prefix</label>
           <InputText v-model="form.prefix" placeholder="Mr., Dr." />
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-xs text-surface-500">Suffix</label>
+          <label class="text-xs text-surface-500 dark:text-surface-400">Suffix</label>
           <InputText v-model="form.suffix" placeholder="Jr., III" />
         </div>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div class="flex flex-col gap-1">
-          <label class="text-xs text-surface-500">First Name</label>
+          <label class="text-xs text-surface-500 dark:text-surface-400">First Name</label>
           <InputText v-model="form.given_name" placeholder="First name" :invalid="!!errors.name" />
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-xs text-surface-500">Last Name</label>
+          <label class="text-xs text-surface-500 dark:text-surface-400">Last Name</label>
           <InputText v-model="form.family_name" placeholder="Last name" :invalid="!!errors.name" />
         </div>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div class="flex flex-col gap-1">
-          <label class="text-xs text-surface-500">Middle Name</label>
+          <label class="text-xs text-surface-500 dark:text-surface-400">Middle Name</label>
           <InputText v-model="form.middle_name" placeholder="Middle name" />
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-xs text-surface-500">Nickname</label>
+          <label class="text-xs text-surface-500 dark:text-surface-400">Nickname</label>
           <InputText v-model="form.nickname" placeholder="Nickname" />
         </div>
       </div>
@@ -109,7 +109,7 @@
         />
         <button
           type="button"
-          class="p-2 rounded-lg text-surface-400 hover:text-yellow-500"
+          class="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:text-yellow-500"
           :class="{ 'text-yellow-500': email.primary }"
           title="Set as primary"
           @click="setPrimaryEmail(i)"
@@ -118,7 +118,7 @@
         </button>
         <button
           type="button"
-          class="p-2 rounded-lg text-surface-400 hover:text-red-500"
+          class="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:text-red-500"
           @click="form.emails.splice(i, 1)"
         >
           <i class="pi pi-minus-circle" />
@@ -154,7 +154,7 @@
         />
         <button
           type="button"
-          class="p-2 rounded-lg text-surface-400 hover:text-yellow-500"
+          class="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:text-yellow-500"
           :class="{ 'text-yellow-500': phone.primary }"
           title="Set as primary"
           @click="setPrimaryPhone(i)"
@@ -163,7 +163,7 @@
         </button>
         <button
           type="button"
-          class="p-2 rounded-lg text-surface-400 hover:text-red-500"
+          class="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:text-red-500"
           @click="form.phones.splice(i, 1)"
         >
           <i class="pi pi-minus-circle" />
@@ -195,7 +195,7 @@
           />
           <button
             type="button"
-            class="p-2 rounded-lg text-surface-400 hover:text-red-500"
+            class="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:text-red-500"
             @click="form.addresses.splice(i, 1)"
           >
             <i class="pi pi-minus-circle" />
@@ -241,7 +241,7 @@
         />
         <button
           type="button"
-          class="p-2 rounded-lg text-surface-400 hover:text-red-500"
+          class="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:text-red-500"
           @click="form.urls.splice(i, 1)"
         >
           <i class="pi pi-minus-circle" />
@@ -261,11 +261,11 @@
     <fieldset class="flex flex-col gap-3">
       <legend class="text-sm font-semibold text-surface-700 dark:text-surface-300 mb-1">Work</legend>
       <div class="flex flex-col gap-1">
-        <label class="text-xs text-surface-500">Organization</label>
+        <label class="text-xs text-surface-500 dark:text-surface-400">Organization</label>
         <InputText v-model="form.organization" placeholder="Company or organization" :invalid="!!errors.name" />
       </div>
       <div class="flex flex-col gap-1">
-        <label class="text-xs text-surface-500">Job Title</label>
+        <label class="text-xs text-surface-500 dark:text-surface-400">Job Title</label>
         <InputText v-model="form.title" placeholder="Job title" />
       </div>
     </fieldset>

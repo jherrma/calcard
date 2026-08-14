@@ -34,21 +34,22 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
     │   ├── auth/            # Login, register, setup, forgot/reset password, OAuth callback, verify
     │   ├── calendar/        # Calendar view with FullCalendar
     │   ├── contacts/        # Contact list with search, grouping, detail panel
-    │   └── search.vue       # Full global-search results page (?q=…)
+    │   ├── search.vue       # Full global-search results page (?q=…)
+    │   └── settings/        # Profile, appearance (theme + accent), calendar, credentials, sharing, admin, …
     ├── components/
     │   ├── auth/            # PasswordStrength
     │   ├── calendar/        # CalendarSidebar, CalendarToolbar, EventForm, Event*Dialog, RecurrenceScopeDialog
     │   ├── contacts/        # ContactsSidebar, ContactListItem, AlphabetNavigation
     │   ├── dashboard/       # WidgetCard, TodayAgendaCard, UpcomingEventsCard, MiniCalendarCard, RecentContacts*, QuickStatsCard
     │   ├── sharing/         # SharePanel, PublicLinkPanel, ShareDialog (calendars + address books)
-    │   └── common/          # AppHeader, AppSidebar, GlobalSearch, Search*, HighlightText, LoadingSpinner, SkeletonList
+    │   └── common/          # AppHeader, AppSidebar, GlobalSearch, Search*, HighlightText, ThemeToggle, LoadingSpinner, SkeletonList
     ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard, preferences, search, sharing
-    ├── composables/         # useApi (fetch wrapper), useAppToast
-    ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, …
+    ├── composables/         # useApi, useAppToast, useTheme (light/dark/system), useAccentColor — both singletons
+    ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, theme, accent, …
     ├── middleware/           # auth (requires login), guest (redirects if logged in)
     ├── layouts/             # default (sidebar + header), auth (centered card)
     ├── types/               # TypeScript interfaces: auth, calendar, contacts, search, api
-    └── plugins/             # PrimeVue service registration (ToastService, ConfirmationService)
+    └── plugins/             # PrimeVue service registration, theme boot (story 046)
 ```
 
 ## AGENT.md and CLAUDE.md Files

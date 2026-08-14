@@ -82,18 +82,18 @@ func TestGetPreferencesUseCase_Execute(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name     string
-		stored   []user.UserPreference
-		expected map[string]string
+		name   string
+		stored []user.UserPreference
+		// want holds only the keys that should DIFFER from the defaults; the
+		// assertion merges it onto user.DefaultPreferences(). Spelling out the
+		// whole map made every one of these cases fail whenever a new preference
+		// key was added, for a reason unrelated to what they test.
+		want map[string]string
 	}{
 		{
 			name:   "unset keys fall back to defaults",
 			stored: nil,
-			expected: map[string]string{
-				user.PrefDefaultEventDuration: "60",
-				user.PrefDefaultAllDay:        "false",
-				user.PrefTimeFormat:           "24h",
-			},
+			want:   nil,
 		},
 		{
 			name: "stored values override defaults, untouched keys keep theirs",
@@ -101,9 +101,8 @@ func TestGetPreferencesUseCase_Execute(t *testing.T) {
 				{UserID: 7, Key: user.PrefDefaultEventDuration, Value: "30"},
 				{UserID: 7, Key: user.PrefTimeFormat, Value: "12h"},
 			},
-			expected: map[string]string{
+			want: map[string]string{
 				user.PrefDefaultEventDuration: "30",
-				user.PrefDefaultAllDay:        "false",
 				user.PrefTimeFormat:           "12h",
 			},
 		},
@@ -114,11 +113,36 @@ func TestGetPreferencesUseCase_Execute(t *testing.T) {
 				{UserID: 7, Key: user.PrefDefaultEventDuration, Value: "37"}, // not in the allowed set
 				{UserID: 7, Key: user.PrefDefaultAllDay, Value: "true"},
 			},
-			expected: map[string]string{
-				user.PrefDefaultEventDuration: "60",
-				user.PrefDefaultAllDay:        "true",
-				user.PrefTimeFormat:           "24h",
+			want: map[string]string{
+				user.PrefDefaultAllDay: "true",
 			},
+		},
+		{
+			name: "a pattern-validated accent colour round-trips (story 046)",
+			stored: []user.UserPreference{
+				{UserID: 7, Key: user.PrefAccentColor, Value: "#8b5cf6"},
+			},
+			want: map[string]string{
+				user.PrefAccentColor: "#8b5cf6",
+			},
+		},
+		{
+			name: "an accent colour stored uppercase by an older build still reads back",
+			stored: []user.UserPreference{
+				{UserID: 7, Key: user.PrefAccentColor, Value: "#8B5CF6"},
+			},
+			// Normalized on read as well as on write, so the user's choice
+			// survives rather than silently reverting to the default blue.
+			want: map[string]string{
+				user.PrefAccentColor: "#8b5cf6",
+			},
+		},
+		{
+			name: "a malformed accent colour falls back to the default",
+			stored: []user.UserPreference{
+				{UserID: 7, Key: user.PrefAccentColor, Value: "rebeccapurple"},
+			},
+			want: nil,
 		},
 	}
 
@@ -131,7 +155,11 @@ func TestGetPreferencesUseCase_Execute(t *testing.T) {
 			prefs, err := NewGetPreferencesUseCase(repo, prefRepo).Execute(ctx, prefUserUUID)
 
 			require.NoError(t, err)
-			assert.Equal(t, tc.expected, prefs)
+			want := user.DefaultPreferences()
+			for k, v := range tc.want {
+				want[k] = v
+			}
+			assert.Equal(t, want, prefs)
 			repo.AssertExpectations(t)
 		})
 	}
@@ -204,6 +232,23 @@ func TestUpdatePreferencesUseCase_Rejections(t *testing.T) {
 			},
 			wantErr: ErrInvalidPreferenceValue,
 		},
+		{
+			name:    "accent colour with no hash",
+			updates: map[string]string{user.PrefAccentColor: "3b82f6"},
+			wantErr: ErrInvalidPreferenceValue,
+		},
+		{
+			name:    "accent colour as a CSS name",
+			updates: map[string]string{user.PrefAccentColor: "rebeccapurple"},
+			wantErr: ErrInvalidPreferenceValue,
+		},
+		{
+			name: "accent colour carrying a CSS injection attempt",
+			// The value ends up interpolated into a style property in the browser,
+			// so the pattern is the boundary that keeps it a colour.
+			updates: map[string]string{user.PrefAccentColor: "#3b82f6; background: url(evil)"},
+			wantErr: ErrInvalidPreferenceValue,
+		},
 	}
 
 	for _, tc := range tests {
@@ -239,15 +284,38 @@ func TestUpdatePreferencesUseCase_Execute(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		assert.Equal(t, map[string]string{
-			user.PrefDefaultEventDuration: "30",
-			user.PrefDefaultAllDay:        "true",
-			user.PrefTimeFormat:           "24h", // untouched key keeps its default
-		}, prefs)
+		// Built from the defaults rather than spelled out, so adding a preference
+		// key does not fail this test for a reason that has nothing to do with it.
+		// The point being asserted is that the two written keys took, and every
+		// untouched key kept its default.
+		want := user.DefaultPreferences()
+		want[user.PrefDefaultEventDuration] = "30"
+		want[user.PrefDefaultAllDay] = "true"
+		assert.Equal(t, want, prefs)
+		assert.Equal(t, "24h", prefs[user.PrefTimeFormat], "an untouched key keeps its default")
 		assert.Equal(t, 2, prefRepo.upserts)
 		for _, r := range prefRepo.rows {
 			assert.Equal(t, uint(7), r.UserID, "rows must be scoped to the caller")
 		}
+	})
+
+	t.Run("stores an accent colour in canonical lowercase (story 046)", func(t *testing.T) {
+		repo := new(mockUserRepo)
+		repo.On("GetByUUID", ctx, prefUserUUID).Return(prefTestUser(), nil)
+		prefRepo := &fakePrefRepo{}
+		uc := NewUpdatePreferencesUseCase(repo, prefRepo)
+
+		prefs, err := uc.Execute(ctx, prefUserUUID, map[string]string{
+			user.PrefAccentColor: "  #8B5CF6 ",
+		})
+
+		require.NoError(t, err)
+		// Normalized before validation AND before the write, so the row and the
+		// response agree and the UI's "is this one of my presets?" comparison
+		// cannot be defeated by casing.
+		assert.Equal(t, "#8b5cf6", prefs[user.PrefAccentColor])
+		require.Len(t, prefRepo.rows, 1)
+		assert.Equal(t, "#8b5cf6", prefRepo.rows[0].Value, "the stored row must be canonical too")
 	})
 
 	t.Run("a second update overwrites instead of duplicating the row", func(t *testing.T) {

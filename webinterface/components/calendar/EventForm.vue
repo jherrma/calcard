@@ -38,7 +38,7 @@
             />
             <span>{{ getCalendarName(value) }}</span>
           </div>
-          <span v-else class="text-surface-400">Select calendar</span>
+          <span v-else class="text-surface-500 dark:text-surface-400">Select calendar</span>
         </template>
       </Select>
       <small v-if="errors.calendar_id" class="text-red-500">{{ errors.calendar_id }}</small>

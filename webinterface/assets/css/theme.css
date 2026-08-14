@@ -1,0 +1,182 @@
+/*
+ * Theme switching (story 046).
+ *
+ * Loaded unlayered on purpose. Tailwind and PrimeVue both live in @layer
+ * (see the layer order in tailwind.css and `cssLayer` in nuxt.config.ts), and
+ * unlayered CSS outranks every layer, so these rules land on top without an
+ * !important arms race — apart from the transition shorthand below, which has to
+ * beat the per-element `transition-*` utilities already sprinkled through the
+ * layouts.
+ *
+ * Everything colour-related is otherwise expressed as Tailwind `dark:` variants
+ * and PrimeVue design tokens, both keyed to `.dark-mode` on <html>.
+ */
+
+/*
+ * Accent colour defaults (story 046).
+ *
+ * `R G B` channel triplets, not colours: tailwind.config.ts wraps them as
+ * `rgb(var(--accent-500) / <alpha-value>)` so opacity modifiers survive. These
+ * are Tailwind's blue scale verbatim — the value a user who never opens the
+ * setting sees — and `utils/accent.ts` overwrites them on <html> for anyone who
+ * picks something else.
+ */
+/*
+ * Surface scale (story 046).
+ *
+ * `surface-*` was used ~440 times in the templates but was NEVER a defined
+ * Tailwind colour, so every one of those utilities compiled to nothing — three
+ * quarters of the app's `dark:` styling had no effect whatsoever, and the
+ * surfaces you actually saw came from PrimeVue's component CSS alone.
+ *
+ * These values are PrimeVue's own Material surface palette, so the two systems
+ * cannot disagree: slate in light mode, zinc in dark, exactly as the preset
+ * defines it (`semantic.colorScheme.{light,dark}.surface`). Templates keep
+ * choosing the SHADE with their own `dark:` variants; this only swaps which
+ * neutral family those shades come from.
+ */
+:root {
+  --surface-0: 255 255 255;
+  --surface-50: 248 250 252;
+  --surface-100: 241 245 249;
+  --surface-200: 226 232 240;
+  --surface-300: 203 213 225;
+  --surface-400: 148 163 184;
+  --surface-500: 100 116 139;
+  --surface-600: 71 85 105;
+  --surface-700: 51 65 85;
+  --surface-800: 30 41 59;
+  --surface-900: 15 23 42;
+  --surface-950: 2 6 23;
+}
+
+html.dark-mode {
+  --surface-50: 250 250 250;
+  --surface-100: 244 244 245;
+  --surface-200: 228 228 231;
+  --surface-300: 212 212 216;
+  --surface-400: 161 161 170;
+  --surface-500: 113 113 122;
+  --surface-600: 82 82 91;
+  --surface-700: 63 63 70;
+  --surface-800: 39 39 42;
+  --surface-900: 24 24 27;
+  --surface-950: 9 9 11;
+}
+
+:root {
+  --accent-50: 239 246 255;
+  --accent-100: 219 234 254;
+  --accent-200: 191 219 254;
+  --accent-300: 147 197 253;
+  --accent-400: 96 165 250;
+  --accent-500: 59 130 246;
+  --accent-600: 37 99 235;
+  --accent-700: 29 78 216;
+  --accent-800: 30 64 175;
+  --accent-900: 30 58 138;
+  --accent-950: 23 37 84;
+}
+
+/*
+ * Animate a theme switch, and ONLY a theme switch.
+ *
+ * `.theme-switching` is added by useTheme() for ~200ms around a change and then
+ * removed, so we never carry a permanent global transition (which would animate
+ * every hover and every route change, and stack up on a month grid full of
+ * events). It is also never applied during startup: the whole point of the
+ * inline head script is that the first paint is already correct, and animating
+ * from the wrong colours would put the flash back.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease,
+      fill 200ms ease,
+      stroke 200ms ease !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+/*
+ * The page background before the app shell paints. Without this the browser
+ * canvas stays white behind a dark app for the first frames — the same flash the
+ * inline script prevents for the class, one level further down. `color-scheme`
+ * (set by applyResolvedTheme) already handles this in modern browsers; the
+ * explicit rules cover the rest and keep the two in sync.
+ *
+ * Expressed through the surface variables so it tracks the palette above
+ * automatically, including the slate→zinc swap.
+ */
+html {
+  background-color: rgb(var(--surface-50));
+}
+
+html.dark-mode {
+  background-color: rgb(var(--surface-950));
+}
+
+/*
+ * Text selection. Left to the browser it is a fixed blue that neither follows
+ * the accent nor has any guaranteed contrast against a dark surface — on the
+ * dark theme the default selection over light text was close to unreadable.
+ */
+::selection {
+  background-color: rgb(var(--accent-200));
+  color: rgb(var(--surface-900));
+}
+
+html.dark-mode ::selection {
+  background-color: rgb(var(--accent-800));
+  color: rgb(var(--surface-50));
+}
+
+/*
+ * Focus ring.
+ *
+ * A baseline for everything that does not already carry its own `focus:ring-*`
+ * utility — plain links, the skip target, PrimeVue internals. `:focus-visible`
+ * rather than `:focus`, so it appears for keyboard users without putting a ring
+ * around every clicked button.
+ *
+ * The ring is drawn in the accent with a surface-coloured gap, which is what
+ * keeps it visible in BOTH themes: a single dark outline vanishes on a dark
+ * surface, and a single light one vanishes on a light card.
+ */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent-500));
+  outline-offset: 2px;
+}
+
+/*
+ * Elevation in dark mode.
+ *
+ * Shadows are black at low alpha, which is all but invisible against a dark
+ * surface — cards, dialogs and dropdowns lose the separation from the page that
+ * the same shadow gives them in light mode. Deepening the alpha restores the
+ * cue without inventing a light-source that contradicts the rest of the UI.
+ *
+ * The selectors match the utilities the app actually uses (shadow-sm/lg on the
+ * shells and dropdowns) plus PrimeVue's card, whose shadow is set in the preset
+ * in nuxt.config.ts.
+ */
+html.dark-mode .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+}
+
+html.dark-mode .shadow-lg {
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.5),
+    0 4px 6px -4px rgb(0 0 0 / 0.5);
+}
+
+html.dark-mode .p-card {
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.5),
+    0 4px 6px -2px rgb(0 0 0 / 0.35);
+}

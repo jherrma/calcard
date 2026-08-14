@@ -10,7 +10,10 @@
 }
 
 :root {
-  --primary-color: #3b82f6;
+  /* Follows the user's accent (story 046) rather than pinning blue, so any
+     hand-written CSS reaching for it cannot drift from the rest of the UI.
+     The channel triplet itself is defined in theme.css. */
+  --primary-color: rgb(var(--accent-500));
 }
 
 body {

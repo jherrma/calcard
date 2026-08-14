@@ -3,7 +3,7 @@
     <!-- Trigger. PrimeVue's Tooltip directive is not registered in this project,
          so the affordance is a plain title/aria-label. -->
     <button
-      class="p-2 rounded-lg text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
+      class="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
       :title="`Search events and contacts (${shortcutLabel})`"
       aria-label="Search events and contacts"
       @click="openSearch"
@@ -23,7 +23,7 @@
     >
       <!-- Input row -->
       <div class="flex items-center gap-3 px-4 py-3 border-b border-surface-200 dark:border-surface-700">
-        <i class="pi pi-search text-surface-400" />
+        <i class="pi pi-search text-surface-500 dark:text-surface-400" />
         <input
           ref="inputRef"
           v-model="query"
@@ -45,14 +45,14 @@
         >
         <button
           v-if="query"
-          class="p-1.5 rounded-full text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800"
+          class="p-1.5 rounded-full text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800"
           title="Clear search"
           aria-label="Clear search"
           @click="clearQuery"
         >
           <i class="pi pi-times text-sm" />
         </button>
-        <kbd class="hidden sm:inline-block text-[0.625rem] px-1.5 py-0.5 rounded border border-surface-300 dark:border-surface-600 text-surface-400">
+        <kbd class="hidden sm:inline-block text-[0.625rem] px-1.5 py-0.5 rounded border border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400">
           ESC
         </kbd>
       </div>
@@ -63,7 +63,7 @@
         <!-- Loading (only when there is nothing to keep on screen) -->
         <div
           v-if="(searchStore.isLoading || isPending) && !searchStore.hasResults"
-          class="flex items-center justify-center gap-3 p-8 text-surface-500"
+          class="flex items-center justify-center gap-3 p-8 text-surface-500 dark:text-surface-400"
           data-testid="search-loading"
         >
           <ProgressSpinner style="width: 1.75rem; height: 1.75rem" stroke-width="4" />
@@ -73,7 +73,7 @@
         <!-- Recent searches (empty query) -->
         <div v-else-if="!isSearchable && searchStore.recentSearches.length > 0" class="p-2">
           <div class="flex items-center justify-between px-2 py-1">
-            <span class="text-xs font-semibold uppercase text-surface-400">Recent searches</span>
+            <span class="text-xs font-semibold uppercase text-surface-500 dark:text-surface-400">Recent searches</span>
             <button
               class="text-xs text-primary-600 dark:text-primary-400 hover:underline"
               @click="searchStore.clearRecentSearches()"
@@ -87,7 +87,7 @@
             class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800"
             @click="query = recent"
           >
-            <i class="pi pi-history text-surface-400 text-sm" />
+            <i class="pi pi-history text-surface-500 dark:text-surface-400 text-sm" />
             <span class="truncate">{{ recent }}</span>
           </button>
         </div>
@@ -95,9 +95,9 @@
         <!-- Empty state (nothing typed yet) -->
         <div v-else-if="!isSearchable" class="flex flex-col items-center gap-2 p-8 text-center">
           <i class="pi pi-search text-2xl text-surface-300 dark:text-surface-600" />
-          <p class="text-sm text-surface-500">Start typing to search events, contacts, calendars and address books.</p>
-          <p class="text-xs text-surface-400">At least {{ MIN_QUERY_LENGTH }} characters.</p>
-          <div class="flex flex-wrap justify-center gap-4 pt-2 text-xs text-surface-400">
+          <p class="text-sm text-surface-500 dark:text-surface-400">Start typing to search events, contacts, calendars and address books.</p>
+          <p class="text-xs text-surface-500 dark:text-surface-400">At least {{ MIN_QUERY_LENGTH }} characters.</p>
+          <div class="flex flex-wrap justify-center gap-4 pt-2 text-xs text-surface-500 dark:text-surface-400">
             <span><kbd class="search-kbd">↑</kbd><kbd class="search-kbd">↓</kbd> Navigate</span>
             <span><kbd class="search-kbd">Enter</kbd> Select</span>
             <span><kbd class="search-kbd">Tab</kbd> Switch category</span>
@@ -138,12 +138,12 @@
                 <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
                   <HighlightText :text="hit.event.summary || '(no title)'" :highlight="searchStore.query" />
                 </span>
-                <span class="block text-xs text-surface-500 truncate">
+                <span class="block text-xs text-surface-500 dark:text-surface-400 truncate">
                   {{ formatEventWhen(hit.event) }} · {{ hit.calendarName }}
                 </span>
               </span>
               <Tag v-if="isPastEvent(hit.event)" value="Past" severity="secondary" class="flex-shrink-0 text-xs" />
-              <span v-else class="text-xs text-surface-500 flex-shrink-0">{{ eventRelativeLabel(hit.event) }}</span>
+              <span v-else class="text-xs text-surface-500 dark:text-surface-400 flex-shrink-0">{{ eventRelativeLabel(hit.event) }}</span>
             </button>
             <SearchViewAll
               v-if="isTruncated(searchStore.results.events)"
@@ -177,7 +177,7 @@
                 <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
                   <HighlightText :text="hit.contact.formatted_name" :highlight="searchStore.query" />
                 </span>
-                <span class="block text-xs text-surface-500 truncate">
+                <span class="block text-xs text-surface-500 dark:text-surface-400 truncate">
                   <HighlightText :text="contactMetaLine(hit)" :highlight="searchStore.query" />
                 </span>
               </span>
@@ -208,7 +208,7 @@
                 <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
                   <HighlightText :text="cal.name" :highlight="searchStore.query" />
                 </span>
-                <span v-if="cal.description" class="block text-xs text-surface-500 truncate">
+                <span v-if="cal.description" class="block text-xs text-surface-500 dark:text-surface-400 truncate">
                   <HighlightText :text="cal.description" :highlight="searchStore.query" />
                 </span>
               </span>
@@ -234,12 +234,12 @@
               @click="selectAddressBook()"
               @mousemove="activeIndex = navIndex('addressBooks', i)"
             >
-              <i class="pi pi-book text-surface-400 text-sm flex-shrink-0" />
+              <i class="pi pi-book text-surface-500 dark:text-surface-400 text-sm flex-shrink-0" />
               <span class="flex-1 min-w-0">
                 <span class="block text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
                   <HighlightText :text="ab.Name" :highlight="searchStore.query" />
                 </span>
-                <span v-if="ab.Description" class="block text-xs text-surface-500 truncate">
+                <span v-if="ab.Description" class="block text-xs text-surface-500 dark:text-surface-400 truncate">
                   <HighlightText :text="ab.Description" :highlight="searchStore.query" />
                 </span>
               </span>
@@ -263,7 +263,7 @@
         <div v-else class="flex flex-col items-center gap-2 p-8 text-center" data-testid="search-no-results">
           <i class="pi pi-search text-2xl text-surface-300 dark:text-surface-600" />
           <p class="text-sm text-surface-600 dark:text-surface-300">No results for “{{ searchStore.query }}”</p>
-          <p class="text-xs text-surface-400">Try different keywords.</p>
+          <p class="text-xs text-surface-500 dark:text-surface-400">Try different keywords.</p>
         </div>
       </div>
     </Dialog>

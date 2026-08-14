@@ -26,7 +26,7 @@
           class="w-full max-w-md"
         >
           <template #value="{ value }">
-            <span v-if="value">{{ value.name }} <span class="text-surface-400 font-mono text-sm ml-1">({{ value.username }})</span></span>
+            <span v-if="value">{{ value.name }} <span class="text-surface-500 dark:text-surface-400 font-mono text-sm ml-1">({{ value.username }})</span></span>
           </template>
           <template #option="{ option }">
             <div v-if="option.action" class="flex items-center gap-2 text-primary-600 dark:text-primary-400">
@@ -35,7 +35,7 @@
             </div>
             <div v-else>
               <span>{{ option.name }}</span>
-              <span class="text-surface-400 font-mono text-sm ml-2">({{ option.username }})</span>
+              <span class="text-surface-500 dark:text-surface-400 font-mono text-sm ml-2">({{ option.username }})</span>
             </div>
           </template>
         </Select>

@@ -3,7 +3,7 @@
     <div class="flex items-start justify-between gap-4">
       <div>
         <h3 class="font-medium text-surface-900 dark:text-surface-100">Public link</h3>
-        <p class="text-sm text-surface-500">
+        <p class="text-sm text-surface-500 dark:text-surface-400">
           Anyone holding the link can subscribe to this calendar and read every event on it — no
           account, no sign-in. Events stay read-only.
         </p>
@@ -50,7 +50,7 @@
           <InputText :model-value="publicUrl" readonly class="flex-1 font-mono text-sm" />
           <Button icon="pi pi-copy" severity="secondary" title="Copy link" @click="copyUrl" />
         </div>
-        <p class="text-xs text-surface-500 mt-1">
+        <p class="text-xs text-surface-500 dark:text-surface-400 mt-1">
           Paste this into Google Calendar, Outlook, Apple Calendar or any app that subscribes to an
           iCal feed.
         </p>
@@ -65,7 +65,7 @@
           :disabled="store.isSaving"
           @click="confirmRegenerate"
         />
-        <p class="text-xs text-surface-500 mt-1">
+        <p class="text-xs text-surface-500 dark:text-surface-400 mt-1">
           Generates a new URL and invalidates the current one. Everyone already subscribed stops
           receiving updates until you send them the new link.
         </p>

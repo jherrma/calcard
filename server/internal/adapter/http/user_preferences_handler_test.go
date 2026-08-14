@@ -87,11 +87,9 @@ func TestUserHandler_Preferences(t *testing.T) {
 	t.Run("GET returns defaults when nothing is set", func(t *testing.T) {
 		resp, prefs := get(t, token)
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-		assert.Equal(t, map[string]string{
-			user.PrefDefaultEventDuration: "60",
-			user.PrefDefaultAllDay:        "false",
-			user.PrefTimeFormat:           "24h",
-		}, prefs)
+		// Compared against the domain's own default map rather than a literal, so
+		// adding a preference key does not fail this test for an unrelated reason.
+		assert.Equal(t, user.DefaultPreferences(), prefs)
 	})
 
 	t.Run("GET unauthorized", func(t *testing.T) {
@@ -105,11 +103,10 @@ func TestUserHandler_Preferences(t *testing.T) {
 			user.PrefTimeFormat:           "12h",
 		}})
 		require.Equal(t, fiber.StatusOK, resp.StatusCode)
-		assert.Equal(t, map[string]string{
-			user.PrefDefaultEventDuration: "30",
-			user.PrefDefaultAllDay:        "false",
-			user.PrefTimeFormat:           "12h",
-		}, prefs)
+		want := user.DefaultPreferences()
+		want[user.PrefDefaultEventDuration] = "30"
+		want[user.PrefTimeFormat] = "12h"
+		assert.Equal(t, want, prefs)
 
 		// Verify the DB, then that a follow-up GET reads the same values back.
 		stored, err := prefRepo.GetByKey(context.Background(), u.ID, user.PrefTimeFormat)
@@ -138,6 +135,21 @@ func TestUserHandler_Preferences(t *testing.T) {
 		assert.Equal(t, 1, count, "upsert must not create a duplicate row")
 	})
 
+	t.Run("PATCH normalizes an accent colour end to end (story 046)", func(t *testing.T) {
+		_, prefs, _ := patch(t, token, dto.UpdatePreferencesRequest{Preferences: map[string]string{
+			user.PrefAccentColor: "#8B5CF6",
+		}})
+		assert.Equal(t, "#8b5cf6", prefs[user.PrefAccentColor])
+
+		stored, err := prefRepo.GetByKey(context.Background(), u.ID, user.PrefAccentColor)
+		require.NoError(t, err)
+		require.NotNil(t, stored)
+		assert.Equal(t, "#8b5cf6", stored.Value, "the row must hold the canonical form")
+
+		_, reread := get(t, token)
+		assert.Equal(t, "#8b5cf6", reread[user.PrefAccentColor])
+	})
+
 	t.Run("PATCH rejections", func(t *testing.T) {
 		tests := []struct {
 			name    string
@@ -147,6 +159,8 @@ func TestUserHandler_Preferences(t *testing.T) {
 			{"bad duration", map[string]any{"preferences": map[string]string{user.PrefDefaultEventDuration: "37"}}},
 			{"bad all-day", map[string]any{"preferences": map[string]string{user.PrefDefaultAllDay: "yes"}}},
 			{"bad time format", map[string]any{"preferences": map[string]string{user.PrefTimeFormat: "military"}}},
+			{"accent colour without a hash", map[string]any{"preferences": map[string]string{user.PrefAccentColor: "3b82f6"}}},
+			{"accent colour as a CSS name", map[string]any{"preferences": map[string]string{user.PrefAccentColor: "rebeccapurple"}}},
 			{"empty map", map[string]any{"preferences": map[string]string{}}},
 			{"missing preferences object", map[string]any{}},
 		}

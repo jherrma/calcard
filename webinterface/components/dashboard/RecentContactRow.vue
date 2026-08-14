@@ -32,7 +32,7 @@
       <a
         v-if="primaryEmail"
         :href="'mailto:' + primaryEmail"
-        class="p-1.5 rounded-full text-surface-400 hover:text-primary-600 hover:bg-surface-200 dark:hover:bg-surface-700"
+        class="p-1.5 rounded-full text-surface-500 dark:text-surface-400 hover:text-primary-600 hover:bg-surface-200 dark:hover:bg-surface-700"
         :title="`Email ${primaryEmail}`"
         @click.stop
       >
@@ -41,7 +41,7 @@
       <a
         v-if="primaryPhone"
         :href="'tel:' + primaryPhone"
-        class="p-1.5 rounded-full text-surface-400 hover:text-primary-600 hover:bg-surface-200 dark:hover:bg-surface-700"
+        class="p-1.5 rounded-full text-surface-500 dark:text-surface-400 hover:text-primary-600 hover:bg-surface-200 dark:hover:bg-surface-700"
         :title="`Call ${primaryPhone}`"
         @click.stop
       >

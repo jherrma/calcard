@@ -38,7 +38,7 @@
         </div>
         <!-- No user directory is exposed by the API, so there is nothing to
              autocomplete against — say what the field accepts instead. -->
-        <p class="text-xs text-surface-500 mt-1">
+        <p class="text-xs text-surface-500 dark:text-surface-400 mt-1">
           Enter the exact email address or username of an existing account.
         </p>
       </div>
@@ -50,7 +50,7 @@
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-medium text-surface-700 dark:text-surface-300">
             Shared with
-            <span v-if="store.shares.length" class="text-surface-400">({{ store.shares.length }})</span>
+            <span v-if="store.shares.length" class="text-surface-500 dark:text-surface-400">({{ store.shares.length }})</span>
           </h3>
           <Button
             v-if="store.shares.length > 1"
@@ -90,7 +90,7 @@
 
           <div
             v-if="!store.sharesError && store.shares.length === 0"
-            class="text-center py-8 text-surface-500 text-sm"
+            class="text-center py-8 text-surface-500 dark:text-surface-400 text-sm"
           >
             This {{ noun }} is private — nobody else can see it.
           </div>
@@ -110,7 +110,7 @@
                 <div class="font-medium text-surface-900 dark:text-surface-100 truncate">
                   {{ share.shared_with.display_name || share.shared_with.username }}
                 </div>
-                <div class="text-sm text-surface-500 truncate">{{ share.shared_with.email }}</div>
+                <div class="text-sm text-surface-500 dark:text-surface-400 truncate">{{ share.shared_with.email }}</div>
               </div>
               <Select
                 :model-value="share.permission"

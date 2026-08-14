@@ -46,11 +46,17 @@ func (uc *GetPreferencesUseCase) Execute(ctx context.Context, userUUID string) (
 // Rows for keys this build no longer knows (or values that are no longer allowed
 // after the option set changed) are skipped rather than echoed back: the
 // response contract is "the known keys, each with a usable value".
+//
+// Values are normalized on the way out as well as on the way in, so a row
+// written by an older build in a non-canonical form (an uppercase hex colour)
+// still reads back as the setting the user made rather than silently reverting
+// to the default.
 func mergePreferences(stored []user.UserPreference) map[string]string {
 	prefs := user.DefaultPreferences()
 	for _, p := range stored {
-		if user.IsAllowedPreferenceValue(p.Key, p.Value) {
-			prefs[p.Key] = p.Value
+		v := user.NormalizePreferenceValue(p.Key, p.Value)
+		if user.IsAllowedPreferenceValue(p.Key, v) {
+			prefs[p.Key] = v
 		}
 	}
 	return prefs

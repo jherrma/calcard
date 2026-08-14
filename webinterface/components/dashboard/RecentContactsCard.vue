@@ -15,7 +15,7 @@
     <div v-else-if="contacts.length === 0" class="flex flex-col items-center gap-2 py-8 text-center">
       <i class="pi pi-user-plus text-3xl text-surface-300 dark:text-surface-600" />
       <p class="text-sm text-surface-600 dark:text-surface-400">No contacts yet</p>
-      <p class="text-xs text-surface-400 dark:text-surface-500">
+      <p class="text-xs text-surface-500 dark:text-surface-400">
         Add your first contact to see it here.
       </p>
       <Button

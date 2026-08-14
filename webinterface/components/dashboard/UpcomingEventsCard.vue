@@ -19,7 +19,7 @@
     <div v-else-if="events.length === 0" class="flex flex-col items-center gap-2 py-8 text-center">
       <i class="pi pi-calendar text-3xl text-surface-300 dark:text-surface-600" />
       <p class="text-sm text-surface-600 dark:text-surface-400">No upcoming events</p>
-      <p class="text-xs text-surface-400 dark:text-surface-500">
+      <p class="text-xs text-surface-500 dark:text-surface-400">
         Nothing scheduled for the rest of {{ horizonLabel }}.
       </p>
     </div>
@@ -47,7 +47,7 @@
             class="text-xs font-medium whitespace-nowrap flex-shrink-0"
             :class="item.isNear
               ? 'text-primary-600 dark:text-primary-400'
-              : 'text-surface-400 dark:text-surface-500'"
+              : 'text-surface-500 dark:text-surface-400'"
           >
             {{ item.relative }}
           </span>

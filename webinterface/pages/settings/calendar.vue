@@ -22,7 +22,7 @@
             option-value="value"
             class="w-full sm:w-64"
           />
-          <small class="text-surface-500">How long a new event lasts when you create one.</small>
+          <small class="text-surface-500 dark:text-surface-400">How long a new event lasts when you create one.</small>
         </div>
 
         <!-- Default all-day -->
@@ -33,7 +33,7 @@
               Create new events as all-day
             </label>
           </div>
-          <small class="text-surface-500">
+          <small class="text-surface-500 dark:text-surface-400">
             New events start with the all-day switch on. Dragging a time range in the week view still wins.
           </small>
         </div>
@@ -51,7 +51,7 @@
             :allow-empty="false"
             aria-labelledby="pref-time-format-label"
           />
-          <small class="text-surface-500">Applies to the calendar grid, event details and the time pickers.</small>
+          <small class="text-surface-500 dark:text-surface-400">Applies to the calendar grid, event details and the time pickers.</small>
         </div>
 
         <div class="flex items-center gap-3 pt-2">
