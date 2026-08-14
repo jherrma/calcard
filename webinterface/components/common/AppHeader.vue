@@ -21,6 +21,9 @@
       <!-- Global search (story 044) — trigger + dialog live together in the component -->
       <CommonGlobalSearch class="mr-1" />
 
+      <!-- Theme switcher (story 046) -->
+      <CommonThemeToggle class="mr-1" />
+
       <!-- User menu -->
       <div class="relative" ref="menuRef">
         <button
@@ -123,6 +126,7 @@ const pageTitle = computed(() => {
     '/contacts': 'Contacts',
     '/settings': 'Settings',
     '/settings/profile': 'Profile Settings',
+    '/settings/appearance': 'Appearance',
     '/settings/password': 'Change Password',
     '/settings/app-passwords': 'App Passwords',
     '/settings/caldav-credentials': 'CalDAV Credentials',

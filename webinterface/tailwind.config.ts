@@ -1,6 +1,13 @@
 import type { Config } from 'tailwindcss';
 
 export default {
+  // Story 046. Without this key Tailwind defaults to `media`, so every `dark:`
+  // utility followed the OS while PrimeVue followed its own `.dark-mode`
+  // selector — an OS-dark user got Tailwind's dark surfaces behind light
+  // PrimeVue components, and the in-app toggle could not have moved either half.
+  // Both now hang off the same class; see `utils/theme.ts`.
+  darkMode: ['selector', '.dark-mode'],
+
   content: [
     './components/**/*.{js,vue,ts}',
     './layouts/**/*.vue',

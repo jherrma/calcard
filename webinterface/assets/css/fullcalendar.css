@@ -1,4 +1,10 @@
-/* FullCalendar custom styles */
+/*
+ * FullCalendar custom styles.
+ *
+ * The dark rules below hang off `.dark-mode` on <html> — the one class PrimeVue,
+ * Tailwind and `utils/theme.ts` all agree on (story 046). They used to target a
+ * bare `.dark`, which nothing in the app ever set, so none of them had rendered.
+ */
 .fc {
   --fc-border-color: theme('colors.gray.200');
   --fc-today-bg-color: theme('colors.primary.50');
@@ -7,7 +13,7 @@
   --fc-list-event-hover-bg-color: theme('colors.gray.100');
 }
 
-.dark .fc {
+.dark-mode .fc {
   --fc-border-color: theme('colors.gray.700');
   --fc-today-bg-color: rgba(59, 130, 246, 0.1);
   --fc-page-bg-color: theme('colors.gray.900');
@@ -47,7 +53,7 @@
   color: theme('colors.gray.700');
 }
 
-.dark .fc .fc-daygrid-day-number {
+.dark-mode .fc .fc-daygrid-day-number {
   color: theme('colors.gray.300');
 }
 
@@ -56,7 +62,7 @@
   font-weight: 500;
 }
 
-.dark .fc .fc-col-header-cell-cushion {
+.dark-mode .fc .fc-col-header-cell-cushion {
   color: theme('colors.gray.400');
 }
 
@@ -64,8 +70,12 @@
   color: theme('colors.gray.500');
 }
 
-.dark .fc .fc-timegrid-slot-label-cushion {
-  color: theme('colors.gray.500');
+.dark-mode .fc .fc-timegrid-slot-label-cushion {
+  /* Lightened from the gray.500 this rule used to repeat verbatim from its light
+     counterpart. Against the dark grid that lands at roughly 3.0–3.7:1 depending
+     on which surface is behind it, short of the 4.5:1 these small hour labels
+     need; gray.400 is about 5.8–7:1. */
+  color: theme('colors.gray.400');
 }
 
 /* Now indicator */

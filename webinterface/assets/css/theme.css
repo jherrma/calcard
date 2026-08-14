@@ -1,0 +1,53 @@
+/*
+ * Theme switching (story 046).
+ *
+ * Loaded unlayered on purpose. Tailwind and PrimeVue both live in @layer
+ * (see the layer order in tailwind.css and `cssLayer` in nuxt.config.ts), and
+ * unlayered CSS outranks every layer, so these rules land on top without an
+ * !important arms race — apart from the transition shorthand below, which has to
+ * beat the per-element `transition-*` utilities already sprinkled through the
+ * layouts.
+ *
+ * Everything colour-related is otherwise expressed as Tailwind `dark:` variants
+ * and PrimeVue design tokens, both keyed to `.dark-mode` on <html>.
+ */
+
+/*
+ * Animate a theme switch, and ONLY a theme switch.
+ *
+ * `.theme-switching` is added by useTheme() for ~200ms around a change and then
+ * removed, so we never carry a permanent global transition (which would animate
+ * every hover and every route change, and stack up on a month grid full of
+ * events). It is also never applied during startup: the whole point of the
+ * inline head script is that the first paint is already correct, and animating
+ * from the wrong colours would put the flash back.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease,
+      fill 200ms ease,
+      stroke 200ms ease !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+/*
+ * The page background before the app shell paints. Without this the browser
+ * canvas stays white behind a dark app for the first frames — the same flash the
+ * inline script prevents for the class, one level further down. `color-scheme`
+ * (set by applyResolvedTheme) already handles this in modern browsers; the
+ * explicit rules cover the rest and keep the two in sync.
+ */
+html {
+  background-color: #f8fafc; /* surface-50, matching the layout shells */
+}
+
+html.dark-mode {
+  background-color: #020617; /* surface-950 */
+}

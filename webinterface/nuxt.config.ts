@@ -1,5 +1,30 @@
 import { definePreset } from '@primeuix/themes';
 import Material from '@primeuix/themes/material';
+import { DARK_MODE_CLASS, DARK_MEDIA_QUERY, DEFAULT_THEME_MODE, THEME_STORAGE_KEY } from './utils/theme';
+
+/**
+ * Flash-prevention script, inlined into <head> (story 046).
+ *
+ * `ssr: false` means index.html paints the shell before any bundle executes, so
+ * a dark-mode user would see a white page for as long as the JS takes to load
+ * and mount. This runs first, synchronously, and sets the class the CSS is
+ * already keyed to — so the first paint is correct and nothing has to animate.
+ *
+ * It imports its constants from `utils/theme.ts` rather than repeating them,
+ * because a silent disagreement over the storage key would look exactly like
+ * "the toggle doesn't persist". The logic still has to be duplicated (this
+ * cannot import at runtime), so keep it in step with `readStoredThemeMode` +
+ * `resolveTheme`: any value that is not exactly 'dark' or 'light' — including
+ * junk and a missing key — is treated as 'system'.
+ */
+const themeInitScript = `
+(function(){try{
+var m=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})||${JSON.stringify(DEFAULT_THEME_MODE)};
+var d=m==='dark'||(m!=='light'&&window.matchMedia(${JSON.stringify(DARK_MEDIA_QUERY)}).matches);
+if(d){document.documentElement.classList.add(${JSON.stringify(DARK_MODE_CLASS)});}
+document.documentElement.style.colorScheme=d?'dark':'light';
+}catch(e){}})();
+`.trim();
 
 const MyPreset = definePreset(Material, {
     semantic: {
@@ -74,7 +99,8 @@ export default defineNuxtConfig({
     },
   },
 
-  css: ['primeicons/primeicons.css'],
+  // theme.css is unlayered so it outranks the Tailwind/PrimeVue layers above.
+  css: ['primeicons/primeicons.css', '~/assets/css/theme.css'],
 
   tailwindcss: {
     cssPath: '~/assets/css/tailwind.css',
@@ -113,6 +139,11 @@ export default defineNuxtConfig({
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap' },
+      ],
+      script: [
+        // Must stay first and stay synchronous — it only helps if it runs before
+        // the browser paints the shell.
+        { innerHTML: themeInitScript, tagPosition: 'head' },
       ],
     },
   },

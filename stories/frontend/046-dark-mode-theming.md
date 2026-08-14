@@ -5,58 +5,87 @@
 **I want to** switch between light and dark themes
 **So that** I can use the application comfortably in different lighting conditions and according to my preferences
 
-## Implementation status (audited 2026-08-04)
+## Implementation status (toggle shipped 2026-08-14; audited 2026-08-04)
 
-**The styling exists; the switch does not.** `nuxt.config.ts` sets
-`darkModeSelector: '.dark-mode'` and components carry **551 `dark:` utility usages** — but nothing
-in the frontend ever adds that class to the document, and `stores/preferences.ts` holds only
-`default_event_duration`, `default_all_day` and `time_format`. So every dark variant in the app is
-currently unreachable: no user has ever seen it, and none of the "Dark Mode Styles" boxes below can
-honestly be ticked even though the work behind them is mostly done.
+**The toggle half of this story is done. The accent-colour half is not started.**
 
-What remains is therefore small and well-defined:
+### What shipped
 
-1. A `useTheme()` composable + toggle (light / dark / system) and a persisted preference.
-2. Setting `.dark-mode` on the root element early enough to avoid a flash.
-3. Then a pass over the existing `dark:` styles to confirm they actually hold up.
+`useTheme()` (`composables/useTheme.ts`) plus `utils/theme.ts`, `components/common/ThemeToggle.vue`,
+`pages/settings/appearance.vue`, `plugins/theme.client.ts` and `assets/css/theme.css`. The switcher
+sits in `AppHeader` (so on the default and settings shells) and in the auth layout, so it works
+logged out. The mode persists in `localStorage` under `calcard-theme`, and an inline script in
+`nuxt.config.ts`'s `app.head` applies the class before first paint. Covered by
+`utils/theme.spec.ts`, `composables/useTheme.spec.ts` and `components/common/ThemeToggle.spec.ts`.
 
-Note the sketch below uses `.dark` and `[data-theme]`; the app is wired for **`.dark-mode`**
-(PrimeVue's `darkModeSelector`). Follow the code, not the sketch. The **Color Customization**
-group (accent picker, presets, per-user persistence) has no counterpart in the code at all and is
-the genuinely new work in this story — it also needs a preference key, since the story's
-localStorage-only approach would not follow the user across devices.
+### Correction to the 2026-08-04 audit
+
+That audit said dark mode was entirely unreachable. That was **half right, and the wrong half was
+the interesting one**:
+
+- `tailwind.config.ts` had no `darkMode` key, so Tailwind fell back to its `media` default. The
+  551 `dark:` utilities were therefore live all along for anyone whose OS was set to dark — while
+  PrimeVue, keyed to a `.dark-mode` class nobody set, stayed light. The real bug was not "no dark
+  mode" but **a half-dark app**, and no toggle could have fixed it without unifying the selector
+  first. It is now `darkMode: ['selector', '.dark-mode']`.
+- `assets/css/fullcalendar.css` targeted a bare `.dark` — a class neither strategy ever produced —
+  so the dark calendar grid genuinely had never rendered. Ported to `.dark-mode`.
+- `utils/theme.spec.ts` now asserts all four places agree on the class, since nothing else would
+  notice them drifting apart again.
+
+**Persistence is deliberately device-local, not a server preference.** The theme has to apply on
+the login page before a token exists, and before the first paint — neither of which an API call
+can do. The accent colour has no such constraint and probably *should* be a server preference.
+
+### What is left
+
+1. The **Color Customization** group below: accent picker, presets, and palette generation for the
+   PrimeVue and Tailwind primary scales. Genuinely new work; nothing in the code corresponds to it.
+2. A visual pass over the now-reachable dark styles — contrast ratios, focus rings, elevation. The
+   unticked boxes under "Dark Mode Styles" and "Visual Consistency" are **unaudited, not known
+   broken**; they belong with story 047's axe pass, which should now run in both themes.
+
+Note the sketch below uses `.dark` and `[data-theme]`; the app is wired for **`.dark-mode`**.
+Follow the code, not the sketch.
 
 ## Acceptance Criteria
 
 ### Theme Toggle
-- [ ] Theme toggle button in header/settings
-- [ ] Three options: Light, Dark, System (auto)
-- [ ] System option follows OS preference
-- [ ] Theme persists across sessions (localStorage)
-- [ ] Smooth transition when switching themes
-- [ ] No flash of wrong theme on page load
+- [x] Theme toggle button in header/settings — `components/common/ThemeToggle.vue` in `AppHeader` and the auth layout, plus `pages/settings/appearance.vue`
+- [x] Three options: Light, Dark, System (auto) — `THEME_OPTIONS` in `utils/theme.ts`, rendered as a `menuitemradio` group
+- [x] System option follows OS preference — live, via a `matchMedia` listener held for the app's lifetime
+- [x] Theme persists across sessions (localStorage) — key `calcard-theme`; an unreadable or junk value degrades to `system`
+- [x] Smooth transition when switching themes — `.theme-switching` for 200ms, under `prefers-reduced-motion`; never on startup
+- [x] No flash of wrong theme on page load — inline `app.head` script, verified present at byte ~400 of the generated `index.html`, ahead of both the stylesheet and the bundle
 
 ### Dark Mode Styles
-- [ ] All components properly styled for dark mode
-- [ ] Calendar colors adjusted for dark backgrounds
-- [ ] Form inputs visible and readable
-- [ ] Sufficient contrast ratios (WCAG AA)
-- [ ] Images/icons adapt or have dark variants
-- [ ] Scrollbars styled for dark mode
+- [x] All components properly styled for dark mode — 553 `dark:` utilities plus PrimeVue's dark tokens, both now keyed to `.dark-mode`
+- [x] Calendar colors adjusted for dark backgrounds — `assets/css/fullcalendar.css`, which had never rendered before the selector fix
+- [x] Form inputs visible and readable — PrimeVue design tokens, plus `color-scheme` for native controls
+- [ ] Sufficient contrast ratios (WCAG AA) — **unaudited**, not known broken; one instance was fixed (the timegrid hour labels repeated their light-theme gray at ~3:1). Belongs with 047's axe pass
+- [x] Images/icons adapt or have dark variants — icons are PrimeIcons webfont glyphs and inherit `currentColor`. The app ships no raster UI chrome: `public/` holds only a favicon, and every `<img>` in the tree is a user-supplied contact photo
+- [x] Scrollbars styled for dark mode — via `color-scheme` on the root, which is also what themes native controls and the canvas. No scrollbar CSS of our own
 
 ### Color Customization
+
+Not started — this is the remaining half of the story. Nothing in the code corresponds to any of it.
+
 - [ ] Primary accent color customizable
 - [ ] Calendar colors visible in both themes
 - [ ] Color picker for accent color in settings
 - [ ] Preset color options available
-- [ ] Custom colors persist per user
+- [ ] Custom colors persist per user — unlike the theme, this should be a *server* preference (`user_preferences`), so it follows the account rather than the device
 
 ### Visual Consistency
+
+**Unaudited, not known broken.** These are properties of the existing `dark:` styles, which only
+became reachable on 2026-08-14; nobody has yet looked at the result.
+
 - [ ] Consistent shadows and elevation in dark mode
 - [ ] Border colors appropriate for each theme
 - [ ] Focus states visible in both themes
 - [ ] Selection highlights work in both themes
-- [ ] Charts and graphs adapt to theme
+- [ ] Charts and graphs adapt to theme — no charts exist in the app today
 
 ## Technical Details
 
