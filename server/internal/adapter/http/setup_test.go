@@ -20,6 +20,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
+	"github.com/jherrma/caldav-server/internal/usecase/mcptoken"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
@@ -95,6 +96,12 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
 	getPreferencesUC := userusecase.NewGetPreferencesUseCase(userRepo, userPrefRepo)
 	updatePreferencesUC := userusecase.NewUpdatePreferencesUseCase(userRepo, userPrefRepo)
+
+	// MCP Access Token Use Cases (story 104)
+	mcpTokenRepo := repository.NewMCPTokenRepository(db.DB())
+	createMCPTokenUC := mcptoken.NewCreateUseCase(mcpTokenRepo, securityLogger)
+	listMCPTokenUC := mcptoken.NewListUseCase(mcpTokenRepo)
+	revokeMCPTokenUC := mcptoken.NewRevokeUseCase(mcpTokenRepo, securityLogger)
 
 	// App Password Use Cases
 	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo, securityLogger)
@@ -176,6 +183,8 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		cfg,
 	)
 
+	mcpTokenHandler := NewMCPTokenHandler(createMCPTokenUC, listMCPTokenUC, revokeMCPTokenUC)
+
 	healthHandler := NewHealthHandler(db)
 
 	// Routes
@@ -222,6 +231,12 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	appPwdGroup := api.Group("/app-passwords", Authenticate(jwtManager, userRepo))
 	appPwdGroup.Get("/", appPwdHandler.List)
 	appPwdGroup.Delete("/:id", appPwdHandler.Revoke)
+
+	// MCP Access Token Routes
+	mcpTokenGroup := api.Group("/mcp-tokens", Authenticate(jwtManager, userRepo))
+	mcpTokenGroup.Post("/", mcpTokenHandler.Create)
+	mcpTokenGroup.Get("/", mcpTokenHandler.List)
+	mcpTokenGroup.Delete("/:id", mcpTokenHandler.Revoke)
 
 	// OAuth Routes
 	oauthGroup := api.Group("/auth/oauth")

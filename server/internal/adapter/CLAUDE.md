@@ -8,10 +8,24 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Handles HTTP/REST communication using the Fiber framework.
 - **Key Components**:
-  - **Handlers**: One handler per domain area — `auth_handler.go`, `oauth_handler.go`, `user_handler.go`, `system_handler.go`, `calendar_handler.go`, `event_handler.go`, `addressbook_handler.go`, `contact_handler.go`, `calendar_share_handler.go`, `addressbook_share_handler.go`, `calendar_public_handler.go`, `public_calendar_handler.go`, `app_password_handler.go`, `caldav_credential_handler.go`, `carddav_credential_handler.go`, `import_handler.go`, `backup_handler.go`, `health.go`, `about_handler.go` (open-source attribution), `search_handler.go` (unified search, #156).
+  - **Handlers**: One handler per domain area — `auth_handler.go`, `oauth_handler.go`, `user_handler.go`, `system_handler.go`, `calendar_handler.go`, `event_handler.go`, `addressbook_handler.go`, `contact_handler.go`, `calendar_share_handler.go`, `addressbook_share_handler.go`, `calendar_public_handler.go`, `public_calendar_handler.go`, `app_password_handler.go`, `caldav_credential_handler.go`, `carddav_credential_handler.go`, `import_handler.go`, `backup_handler.go`, `mcp_token_handler.go` (MCP access tokens, #104), `health.go`, `about_handler.go` (open-source attribution), `search_handler.go` (unified search, #156).
   - **DTOs** (`dto/`): Data Transfer Objects for auth, user, contact, addressbook, event, and credentials.
   - **Middleware**: `auth_middleware.go` (JWT verification), `rate_limiter.go`.
   - **Responses**: `response.go` — `SuccessResponse()` wraps most responses in `{ "status": "ok", "data": ... }`. **Exception**: AddressBook and Contact handlers return raw JSON.
+
+### [mcp/](mcp/)
+
+- **Purpose**: Model Context Protocol server (story 104) — a JSON-RPC 2.0 tool/resource surface over Streamable HTTP at `/mcp`, so an AI assistant can read and manage the caller's calendars and contacts.
+- **Key Components**:
+  - `protocol.go` — JSON-RPC and MCP message types, protocol-version negotiation, the handshake `instructions` handed to the model.
+  - `errors.go` — JSON-RPC error codes and response constructors.
+  - `server.go` — `Deps` (the use cases the tools delegate to), the tool registry, and the method dispatcher.
+  - `handler.go` — Fiber transport: bearer authentication (MCP token or JWT), `POST` (JSON-RPC, single or batch), `GET` (manifest or SSE stream), `DELETE` (terminate session).
+  - `session.go` — In-memory `Mcp-Session-Id` store. Sessions are bound to a user, so a leaked id cannot be used by another account.
+  - `access.go` — `callContext` plus the permission helpers, mirroring the HTTP handlers exactly.
+  - `tools_calendar.go`, `tools_contact.go`, `tools_scheduling.go` — the 13 advertised tools.
+  - `resources.go` — `calendars://list`, `contacts://list`, `calendars://{id}/events`, `contacts://{id}`.
+- **Invariant**: this package owns **no** persistence, queries or permission logic. Every tool calls the same use case the REST handler does and resolves access through the same repository methods, so MCP can never reach data REST would refuse. A tool that reaches past a use case is a bug, not an optimization.
 
 ### [repository/](repository/)
 
@@ -24,6 +38,7 @@ The adapter layer is responsible for translating data between the application's 
   - `addressbook_repository.go` — AddressBook and contact persistence (with pagination and search).
   - `app_password_repo.go` — App password storage.
   - `caldav_credential_repo.go`, `carddav_credential_repo.go` — DAV credential storage.
+  - `mcp_token_repo.go` — MCP access-token storage, looked up by SHA-256 of the presented secret (#104).
   - `calendar_share_repo.go`, `addressbook_share_repo.go` — Sharing persistence.
   - `oauth_connection_repo.go` — OAuth provider link storage.
   - `system_setting_repo.go` — System settings persistence.

@@ -69,6 +69,10 @@ func runTests(m *testing.M) (int, error) {
 			MaxRequestSize: 10 * 1024 * 1024,
 			RequestTimeout: 30 * time.Second,
 		},
+		// MCP defaults to enabled in config.Load, but this Config is built as a
+		// literal, so the flag has to be set explicitly or /mcp is never routed
+		// and mcp_test.go would be asserting against the SPA catch-all.
+		MCP: config.MCPConfig{Enabled: true, Requests: 120},
 	}
 
 	db, err := database.New(cfg)

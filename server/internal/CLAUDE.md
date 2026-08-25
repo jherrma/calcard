@@ -30,13 +30,15 @@ This directory contains the core business logic and implementation details of th
   - `sharing/` — Calendar and address book share create/list/update/revoke.
   - `importexport/` — Calendar import, contact import, backup export.
   - `about/` — Open-source attribution list (embedded, generated manifest).
+  - `mcptoken/` — Mint, list, revoke and verify the long-lived bearer tokens MCP clients authenticate with (story 104).
 - **Dependencies**: Only depends on `domain`.
 
 ### [adapter/](adapter/)
 
 - **Purpose**: Translates data between the internal layers and the external world.
 - **Contents**:
-  - `http/` — REST handlers (auth, user, system, calendar, event, addressbook, contact, sharing, app password, credentials, import/export, health), DTOs, middleware (auth, rate limiter).
+  - `http/` — REST handlers (auth, user, system, calendar, event, addressbook, contact, sharing, app password, credentials, MCP tokens, import/export, health), DTOs, middleware (auth, rate limiter).
+  - `mcp/` — Model Context Protocol server (story 104): JSON-RPC dispatcher, Streamable HTTP transport, tools and resources. A facade over the existing use cases — no persistence or permission logic of its own.
   - `repository/` — GORM implementations for all domain repository interfaces (~16 repos).
   - `auth/` — JWT, Basic Auth (for DAV clients), OAuth (OIDC).
   - `middleware/` — CORS, rate limiting, security headers.

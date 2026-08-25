@@ -36,7 +36,7 @@ webinterface/
 │   ├── contacts/
 │   │   └── index.vue        # Contact list with search, grouping, detail panel
 │   ├── search.vue           # Full global-search results page (?q=…), uncapped
-│   └── settings/            # Profile, password, credentials, connections, import/export, admin, danger
+│   └── settings/            # Profile, password, credentials, MCP access, connections, import/export, admin, danger
 │       ├── about.vue        # Open Source Attribution (story 101)
 │       └── appearance.vue   # Theme + accent colour picker (story 046)
 ├── components/              # Auto-imported by Nuxt (directory prefix = component name)
@@ -369,6 +369,26 @@ The second half of theming, and the one that persists DIFFERENTLY from the theme
 Both manifests are COMMITTED — the page works without ever running a generator. Re-run both after a dependency change; their output is deterministic (sorted, no timestamps), so an unchanged dependency set yields an empty diff. `server/Dockerfile` re-runs both but tolerates failure, since the committed files are authoritative.
 
 A license of `"unknown"` means it could not be detected/was not declared — never render it as "unlicensed". The generators' `note` field carries that caveat and the page prints it.
+
+### MCP Access (story 104)
+
+`pages/settings/mcp.vue` mints and revokes the bearer tokens an AI assistant uses against the
+server's `/mcp` endpoint. It has no Pinia store — three `useApi()` calls are the whole surface:
+
+- `GET /api/v1/mcp-tokens` → `{ tokens: MCPToken[] }` (raw JSON, no `{status,data}` envelope).
+- `POST /api/v1/mcp-tokens` → `MCPTokenCreateResponse`. **The `token` field is the only time the
+  secret exists**: the server stores a SHA-256 and cannot reproduce it. The post-create panel is
+  therefore not a nicety — losing it strands the user with an unusable token.
+- `DELETE /api/v1/mcp-tokens/:id` → 204.
+
+Two things that look cosmetic but are not:
+
+- **The endpoint shown to the user is `${apiBaseUrl || window.location.origin}/mcp`** — NOT under
+  `/api/v1`. MCP addresses one URL that clients are configured with directly. A wrong URL here
+  makes every client fail with no diagnosis, which is why `mcp.spec.ts` pins it.
+- **A failed load renders an error with a Retry, never the empty state.** "No MCP tokens yet" on a
+  failed request is a false statement about the account and hides the very token the user may have
+  come to revoke — the same rule `pages/settings/sharing.vue` follows.
 
 ## Nuxt Configuration
 

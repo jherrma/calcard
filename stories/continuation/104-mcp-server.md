@@ -8,11 +8,48 @@ Model Context Protocol (MCP) Server for AI-Assisted Calendar and Contact Managem
 
 As a user, I want CalCard to expose an MCP server so that AI assistants (Claude, etc.) can discover and interact with my calendars and contacts through a standardized protocol. This enables natural language calendar management, contact lookups, and scheduling workflows from any MCP-compatible client.
 
-## Implementation status (audited 2026-08-04)
+## Implementation status (implemented 2026-08-25)
 
-**Nothing implemented.** No `/mcp` route, no JSON-RPC transport. The tool surface it describes maps
-onto use cases that already exist (calendar/event/contact CRUD, unified search), so the work is
-the protocol layer plus per-session auth scoping — not new business logic.
+**Done.** `internal/adapter/mcp/` holds the JSON-RPC dispatcher, the Streamable HTTP transport, 13
+tools and 4 resources; `internal/usecase/mcptoken/` holds the credential. Wired in `routes.go`
+behind `cfg.MCP.Enabled` (default true).
+
+Everything in "Acceptance Criteria" and "Definition of Done" below is met, with these deliberate
+departures from the sketch — read them before "fixing" the code to match the prose above:
+
+- **Authentication is a dedicated MCP access token**, not (only) the JWT the story assumed. An
+  access token lives 10 minutes, which is useless for a client configured once with a static
+  `Authorization` header; app passwords were rejected too, because they are scoped to CalDAV/CardDAV
+  and widening them would silently grant every existing DAV credential a full read/write tool
+  surface. `user.MCPToken` stores a unique-indexed SHA-256 of a 256-bit random secret (not bcrypt:
+  the client presents only the opaque string, so it must be findable from that alone). JWTs are
+  still accepted, as specified. Minted and revoked at `/api/v1/mcp-tokens`, UI at
+  **Settings → MCP Access**.
+- **Protocol version is `2025-06-18`**, not the story's `2025-03-26`; `2025-03-26` and `2024-11-05`
+  are still accepted, and an unrecognised version is answered with ours rather than refused, so a
+  client newer than this code can still connect.
+- **Tools answer with JSON, not the prose the examples show.** "Event 'Team Standup' created
+  successfully" leaves the model with no id to update or delete it by, forcing a re-list after every
+  write. JSON keeps ids, permissions and timestamps addressable.
+- **Session state lives in `adapter/mcp/session.go`, not `usecase/mcp/session.go`.** An
+  `Mcp-Session-Id` is transport state; putting it in the use-case layer would put an HTTP concern
+  inside the layer that must not know about HTTP.
+- **`GET /mcp` serves both** the manifest the story asks for and the SSE notification stream, chosen
+  by `Accept: text/event-stream`. The stream is real but carries only keep-alives — there is no
+  change feed yet — and is bounded by the server's write timeout, since fasthttp applies that to the
+  whole streamed response. `resources` therefore does not advertise `subscribe`.
+- **`find_free_slots` ignores all-day events by default** (`include_all_day` opts in). Birthdays and
+  holidays would otherwise wipe out entire days, which is the opposite of useful.
+- **No Go MCP SDK was added.** The protocol subset is small and the SDKs assume `net/http`, which
+  would need an adapter into Fiber v3 for no gain.
+
+The tool surface is a facade: every tool calls the same use case the REST handler calls and resolves
+permissions through the same `GetUserPermission` methods. That is the invariant to preserve — an MCP
+tool that queries or authorizes on its own is a way around the sharing model.
+
+Tests: `internal/adapter/mcp/*_test.go` (tools, protocol, resources, transport, sessions),
+`internal/usecase/mcptoken/token_test.go`, `internal/adapter/http/mcp_token_handler_test.go`,
+`integration/mcp_test.go` (full lifecycle over a real socket), `webinterface/pages/settings/mcp.spec.ts`.
 
 ## Acceptance Criteria
 

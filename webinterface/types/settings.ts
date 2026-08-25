@@ -89,3 +89,33 @@ export type TimeFormat = '12h' | '24h';
 export interface PreferencesResponse {
   preferences: Record<string, string>;
 }
+
+// MCP access tokens (story 104). These authenticate MCP clients against the
+// `/mcp` endpoint; unlike the JWT the web UI holds, they are long-lived and
+// revoked individually.
+//
+// There is no `token` field here on purpose: the secret exists only in
+// MCPTokenCreateResponse, which the server can produce exactly once.
+export interface MCPToken {
+  id: string;
+  name: string;
+  token_prefix: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  last_used_ip: string;
+  created_at: string;
+}
+
+export interface MCPTokenListResponse {
+  tokens: MCPToken[];
+}
+
+export interface MCPTokenCreateResponse {
+  id: string;
+  name: string;
+  /** The full secret. Shown once, never retrievable again. */
+  token: string;
+  token_prefix: string;
+  expires_at: string | null;
+  created_at: string;
+}

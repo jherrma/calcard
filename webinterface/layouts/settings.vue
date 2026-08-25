@@ -142,6 +142,7 @@ const navItems: SettingsNavItem[] = [
   { to: '/settings/app-passwords', label: 'App Passwords', icon: 'pi pi-key' },
   { to: '/settings/caldav-credentials', label: 'CalDAV Credentials', icon: 'pi pi-calendar' },
   { to: '/settings/carddav-credentials', label: 'CardDAV Credentials', icon: 'pi pi-id-card' },
+  { to: '/settings/mcp', label: 'MCP Access', icon: 'pi pi-sparkles' },
   { to: '/settings/connections', label: 'Connected Accounts', icon: 'pi pi-link' },
   { to: '/settings/sharing', label: 'Shared with me', icon: 'pi pi-users' },
   { to: '/settings/import-export', label: 'Import & Export', icon: 'pi pi-arrow-right-arrow-left' },
