@@ -31,11 +31,23 @@ import (
 	"github.com/jherrma/caldav-server/internal/usecase/mcptoken"
 	searchusecase "github.com/jherrma/caldav-server/internal/usecase/search"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
+	subscriptionusecase "github.com/jherrma/caldav-server/internal/usecase/subscription"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
 
-// SetupRoutes registers all application routes
-func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
+// BackgroundServices are the long-running jobs the route wiring builds but does
+// not own. SetupRoutes returns them so the Server can start them after the
+// listener is up and stop them during shutdown, rather than having them leak a
+// goroutine that outlives the app.
+type BackgroundServices struct {
+	// SubscriptionWorker refreshes remote calendar subscriptions (story 100).
+	// Nil when the feature or the worker interval is turned off.
+	SubscriptionWorker *subscriptionusecase.Worker
+}
+
+// SetupRoutes registers all application routes and returns the background
+// services the caller is responsible for running.
+func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *BackgroundServices {
 	// Repositories
 	userRepo := repository.NewUserRepository(db.DB())
 	tokenRepo := repository.NewRefreshTokenRepository(db.DB())
@@ -51,6 +63,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	shareRepo := repository.NewCalendarShareRepository(db.DB())
 	abShareRepo := repository.NewAddressBookShareRepository(db.DB())
 	mcpTokenRepo := repository.NewMCPTokenRepository(db.DB())
+	subscriptionRepo := repository.NewCalendarSubscriptionRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -404,7 +417,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	v1.Get("/search", http.Authenticate(jwtManager, userRepo), searchHandler.Search)
 
 	// CalDAV/CardDAV Routes
-	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo, shareRepo)
+	caldavBackend := webdav.NewCalDAVBackend(calendarRepo, userRepo, shareRepo).
+		WithSubscriptions(subscriptionRepo)
 	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo, abShareRepo)
 	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, carddavCredRepo, jwtManager)
 
@@ -494,9 +508,46 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 		mcpGroup.Delete("/", mcpHandler.HandleDelete)
 	}
 
+	// Remote calendar subscriptions (story 100). The endpoints and the worker
+	// share one Fetcher — and therefore one SSRF policy — so a URL that the
+	// create endpoint refuses can never be reached by the background worker
+	// either.
+	services := &BackgroundServices{}
+	if cfg.Subscriptions.Enabled {
+		fetcher := subscriptionusecase.NewFetcher(subscriptionusecase.FetchOptions{
+			MaxSize:           cfg.Subscriptions.MaxFeedSize,
+			Timeout:           cfg.Subscriptions.FetchTimeout,
+			AllowInsecureURLs: cfg.Subscriptions.AllowInsecureURLs,
+			AllowPrivateHosts: cfg.Subscriptions.AllowPrivateHosts,
+		})
+		subSyncUC := subscriptionusecase.NewSyncUseCase(subscriptionRepo, calendarRepo, fetcher, cfg.Subscriptions.MaxFailures, nil)
+		subscriptionHandler := http.NewSubscriptionHandler(
+			subscriptionusecase.NewCreateUseCase(subscriptionRepo, calendarRepo, fetcher, cfg.Subscriptions.MaxPerUser, cfg.Subscriptions.AllowInsecureURLs, nil),
+			subscriptionusecase.NewListUseCase(subscriptionRepo, calendarRepo),
+			subscriptionusecase.NewGetUseCase(subscriptionRepo, calendarRepo),
+			subscriptionusecase.NewUpdateUseCase(subscriptionRepo, calendarRepo, subSyncUC, cfg.Subscriptions.AllowInsecureURLs, nil),
+			subscriptionusecase.NewDeleteUseCase(subscriptionRepo, calendarRepo),
+			subscriptionusecase.NewRefreshUseCase(subscriptionRepo, calendarRepo, subSyncUC),
+		)
+
+		subGroup := v1.Group("/calendar-subscriptions", http.Authenticate(jwtManager, userRepo))
+		subGroup.Post("/", subscriptionHandler.Create)
+		subGroup.Get("/", subscriptionHandler.List)
+		subGroup.Get("/:id", subscriptionHandler.Get)
+		subGroup.Patch("/:id", subscriptionHandler.Update)
+		subGroup.Delete("/:id", subscriptionHandler.Delete)
+		subGroup.Post("/:id/refresh", subscriptionHandler.Refresh)
+
+		services.SubscriptionWorker = subscriptionusecase.NewWorker(
+			subscriptionRepo, subSyncUC, cfg.Subscriptions.WorkerInterval, slog.Default(),
+		)
+	}
+
 	// Serve the built SPA (single-container deployment). Registered LAST so every
 	// API/DAV/well-known route above wins first.
 	registerWebUI(app, "./public")
+
+	return services
 }
 
 // registerWebUI serves the built Nuxt SPA from dir when dir/index.html exists

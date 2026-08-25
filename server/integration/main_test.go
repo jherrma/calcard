@@ -73,6 +73,21 @@ func runTests(m *testing.M) (int, error) {
 		// literal, so the flag has to be set explicitly or /mcp is never routed
 		// and mcp_test.go would be asserting against the SPA catch-all.
 		MCP: config.MCPConfig{Enabled: true, Requests: 120},
+		// Same literal-config trap for subscriptions (story 100). The worker
+		// interval is left at zero on purpose: the tests drive refreshes
+		// explicitly, and a ticker firing mid-suite would fetch feeds nothing
+		// asked for.
+		Subscriptions: config.SubscriptionConfig{
+			Enabled:      true,
+			MaxFailures:  5,
+			MaxFeedSize:  5 * 1024 * 1024,
+			FetchTimeout: 10 * time.Second,
+			MaxPerUser:   20,
+			// The test feed is served by a local httptest server, which lives
+			// on 127.0.0.1 — exactly what the SSRF guard exists to refuse.
+			AllowInsecureURLs: true,
+			AllowPrivateHosts: true,
+		},
 	}
 
 	db, err := database.New(cfg)

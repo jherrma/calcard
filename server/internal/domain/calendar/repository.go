@@ -118,4 +118,56 @@ type CalendarRepository interface {
 
 	// FindByPublicToken retrieves a calendar by its public token
 	FindByPublicToken(ctx context.Context, token string) (*Calendar, error)
+
+	// ReplaceFeedObjects makes the calendar's contents match objects exactly:
+	// it creates objects whose UID is new, rewrites those whose iCalendar data
+	// changed, and deletes stored objects the feed no longer contains — all in
+	// a single transaction, so a feed sync is never half-applied.
+	//
+	// It exists as its own method rather than as a loop over the object CRUD
+	// methods for two reasons. A loop would mint one sync token per object and
+	// re-Update the calendar row that many times; and it would have to run
+	// outside any transaction, so a failure partway through would leave the
+	// mirror showing a state the feed never published. Objects whose iCalendar
+	// data is byte-identical to what is stored are left completely untouched,
+	// which is what keeps a feed that republishes unchanged content from
+	// bumping the CTag and waking every connected DAV client.
+	//
+	// It is used only by the subscription sync path (story 100), which is also
+	// the only writer permitted on a Subscribed calendar.
+	ReplaceFeedObjects(ctx context.Context, calendarID uint, objects []*CalendarObject) (FeedSyncStats, error)
+}
+
+// CalendarSubscriptionRepository defines persistence for remote calendar
+// subscriptions (story 100).
+type CalendarSubscriptionRepository interface {
+	// Create stores a new subscription.
+	Create(ctx context.Context, sub *CalendarSubscription) error
+
+	// GetByUUID retrieves a subscription by its external id, or (nil, nil)
+	// when none exists.
+	GetByUUID(ctx context.Context, uuid string) (*CalendarSubscription, error)
+
+	// GetByCalendarID retrieves the subscription backing a calendar, or
+	// (nil, nil) when the calendar is not a subscription.
+	GetByCalendarID(ctx context.Context, calendarID uint) (*CalendarSubscription, error)
+
+	// ListByUserID retrieves a user's subscriptions, newest first, with the
+	// backing Calendar preloaded (the API reports its name, colour and event
+	// count alongside the feed's own state).
+	ListByUserID(ctx context.Context, userID uint) ([]*CalendarSubscription, error)
+
+	// CountByUserID counts a user's subscriptions, for the per-user cap.
+	CountByUserID(ctx context.Context, userID uint) (int64, error)
+
+	// Update persists a subscription's mutable fields.
+	Update(ctx context.Context, sub *CalendarSubscription) error
+
+	// Delete removes a subscription row by id. The backing calendar is deleted
+	// separately by the use case.
+	Delete(ctx context.Context, id uint) error
+
+	// FindDue returns up to limit enabled subscriptions whose NextSyncAt has
+	// passed, oldest due first so a backlog drains fairly.
+	FindDue(ctx context.Context, now time.Time, limit int) ([]*CalendarSubscription, error)
 }

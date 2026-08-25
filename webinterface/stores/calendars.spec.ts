@@ -144,6 +144,24 @@ describe('writableCalendars', () => {
     expect(writable).toContain('3');
     expect(writable).not.toContain('2');
   });
+
+  it('excludes a subscribed calendar even though the user owns it', () => {
+    const store = useCalendarStore();
+    store.calendars = [
+      cal({ id: 1, shared: false }),
+      cal({ id: 2, shared: false, subscribed: true }),
+    ];
+
+    // REVERT PROOF: this getter is what the event form and the dashboard's
+    // quick-add offer as targets. A subscribed calendar mirrors a remote feed,
+    // so the server refuses the write — and had it not, the next refresh would
+    // replace the collection and silently discard the event.
+    const writable = store.writableCalendars.map((c) => String(c.id));
+    expect(writable).toEqual(['1']);
+
+    expect(store.ownedCalendars.map((c) => String(c.id))).toEqual(['1']);
+    expect(store.subscribedCalendars.map((c) => String(c.id))).toEqual(['2']);
+  });
 });
 
 describe('fetchEvents parallel loading (#22)', () => {

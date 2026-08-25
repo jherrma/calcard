@@ -113,6 +113,9 @@ func (m *mockCalendarRepo) GetUserPermission(context.Context, uint, uint) (calen
 func (m *mockCalendarRepo) FindByPublicToken(context.Context, string) (*calendar.Calendar, error) {
 	return nil, nil
 }
+func (m *mockCalendarRepo) ReplaceFeedObjects(context.Context, uint, []*calendar.CalendarObject) (calendar.FeedSyncStats, error) {
+	return calendar.FeedSyncStats{}, nil
+}
 
 // icalWithDuplicateUID builds a VCALENDAR carrying `count` VEVENTs that all
 // share the same UID (a duplicate-in-file scenario).

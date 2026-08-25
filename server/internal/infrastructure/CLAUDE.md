@@ -11,14 +11,14 @@ This directory contains the technical implementations and external library integ
   - `database.go` — Unified database initialization based on configuration (auto-selects SQLite or PostgreSQL).
   - `sqlite.go` — SQLite driver setup using GORM.
   - `postgres.go` — PostgreSQL driver setup using GORM.
-  - `migrations.go` — Automatic database schema updates using GORM's `AutoMigrate`. Registers all domain models (User, Calendar, Event, AddressBook, Contact, Sharing, etc.).
+  - `migrations.go` — Automatic database schema updates using GORM's `AutoMigrate`. Registers all domain models (User, Calendar, CalendarSubscription, Event, AddressBook, Contact, Sharing, etc.).
 
 ### [server/](server/)
 
 - **Purpose**: Manages the HTTP server lifecycle and request pipeline.
 - **Key Components**:
   - `server.go` — Configures the Fiber application instance, including custom WebDAV HTTP methods (PROPFIND, PROPPATCH, MKCOL, REPORT, MKCALENDAR, etc.).
-  - `routes.go` — Registers all API endpoints and injects handler dependencies. Initializes OAuth providers. This is the dependency injection root of the application.
+  - `routes.go` — Registers all API endpoints and injects handler dependencies. Initializes OAuth providers. This is the dependency injection root of the application. It also RETURNS the `BackgroundServices` it built (currently the story-100 subscription worker) rather than starting them: a goroutine spawned during wiring has no owner, and every test that constructs a server would leave one polling the database for the rest of the run. `server.go` starts them after the listener is up and stops them before closing the database.
   - `middleware.go` — Configures global HTTP middleware (CORS, Recovery, Request ID logging, security headers, rate limiting, TLS).
 
 ### [email/](email/)

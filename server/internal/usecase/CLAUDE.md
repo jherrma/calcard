@@ -108,6 +108,16 @@ MCP access tokens (story 104) — the long-lived bearer credential an MCP client
 
 Why its own credential rather than a JWT or an app password: an access token lives ten minutes, which is useless for a client configured once with a static header; and app passwords are scoped to CalDAV/CardDAV, so widening them would silently grant every existing DAV credential a full read/write tool surface. The secret is 256 bits of randomness stored as a **unique-indexed SHA-256** — not bcrypt — because an MCP client presents only the opaque string, so the token must be findable from that alone, and a full-entropy secret needs no slow KDF.
 
+### [subscription/](subscription/)
+
+Remote calendar subscriptions (story 100) — mirroring third-party iCalendar feeds into read-only calendars:
+
+- `fetch.go` — the SSRF-guarded HTTP client and URL normalization (`webcal://` → `https://`). **Read this before touching anything that fetches a user-supplied URL.** The address check lives in the dialer's `Control` hook, which sees the already-resolved `ip:port` immediately before connect, so DNS rebinding — the standard bypass for a pre-flight lookup — is caught, and every redirect hop and round-robin address is covered for free. `FeedError` marks a failure as the remote feed's fault (a 4xx at the HTTP boundary) rather than ours (a 5xx); its message is written to be shown to the user and never repeats the feed URL, which routinely carries a secret token.
+- `parse.go` — feed → `CalendarObject`s, grouped **by UID** (a recurring event and its `RECURRENCE-ID` overrides share a UID and must live in one resource, RFC 4791 §4.1) with only the `VTIMEZONE`s each object references. Output must be BYTE-STABLE across runs — a missing `sort` or a `time.Now()` DTSTAMP would make every refresh report every event as modified and wake every DAV client.
+- `sync.go` — one refresh: conditional fetch, parse, `ReplaceFeedObjects`, then persist success or failure with backoff. Shared by the worker, the manual-refresh endpoint and the initial sync on creation, so all three record status identically.
+- `create.go`, `manage.go` — the CRUD use cases. Create validates the feed BEFORE writing anything and rolls the calendar back if the subscription cannot be stored.
+- `worker.go` — the ticker that refreshes due subscriptions. A poller over a `NextSyncAt` column rather than a timer per subscription, so the schedule survives a restart with no recovery step.
+
 ### [about/](about/)
 
 Project metadata (story 101):

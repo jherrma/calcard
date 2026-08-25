@@ -98,8 +98,22 @@ func (r *CalendarRepository) UpdateMetadata(ctx context.Context, cal *calendar.C
 }
 
 // Delete deletes a calendar by ID
+// Delete removes a calendar, together with the subscription row that mirrors a
+// feed into it (story 100).
+//
+// The cascade lives here rather than in the subscription delete use case
+// because a calendar can be deleted from three places — the REST calendar
+// endpoint, a DAV client's DELETE on the collection, and the subscription
+// endpoint — and only the last one knows subscriptions exist. An orphaned
+// subscription is not inert: the worker would keep fetching the third party's
+// feed on a schedule, forever, for a calendar the user believes they deleted.
 func (r *CalendarRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&calendar.Calendar{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("calendar_id = ?", id).Delete(&calendar.CalendarSubscription{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&calendar.Calendar{}, id).Error
+	})
 }
 
 // CountByUserID counts calendars for a user
@@ -479,4 +493,114 @@ func (r *CalendarRepository) FindByPublicToken(ctx context.Context, token string
 		return nil, err
 	}
 	return &cal, nil
+}
+
+// ReplaceFeedObjects makes a subscribed calendar's contents match the feed
+// exactly, in one transaction. See the interface doc for why this is not a loop
+// over the object CRUD methods.
+//
+// Change-log bookkeeping deliberately mirrors recordChange rather than calling
+// it: each changed resource gets its OWN sync token (the change log is queried
+// by "the id of the row carrying this token", so two rows sharing a token would
+// make a resuming client replay that whole batch on every subsequent sync,
+// forever), but the calendar row is updated exactly once, to the last token.
+// A sync that changes nothing touches neither, so an unchanged feed does not
+// bump the CTag and wake every connected DAV client.
+func (r *CalendarRepository) ReplaceFeedObjects(ctx context.Context, calendarID uint, objects []*calendar.CalendarObject) (calendar.FeedSyncStats, error) {
+	var stats calendar.FeedSyncStats
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing []*calendar.CalendarObject
+		if err := tx.Where("calendar_id = ?", calendarID).Find(&existing).Error; err != nil {
+			return err
+		}
+		byUID := make(map[string]*calendar.CalendarObject, len(existing))
+		for _, obj := range existing {
+			byUID[obj.UID] = obj
+		}
+
+		lastToken := ""
+		record := func(path, uid, changeType string) error {
+			token := calendar.GenerateSyncToken()
+			lastToken = token
+			return tx.Create(&calendar.SyncChangeLog{
+				CalendarID:   calendarID,
+				ResourcePath: path,
+				ResourceUID:  uid,
+				ChangeType:   changeType,
+				SyncToken:    token,
+			}).Error
+		}
+
+		seen := make(map[string]bool, len(objects))
+		for _, obj := range objects {
+			if seen[obj.UID] {
+				// Two components in one feed claiming the same UID: the first
+				// wins. Letting the second through would create a duplicate
+				// resource that the next sync would then delete and recreate
+				// forever.
+				continue
+			}
+			seen[obj.UID] = true
+
+			prev, ok := byUID[obj.UID]
+			if !ok {
+				obj.CalendarID = calendarID
+				if err := tx.Create(obj).Error; err != nil {
+					return err
+				}
+				if err := record(obj.Path, obj.UID, "created"); err != nil {
+					return err
+				}
+				stats.Created++
+				continue
+			}
+
+			if prev.ICalData == obj.ICalData {
+				stats.Unchanged++
+				continue
+			}
+
+			// Keep the stored resource's identity (UUID, path, id) so DAV
+			// clients see an update to a resource they already know rather
+			// than a delete plus an unrelated create.
+			prev.ICalData = obj.ICalData
+			prev.ETag = calendar.NewETag()
+			if err := prev.PopulateDenormFieldsFromICal(); err != nil {
+				return err
+			}
+			if err := tx.Save(prev).Error; err != nil {
+				return err
+			}
+			if err := record(prev.Path, prev.UID, "modified"); err != nil {
+				return err
+			}
+			stats.Updated++
+		}
+
+		for uid, obj := range byUID {
+			if seen[uid] {
+				continue
+			}
+			if err := tx.Delete(&calendar.CalendarObject{}, obj.ID).Error; err != nil {
+				return err
+			}
+			if err := record(obj.Path, obj.UID, "deleted"); err != nil {
+				return err
+			}
+			stats.Deleted++
+		}
+
+		if lastToken == "" {
+			return nil
+		}
+		return tx.Model(&calendar.Calendar{}).Where("id = ?", calendarID).Updates(map[string]interface{}{
+			"sync_token": lastToken,
+			"ctag":       lastToken,
+		}).Error
+	})
+	if err != nil {
+		return calendar.FeedSyncStats{}, err
+	}
+	return stats, nil
 }

@@ -7,9 +7,23 @@ import (
 	"net/http"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
 )
 
 const calendarServerNS = "http://calendarserver.org/ns/"
+
+// The two DAV:current-user-privilege-set bodies this handler reports. Only the
+// privileges the server actually implements are listed: advertising
+// write-content on a collection that refuses PUT would be worse than silence.
+const (
+	readOnlyPrivileges = `<privilege xmlns="DAV:"><read/></privilege>` +
+		`<privilege xmlns="DAV:"><read-current-user-privilege-set/></privilege>`
+	readWritePrivileges = readOnlyPrivileges +
+		`<privilege xmlns="DAV:"><write/></privilege>` +
+		`<privilege xmlns="DAV:"><write-content/></privilege>` +
+		`<privilege xmlns="DAV:"><bind/></privilege>` +
+		`<privilege xmlns="DAV:"><unbind/></privilege>`
+)
 
 // propfindReq is the subset of a PROPFIND body we need: which named properties
 // were requested (or allprop/propname).
@@ -34,14 +48,39 @@ func xmlEscaped(s string) []byte {
 func (h *Handler) handleCollectionPropfind(c fiber.Ctx, ctx context.Context, reqPath, collectionType string) error {
 	var name, ctag, syncToken string
 	var resourcetypeInner, reportSetInner string
+	// extra carries properties only one collection type has (currently the
+	// subscription source), merged into the known set below.
+	extra := map[xml.Name]RawXMLValue{}
+	// privileges is the DAV:current-user-privilege-set inner XML. It is what
+	// tells a client a collection is read-only, which for a subscribed
+	// calendar (story 100) is the difference between the client greying out
+	// "new event" and the user discovering the restriction as a failed save.
+	privileges := readWritePrivileges
 
 	if collectionType == "calendars" {
 		be := h.caldavHandler.Backend.(*CalDAVBackend)
-		cal, _, _, err := be.ResolvePath(ctx, reqPath)
+		cal, _, perm, err := be.ResolvePath(ctx, reqPath)
 		if err != nil {
 			return c.SendStatus(http.StatusNotFound)
 		}
 		name, ctag, syncToken = cal.Name, cal.CTag, cal.SyncToken
+		if perm != calendar.PermissionOwner && perm != calendar.PermissionReadWrite {
+			privileges = readOnlyPrivileges
+		}
+		if cal.Subscribed {
+			// CalendarServer's "source" property: the feed a subscribed
+			// collection mirrors. Note the resourcetype deliberately stays
+			// <C:calendar/> rather than becoming <CS:subscribed/> — a client
+			// that does not know the subscribed type would stop treating the
+			// collection as a calendar and hide its events entirely, which is
+			// a far worse failure than not advertising the distinction.
+			if src := be.SubscriptionURL(ctx, cal.ID); src != "" {
+				extra[xml.Name{Space: calendarServerNS, Local: "source"}] = RawXMLValue{
+					XMLName: xml.Name{Space: calendarServerNS, Local: "source"},
+					Inner:   append([]byte(`<href xmlns="DAV:">`), append(xmlEscaped(src), []byte(`</href>`)...)...),
+				}
+			}
+		}
 		resourcetypeInner = `<collection xmlns="DAV:"/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/>`
 		reportSetInner = `<supported-report xmlns="DAV:"><report><sync-collection/></report></supported-report>` +
 			`<supported-report xmlns="DAV:"><report><calendar-multiget xmlns="urn:ietf:params:xml:ns:caldav"/></report></supported-report>` +
@@ -52,11 +91,14 @@ func (h *Handler) handleCollectionPropfind(c fiber.Ctx, ctx context.Context, req
 		if !ok {
 			return c.SendStatus(http.StatusUnauthorized)
 		}
-		ab, _, err := be.resolveAddressBook(ctx, u, reqPath)
+		ab, perm, err := be.resolveAddressBook(ctx, u, reqPath)
 		if err != nil {
 			return c.SendStatus(http.StatusNotFound)
 		}
 		name, ctag, syncToken = ab.Name, ab.CTag, ab.SyncToken
+		if perm != abPermOwner && perm != abPermReadWrite {
+			privileges = readOnlyPrivileges
+		}
 		resourcetypeInner = `<collection xmlns="DAV:"/><addressbook xmlns="urn:ietf:params:xml:ns:carddav"/>`
 		reportSetInner = `<supported-report xmlns="DAV:"><report><sync-collection/></report></supported-report>` +
 			`<supported-report xmlns="DAV:"><report><addressbook-multiget xmlns="urn:ietf:params:xml:ns:carddav"/></report></supported-report>` +
@@ -70,6 +112,13 @@ func (h *Handler) handleCollectionPropfind(c fiber.Ctx, ctx context.Context, req
 		{Space: "DAV:", Local: "sync-token"}:           {XMLName: xml.Name{Space: "DAV:", Local: "sync-token"}, Inner: xmlEscaped(syncToken)},
 		{Space: "DAV:", Local: "supported-report-set"}: {XMLName: xml.Name{Space: "DAV:", Local: "supported-report-set"}, Inner: []byte(reportSetInner)},
 		{Space: calendarServerNS, Local: "getctag"}:    {XMLName: xml.Name{Space: calendarServerNS, Local: "getctag"}, Inner: xmlEscaped(ctag)},
+		{Space: "DAV:", Local: "current-user-privilege-set"}: {
+			XMLName: xml.Name{Space: "DAV:", Local: "current-user-privilege-set"},
+			Inner:   []byte(privileges),
+		},
+	}
+	for n, v := range extra {
+		known[n] = v
 	}
 
 	// Which props were requested? Match by namespace URI + local name — Go's

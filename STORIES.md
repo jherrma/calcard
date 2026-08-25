@@ -70,16 +70,16 @@ All backend stories are implemented.
 | --- | ------------------------------------------ | ------- |
 | 042 | Dashboard Home Page                        | Done    |
 | 043 | Sharing Management UI                      | Done    |
-| 100 | Remote Calendar Subscriptions              | Pending |
+| 100 | Remote Calendar Subscriptions              | Done    |
 | 101 | Open Source Attribution                    | Done    |
 | 103 | Event Default Settings                     | Done    |
 | 104 | MCP Server Integration                     | Done    |
 
 ## Summary
 
-- **Done**: 46 / 51
+- **Done**: 47 / 51
 - **Partial**: 3 / 51 — 045 Error Handling, 047 Accessibility, 049 Responsive
-- **Pending**: 2 / 51 — 050 PWA & Push, 100 Remote Calendar Subscriptions
+- **Pending**: 1 / 51 — 050 PWA & Push
 
 <!-- Counts are of the rows in the three tables above (28 backend + 17 frontend + 6
      continuation = 51). The denominator used to read 57, which never matched the
@@ -116,7 +116,6 @@ filed straight onto the tracker and never got a story file.
 
 | Item | What is actually left |
 | --- | --- |
-| **100 Remote Calendar Subscriptions** | Whole feature. Needs read-only calendars in the domain model, a refresh scheduler, and failure surfacing. |
 | **050 PWA & Push Notifications** | Whole feature, and **not frontend-only**: reminders need a server-side scheduler plus a delivery channel (web push subscriptions, or SMTP which is optional here). `VALARM` round-trips today but nothing fires it. Its offline half overlaps 045 — one story should own the action queue. |
 | **#113** Pluggable persistence | Refactor behind the repository interfaces: GORM plus a direct Turso driver, opening the door to MongoDB. Broadest blast radius of anything open. |
 

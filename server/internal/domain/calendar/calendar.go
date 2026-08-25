@@ -21,24 +21,34 @@ const (
 
 // Calendar represents a calendar collection
 type Calendar struct {
-	ID                  uint           `gorm:"primaryKey" json:"id"`
-	UUID                string         `gorm:"uniqueIndex;size:36;not null" json:"uuid"`
-	UserID              uint           `gorm:"index;not null" json:"user_id"`
-	Owner               user.User      `gorm:"foreignKey:UserID" json:"-"`
-	Path                string         `gorm:"size:255;not null" json:"path"` // URL path component
-	Name                string         `gorm:"size:255;not null" json:"name"`
-	Description         string         `gorm:"size:1000" json:"description"`
-	Color               string         `gorm:"size:7;not null" json:"color"` // #RRGGBB
-	Timezone            string         `gorm:"size:50;not null" json:"timezone"`
-	SupportedComponents string         `gorm:"size:100;not null" json:"supported_components"` // "VEVENT,VTODO"
-	SyncToken           string         `gorm:"size:64;not null;default:''" json:"sync_token"`
-	CTag                string         `gorm:"column:ctag;size:64;not null;default:''" json:"ctag"`
-	PublicToken         *string        `gorm:"uniqueIndex;size:64" json:"-"`
-	PublicEnabled       bool           `gorm:"default:false" json:"public_enabled"`
-	PublicEnabledAt     *time.Time     `json:"public_enabled_at,omitempty"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
-	DeletedAt           gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                  uint       `gorm:"primaryKey" json:"id"`
+	UUID                string     `gorm:"uniqueIndex;size:36;not null" json:"uuid"`
+	UserID              uint       `gorm:"index;not null" json:"user_id"`
+	Owner               user.User  `gorm:"foreignKey:UserID" json:"-"`
+	Path                string     `gorm:"size:255;not null" json:"path"` // URL path component
+	Name                string     `gorm:"size:255;not null" json:"name"`
+	Description         string     `gorm:"size:1000" json:"description"`
+	Color               string     `gorm:"size:7;not null" json:"color"` // #RRGGBB
+	Timezone            string     `gorm:"size:50;not null" json:"timezone"`
+	SupportedComponents string     `gorm:"size:100;not null" json:"supported_components"` // "VEVENT,VTODO"
+	SyncToken           string     `gorm:"size:64;not null;default:''" json:"sync_token"`
+	CTag                string     `gorm:"column:ctag;size:64;not null;default:''" json:"ctag"`
+	PublicToken         *string    `gorm:"uniqueIndex;size:64" json:"-"`
+	PublicEnabled       bool       `gorm:"default:false" json:"public_enabled"`
+	PublicEnabledAt     *time.Time `json:"public_enabled_at,omitempty"`
+	// Subscribed marks a calendar as the local mirror of a remote iCalendar
+	// feed (story 100). Its details live in the CalendarSubscription sidecar.
+	//
+	// The flag makes the collection read-only to EVERY write path — REST,
+	// CalDAV and MCP alike, and to the owner as much as to a sharee: the next
+	// refresh replaces the collection's contents wholesale, so a write here
+	// would be silently discarded, which is worse than being refused. The
+	// owner keeps full control of the collection itself (rename, recolor,
+	// share, delete) because those are ownership decisions, not object writes.
+	Subscribed bool           `gorm:"not null;default:false" json:"subscribed"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // TableName specifies the table name for Calendar
@@ -99,4 +109,24 @@ func GenerateRandomColor() string {
 func (c *Calendar) UpdateSyncTokens() {
 	c.SyncToken = GenerateSyncToken()
 	c.CTag = GenerateCTag()
+}
+
+// EffectivePermission caps a resolved permission at read-only for a subscribed
+// calendar (story 100).
+//
+// It is the single place the "a subscription is read-only" rule is expressed,
+// and every adapter that resolves a permission — REST, CalDAV, MCP — funnels
+// through it, so the rule cannot hold on one protocol and not another. Capping
+// the PERMISSION rather than adding a separate check at each write site is
+// what makes that work: a write path that already refuses PermissionRead needs
+// no new code and cannot be forgotten.
+//
+// It caps only object-level access. Ownership of the collection is unaffected,
+// so the owner can still rename, recolour, share and delete a subscribed
+// calendar; those sites check cal.UserID directly.
+func EffectivePermission(cal *Calendar, perm CalendarPermission) CalendarPermission {
+	if cal != nil && cal.Subscribed && perm > PermissionRead {
+		return PermissionRead
+	}
+	return perm
 }

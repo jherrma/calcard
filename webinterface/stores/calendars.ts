@@ -47,15 +47,28 @@ export const useCalendarStore = defineStore('calendars', {
     },
 
     ownedCalendars(state: CalendarState) {
-      return state.calendars.filter((c: Calendar) => !c.shared);
+      return state.calendars.filter((c: Calendar) => !c.shared && !c.subscribed);
     },
 
     sharedCalendars(state: CalendarState) {
       return state.calendars.filter((c: Calendar) => c.shared);
     },
 
+    // Calendars the user may create or edit events in. A subscribed calendar
+    // (story 100) is excluded no matter who owns it: it mirrors a remote feed,
+    // and the next refresh replaces its contents wholesale, so anything saved
+    // into it would silently disappear. This getter is the single place the
+    // event form and the dashboard's quick-add read, so excluding it here is
+    // what keeps the UI from offering a write the server will refuse.
     writableCalendars(state: CalendarState) {
-      return state.calendars.filter((c: Calendar) => !c.shared || c.permission === 'read-write');
+      return state.calendars.filter(
+        (c: Calendar) => !c.subscribed && (!c.shared || c.permission === 'read-write'),
+      );
+    },
+
+    // Subscribed calendars, for the sidebar's own section.
+    subscribedCalendars(state: CalendarState) {
+      return state.calendars.filter((c: Calendar) => c.subscribed);
     },
   },
 

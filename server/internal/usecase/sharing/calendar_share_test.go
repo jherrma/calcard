@@ -129,6 +129,9 @@ func (m *mockCalendarRepo) GetUserPermission(ctx context.Context, cid, uid uint)
 func (m *mockCalendarRepo) FindByPublicToken(ctx context.Context, token string) (*calendar.Calendar, error) {
 	return nil, nil
 }
+func (m *mockCalendarRepo) ReplaceFeedObjects(ctx context.Context, calendarID uint, objects []*calendar.CalendarObject) (calendar.FeedSyncStats, error) {
+	return calendar.FeedSyncStats{}, nil
+}
 
 type mockUserRepo struct {
 	mock.Mock

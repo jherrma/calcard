@@ -26,12 +26,13 @@ The domain layer defines:
 
 ### [calendar/](calendar/)
 
-- `calendar.go` — Calendar entity (name, color, description, public sharing token).
+- `calendar.go` — Calendar entity (name, color, description, public sharing token). Carries `Subscribed` (story 100) and `EffectivePermission`, which caps a subscribed calendar at read-only. That helper is the ONE place the "a subscription is read-only" rule is expressed; REST, CalDAV and MCP all funnel their permission resolution through it, so a write path that already refuses `PermissionRead` needs no new code and cannot be forgotten. It caps object access only — ownership of the collection (rename, recolour, share, delete) is unaffected, and those sites compare `cal.UserID` directly.
 - `calendar_object.go` — CalDAV object (iCalendar data, ETag).
 - `event.go` — Event entity (title, dates, recurrence, attendees).
+- `subscription.go` — `CalendarSubscription` (story 100): the remote iCalendar feed behind a subscribed calendar, plus the status derivation, the allowed refresh-interval set, and the success/failure state machine (`RecordSuccess` / `RecordFailure`, exponential backoff anchored to the subscription's own interval, capped at 24h, auto-disable after N failures). A sidecar to `Calendar` rather than columns on it: every field here is meaningless for an ordinary calendar.
 - `sync_changelog.go` — WebDAV-Sync change tracking.
 - `validation.go` — Calendar/event validation.
-- `repository.go` — Repository interfaces for calendars, events, and sync.
+- `repository.go` — Repository interfaces for calendars, events, sync, and calendar subscriptions. `CalendarRepository.ReplaceFeedObjects` is the transactional feed diff the subscription sync uses — and the only writer permitted on a subscribed calendar.
 
 ### [addressbook/](addressbook/)
 

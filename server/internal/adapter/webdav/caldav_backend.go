@@ -24,6 +24,8 @@ type CalDAVBackend struct {
 	calendarRepo calendar.CalendarRepository
 	userRepo     user.UserRepository
 	shareRepo    sharing.CalendarShareRepository
+	// subscriptionRepo is optional; see WithSubscriptions.
+	subscriptionRepo calendar.CalendarSubscriptionRepository
 }
 
 func NewCalDAVBackend(
@@ -36,6 +38,33 @@ func NewCalDAVBackend(
 		userRepo:     userRepo,
 		shareRepo:    shareRepo,
 	}
+}
+
+// WithSubscriptions lets the backend report a subscribed calendar's feed URL as
+// the CalendarServer "source" property (story 100).
+//
+// It is a separate setter rather than a constructor parameter because the
+// subscription surface is optional — an operator can turn it off entirely — and
+// because the backend needs the repository for exactly one advisory property.
+// With no repository set, a subscribed calendar simply omits the property.
+func (b *CalDAVBackend) WithSubscriptions(repo calendar.CalendarSubscriptionRepository) *CalDAVBackend {
+	b.subscriptionRepo = repo
+	return b
+}
+
+// SubscriptionURL returns the feed URL behind a subscribed calendar, or "" if
+// the calendar is not a subscription or the lookup fails. It never surfaces an
+// error: the property is advisory, and a failed lookup must not turn a
+// PROPFIND into a 500.
+func (b *CalDAVBackend) SubscriptionURL(ctx context.Context, calendarID uint) string {
+	if b.subscriptionRepo == nil {
+		return ""
+	}
+	sub, err := b.subscriptionRepo.GetByCalendarID(ctx, calendarID)
+	if err != nil || sub == nil {
+		return ""
+	}
+	return sub.URL
 }
 
 // CurrentUserPrincipal returns the path to the current user's principal resource.
@@ -336,23 +365,23 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 }
 
 func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) error {
-	c, _, perm, err := b.ResolvePath(ctx, p)
+	c, u, perm, err := b.ResolvePath(ctx, p)
 	if err != nil {
 		return err
-	}
-
-	// Check Write Permission
-	if perm != calendar.PermissionOwner && perm != calendar.PermissionReadWrite {
-		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
 	// emersion/go-webdav dispatches every DELETE through this method,
 	// including DELETE on the calendar collection itself. Detect that
 	// case by path shape ("/dav/{user}/calendars/{cal}/" has no object
 	// segment) and delete the whole calendar. Only the owner may.
+	//
+	// This is checked BEFORE the object-write permission below, and against
+	// ownership rather than PermissionOwner: ResolvePath caps a subscribed
+	// calendar at read-only, and testing perm here would leave its owner
+	// unable to delete their own subscription from a DAV client.
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	if len(parts) < 5 {
-		if perm != calendar.PermissionOwner {
+		if c.UserID != u.ID {
 			return webdav.NewHTTPError(http.StatusForbidden, nil)
 		}
 		if err := b.calendarRepo.Delete(ctx, c.ID); err != nil {
@@ -364,6 +393,11 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 			return err
 		}
 		return nil
+	}
+
+	// Check Write Permission for the object delete.
+	if perm != calendar.PermissionOwner && perm != calendar.PermissionReadWrite {
+		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
 	objPath := parts[4]
@@ -384,8 +418,26 @@ func (b *CalDAVBackend) GetCalendarObjectByPath(ctx context.Context, calendarID 
 	return b.calendarRepo.GetCalendarObjectByPath(ctx, calendarID, path)
 }
 
-// ResolvePath resolves a path to a calendar, user, and permission
+// ResolvePath resolves a path to a calendar, user, and permission.
+//
+// The permission is capped at read-only for a subscribed calendar (story 100),
+// which is what makes PUT and DELETE on its objects return 403 to a DAV client
+// without either of those handlers knowing subscriptions exist. Collection-
+// level operations that are the OWNER's prerogative — deleting the collection,
+// PROPPATCHing its displayname — must therefore compare c.UserID against the
+// authenticated user rather than testing for PermissionOwner, or they would
+// lock the owner out of their own subscription.
 func (b *CalDAVBackend) ResolvePath(ctx context.Context, p string) (*calendar.Calendar, *user.User, calendar.CalendarPermission, error) {
+	c, u, perm, err := b.resolvePathUncapped(ctx, p)
+	if err != nil {
+		return c, u, perm, err
+	}
+	return c, u, calendar.EffectivePermission(c, perm), nil
+}
+
+// resolvePathUncapped does the actual lookup, reporting the permission the
+// ownership/share model grants before the subscription cap is applied.
+func (b *CalDAVBackend) resolvePathUncapped(ctx context.Context, p string) (*calendar.Calendar, *user.User, calendar.CalendarPermission, error) {
 	u, ok := UserFromContext(ctx)
 	if !ok {
 		return nil, nil, calendar.PermissionNone, webdav.NewHTTPError(http.StatusUnauthorized, nil)

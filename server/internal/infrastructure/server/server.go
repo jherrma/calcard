@@ -16,9 +16,15 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	app *fiber.App
-	cfg *config.Config
-	db  database.Database
+	app      *fiber.App
+	cfg      *config.Config
+	db       database.Database
+	services *BackgroundServices
+
+	// stopBackground cancels the background services' context; bgDone is
+	// closed once they have all returned, so shutdown can wait for them.
+	stopBackground context.CancelFunc
+	bgDone         chan struct{}
 }
 
 // New creates a new Server instance
@@ -46,12 +52,46 @@ func New(cfg *config.Config, db database.Database) *Server {
 	})
 
 	SetupMiddleware(app, cfg)
-	SetupRoutes(app, db, cfg)
+	services := SetupRoutes(app, db, cfg)
 
 	return &Server{
-		app: app,
-		cfg: cfg,
-		db:  db,
+		app:      app,
+		cfg:      cfg,
+		db:       db,
+		services: services,
+	}
+}
+
+// startBackground launches the long-running jobs SetupRoutes built.
+//
+// They are started explicitly rather than from SetupRoutes because a goroutine
+// spawned during wiring has no owner: tests construct a Server per case, and
+// each one would leave a worker polling the database for the rest of the run.
+func (s *Server) startBackground() {
+	if s.services == nil || s.services.SubscriptionWorker == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	s.stopBackground = cancel
+	s.bgDone = done
+
+	go func() {
+		defer close(done)
+		s.services.SubscriptionWorker.Run(ctx)
+	}()
+}
+
+// stopBackgroundAndWait cancels the background services and waits for them,
+// bounded by ctx so a wedged job cannot hold shutdown open indefinitely.
+func (s *Server) stopBackgroundAndWait(ctx context.Context) {
+	if s.stopBackground == nil {
+		return
+	}
+	s.stopBackground()
+	select {
+	case <-s.bgDone:
+	case <-ctx.Done():
 	}
 }
 
@@ -78,6 +118,8 @@ func (s *Server) Run() error {
 		}
 	}()
 
+	s.startBackground()
+
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
@@ -93,6 +135,9 @@ func (s *Server) Run() error {
 	// Create a deadline to wait for
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Stop the background jobs before closing the database they query.
+	s.stopBackgroundAndWait(ctx)
 
 	if err := s.app.ShutdownWithContext(ctx); err != nil {
 		fmt.Printf("Server forced to shutdown: %v\n", err)
@@ -122,11 +167,15 @@ func (s *Server) Start(addr string) (string, error) {
 			fmt.Printf("Server listener exited: %v\n", err)
 		}
 	}()
+	// Background jobs run here too, so an embedded/integration server is the
+	// same server production runs; Shutdown stops them again.
+	s.startBackground()
 	return ln.Addr().String(), nil
 }
 
 // Shutdown gracefully stops the server. Intended for tests; production code
 // should use Run() which installs its own signal-driven shutdown.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.stopBackgroundAndWait(ctx)
 	return s.app.ShutdownWithContext(ctx)
 }

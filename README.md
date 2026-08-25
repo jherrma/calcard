@@ -96,6 +96,30 @@ want an AI tool surface at all can remove the routes entirely with `CALDAV_MCP_E
 
 ---
 
+## Calendar subscriptions
+
+Follow a calendar published elsewhere — a holiday calendar, a sports schedule, an export from
+another service. The server fetches the feed on a schedule and mirrors it into a calendar of your
+own, which then syncs to every CalDAV client like any other.
+
+1. Sign in and go to **Settings → Subscriptions**.
+2. Paste the feed URL (an `.ics` link; `webcal://` links work too) and pick how often to refresh
+   — 15m, 30m, 1h (default), 6h, 12h or 24h.
+3. The feed is fetched immediately, so a bad URL is reported there and then rather than surfacing
+   as a silently empty calendar an hour later.
+
+Subscribed calendars are **read-only**, to their owner as much as to anyone they are shared with:
+the next refresh replaces their contents wholesale, so an event added locally would disappear
+without a trace. You can still rename, recolour, share and delete the calendar itself. A feed that
+stops responding is retried with exponential backoff and, after five consecutive failures, pauses
+itself with the reason shown on the settings page; refreshing manually resumes it.
+
+Because the server fetches URLs its users choose, feeds must be `https://` and on publicly
+routable addresses by default. Self-hosted deployments whose users subscribe to feeds on the same
+private network can relax both — see [CONFIGURATION.md](CONFIGURATION.md).
+
+---
+
 ## API Documentation
 
 There is no generated API reference. The REST surface is documented in

@@ -23,6 +23,7 @@ func Models() []interface{} {
 		&calendar.Calendar{},
 		&calendar.CalendarObject{},
 		&calendar.SyncChangeLog{},
+		&calendar.CalendarSubscription{},
 		&addressbook.AddressBook{},
 		&addressbook.AddressObject{},
 		&addressbook.ContactPhoto{},
