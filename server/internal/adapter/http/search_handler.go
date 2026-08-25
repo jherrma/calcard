@@ -87,39 +87,29 @@ type SearchResponse struct {
 	AddressBooks SearchAddressBookGroup `json:"addressbooks"`
 }
 
-// Search godoc
-// @Summary      Unified search
-// @Description  Searches events, contacts, calendars and address books for the authenticated user in one request.
-// @Description
-// @Description  Events are searched across every calendar the caller can read — owned and shared — over their
-// @Description  denormalized summary, location and description, with **no implicit date bound**: pass `start`/`end`
-// @Description  only if a window is actually wanted. Contacts are searched across every readable address book,
-// @Description  including books shared with the caller.
-// @Description
-// @Description  Each matching recurring series is returned once, represented by the occurrence that best describes
-// @Description  it: the first occurrence at or after now, or the last one for a series wholly in the past. The
-// @Description  occurrence carries its own `recurrence_id`, so a client can open it directly instead of the series
-// @Description  master.
-// @Description
-// @Description  Ranking: upcoming occurrences first (soonest first), then past ones (most recent first). Contacts are
-// @Description  ordered by name, collections by the order the list endpoints return.
-// @Description
-// @Description  `limit` and `offset` apply per group and `limit` is capped at 100 (echoed as `max_limit`); each group
-// @Description  reports `has_more` rather than truncating silently.
-// @Tags         Search
-// @Produce      json
-// @Param        q       query     string  true   "Search text (minimum 2 characters)"
-// @Param        types   query     string  false  "Comma-separated subset of events,contacts,calendars,addressbooks (default: all)"
-// @Param        limit   query     integer false  "Maximum items per group (default 20, max 100)"
-// @Param        offset  query     integer false  "Items to skip per group (default 0)"
-// @Param        start   query     string  false  "Optional lower bound for events (RFC 3339)"
-// @Param        end     query     string  false  "Optional upper bound for events (RFC 3339)"
-// @Success      200     {object}  SearchResponse
-// @Failure      400     {object}  ErrorResponseBody
-// @Failure      401     {object}  ErrorResponseBody
-// @Failure      500     {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /search [get]
+// GET /api/v1/search
+//
+// Searches events, contacts, calendars and address books for the authenticated
+// user in one request. `q` is required (minimum 2 characters); `types` narrows
+// the search to a comma-separated subset of events,contacts,calendars,addressbooks.
+//
+// Events are searched across every calendar the caller can read — owned and
+// shared — over their denormalized summary, location and description, with no
+// implicit date bound: `start`/`end` (RFC 3339) apply only if a window is
+// actually wanted. Contacts are searched across every readable address book,
+// including books shared with the caller.
+//
+// Each matching recurring series is returned once, represented by the
+// occurrence that best describes it: the first occurrence at or after now, or
+// the last one for a series wholly in the past. The occurrence carries its own
+// recurrence_id, so a client can open it directly instead of the series master.
+//
+// Ranking: upcoming occurrences first (soonest first), then past ones (most
+// recent first). Contacts are ordered by name, collections by the order the
+// list endpoints return.
+//
+// `limit` and `offset` apply per group and `limit` is capped at 100 (echoed as
+// `max_limit`); each group reports `has_more` rather than truncating silently.
 func (h *SearchHandler) Search(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 

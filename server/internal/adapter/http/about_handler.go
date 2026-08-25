@@ -15,24 +15,13 @@ func NewAboutHandler(listOpenSourceUC *aboutuc.ListOpenSourceUseCase) *AboutHand
 	return &AboutHandler{listOpenSourceUC: listOpenSourceUC}
 }
 
-// HAZARD (#101): the @Success type below must spell the use-case package with
-// THIS file's import alias — `aboutuc`, not `about`. swag resolves annotation
-// field types through the file's import table, and a name it cannot resolve
-// aborts the entire generation run with exit 1, not just this one endpoint.
-// Dockerfile runs `swag init` with no `|| true`, so getting this wrong breaks
-// `docker build` and every developer's `swag init` — and no Go/JS test catches
-// it, because none of them invoke swag.
+// GET /api/v1/about/open-source
 //
-// OpenSource godoc
-// @Summary      List backend open-source dependencies
-// @Description  Returns the attribution list for the Go modules linked into the server binary. The list is generated at build time (`go run ./tools/genlicenses`) and embedded in the binary, so no network access is involved. License detection is best-effort — a license of "unknown" means it could not be determined automatically, NOT that the package is unlicensed.
-// @Tags         About
-// @Produce      json
-// @Success      200  {object}  object{generator=string,note=string,count=int,packages=[]aboutuc.OpenSourcePackage}
-// @Failure      401  {object}  ErrorResponseBody
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /about/open-source [get]
+// Returns the attribution list for the Go modules linked into the server
+// binary. The list is generated at build time (`go run ./tools/genlicenses`)
+// and embedded, so serving it involves no network access. License detection is
+// best-effort — a license of "unknown" means it could not be determined
+// automatically, NOT that the package is unlicensed.
 func (h *AboutHandler) OpenSource(c fiber.Ctx) error {
 	man, err := h.listOpenSourceUC.Execute()
 	if err != nil {

@@ -30,18 +30,7 @@ func NewCardDAVCredentialHandler(
 	}
 }
 
-// Create godoc
-// @Summary      Create CardDAV credential
-// @Description  Create a new app-specific password/credential for CardDAV access
-// @Tags         Credentials
-// @Accept       json
-// @Produce      json
-// @Param        request  body      dto.CreateCardDAVCredentialRequest  true  "Credential details"
-// @Success      201      {object}  apppassword.CreateCardDAVCredentialOutput
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      409      {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /carddav-credentials [post]
+// POST /api/v1/carddav-credentials
 func (h *CardDAVCredentialHandler) Create(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 
@@ -92,15 +81,7 @@ func (h *CardDAVCredentialHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(output)
 }
 
-// List godoc
-// @Summary      List CardDAV credentials
-// @Description  List all CardDAV credentials for the current user
-// @Tags         Credentials
-// @Produce      json
-// @Success      200  {object}  dto.CardDAVCredentialListResponse
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /carddav-credentials [get]
+// GET /api/v1/carddav-credentials
 func (h *CardDAVCredentialHandler) List(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 
@@ -142,15 +123,7 @@ func (h *CardDAVCredentialHandler) List(c fiber.Ctx) error {
 	return c.JSON(dto.CardDAVCredentialListResponse{Credentials: response})
 }
 
-// Revoke godoc
-// @Summary      Revoke CardDAV credential
-// @Description  Revoke/Delete a CardDAV credential
-// @Tags         Credentials
-// @Param        id   path      string  true  "Credential UUID"
-// @Success      204
-// @Failure      404  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /carddav-credentials/{id} [delete]
+// DELETE /api/v1/carddav-credentials/:id
 func (h *CardDAVCredentialHandler) Revoke(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 	credUUID := c.Params("id")

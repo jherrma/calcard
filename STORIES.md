@@ -7,7 +7,7 @@ exactly what is ticked and what is left. **Pending** — no code exists.
 A story is never the whole picture: features filed straight onto the issue tracker never got a story
 file. The consolidated list at the bottom merges both.
 
-## Backend Stories (001–030)
+## Backend Stories (001–029)
 
 All backend stories are implemented.
 
@@ -41,7 +41,6 @@ All backend stories are implemented.
 | 027 | Security Configuration                     | Done   |
 | 028 | Server Setup Instructions                  | Done   |
 | 029 | Import/Export Functionality                 | Done   |
-| 030 | API Documentation                          | Done   |
 
 ## Frontend Stories (031–050)
 
@@ -135,11 +134,3 @@ filed straight onto the tracker and never got a story file.
   components, and it has no Sharing section. Both files were updated for 046 on 2026-08-14, but the
   older gap was left alone rather than folded into an unrelated PR. Prefer `CLAUDE.md` where they
   disagree.
-- `server/docs/swagger.*` is committed AND embedded in the binary (`docs/embed.go`), so a stale
-  file is what `/api/docs` serves. It had drifted by three features (28 → 31 paths: `/search`,
-  `/about/open-source`, `/users/me/preferences`, and the contact-move route moving under its
-  address book) and was regenerated on 2026-08-04. Nothing enforces this — the Dockerfile re-runs
-  `swag init` at image build, which masks the drift in Docker while the committed file rots, and
-  there is no CI (`.github/` holds only CODEOWNERS). **Regenerate and commit whenever you touch a
-  handler annotation**: `swag init -g cmd/server/main.go --parseDependency --parseInternal` from
-  `server/`.

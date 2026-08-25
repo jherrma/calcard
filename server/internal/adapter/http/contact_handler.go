@@ -139,21 +139,7 @@ func (h *ContactHandler) contactPermission(c fiber.Ctx, contactUUID string) addr
 	return h.addressBookPermission(c, obj.AddressBookID)
 }
 
-// List godoc
-// @Summary      List contacts
-// @Description  Get contacts from address book
-// @Tags         Contacts
-// @Produce      json
-// @Param        addressbook_id  path      integer  true  "Address Book ID"
-// @Param        limit           query     integer  false "Limit (default 50)"
-// @Param        offset          query     integer  false "Offset (default 0)"
-// @Param        sort            query     string   false "Sort field (default name)"
-// @Param        order           query     string   false "Sort order (asc/desc)"
-// @Success      200             {object}  contactuc.ListOutput
-// @Failure      400             {object}  ErrorResponseBody
-// @Failure      500             {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts [get]
+// GET /api/v1/addressbooks/:addressbook_id/contacts
 func (h *ContactHandler) List(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookRead(c)
 	if !ok {
@@ -192,19 +178,7 @@ func (h *ContactHandler) List(c fiber.Ctx) error {
 	return c.JSON(output)
 }
 
-// Get godoc
-// @Summary      Get contact
-// @Description  Get contact by ID
-// @Tags         Contacts
-// @Produce      json
-// @Param        addressbook_id  path      integer  true  "Address Book ID"
-// @Param        contact_id      path      string   true  "Contact UUID"
-// @Success      200             {object}  contact.Contact
-// @Failure      400             {object}  ErrorResponseBody
-// @Failure      404             {object}  ErrorResponseBody
-// @Failure      500             {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts/{contact_id} [get]
+// GET /api/v1/addressbooks/:addressbook_id/contacts/:contact_id
 func (h *ContactHandler) Get(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookRead(c)
 	if !ok {
@@ -231,20 +205,7 @@ func (h *ContactHandler) Get(c fiber.Ctx) error {
 	return c.JSON(res)
 }
 
-// Create godoc
-// @Summary      Create contact
-// @Description  Create a new contact
-// @Tags         Contacts
-// @Accept       json
-// @Produce      json
-// @Param        addressbook_id  path      integer          true  "Address Book ID"
-// @Param        contact         body      contact.Contact  true  "Contact details"
-// @Success      201             {object}  contact.Contact
-// @Failure      403             {object}  ErrorResponseBody  "Read-only access to the address book"
-// @Failure      400             {object}  ErrorResponseBody
-// @Failure      500             {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts [post]
+// POST /api/v1/addressbooks/:addressbook_id/contacts
 func (h *ContactHandler) Create(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookWrite(c)
 	if !ok {
@@ -265,22 +226,7 @@ func (h *ContactHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(res)
 }
 
-// Update godoc
-// @Summary      Update contact
-// @Description  Update contact details
-// @Tags         Contacts
-// @Accept       json
-// @Produce      json
-// @Param        addressbook_id  path      integer                true  "Address Book ID"
-// @Param        contact_id      path      string                 true  "Contact UUID"
-// @Param        contact         body      contactuc.UpdateInput  true  "Contact updates"
-// @Success      200             {object}  contact.Contact
-// @Failure      403             {object}  ErrorResponseBody  "Read-only access to the address book"
-// @Failure      400             {object}  ErrorResponseBody
-// @Failure      404             {object}  ErrorResponseBody
-// @Failure      500             {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts/{contact_id} [put]
+// PUT /api/v1/addressbooks/:addressbook_id/contacts/:contact_id
 func (h *ContactHandler) Update(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookWrite(c)
 	if !ok {
@@ -304,18 +250,7 @@ func (h *ContactHandler) Update(c fiber.Ctx) error {
 	return c.JSON(res)
 }
 
-// Delete godoc
-// @Summary      Delete contact
-// @Description  Delete a contact
-// @Tags         Contacts
-// @Param        addressbook_id  path      integer  true  "Address Book ID"
-// @Param        contact_id      path      string   true  "Contact UUID"
-// @Success      204
-// @Failure      403             {object}  ErrorResponseBody  "Read-only access to the address book"
-// @Failure      400  {object}  ErrorResponseBody
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts/{contact_id} [delete]
+// DELETE /api/v1/addressbooks/:addressbook_id/contacts/:contact_id
 func (h *ContactHandler) Delete(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookWrite(c)
 	if !ok {
@@ -331,28 +266,17 @@ func (h *ContactHandler) Delete(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// Search godoc
-// @Summary      Search contacts
-// @Description  Searches every address book the caller can read — their own AND
-// @Description  books shared with them (#162). It used to be owner-scoped, which
-// @Description  made a contact in a shared book vanish as soon as you searched
-// @Description  for it even though the same contact was listed and editable.
-// @Description
-// @Description  The optional addressbook_id narrows the search to one book, given
-// @Description  as its UUID (#52). A UUID that is not among the readable books —
-// @Description  unknown, deleted, or simply not shared with the caller — is a 404,
-// @Description  so a narrowing request is never silently answered about other books.
-// @Tags         Contacts
-// @Produce      json
-// @Param        q               query     string   true   "Search query"
-// @Param        limit           query     integer  false  "Limit (default 20, max 200)"
-// @Param        addressbook_id  query     string   false  "Restrict to one address book, by UUID"
-// @Success      200             {object}  contactuc.SearchOutput
-// @Failure      400             {object}  ErrorResponseBody
-// @Failure      404             {object}  ErrorResponseBody  "addressbook_id names a book the caller cannot read"
-// @Failure      500             {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /contacts/search [get]
+// GET /api/v1/contacts/search
+//
+// Searches every address book the caller can read — their own AND books shared
+// with them (#162). It used to be owner-scoped, which made a contact in a
+// shared book vanish as soon as you searched for it even though the same
+// contact was listed and editable.
+//
+// The optional addressbook_id narrows the search to one book, given as its
+// UUID (#52). A UUID that is not among the readable books — unknown, deleted,
+// or simply not shared with the caller — is a 404, so a narrowing request is
+// never silently answered about other books.
 func (h *ContactHandler) Search(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint) // Get from middleware
 	query := c.Query("q")
@@ -394,22 +318,7 @@ func (h *ContactHandler) Search(c fiber.Ctx) error {
 	return c.JSON(output)
 }
 
-// Move godoc
-// @Summary      Move contact
-// @Description  Move contact to another address book
-// @Tags         Contacts
-// @Accept       json
-// @Produce      json
-// @Param        addressbook_id  path  string                  true  "Source address book UUID"
-// @Param        contact_id  path      string                  true  "Contact UUID"
-// @Param        request     body      dto.MoveContactRequest  true  "Target address book"
-// @Success      200         {object}  contact.Contact
-// @Failure      400         {object}  ErrorResponseBody
-// @Failure      403         {object}  ErrorResponseBody  "Read-only access to the source or target address book"
-// @Failure      404         {object}  ErrorResponseBody
-// @Failure      500         {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts/{contact_id}/move [post]
+// POST /api/v1/addressbooks/:addressbook_id/contacts/:contact_id/move
 func (h *ContactHandler) Move(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 	contactID := c.Params("contact_id")
@@ -450,22 +359,7 @@ func (h *ContactHandler) Move(c fiber.Ctx) error {
 	return c.JSON(res)
 }
 
-// UploadPhoto godoc
-// @Summary      Upload contact photo
-// @Description  Upload a photo for a contact (JPEG, PNG, GIF)
-// @Tags         Contacts
-// @Accept       image/jpeg,image/png,image/gif
-// @Param        addressbook_id  path  integer  true  "Address Book ID"
-// @Param        contact_id      path  string   true  "Contact UUID"
-// @Param        file            body  []byte   true  "Photo data"
-// @Success      204
-// @Failure      403             {object}  ErrorResponseBody  "Read-only access to the address book"
-// @Failure      400            {object}  ErrorResponseBody
-// @Failure      413            {object}  ErrorResponseBody  "Photo too large"
-// @Failure      415            {object}  ErrorResponseBody  "Unsupported file type"
-// @Failure      500            {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts/{contact_id}/photo [put]
+// PUT /api/v1/addressbooks/:addressbook_id/contacts/:contact_id/photo
 func (h *ContactHandler) UploadPhoto(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookWrite(c)
 	if !ok {
@@ -508,18 +402,7 @@ func (h *ContactHandler) UploadPhoto(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// DeletePhoto godoc
-// @Summary      Delete contact photo
-// @Description  Remove photo from contact
-// @Tags         Contacts
-// @Param        addressbook_id  path  integer  true  "Address Book ID"
-// @Param        contact_id      path  string   true  "Contact UUID"
-// @Success      204
-// @Failure      403             {object}  ErrorResponseBody  "Read-only access to the address book"
-// @Failure      400  {object}  ErrorResponseBody
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts/{contact_id}/photo [delete]
+// DELETE /api/v1/addressbooks/:addressbook_id/contacts/:contact_id/photo
 func (h *ContactHandler) DeletePhoto(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookWrite(c)
 	if !ok {
@@ -534,19 +417,7 @@ func (h *ContactHandler) DeletePhoto(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// ServePhoto godoc
-// @Summary      Get contact photo
-// @Description  Get contact's photo content
-// @Tags         Contacts
-// @Produce      image/jpeg,image/png,image/gif
-// @Param        addressbook_id  path  integer  true  "Address Book ID"
-// @Param        contact_id      path  string   true  "Contact UUID"
-// @Success      200             {file}    file
-// @Failure      400             {object}  ErrorResponseBody
-// @Failure      404             {object}  ErrorResponseBody
-// @Failure      500             {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{addressbook_id}/contacts/{contact_id}/photo [get]
+// GET /api/v1/addressbooks/:addressbook_id/contacts/:contact_id/photo
 func (h *ContactHandler) ServePhoto(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookRead(c)
 	if !ok {

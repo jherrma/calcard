@@ -62,17 +62,7 @@ func NewAuthHandler(
 	}
 }
 
-// Register godoc
-// @Summary      Register a new user
-// @Description  Create a new user account with email and password
-// @Tags         Authentication
-// @Accept       json
-// @Produce      json
-// @Param        request  body      dto.RegisterRequest  true  "Registration details"
-// @Success      200      {object}  dto.RegisterResponse
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      409      {object}  ErrorResponseBody  "Email already registered"
-// @Router       /auth/register [post]
+// POST /api/v1/auth/register
 func (h *AuthHandler) Register(c fiber.Ctx) error {
 	if h.config.Registration.Disabled {
 		return ErrorResponse(c, fiber.StatusForbidden, "registration is disabled")
@@ -109,16 +99,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 	})
 }
 
-// Verify godoc
-// @Summary      Verify email address
-// @Description  Verify user email with token from verification email
-// @Tags         Authentication
-// @Accept       json
-// @Produce      json
-// @Param        token  query     string  true  "Verification token"
-// @Success      200    {object}  SuccessResponseBody
-// @Failure      400    {object}  ErrorResponseBody
-// @Router       /auth/verify [get]
+// GET /api/v1/auth/verify
 func (h *AuthHandler) Verify(c fiber.Ctx) error {
 	token := c.Query("token")
 	if token == "" {
@@ -137,17 +118,7 @@ func (h *AuthHandler) Verify(c fiber.Ctx) error {
 	return SuccessResponse(c, "Account verified successfully")
 }
 
-// Login godoc
-// @Summary      Login with email and password
-// @Description  Authenticate user and receive JWT tokens
-// @Tags         Authentication
-// @Accept       json
-// @Produce      json
-// @Param        request  body      dto.LoginRequest  true  "Login credentials"
-// @Success      200      {object}  dto.LoginResponse
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      401      {object}  ErrorResponseBody  "Invalid credentials"
-// @Router       /auth/login [post]
+// POST /api/v1/auth/login
 func (h *AuthHandler) Login(c fiber.Ctx) error {
 	var req dto.LoginRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -175,17 +146,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 	})
 }
 
-// Refresh godoc
-// @Summary      Refresh access token
-// @Description  Get a new access token using refresh token
-// @Tags         Authentication
-// @Accept       json
-// @Produce      json
-// @Param        request  body      object{refresh_token=string}  true  "Refresh token"
-// @Success      200      {object}  object{access_token=string,refresh_token=string,token_type=string,expires_at=int}
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      401      {object}  ErrorResponseBody  "Invalid refresh token"
-// @Router       /auth/refresh [post]
+// POST /api/v1/auth/refresh
 func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
@@ -210,16 +171,7 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 	})
 }
 
-// Logout godoc
-// @Summary      Logout user
-// @Description  Invalidate refresh token to logout
-// @Tags         Authentication
-// @Accept       json
-// @Produce      json
-// @Param        request  body      object{refresh_token=string}  true  "Refresh token to invalidate"
-// @Success      200      {object}  SuccessResponseBody
-// @Failure      400      {object}  ErrorResponseBody
-// @Router       /auth/logout [post]
+// POST /api/v1/auth/logout
 func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
@@ -241,16 +193,7 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	return SuccessResponse(c, "Logged out successfully")
 }
 
-// ForgotPassword godoc
-// @Summary      Request password reset
-// @Description  Send password reset email to user
-// @Tags         Authentication
-// @Accept       json
-// @Produce      json
-// @Param        request  body      object{email=string}  true  "User email"
-// @Success      200      {object}  SuccessResponseBody
-// @Failure      400      {object}  ErrorResponseBody
-// @Router       /auth/forgot-password [post]
+// POST /api/v1/auth/forgot-password
 func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 	var req struct {
 		Email string `json:"email"`
@@ -272,17 +215,7 @@ func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 	return SuccessResponse(c, "If an account with that email exists, a password reset link has been sent.")
 }
 
-// ResetPassword godoc
-// @Summary      Reset password with token
-// @Description  Set new password using reset token from email
-// @Tags         Authentication
-// @Accept       json
-// @Produce      json
-// @Param        request  body      object{token=string,new_password=string}  true  "Reset token and new password"
-// @Success      200      {object}  SuccessResponseBody
-// @Failure      400      {object}  ErrorResponseBody  "Invalid token"
-// @Failure      500      {object}  ErrorResponseBody
-// @Router       /auth/reset-password [post]
+// POST /api/v1/auth/reset-password
 func (h *AuthHandler) ResetPassword(c fiber.Ctx) error {
 	var req struct {
 		Token       string `json:"token"`

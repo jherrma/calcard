@@ -37,8 +37,8 @@ docker compose up -d                                   # SQLite
 ```
 
 This builds **one image** that serves everything on **one origin** (port 8080):
-the REST API (`/api`), DAV (`/dav`), `/.well-known`, `/health`, `/api/docs`, **and
-the built web UI**. Open `http://localhost:8080/` and the UI loads from the same
+the REST API (`/api`), DAV (`/dav`), `/.well-known`, `/health`, **and the built
+web UI**. Open `http://localhost:8080/` and the UI loads from the same
 server that answers its API calls.
 
 Because the UI and API share an origin, the browser never applies CORS, so
@@ -76,27 +76,10 @@ For frontend development, run the SPA separately with `cd webinterface && pnpm d
 
 ## API Documentation
 
-The server exposes an OpenAPI 3.1 specification and Swagger UI.
-
-- **Swagger UI**: Visit `/api/docs` (e.g., `http://localhost:8080/api/docs`)
-- **OpenAPI Spec**: Available at `/api/v1/swagger.json` or `/api/v1/swagger.yaml`
-
-### Generating Documentation
-
-If you modify the API handlers, you need to regenerate the Swagger documentation:
-
-1. Install `swag` CLI:
-   ```bash
-   go install github.com/swaggo/swag/cmd/swag@latest
-   ```
-2. Run generator from `server` directory:
-   ```bash
-   cd server
-   swag init -g cmd/server/main.go --parseDependency --parseInternal
-   ```
-
-> [!NOTE]
-> The Docker build process automatically runs the Swagger generation step, ensuring documentation is always up-to-date in production builds.
+There is no generated API reference. The REST surface is documented in
+[server/CLAUDE.md](server/CLAUDE.md) (endpoint areas) and, per endpoint, by the
+`// METHOD /api/v1/...` doc comment above each handler in
+`server/internal/adapter/http/`.
 
 ---
 

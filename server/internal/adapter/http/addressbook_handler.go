@@ -54,19 +54,7 @@ func (h *AddressBookHandler) resolveAddressBookID(c fiber.Ctx) (uint, bool) {
 	return ab.ID, true
 }
 
-// Create godoc
-// @Summary      Create address book
-// @Description  Create a new address book
-// @Tags         AddressBooks
-// @Accept       json
-// @Produce      json
-// @Param        request  body      dto.CreateAddressBookRequest  true  "Address book details"
-// @Success      201      {object}  domainaddressbook.AddressBook
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      401      {object}  ErrorResponseBody
-// @Failure      500      {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks [post]
+// POST /api/v1/addressbooks
 func (h *AddressBookHandler) Create(c fiber.Ctx) error {
 	userID, err := GetUserIDFromContext(c)
 	if err != nil {
@@ -97,16 +85,7 @@ func (h *AddressBookHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(ab)
 }
 
-// List godoc
-// @Summary      List address books
-// @Description  Get all address books for the user
-// @Tags         AddressBooks
-// @Produce      json
-// @Success      200  {object}  object{addressbooks=[]domainaddressbook.AddressBook}
-// @Failure      401  {object}  ErrorResponseBody
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks [get]
+// GET /api/v1/addressbooks
 func (h *AddressBookHandler) List(c fiber.Ctx) error {
 	userID, err := GetUserIDFromContext(c)
 	if err != nil {
@@ -121,19 +100,7 @@ func (h *AddressBookHandler) List(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"addressbooks": list})
 }
 
-// Get godoc
-// @Summary      Get address book
-// @Description  Get address book by ID
-// @Tags         AddressBooks
-// @Produce      json
-// @Param        id   path      integer  true  "Address Book ID"
-// @Success      200  {object}  domainaddressbook.AddressBook
-// @Failure      400  {object}  ErrorResponseBody
-// @Failure      401  {object}  ErrorResponseBody
-// @Failure      404  {object}  ErrorResponseBody
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{id} [get]
+// GET /api/v1/addressbooks/:id
 func (h *AddressBookHandler) Get(c fiber.Ctx) error {
 	userID, err := GetUserIDFromContext(c)
 	if err != nil {
@@ -156,20 +123,7 @@ func (h *AddressBookHandler) Get(c fiber.Ctx) error {
 	return c.JSON(ab)
 }
 
-// Update godoc
-// @Summary      Update address book
-// @Description  Update address book details
-// @Tags         AddressBooks
-// @Accept       json
-// @Produce      json
-// @Param        id       path      integer                       true  "Address Book ID"
-// @Param        request  body      dto.UpdateAddressBookRequest  true  "Update details"
-// @Success      200      {object}  domainaddressbook.AddressBook
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      401      {object}  ErrorResponseBody
-// @Failure      500      {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{id} [patch]
+// PATCH /api/v1/addressbooks/:id
 func (h *AddressBookHandler) Update(c fiber.Ctx) error {
 	userID, err := GetUserIDFromContext(c)
 	if err != nil {
@@ -201,18 +155,7 @@ func (h *AddressBookHandler) Update(c fiber.Ctx) error {
 	return c.JSON(ab)
 }
 
-// Delete godoc
-// @Summary      Delete address book
-// @Description  Delete address book
-// @Tags         AddressBooks
-// @Accept       json
-// @Param        id       path      integer                       true  "Address Book ID"
-// @Param        request  body      dto.DeleteAddressBookRequest  true  "Confirmation"
-// @Success      204
-// @Failure      400  {object}  ErrorResponseBody
-// @Failure      401  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{id} [delete]
+// DELETE /api/v1/addressbooks/:id
 func (h *AddressBookHandler) Delete(c fiber.Ctx) error {
 	userID, err := GetUserIDFromContext(c)
 	if err != nil {
@@ -240,17 +183,7 @@ func (h *AddressBookHandler) Delete(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// Export godoc
-// @Summary      Export address book
-// @Description  Export address book as vCard
-// @Tags         Import/Export
-// @Produce      text/vcard
-// @Param        id   path      integer  true  "Address Book ID"
-// @Success      200  {file}    file
-// @Failure      400  {object}  ErrorResponseBody
-// @Failure      401  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /addressbooks/{id}/export [get]
+// GET /api/v1/addressbooks/:id/export
 func (h *AddressBookHandler) Export(c fiber.Ctx) error {
 	userID, err := GetUserIDFromContext(c)
 	if err != nil {

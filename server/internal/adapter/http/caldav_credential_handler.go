@@ -30,18 +30,7 @@ func NewCalDAVCredentialHandler(
 	}
 }
 
-// Create godoc
-// @Summary      Create CalDAV credential
-// @Description  Create a new app-specific password/credential for CalDAV access
-// @Tags         Credentials
-// @Accept       json
-// @Produce      json
-// @Param        request  body      dto.CreateCalDAVCredentialRequest  true  "Credential details"
-// @Success      201      {object}  apppassword.CreateCalDAVCredentialOutput
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      409      {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /caldav-credentials [post]
+// POST /api/v1/caldav-credentials
 func (h *CalDAVCredentialHandler) Create(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 
@@ -92,15 +81,7 @@ func (h *CalDAVCredentialHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(output)
 }
 
-// List godoc
-// @Summary      List CalDAV credentials
-// @Description  List all CalDAV credentials for the current user
-// @Tags         Credentials
-// @Produce      json
-// @Success      200  {object}  dto.CalDAVCredentialListResponse
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /caldav-credentials [get]
+// GET /api/v1/caldav-credentials
 func (h *CalDAVCredentialHandler) List(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 
@@ -142,15 +123,7 @@ func (h *CalDAVCredentialHandler) List(c fiber.Ctx) error {
 	return c.JSON(dto.CalDAVCredentialListResponse{Credentials: response})
 }
 
-// Revoke godoc
-// @Summary      Revoke CalDAV credential
-// @Description  Revoke/Delete a CalDAV credential
-// @Tags         Credentials
-// @Param        id   path      string  true  "Credential UUID"
-// @Success      204
-// @Failure      404  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /caldav-credentials/{id} [delete]
+// DELETE /api/v1/caldav-credentials/:id
 func (h *CalDAVCredentialHandler) Revoke(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 	credUUID := c.Params("id")

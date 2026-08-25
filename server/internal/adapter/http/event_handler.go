@@ -159,20 +159,7 @@ func eventResponseFromObject(obj *calendar.CalendarObject) dto.EventResponse {
 	return resp
 }
 
-// List godoc
-// @Summary      List events
-// @Description  Get events from calendar
-// @Tags         Events
-// @Produce      json
-// @Param        calendar_id  path      integer  true   "Calendar ID"
-// @Param        start        query     string   false  "Start time (RFC3339)"
-// @Param        end          query     string   false  "End time (RFC3339)"
-// @Param        expand       query     boolean  false  "Expand recurring events (default true)"
-// @Success      200          {object}  dto.EventListResponse
-// @Failure      400          {object}  ErrorResponseBody
-// @Failure      500          {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /calendars/{calendar_id}/events [get]
+// GET /api/v1/calendars/:calendar_id/events
 func (h *EventHandler) List(c fiber.Ctx) error {
 	calendarID, ok := h.resolveCalendarID(c)
 	if !ok || h.calendarPermission(c, calendarID) == calendar.PermissionNone {
@@ -213,18 +200,7 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 	})
 }
 
-// Get godoc
-// @Summary      Get event
-// @Description  Get event by ID
-// @Tags         Events
-// @Produce      json
-// @Param        calendar_id  path      integer  true  "Calendar ID"
-// @Param        event_id     path      string   true  "Event UUID"
-// @Success      200          {object}  dto.EventResponse
-// @Failure      404          {object}  ErrorResponseBody
-// @Failure      500          {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /calendars/{calendar_id}/events/{event_id} [get]
+// GET /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Get(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
 	if h.eventPermission(c, eventID) == calendar.PermissionNone {
@@ -238,19 +214,7 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 	return c.JSON(eventResponseFromObject(obj))
 }
 
-// Create godoc
-// @Summary      Create event
-// @Description  Create a new event
-// @Tags         Events
-// @Accept       json
-// @Produce      json
-// @Param        calendar_id  path      integer                 true  "Calendar ID"
-// @Param        event        body      dto.CreateEventRequest  true  "Event details"
-// @Success      201          {object}  dto.EventResponse
-// @Failure      400          {object}  ErrorResponseBody
-// @Failure      500          {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /calendars/{calendar_id}/events [post]
+// POST /api/v1/calendars/:calendar_id/events
 func (h *EventHandler) Create(c fiber.Ctx) error {
 	calendarID, ok := h.resolveCalendarID(c)
 	if !ok {
@@ -293,24 +257,7 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(eventResponseFromObject(obj))
 }
 
-// Update godoc
-// @Summary      Update event
-// @Description  Update event details
-// @Tags         Events
-// @Accept       json
-// @Produce      json
-// @Param        calendar_id    path      integer                 true   "Calendar ID"
-// @Param        event_id       path      string                  true   "Event UUID"
-// @Param        recurrence_id  query     string                  false  "Recurrence ID (for recurring events)"
-// @Param        scope          query     string                  false  "Update scope (this, all, this_and_future)"
-// @Param        event          body      dto.UpdateEventRequest  true   "Event updates"
-// @Param        If-Match       header    string                  false  "Optional ETag precondition; 412 on mismatch"
-// @Success      200            {object}  dto.EventResponse
-// @Failure      400            {object}  ErrorResponseBody
-// @Failure      412            {object}  ErrorResponseBody  "ETag precondition failed"
-// @Failure      500            {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /calendars/{calendar_id}/events/{event_id} [put]
+// PUT /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Update(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
 	perm := h.eventPermission(c, eventID)
@@ -361,20 +308,7 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 	return c.JSON(eventResponseFromObject(obj))
 }
 
-// Delete godoc
-// @Summary      Delete event
-// @Description  Delete an event
-// @Tags         Events
-// @Param        calendar_id    path      integer  true   "Calendar ID"
-// @Param        event_id       path      string   true   "Event UUID"
-// @Param        scope          query     string   false  "Delete scope (this, all, this_and_future)"
-// @Param        recurrence_id  query     string   false  "Recurrence ID (for recurring events)"
-// @Param        If-Match       header    string   false  "Optional ETag precondition; 412 on mismatch"
-// @Success      204
-// @Failure      412  {object}  ErrorResponseBody  "ETag precondition failed"
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /calendars/{calendar_id}/events/{event_id} [delete]
+// DELETE /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Delete(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
 	perm := h.eventPermission(c, eventID)
@@ -400,20 +334,7 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// Move godoc
-// @Summary      Move event
-// @Description  Move event to another calendar
-// @Tags         Events
-// @Accept       json
-// @Produce      json
-// @Param        calendar_id  path      integer               true  "Source Calendar ID"
-// @Param        event_id     path      string                true  "Event UUID"
-// @Param        request      body      dto.MoveEventRequest  true  "Target calendar"
-// @Success      200          {object}  dto.EventResponse
-// @Failure      400          {object}  ErrorResponseBody
-// @Failure      500          {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /calendars/{calendar_id}/events/{event_id}/move [post]
+// POST /api/v1/calendars/:calendar_id/events/:event_id/move
 func (h *EventHandler) Move(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
 	srcPerm := h.eventPermission(c, eventID)
