@@ -9,6 +9,12 @@ export interface Calendar {
   owner_id: string;
   shared?: boolean;
   permission?: string;
+  /**
+   * True when this calendar mirrors a remote iCalendar feed (story 100). The
+   * server refuses every write to it — from its owner as much as from a
+   * sharee — so the UI must not offer one.
+   */
+  subscribed?: boolean;
   public_enabled?: boolean;
   public_url?: string;
   owner?: {
@@ -60,4 +66,43 @@ export interface EventsQuery {
   start: string;
   end: string;
   calendar_ids?: string[];
+}
+
+/**
+ * A subscription to a remote iCalendar feed (story 100). The server flattens
+ * the subscription and the calendar mirroring it into one object, because they
+ * are one thing to the user: "a calendar I subscribed to".
+ */
+export interface CalendarSubscription {
+  id: string;
+  /** UUID of the read-only calendar this feed is mirrored into. */
+  calendar_id: string;
+  name: string;
+  description: string;
+  color: string;
+  url: string;
+  /** A Go duration string from the allowed set: 15m, 30m, 1h, 6h, 12h, 24h. */
+  refresh_interval: string;
+  status: 'pending' | 'synced' | 'error' | 'disabled';
+  enabled: boolean;
+  last_synced_at: string | null;
+  /** Null when auto-sync is off — there is no next refresh to report. */
+  next_sync_at: string | null;
+  last_error: string;
+  error_count: number;
+  event_count: number;
+  created_at: string;
+}
+
+export interface CalendarSubscriptionListResponse {
+  subscriptions: CalendarSubscription[];
+}
+
+/** POST /calendar-subscriptions/:id/refresh — the subscription plus what changed. */
+export interface CalendarSubscriptionRefreshResponse extends CalendarSubscription {
+  synced: boolean;
+  created: number;
+  updated: number;
+  deleted: number;
+  skipped: number;
 }

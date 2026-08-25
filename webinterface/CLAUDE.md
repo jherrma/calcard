@@ -36,7 +36,7 @@ webinterface/
 │   ├── contacts/
 │   │   └── index.vue        # Contact list with search, grouping, detail panel
 │   ├── search.vue           # Full global-search results page (?q=…), uncapped
-│   └── settings/            # Profile, password, credentials, MCP access, connections, import/export, admin, danger
+│   └── settings/            # Profile, password, credentials, MCP access, subscriptions, connections, import/export, admin, danger
 │       ├── about.vue        # Open Source Attribution (story 101)
 │       └── appearance.vue   # Theme + accent colour picker (story 046)
 ├── components/              # Auto-imported by Nuxt (directory prefix = component name)
@@ -389,6 +389,32 @@ Two things that look cosmetic but are not:
 - **A failed load renders an error with a Retry, never the empty state.** "No MCP tokens yet" on a
   failed request is a false statement about the account and hides the very token the user may have
   come to revoke — the same rule `pages/settings/sharing.vue` follows.
+
+### Calendar Subscriptions (story 100)
+
+`pages/settings/subscriptions.vue` manages remote iCalendar feeds mirrored into read-only
+calendars. Like the MCP page it has no Pinia store of its own — `useApi()` against
+`/api/v1/calendar-subscriptions` (raw JSON, no `{status,data}` envelope) is the whole surface.
+
+Three things that look cosmetic but are not:
+
+- **A subscribed calendar is read-only, and the UI must not offer a write.** `Calendar.subscribed`
+  drives that. `stores/calendars.ts` excludes subscribed calendars from `writableCalendars` — the
+  single getter the event form and the dashboard quick-add read — and `pages/calendar/index.vue`
+  sets `editable` **per event** rather than globally, so one read-only calendar among several does
+  not freeze the whole grid. (That per-event flag also fixed the same gap for read-only *shares*,
+  which were draggable and failed server-side.) `CalendarSidebar.vue` lists them in their own
+  section without the edit/share/delete menu.
+- **A failed refresh answers HTTP 200.** The request succeeded; the third-party feed is what
+  failed, and the response carries the reason on the subscription. The page keys its toast on
+  `result.synced`, not on the request resolving — treating 200 as success would show "refreshed"
+  over a row that is about to render an error.
+- **Every mutation refreshes the calendar store too.** A subscription IS a calendar: adding,
+  renaming, recolouring, refreshing or removing one changes `GET /calendars`, and without the
+  extra call the sidebar keeps showing the old state until a full page reload.
+
+A failed *load* renders an error with a Retry rather than the empty state, for the same reason as
+the MCP page.
 
 ## Nuxt Configuration
 

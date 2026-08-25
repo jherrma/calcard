@@ -75,3 +75,26 @@ mcp:
   # on). An assistant makes a burst of tool calls per conversation turn, so this
   # sits well above a human-clicking limit while still bounding a runaway loop.
   requests: 120
+
+# Remote calendar subscriptions (story 100): the background worker that mirrors
+# third-party iCalendar feeds into read-only calendars.
+subscriptions:
+  enabled: true
+  # How often the worker looks for due feeds. NOT a refresh interval — each
+  # subscription carries its own (15m/30m/1h/6h/12h/24h, chosen by the user).
+  # 0 disables the worker while leaving manual refresh working.
+  worker_interval: 1m
+  # Consecutive failures after which a subscription's auto-sync switches off.
+  # A manual refresh turns it back on. 0 never disables.
+  max_failures: 5
+  # Byte cap on a feed body. An oversized feed FAILS rather than being
+  # truncated: half an .ics parses fine and would delete every event past the
+  # cut-off from the mirror.
+  max_feed_size: 5242880
+  fetch_timeout: 30s
+  max_per_user: 20
+  # Both of the following widen what a user can point the SERVER at, which is
+  # the classic server-side request forgery shape. Leave them off unless your
+  # users are meant to subscribe to feeds on this machine's private network.
+  allow_insecure_urls: false
+  allow_private_hosts: false

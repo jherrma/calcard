@@ -45,6 +45,44 @@
         </div>
       </div>
 
+      <!-- Subscribed calendars (story 100). Their own section, without the
+           per-calendar menu: they are read-only mirrors of a remote feed, and
+           everything you can do with one lives on the settings page. -->
+      <div v-if="subscribedCalendars.length > 0" class="mt-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300">Subscribed</h3>
+          <NuxtLink
+            to="/settings/subscriptions"
+            class="text-surface-500 dark:text-surface-400 hover:text-surface-600 dark:hover:text-surface-200"
+            aria-label="Manage subscriptions"
+          >
+            <i class="pi pi-cog text-sm" />
+          </NuxtLink>
+        </div>
+        <div class="space-y-1">
+          <div
+            v-for="calendar in subscribedCalendars"
+            :key="calendar.id"
+            class="flex items-center gap-2 p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800"
+          >
+            <Checkbox
+              :model-value="calendar.visible"
+              :binary="true"
+              @update:model-value="emit('toggle-calendar', calendar.id)"
+            />
+            <span
+              class="w-3 h-3 rounded-full flex-shrink-0"
+              :style="{ backgroundColor: calendar.color }"
+            />
+            <span class="flex-1 text-sm truncate text-surface-700 dark:text-surface-300">{{ calendar.name }}</span>
+            <i
+              class="pi pi-cloud-download text-xs text-surface-400 dark:text-surface-500"
+              title="Read-only — mirrors a remote feed"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- Shared calendars -->
       <div v-if="sharedCalendars.length > 0" class="mt-6">
         <h3 class="text-sm font-semibold text-surface-700 dark:text-surface-300 mb-3">Shared with me</h3>
@@ -96,12 +134,19 @@ const emit = defineEmits<{
 const calendarMenu = ref();
 const selectedCalendar = ref<(Calendar & { visible: boolean }) | null>(null);
 
+// A subscribed calendar is owned but read-only, so it belongs in neither of
+// the existing groups: listing it under "My Calendars" would give it the
+// edit/share/delete menu those rows carry.
 const ownedCalendars = computed(() =>
-  props.calendars.filter(c => !c.shared)
+  props.calendars.filter(c => !c.shared && !c.subscribed)
 );
 
 const sharedCalendars = computed(() =>
   props.calendars.filter(c => c.shared)
+);
+
+const subscribedCalendars = computed(() =>
+  props.calendars.filter(c => c.subscribed)
 );
 
 const handleEdit = () => {

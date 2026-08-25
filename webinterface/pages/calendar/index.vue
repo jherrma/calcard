@@ -247,9 +247,19 @@ watch(() => route.query, () => {
 });
 
 // Get calendar color
-const getCalendarColor = (calendarId: number) => {
-  const calendar = calendarStore.calendars.find(c => String(c.id) === String(calendarId));
-  return calendar?.color || '#3b82f6';
+const findCalendar = (calendarId: number | string) =>
+  calendarStore.calendars.find(c => String(c.id) === String(calendarId));
+
+const getCalendarColor = (calendarId: number) => findCalendar(calendarId)?.color || '#3b82f6';
+
+// Whether the user may edit events in a calendar. Read-only calendars are
+// read-only shares and subscriptions (story 100); dragging an event in either
+// produces a 403 and a toast, having already animated the move.
+const isCalendarEditable = (calendarId: number) => {
+  const calendar = findCalendar(calendarId);
+  if (!calendar) return false;
+  if (calendar.subscribed) return false;
+  return !calendar.shared || calendar.permission === 'read-write';
 };
 
 // Map store events to FullCalendar event objects
@@ -267,6 +277,9 @@ const mappedEvents = computed(() =>
     allDay: event.all_day,
     backgroundColor: getCalendarColor(event.calendar_id),
     borderColor: getCalendarColor(event.calendar_id),
+    // Per-event, not global: one read-only calendar among several must not
+    // make the whole grid read-only.
+    editable: isCalendarEditable(event.calendar_id),
     extendedProps: {
       eventId: event.id, // real backend id for API calls
       recurrenceId: event.recurrence_id,

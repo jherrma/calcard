@@ -9,7 +9,7 @@ This directory contains the core business logic and implementation details of th
 - **Purpose**: Contains the core business entities and the logic that is intrinsic to the domain.
 - **Contents**:
   - `user/` — User, RefreshToken, EmailVerification, AppPassword, CalDAV/CardDAV credentials, repository interfaces.
-  - `calendar/` — Calendar, CalendarObject, Event, SyncChangelog, repository interfaces, validation.
+  - `calendar/` — Calendar, CalendarObject, Event, CalendarSubscription, SyncChangelog, repository interfaces, validation.
   - `addressbook/` — AddressBook, AddressObject, Photo, SyncChangelog, repository interfaces.
   - `contact/` — Contact domain model.
   - `sharing/` — CalendarShare, AddressBookShare, sharing repository interfaces.
@@ -31,6 +31,7 @@ This directory contains the core business logic and implementation details of th
   - `importexport/` — Calendar import, contact import, backup export.
   - `about/` — Open-source attribution list (embedded, generated manifest).
   - `mcptoken/` — Mint, list, revoke and verify the long-lived bearer tokens MCP clients authenticate with (story 104).
+  - `subscription/` — Remote calendar subscriptions (story 100): the SSRF-guarded feed fetcher, the feed parser, the sync engine and the background refresh worker.
 - **Dependencies**: Only depends on `domain`.
 
 ### [adapter/](adapter/)

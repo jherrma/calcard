@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/jherrma/caldav-server/internal/domain/calendar"
 )
 
 const appleICalNS = "http://apple.com/ns/ical/"
@@ -77,11 +76,15 @@ func (h *Handler) handleCollectionProppatch(c fiber.Ctx, ctx context.Context, re
 	if newName != nil || newColor != nil {
 		if collectionType == "calendars" {
 			be := h.caldavHandler.Backend.(*CalDAVBackend)
-			cal, _, perm, err := be.ResolvePath(ctx, reqPath)
+			cal, u, _, err := be.ResolvePath(ctx, reqPath)
 			if err != nil {
 				return c.SendStatus(http.StatusNotFound)
 			}
-			if perm != calendar.PermissionOwner {
+			// Ownership, not PermissionOwner: renaming or recolouring a
+			// collection is the owner's prerogative, and ResolvePath caps a
+			// subscribed calendar (story 100) at read-only, which would
+			// otherwise stop its owner renaming their own subscription.
+			if cal.UserID != u.ID {
 				return c.SendStatus(http.StatusForbidden)
 			}
 			if newName != nil {

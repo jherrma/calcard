@@ -8,12 +8,80 @@ Subscribe to Remote Calendars via URL
 
 As a user, I want to subscribe to external calendars via URL (WebCal/iCalendar feeds) so that I can view events from other services (e.g., Google Calendar, Outlook, sports schedules) that automatically stay synchronized with the remote source.
 
-## Implementation status (audited 2026-08-04)
+## Implementation status: **Done** (2026-08-25)
 
-**Nothing implemented** — the word "subscription" does not appear anywhere in `server/internal`.
-Read-only calendars have no representation in the domain model yet either, so this needs the model
-change, a refresh scheduler, and a decision about how a failing feed surfaces in the UI before any
-endpoint work starts.
+Implemented end to end — domain model, repository, use cases, background worker, REST endpoints,
+read-only enforcement across every write surface, and a settings page. Verified against a real
+public feed (`https://www.Der-Mond.de/ical/vollmond.ics`, 86 events): the create, refresh and
+worker paths all round-trip it with a byte-stable result, so a re-fetch of unchanged content
+reports zero changes and does not touch the collection.
+
+### Where the code lives
+
+| Piece | File |
+| --- | --- |
+| Entity, status/backoff rules, repository interfaces | `internal/domain/calendar/subscription.go`, `repository.go` |
+| `Calendar.Subscribed` + `EffectivePermission` | `internal/domain/calendar/calendar.go` |
+| GORM repository | `internal/adapter/repository/subscription_repo.go` |
+| Transactional feed diff | `CalendarRepository.ReplaceFeedObjects` in `internal/adapter/repository/calendar_repo.go` |
+| SSRF-guarded fetcher | `internal/usecase/subscription/fetch.go` |
+| Feed parser (UID grouping, VTIMEZONE) | `internal/usecase/subscription/parse.go` |
+| Sync + CRUD use cases | `internal/usecase/subscription/{sync,create,manage}.go` |
+| Background worker | `internal/usecase/subscription/worker.go` |
+| REST handler | `internal/adapter/http/subscription_handler.go` |
+| Settings page | `webinterface/pages/settings/subscriptions.vue` |
+
+### Departures from this story, and why
+
+1. **Read-only is enforced by capping the resolved permission, not by a check per write site.**
+   `calendar.EffectivePermission` caps a subscribed calendar at `PermissionRead`, and the three
+   adapters that resolve a permission (REST, CalDAV, MCP) all funnel through it. A write path that
+   already refuses `PermissionRead` therefore needs no new code and cannot be forgotten. It caps
+   only OBJECT access: the owner keeps rename, recolour, share and delete, because those check
+   `cal.UserID` directly. The CalDAV collection-DELETE and PROPPATCH paths were changed from
+   `perm == PermissionOwner` to an ownership comparison for exactly that reason.
+
+2. **"Preserve local modifications (optional setting)" was dropped.** The calendar is read-only,
+   so there are no local modifications to preserve. Keeping the setting would mean allowing writes
+   that the next refresh silently discards, which is worse than refusing them.
+
+3. **The resourcetype stays `<C:calendar/>`; `CS:subscribed` is NOT advertised.** A client that
+   does not know the CalendarServer subscribed type would stop treating the collection as a
+   calendar and hide its events entirely. The read-only nature is advertised through
+   `DAV:current-user-privilege-set` instead — which every CalDAV client understands — plus
+   `CS:source` naming the feed. Adding privileges also fixed the same gap for read-only *shares*,
+   which previously advertised write.
+
+4. **`RefreshInterval` is a closed set, not "anything >= 15m".** A minimum alone lets a caller
+   pick `15m1s` to look compliant while polling continuously; a closed set also keeps the UI a
+   dropdown.
+
+5. **Backoff is anchored to the subscription's own interval**, not a fixed base: a 15-minute feed
+   should retry sooner than a daily one. It is capped at 24h and the shift is guarded, so a
+   long-broken feed cannot overflow the duration into a negative value and become a hot loop.
+
+6. **The feed is fetched and validated BEFORE anything is written** (as the story asks), and a
+   failure after the calendar is created rolls the calendar back. A subscribed calendar without
+   its subscription row is unreachable wreckage: read-only to every write path, and refreshed by
+   nothing.
+
+7. **Deleting a calendar cascades to its subscription**, in `CalendarRepository.Delete`. A
+   calendar can be deleted from three places and only one of them knows subscriptions exist; an
+   orphan would keep fetching a third party's feed forever for a calendar the user believes is
+   gone.
+
+8. **A failed manual refresh answers 200, not 5xx.** The request succeeded; the third-party feed
+   is what failed, and the client needs the updated subscription state to render the reason.
+
+### Security notes
+
+A subscription URL is attacker-chosen input that the SERVER fetches — the classic SSRF shape.
+The guard lives in the HTTP client's dial `Control` hook, which sees the ALREADY RESOLVED
+`ip:port` immediately before connect, so DNS rebinding (the standard bypass for a pre-flight
+lookup) is caught, and every redirect hop and every address in a round-robin is checked for free.
+Non-public addresses, plain `http://`, non-http schemes and URLs with embedded credentials are all
+refused; `CALDAV_SUBSCRIPTIONS_ALLOW_PRIVATE_HOSTS` / `..._ALLOW_INSECURE_URLS` widen this
+deliberately. Failure messages never repeat the feed URL, which routinely carries a secret token.
 
 ## Acceptance Criteria
 

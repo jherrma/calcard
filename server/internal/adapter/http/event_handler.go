@@ -92,7 +92,19 @@ func (h *EventHandler) calendarPermission(c fiber.Ctx, calendarID uint) calendar
 	if err != nil {
 		return calendar.PermissionNone
 	}
-	return perm
+	if perm == calendar.PermissionNone {
+		return perm
+	}
+	// A subscribed calendar (story 100) mirrors a remote feed and is read-only
+	// to everyone, its owner included: the next refresh replaces its contents
+	// wholesale, so a write accepted here would vanish without a trace. Load
+	// the calendar only once we know the caller can see it at all, so this
+	// costs nothing on the "no access" path.
+	cal, err := h.calendarRepo.GetByID(c.Context(), calendarID)
+	if err != nil {
+		return calendar.PermissionNone
+	}
+	return calendar.EffectivePermission(cal, perm)
 }
 
 // eventPermission returns the user's permission on the calendar that contains

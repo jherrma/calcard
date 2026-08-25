@@ -30,6 +30,13 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 	if cal.UserID != userID {
 		return nil, fmt.Errorf("access denied")
 	}
+	// A subscribed calendar (story 100) mirrors a remote feed: anything
+	// imported into it survives only until the next refresh, which replaces
+	// the collection's contents wholesale. Accepting the import and reporting
+	// "42 events imported" would be a lie with a delay on it.
+	if cal.Subscribed {
+		return nil, fmt.Errorf("cannot import into a subscribed calendar: it mirrors a remote feed and is read-only")
+	}
 
 	// Default options
 	if opts.DuplicateHandling == "" {

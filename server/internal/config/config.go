@@ -28,6 +28,8 @@ type Config struct {
 	Security     SecurityConfig     `yaml:"security"`
 	Registration RegistrationConfig `yaml:"registration"`
 	MCP          MCPConfig          `yaml:"mcp"`
+
+	Subscriptions SubscriptionConfig `yaml:"subscriptions"`
 }
 
 // ServerConfig contains server-specific settings
@@ -80,6 +82,56 @@ type JWTConfig struct {
 type MCPConfig struct {
 	Enabled  bool `yaml:"enabled" env:"CALDAV_MCP_ENABLED"`
 	Requests int  `yaml:"requests" env:"CALDAV_MCP_RATE_LIMIT_REQUESTS"`
+}
+
+// SubscriptionConfig controls remote calendar subscriptions (story 100) — the
+// background worker that mirrors third-party iCalendar feeds into read-only
+// calendars.
+//
+// This is the one feature that makes the server issue outbound HTTP requests to
+// URLs its users choose, so its security-relevant knobs live here rather than
+// being hard-coded: AllowInsecureURLs and AllowPrivateHosts are both off, and
+// turning either on widens what a user can point the server at.
+type SubscriptionConfig struct {
+	// Enabled off unregisters the routes and never starts the worker, so an
+	// operator who does not want outbound fetches at all gets exactly that.
+	Enabled bool `yaml:"enabled" env:"CALDAV_SUBSCRIPTIONS_ENABLED"`
+
+	// WorkerInterval is how often the worker looks for due subscriptions. It
+	// is NOT a refresh interval: each subscription carries its own, and this
+	// only bounds how late a refresh can be. Zero disables the worker while
+	// leaving manual refresh working.
+	WorkerInterval time.Duration `yaml:"worker_interval" env:"CALDAV_SUBSCRIPTIONS_WORKER_INTERVAL"`
+
+	// MaxFailures is how many consecutive failed refreshes disable a
+	// subscription's auto-sync. 0 means never disable.
+	MaxFailures int `yaml:"max_failures" env:"CALDAV_SUBSCRIPTIONS_MAX_FAILURES"`
+
+	// MaxFeedSize caps a feed's response body in bytes. A feed that exceeds it
+	// fails rather than being truncated: half an .ics would silently delete
+	// every event past the cut-off from the mirror.
+	MaxFeedSize int64 `yaml:"max_feed_size" env:"CALDAV_SUBSCRIPTIONS_MAX_FEED_SIZE"`
+
+	// FetchTimeout bounds one feed fetch end to end, redirects included.
+	FetchTimeout time.Duration `yaml:"fetch_timeout" env:"CALDAV_SUBSCRIPTIONS_FETCH_TIMEOUT"`
+
+	// MaxPerUser caps how many subscriptions one account may hold. Each one is
+	// a recurring outbound request the server makes on that user's behalf.
+	MaxPerUser int `yaml:"max_per_user" env:"CALDAV_SUBSCRIPTIONS_MAX_PER_USER"`
+
+	// AllowInsecureURLs permits plain http:// feeds. Off by default: a feed
+	// fetched over http is trivially modifiable in transit, and the events it
+	// injects show up in the user's calendar as if the server vouched for them.
+	AllowInsecureURLs bool `yaml:"allow_insecure_urls" env:"CALDAV_SUBSCRIPTIONS_ALLOW_INSECURE_URLS"`
+
+	// AllowPrivateHosts permits feeds on loopback, link-local and private
+	// address space. Off by default because a subscription URL is attacker-
+	// chosen input that the SERVER fetches — the classic SSRF shape, where a
+	// user points a feed at an internal admin panel or a cloud metadata
+	// endpoint and reads the response back out of their own calendar. Turn it
+	// on only for a deployment whose users are meant to subscribe to feeds on
+	// the same private network.
+	AllowPrivateHosts bool `yaml:"allow_private_hosts" env:"CALDAV_SUBSCRIPTIONS_ALLOW_PRIVATE_HOSTS"`
 }
 
 // RateLimitConfig contains rate limiting settings
@@ -234,6 +286,16 @@ func Load(configPath string) (*Config, error) {
 			// break normal use, while this still bounds a runaway loop.
 			Requests: 120,
 		},
+		Subscriptions: SubscriptionConfig{
+			Enabled: true,
+			// A minute of granularity is plenty when the shortest refresh
+			// interval a user can pick is fifteen.
+			WorkerInterval: time.Minute,
+			MaxFailures:    5,
+			MaxFeedSize:    5 * 1024 * 1024,
+			FetchTimeout:   30 * time.Second,
+			MaxPerUser:     20,
+		},
 		OAuth: OAuthConfig{
 			Google: OAuthProviderConfig{
 				Issuer: "https://accounts.google.com",
@@ -323,6 +385,26 @@ func Load(configPath string) (*Config, error) {
 	}
 	if cfg.MCP.Requests <= 0 {
 		cfg.MCP.Requests = 120
+	}
+
+	// Subscription limits: a zero or negative value here would mean "no cap"
+	// on an outbound-fetch feature, so mirror the defaults instead. Zero is
+	// meaningful for WorkerInterval (disable the worker) and MaxFailures
+	// (never auto-disable), so only NEGATIVE values are corrected for those.
+	if cfg.Subscriptions.WorkerInterval < 0 {
+		cfg.Subscriptions.WorkerInterval = time.Minute
+	}
+	if cfg.Subscriptions.MaxFailures < 0 {
+		cfg.Subscriptions.MaxFailures = 5
+	}
+	if cfg.Subscriptions.MaxFeedSize <= 0 {
+		cfg.Subscriptions.MaxFeedSize = 5 * 1024 * 1024
+	}
+	if cfg.Subscriptions.FetchTimeout <= 0 {
+		cfg.Subscriptions.FetchTimeout = 30 * time.Second
+	}
+	if cfg.Subscriptions.MaxPerUser <= 0 {
+		cfg.Subscriptions.MaxPerUser = 20
 	}
 
 	return cfg, nil

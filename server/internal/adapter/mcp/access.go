@@ -43,7 +43,17 @@ func (s *Server) calendarPermission(cc *callContext, calendarID uint) calendar.C
 	if err != nil {
 		return calendar.PermissionNone
 	}
-	return perm
+	if perm == calendar.PermissionNone {
+		return perm
+	}
+	// Same cap the REST handler applies: a subscribed calendar (story 100) is
+	// a read-only mirror of a remote feed, so an assistant may read it and may
+	// not write to it, whoever it is acting for.
+	cal, err := s.deps.CalendarRepo.GetByID(cc.ctx, calendarID)
+	if err != nil {
+		return calendar.PermissionNone
+	}
+	return calendar.EffectivePermission(cal, perm)
 }
 
 // eventPermission returns the caller's permission on the calendar holding the

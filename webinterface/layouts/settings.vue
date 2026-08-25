@@ -139,6 +139,7 @@ const navItems: SettingsNavItem[] = [
   { to: '/settings/password', label: 'Password', icon: 'pi pi-lock' },
   { to: '/settings/appearance', label: 'Appearance', icon: 'pi pi-palette' },
   { to: '/settings/calendar', label: 'Calendar', icon: 'pi pi-calendar-clock' },
+  { to: '/settings/subscriptions', label: 'Subscriptions', icon: 'pi pi-cloud-download' },
   { to: '/settings/app-passwords', label: 'App Passwords', icon: 'pi pi-key' },
   { to: '/settings/caldav-credentials', label: 'CalDAV Credentials', icon: 'pi pi-calendar' },
   { to: '/settings/carddav-credentials', label: 'CardDAV Credentials', icon: 'pi pi-id-card' },

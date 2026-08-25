@@ -93,6 +93,44 @@ would either throttle a single legitimate conversation or be far too loose on a
 shared host. It is separate from `rate_limit.requests` because one MCP call can
 be a whole conversation turn's worth of work.
 
+### Subscriptions Section (`subscriptions:`)
+
+Controls remote calendar subscriptions (story 100) — the background worker that
+mirrors third-party iCalendar feeds into read-only calendars, and the
+`/api/v1/calendar-subscriptions` endpoints behind **Settings → Subscriptions**.
+
+This is the only feature that makes the server issue outbound HTTP requests to
+URLs its users choose, so read the two `allow_*` keys before changing them.
+
+| YAML Key              | Env Var                                          | Default   | Description                                                                                                     |
+| :-------------------- | :----------------------------------------------- | :-------- | :-------------------------------------------------------------------------------------------------------------- |
+| `enabled`             | `CALDAV_SUBSCRIPTIONS_ENABLED`                   | `true`    | Register the routes and start the worker. `false` removes both — no outbound fetches at all.                     |
+| `worker_interval`     | `CALDAV_SUBSCRIPTIONS_WORKER_INTERVAL`           | `1m`      | How often the worker looks for due feeds. **Not** a refresh interval — each subscription carries its own. `0` disables the worker while leaving manual refresh working. |
+| `max_failures`        | `CALDAV_SUBSCRIPTIONS_MAX_FAILURES`              | `5`       | Consecutive failures after which a subscription's auto-sync is switched off. `0` never disables.                 |
+| `max_feed_size`       | `CALDAV_SUBSCRIPTIONS_MAX_FEED_SIZE`             | `5242880` | Byte cap on a feed body. An oversized feed fails rather than being truncated.                                    |
+| `fetch_timeout`       | `CALDAV_SUBSCRIPTIONS_FETCH_TIMEOUT`             | `30s`     | Bounds one fetch end to end, redirects included.                                                                 |
+| `max_per_user`        | `CALDAV_SUBSCRIPTIONS_MAX_PER_USER`              | `20`      | Subscriptions one account may hold. Each is a recurring outbound request made on that user's behalf.             |
+| `allow_insecure_urls` | `CALDAV_SUBSCRIPTIONS_ALLOW_INSECURE_URLS`       | `false`   | Permit plain `http://` feeds. See below.                                                                         |
+| `allow_private_hosts` | `CALDAV_SUBSCRIPTIONS_ALLOW_PRIVATE_HOSTS`       | `false`   | Permit feeds on loopback, link-local and private address space. See below.                                       |
+
+A user may pick any of `15m`, `30m`, `1h` (default), `6h`, `12h` or `24h` as a
+subscription's own refresh interval. That set is closed and not configurable: a
+plain minimum lets a caller choose `15m1s` to look compliant while polling
+continuously.
+
+**`allow_private_hosts` is an SSRF control.** A subscription URL is input the
+user chooses and the *server* fetches, so without a guard "subscribe to a
+calendar" becomes a way to read any URL the server can reach — an internal admin
+panel, a cloud instance-metadata endpoint — and pipe the response back through
+the user's own calendar. The check runs at connect time on the resolved IP, so
+DNS rebinding and redirects are covered too. Turn it on only for a deployment
+whose users are meant to subscribe to feeds on the same private network.
+
+**`allow_insecure_urls`** exists for the same kind of deployment. A feed fetched
+over plain http is trivially modifiable in transit, and the events it injects
+appear in the user's calendar as if the server vouched for them. `webcal://`
+links are rewritten to `https://` and are unaffected by this setting.
+
 ### TLS Section (`tls:`)
 
 | YAML Key    | Env Var                | Default | Description                       |
