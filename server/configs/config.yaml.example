@@ -65,3 +65,13 @@ security:
   hsts_enabled: true
   hsts_max_age: 31536000
 
+
+# Model Context Protocol endpoint (/mcp), story 104. Enabled by default; using
+# it still requires an MCP access token minted per user under Settings → MCP
+# Access. Set enabled: false to unregister the routes entirely.
+mcp:
+  enabled: true
+  # Per-USER requests per rate_limit.window (only applied when rate limiting is
+  # on). An assistant makes a burst of tool calls per conversation turn, so this
+  # sits well above a human-clicking limit while still bounding a runaway loop.
+  requests: 120

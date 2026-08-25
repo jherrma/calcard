@@ -27,6 +27,7 @@ type Config struct {
 	CORS         CORSConfig         `yaml:"cors"`
 	Security     SecurityConfig     `yaml:"security"`
 	Registration RegistrationConfig `yaml:"registration"`
+	MCP          MCPConfig          `yaml:"mcp"`
 }
 
 // ServerConfig contains server-specific settings
@@ -62,6 +63,23 @@ type JWTConfig struct {
 	AccessExpiry  time.Duration `yaml:"access_expiry" env:"CALDAV_JWT_ACCESS_EXPIRY"`
 	RefreshExpiry time.Duration `yaml:"refresh_expiry" env:"CALDAV_JWT_REFRESH_EXPIRY"`
 	ResetExpiry   time.Duration `yaml:"reset_expiry" env:"CALDAV_PASSWORD_RESET_EXPIRY"`
+}
+
+// MCPConfig controls the Model Context Protocol endpoint (story 104).
+//
+// Enabled defaults to true: the endpoint is useless without an MCP token, which
+// a user has to mint deliberately, so shipping it off by default would only
+// mean the feature silently does nothing. Operators who do not want an AI tool
+// surface on their server at all can turn it off here, which unregisters the
+// routes entirely rather than merely refusing requests.
+//
+// Requests is the per-user allowance per RateLimit.Window. It is separate from
+// the global limit because one MCP call can be a whole conversation turn's
+// worth of work, and because the limit must key on the user rather than the IP:
+// an assistant runs from one address on behalf of one account.
+type MCPConfig struct {
+	Enabled  bool `yaml:"enabled" env:"CALDAV_MCP_ENABLED"`
+	Requests int  `yaml:"requests" env:"CALDAV_MCP_RATE_LIMIT_REQUESTS"`
 }
 
 // RateLimitConfig contains rate limiting settings
@@ -209,6 +227,13 @@ func Load(configPath string) (*Config, error) {
 			AuthIPRequests:    20,
 			AuthEmailRequests: 10,
 		},
+		MCP: MCPConfig{
+			Enabled: true,
+			// 120/min per user: an assistant working through a request makes a
+			// burst of tool calls, so a limit tuned for human clicking would
+			// break normal use, while this still bounds a runaway loop.
+			Requests: 120,
+		},
 		OAuth: OAuthConfig{
 			Google: OAuthProviderConfig{
 				Issuer: "https://accounts.google.com",
@@ -295,6 +320,9 @@ func Load(configPath string) (*Config, error) {
 	}
 	if cfg.RateLimit.AuthEmailRequests <= 0 {
 		cfg.RateLimit.AuthEmailRequests = 10
+	}
+	if cfg.MCP.Requests <= 0 {
+		cfg.MCP.Requests = 120
 	}
 
 	return cfg, nil

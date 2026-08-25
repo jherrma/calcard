@@ -73,6 +73,26 @@ All configuration options can be set via environment variables. The mapping is d
 | `requests` | `CALDAV_RATE_LIMIT_REQUESTS` | `100`   | Number of requests allowed in the window. |
 | `window`   | `CALDAV_RATE_LIMIT_WINDOW`   | `1m`    | Time window for rate limiting.            |
 
+### MCP Section (`mcp:`)
+
+Controls the Model Context Protocol endpoint at `/mcp` (story 104), which lets an
+AI assistant read and manage a user's calendars and contacts. Access always
+requires an MCP access token that the user mints themselves under
+**Settings → MCP Access**, so the endpoint exposes nothing on its own — but
+disabling it unregisters the routes entirely for operators who do not want an AI
+tool surface on their server at all.
+
+| YAML Key   | Env Var                            | Default | Description                                                                                     |
+| :--------- | :--------------------------------- | :------ | :---------------------------------------------------------------------------------------------- |
+| `enabled`  | `CALDAV_MCP_ENABLED`               | `true`  | Register the `/mcp` routes. `false` removes them; existing tokens then authenticate nothing.     |
+| `requests` | `CALDAV_MCP_RATE_LIMIT_REQUESTS`   | `120`   | Per-**user** requests allowed per `rate_limit.window`. Only applied when `rate_limit.enabled`.   |
+
+The MCP limit is keyed on the authenticated user rather than the IP: an
+assistant calls from one address on behalf of one account, so an IP-keyed limit
+would either throttle a single legitimate conversation or be far too loose on a
+shared host. It is separate from `rate_limit.requests` because one MCP call can
+be a whole conversation turn's worth of work.
+
 ### TLS Section (`tls:`)
 
 | YAML Key    | Env Var                | Default | Description                       |

@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/static"
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/http"
+	"github.com/jherrma/caldav-server/internal/adapter/mcp"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/adapter/webdav"
 	"github.com/jherrma/caldav-server/internal/config"
@@ -27,6 +28,7 @@ import (
 	contactusecase "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
 	"github.com/jherrma/caldav-server/internal/usecase/importexport"
+	"github.com/jherrma/caldav-server/internal/usecase/mcptoken"
 	searchusecase "github.com/jherrma/caldav-server/internal/usecase/search"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
@@ -48,6 +50,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	carddavCredRepo := repository.NewCardDAVCredentialRepository(db.DB())
 	shareRepo := repository.NewCalendarShareRepository(db.DB())
 	abShareRepo := repository.NewAddressBookShareRepository(db.DB())
+	mcpTokenRepo := repository.NewMCPTokenRepository(db.DB())
 
 	// Services
 	emailService := email.NewEmailService(cfg.SMTP)
@@ -95,6 +98,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	listCarddavCredUC := apppassword.NewListCardDAVCredentialsUseCase(carddavCredRepo)
 	revokeCarddavCredUC := apppassword.NewRevokeCardDAVCredentialUseCase(carddavCredRepo, securityLogger)
 
+	// MCP Access Token Use Cases (story 104) — the long-lived bearer credential
+	// an MCP client is configured with, minted from the web UI over JWT auth.
+	createMCPTokenUC := mcptoken.NewCreateUseCase(mcpTokenRepo, securityLogger)
+	listMCPTokenUC := mcptoken.NewListUseCase(mcpTokenRepo)
+	revokeMCPTokenUC := mcptoken.NewRevokeUseCase(mcpTokenRepo, securityLogger)
+	authenticateMCPTokenUC := mcptoken.NewAuthenticateUseCase(mcpTokenRepo, userRepo)
+
 	// Sharing Use Cases
 	createShareUC := sharing.NewCreateCalendarShareUseCase(shareRepo, calendarRepo, userRepo)
 	listShareUC := sharing.NewListCalendarSharesUseCase(shareRepo, calendarRepo)
@@ -121,6 +131,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
+	mcpTokenHandler := http.NewMCPTokenHandler(createMCPTokenUC, listMCPTokenUC, revokeMCPTokenUC)
 	shareHandler := http.NewCalendarShareHandler(createShareUC, listShareUC, updateShareUC, revokeShareUC, calendarRepo)
 	abShareHandler := http.NewAddressBookShareHandler(createABShareUC, listABShareUC, updateABShareUC, revokeABShareUC, addressBookRepo)
 	healthHandler := http.NewHealthHandler(db)
@@ -248,6 +259,14 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	carddavCredGroup.Post("/", carddavCredHandler.Create)
 	carddavCredGroup.Get("/", carddavCredHandler.List)
 	carddavCredGroup.Delete("/:id", carddavCredHandler.Revoke)
+
+	// MCP Access Token Routes (Protected). These are ordinary JWT-authenticated
+	// REST endpoints: the MCP endpoint itself lives at /mcp and authenticates
+	// with the tokens minted here.
+	mcpTokenGroup := v1.Group("/mcp-tokens", http.Authenticate(jwtManager, userRepo))
+	mcpTokenGroup.Post("/", mcpTokenHandler.Create)
+	mcpTokenGroup.Get("/", mcpTokenHandler.List)
+	mcpTokenGroup.Delete("/:id", mcpTokenHandler.Revoke)
 
 	// OAuth Routes
 	initiateOAuthUC := authusecase.NewInitiateOAuthUseCase(oauthManager)
@@ -425,8 +444,58 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) {
 	eventGroup.Delete("/:event_id", eventHandler.Delete)
 	eventGroup.Post("/:event_id/move", eventHandler.Move)
 
+	// MCP Server (story 104). Registered here, after every use case it delegates
+	// to exists, and mounted at /mcp rather than under /api/v1 because the
+	// protocol addresses one endpoint URL that clients are configured with
+	// directly — versioning happens inside the protocol handshake, not the path.
+	//
+	// It is handed the SAME use-case instances the REST handlers use, so the two
+	// surfaces cannot diverge on what a user may see or change.
+	if cfg.MCP.Enabled {
+		mcpServer := mcp.NewServer(mcp.Deps{
+			CalendarRepo:    calendarRepo,
+			AddressBookRepo: addressBookRepo,
+			CalendarList:    calendarListUC,
+			EventList:       eventListUC,
+			EventGet:        eventGetUC,
+			EventCreate:     eventCreateUC,
+			EventUpdate:     eventUpdateUC,
+			EventDelete:     eventDeleteUC,
+			AddressBookList: abListUC,
+			ContactList:     contactListUC,
+			ContactGet:      contactGetUC,
+			ContactCreate:   contactCreateUC,
+			ContactUpdate:   contactUpdateUC,
+			ContactDelete:   contactDeleteUC,
+			Search:          searchUC,
+		})
+		mcpHandler := mcp.NewHandler(
+			mcpServer,
+			authenticateMCPTokenUC,
+			jwtManager,
+			userRepo,
+			securityLogger,
+			cfg.Security.RequestTimeout,
+		)
+
+		mcpGroup := app.Group("/mcp", mcpHandler.Authenticate())
+		// The limiter runs after authentication so it can key on the user; see
+		// NewUserRateLimiter. Gated by the same flag as every other limiter so
+		// tests that disable rate limiting are not throttled.
+		if cfg.RateLimit.Enabled {
+			mcpWindow := cfg.RateLimit.Window
+			if mcpWindow <= 0 {
+				mcpWindow = time.Minute
+			}
+			mcpGroup.Use(http.NewUserRateLimiter(cfg.MCP.Requests, mcpWindow))
+		}
+		mcpGroup.Post("/", mcpHandler.HandleMessage)
+		mcpGroup.Get("/", mcpHandler.HandleGet)
+		mcpGroup.Delete("/", mcpHandler.HandleDelete)
+	}
+
 	// Serve the built SPA (single-container deployment). Registered LAST so every
-	// API/DAV/well-known/health/docs route above wins first.
+	// API/DAV/well-known route above wins first.
 	registerWebUI(app, "./public")
 }
 
@@ -445,7 +514,7 @@ func registerWebUI(app *fiber.App, dir string) bool {
 		NotFoundHandler: func(c fiber.Ctx) error {
 			p := c.Path()
 			if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/dav/") ||
-				strings.HasPrefix(p, "/.well-known/") {
+				strings.HasPrefix(p, "/.well-known/") || p == "/mcp" || strings.HasPrefix(p, "/mcp/") {
 				return c.SendStatus(fiber.StatusNotFound)
 			}
 			// The static handler set 404 before delegating here; a client-side

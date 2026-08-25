@@ -29,6 +29,7 @@ func Models() []interface{} {
 		&addressbook.SyncChangeLog{},
 		&user.CalDAVCredential{},
 		&user.CardDAVCredential{},
+		&user.MCPToken{},
 		&sharing.CalendarShare{},
 		&sharing.AddressBookShare{},
 	}

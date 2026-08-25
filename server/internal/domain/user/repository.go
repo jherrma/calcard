@@ -113,3 +113,19 @@ type CalDAVCredentialRepository interface {
 	Revoke(ctx context.Context, id uint) error
 	UpdateLastUsed(ctx context.Context, id uint, ip string) error
 }
+
+// MCPTokenRepository defines the interface for MCP access-token persistence
+// (story 104).
+//
+// GetByHash is the authentication path: an MCP client presents only the opaque
+// bearer string, so the token is looked up by the SHA-256 of what it sent. It
+// returns tokens regardless of revocation/expiry — the caller decides, so an
+// expired token can be reported as such rather than as "no such token".
+type MCPTokenRepository interface {
+	Create(ctx context.Context, token *MCPToken) error
+	GetByUUID(ctx context.Context, uuid string) (*MCPToken, error)
+	GetByHash(ctx context.Context, hash string) (*MCPToken, error)
+	ListByUserID(ctx context.Context, userID uint) ([]MCPToken, error)
+	Revoke(ctx context.Context, id uint) error
+	UpdateLastUsed(ctx context.Context, id uint, ip string) error
+}

@@ -74,6 +74,28 @@ For frontend development, run the SPA separately with `cd webinterface && pnpm d
   former root-level `Technical Overview.md`.)
 - **Feature status**: [STORIES.md](STORIES.md) - what is implemented, what remains.
 
+## MCP Server (AI assistants)
+
+The server exposes a [Model Context Protocol](https://modelcontextprotocol.io) endpoint at `/mcp`,
+so an AI assistant can read and manage calendars and contacts on your behalf: list and search
+events and contacts, create/update/delete them, and find free slots across your calendars.
+
+1. Sign in to the web UI and go to **Settings → MCP Access**.
+2. Create a token. It is shown **once** — the server stores only a hash.
+3. Point your client at the endpoint:
+
+   ```bash
+   claude mcp add --transport http calcard https://caldav.example.com/mcp \
+     --header "Authorization: Bearer calcard_mcp_..."
+   ```
+
+A token grants exactly what the account can see itself, including collections shared with it, and
+is revoked from the same page (revocation takes effect on the next request). Operators who do not
+want an AI tool surface at all can remove the routes entirely with `CALDAV_MCP_ENABLED=false` — see
+[CONFIGURATION.md](CONFIGURATION.md).
+
+---
+
 ## API Documentation
 
 There is no generated API reference. The REST surface is documented in

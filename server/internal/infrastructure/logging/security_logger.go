@@ -87,6 +87,52 @@ func (l *SecurityLogger) LogAppPasswordRevoked(ctx context.Context, userID uint,
 	l.logger.Info("security_event", slog.Any("event", event))
 }
 
+// LogMCPTokenCreated logs the creation of an MCP access token (story 104).
+// MCP tokens get their own events rather than reusing the app-password ones so
+// an audit can tell a DAV credential apart from a credential that grants the
+// AI tool surface.
+func (l *SecurityLogger) LogMCPTokenCreated(ctx context.Context, userID uint, name string, ip string, userAgent string) {
+	event := SecurityEvent{
+		Timestamp: time.Now(),
+		Event:     "mcp_token_created",
+		UserID:    &userID,
+		Details:   "Name: " + name,
+		IP:        ip,
+		UserAgent: userAgent,
+		Success:   true,
+	}
+	l.logger.Info("security_event", slog.Any("event", event))
+}
+
+// LogMCPTokenRevoked logs the revocation of an MCP access token.
+func (l *SecurityLogger) LogMCPTokenRevoked(ctx context.Context, userID uint, name string, ip string, userAgent string) {
+	event := SecurityEvent{
+		Timestamp: time.Now(),
+		Event:     "mcp_token_revoked",
+		UserID:    &userID,
+		Details:   "Name: " + name,
+		IP:        ip,
+		UserAgent: userAgent,
+		Success:   true,
+	}
+	l.logger.Info("security_event", slog.Any("event", event))
+}
+
+// LogMCPAuthFailure logs a rejected MCP bearer credential. reason is the
+// sentinel the use case returned (unknown / revoked / expired / inactive) — a
+// revoked token being replayed is a different signal from a random string.
+func (l *SecurityLogger) LogMCPAuthFailure(ctx context.Context, reason string, ip string, userAgent string) {
+	event := SecurityEvent{
+		Timestamp: time.Now(),
+		Event:     "mcp_auth_failed",
+		IP:        ip,
+		UserAgent: userAgent,
+		Success:   false,
+		Details:   reason,
+	}
+	l.logger.Warn("security_event", slog.Any("event", event))
+}
+
 // LogRefreshTokenReuse logs a detected refresh-token reuse — the signal that a
 // token was replayed (possible theft). revokeErr, when non-nil, records that
 // the containment action (revoking the token family) itself failed.

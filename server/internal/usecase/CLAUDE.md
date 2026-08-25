@@ -100,6 +100,14 @@ Data import and export:
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.
 
+### [mcptoken/](mcptoken/)
+
+MCP access tokens (story 104) — the long-lived bearer credential an MCP client is configured with:
+
+- `token.go` — `Generate` / `HashToken`, plus the create, list, revoke and authenticate use cases.
+
+Why its own credential rather than a JWT or an app password: an access token lives ten minutes, which is useless for a client configured once with a static header; and app passwords are scoped to CalDAV/CardDAV, so widening them would silently grant every existing DAV credential a full read/write tool surface. The secret is 256 bits of randomness stored as a **unique-indexed SHA-256** — not bcrypt — because an MCP client presents only the opaque string, so the token must be findable from that alone, and a full-entropy secret needs no slow KDF.
+
 ### [about/](about/)
 
 Project metadata (story 101):

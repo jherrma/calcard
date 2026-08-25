@@ -18,10 +18,10 @@ CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalD
 │   ├── cmd/server/          # Application entrypoint
 │   ├── configs/             # Configuration examples (config.yaml.example)
 │   ├── internal/
-│   │   ├── adapter/         # HTTP handlers, repositories, auth (JWT, OAuth), WebDAV
+│   │   ├── adapter/         # HTTP handlers, repositories, auth (JWT, OAuth), WebDAV, MCP (#104)
 │   │   ├── domain/          # Domain models and repository interfaces
 │   │   ├── infrastructure/  # Database, email, server setup, migrations
-│   │   ├── usecase/         # Business logic (auth, calendar, contact, sharing, import/export)
+│   │   ├── usecase/         # Business logic (auth, calendar, contact, sharing, import/export, mcptoken)
 │   │   └── config/          # Configuration loading
 │   ├── Dockerfile           # Multi-stage Alpine build (static binary)
 │   └── docker-compose*.yml  # SQLite and PostgreSQL configurations
