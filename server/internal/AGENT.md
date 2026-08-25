@@ -36,7 +36,7 @@ This directory contains the core business logic and implementation details of th
 
 - **Purpose**: Translates data between the internal layers and the external world.
 - **Contents**:
-  - `http/` — REST handlers (auth, user, system, calendar, event, addressbook, contact, sharing, app password, credentials, import/export, docs, health), DTOs, middleware (auth, rate limiter).
+  - `http/` — REST handlers (auth, user, system, calendar, event, addressbook, contact, sharing, app password, credentials, import/export, health), DTOs, middleware (auth, rate limiter).
   - `repository/` — GORM implementations for all domain repository interfaces (~16 repos).
   - `auth/` — JWT, Basic Auth (for DAV clients), OAuth (OIDC).
   - `middleware/` — CORS, rate limiting, security headers.

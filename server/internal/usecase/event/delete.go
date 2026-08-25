@@ -215,7 +215,7 @@ func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope st
 	}
 
 	// A bad scope / recurrence_id combination is a client error (e.g. scope=this
-	// with no recurrence_id, or the swagger-documented-but-unsupported
-	// scope=future). Wrap ErrInvalidInput so the handler maps it to 400, not 500.
+	// with no recurrence_id, or the accepted-but-unsupported scope=future).
+	// Wrap ErrInvalidInput so the handler maps it to 400, not 500.
 	return fmt.Errorf("%w: invalid scope or recurrence_id for deletion", ErrInvalidInput)
 }

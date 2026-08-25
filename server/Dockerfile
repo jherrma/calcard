@@ -36,9 +36,6 @@ COPY server/ .
 # this step is skipped or the module cache lacks a LICENSE file — a failure here
 # only means the embedded list stays at its committed state.
 RUN go run ./tools/genlicenses || echo "WARNING: Go license generation failed; using the committed internal/usecase/about/open_source_go.json"
-# Install and run swag
-RUN go install github.com/swaggo/swag/cmd/swag@latest
-RUN /go/bin/swag init -g cmd/server/main.go --parseDependency --parseInternal
 RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags '-linkmode external -extldflags "-static"' -o server ./cmd/server
 
 # Runtime stage
@@ -52,9 +49,8 @@ RUN addgroup -g 1000 caldav && \
 
 WORKDIR /app
 
-# Copy binary + docs
+# Copy binary
 COPY --from=builder /app/server .
-COPY --from=builder /app/docs ./docs
 # Copy the built SPA so the Go server serves it same-origin (see registerWebUI).
 COPY --from=webbuilder /web/.output/public ./public
 

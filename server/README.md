@@ -142,18 +142,10 @@ See `server/integration/CLAUDE.md` for guidance on adding new integration tests 
 - Go 1.25.6+
 - GCC and SQLite dev libraries (for CGO/SQLite support)
 - Node.js 18+ and npm (for the web interface)
-- [swag](https://github.com/swaggo/swag) (`go install github.com/swaggo/swag/cmd/swag@latest`)
 
 ### Backend
 
-1.  Generate Swagger docs:
-
-    ```bash
-    cd server
-    swag init -g cmd/server/main.go --parseDependency --parseInternal
-    ```
-
-2.  Build a statically linked binary:
+1.  Build a statically linked binary:
 
     ```bash
     CGO_ENABLED=1 go build -a -ldflags '-linkmode external -extldflags "-static"' -o server ./cmd/server

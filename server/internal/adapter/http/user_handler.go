@@ -48,17 +48,7 @@ func NewUserHandler(
 	}
 }
 
-// GetProfile godoc
-// @Summary      Get user profile
-// @Description  Get current user's profile information
-// @Tags         Users
-// @Produce      json
-// @Success      200  {object}  dto.UserProfileResponse
-// @Failure      401  {object}  ErrorResponseBody
-// @Failure      404  {object}  ErrorResponseBody
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /users/me [get]
+// GET /api/v1/users/me
 func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 	userUUID, ok := c.Locals("user_uuid").(string)
 	if !ok {
@@ -96,21 +86,7 @@ func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 	return SuccessResponse(c, res)
 }
 
-// UpdateProfile godoc
-// @Summary      Update user profile
-// @Description  Update current user's display name
-// @Tags         Users
-// @Accept       json
-// @Produce      json
-// @Param        profile  body      dto.UpdateProfileRequest  true  "Profile updates"
-// @Success      200      {object}  dto.UserProfileResponse
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      401      {object}  ErrorResponseBody
-// @Failure      404      {object}  ErrorResponseBody
-// @Failure      409      {object}  ErrorResponseBody
-// @Failure      500      {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /users/me [patch]
+// PATCH /api/v1/users/me
 func (h *UserHandler) UpdateProfile(c fiber.Ctx) error {
 	var req dto.UpdateProfileRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -163,18 +139,7 @@ func (h *UserHandler) UpdateProfile(c fiber.Ctx) error {
 	return SuccessResponse(c, res)
 }
 
-// DeleteAccount godoc
-// @Summary      Delete user account
-// @Description  Permanently delete user account
-// @Tags         Users
-// @Accept       json
-// @Param        request  body  dto.DeleteAccountRequest  true  "Delete confirmation"
-// @Success      204
-// @Failure      400       {object}  ErrorResponseBody
-// @Failure      401       {object}  ErrorResponseBody
-// @Failure      500       {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /users/me [delete]
+// DELETE /api/v1/users/me
 func (h *UserHandler) DeleteAccount(c fiber.Ctx) error {
 	var req dto.DeleteAccountRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -200,19 +165,7 @@ func (h *UserHandler) DeleteAccount(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// ChangePassword godoc
-// @Summary      Change password
-// @Description  Change the current user's password
-// @Tags         Users
-// @Accept       json
-// @Produce      json
-// @Param        request  body      dto.ChangePasswordRequest  true  "Password change details"
-// @Success      200      {object}  object{message=string,access_token=string}
-// @Failure      400      {object}  ErrorResponseBody
-// @Failure      401      {object}  ErrorResponseBody
-// @Failure      500      {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /users/me/password [put]
+// PUT /api/v1/users/me/password
 func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
 	var req dto.ChangePasswordRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -252,17 +205,12 @@ func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
 	})
 }
 
-// GetPreferences godoc
-// @Summary      Get user preferences
-// @Description  Get the current user's preferences. Keys the user has not set are returned with their default value. Keys: `default_event_duration` (minutes, one of 15/30/45/60/90/120/180/240/480), `default_all_day` (true/false), `time_format` (12h/24h), `accent_color` (6-digit lowercase hex, e.g. `#3b82f6`).
-// @Tags         Users
-// @Produce      json
-// @Success      200  {object}  dto.PreferencesResponse
-// @Failure      401  {object}  ErrorResponseBody
-// @Failure      404  {object}  ErrorResponseBody
-// @Failure      500  {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /users/me/preferences [get]
+// GET /api/v1/users/me/preferences
+//
+// Keys the user has not set are returned with their default value. Keys:
+// `default_event_duration` (minutes, one of 15/30/45/60/90/120/180/240/480),
+// `default_all_day` (true/false), `time_format` (12h/24h), `accent_color`
+// (6-digit lowercase hex, e.g. `#3b82f6`).
 func (h *UserHandler) GetPreferences(c fiber.Ctx) error {
 	userUUID, ok := c.Locals("user_uuid").(string)
 	if !ok {
@@ -280,20 +228,13 @@ func (h *UserHandler) GetPreferences(c fiber.Ctx) error {
 	return SuccessResponse(c, dto.PreferencesResponse{Preferences: prefs})
 }
 
-// UpdatePreferences godoc
-// @Summary      Update user preferences
-// @Description  Upsert one or more preferences. Unknown keys and out-of-range values are rejected with 400 and NOTHING is written, so a batch never half-applies; the full updated map is returned. Values are canonicalised before storage — `accent_color` is lower-cased and trimmed, so `"#8B5CF6"` reads back as `"#8b5cf6"`.
-// @Tags         Users
-// @Accept       json
-// @Produce      json
-// @Param        preferences  body      dto.UpdatePreferencesRequest  true  "Preferences to set"
-// @Success      200          {object}  dto.PreferencesResponse
-// @Failure      400          {object}  ErrorResponseBody
-// @Failure      401          {object}  ErrorResponseBody
-// @Failure      404          {object}  ErrorResponseBody
-// @Failure      500          {object}  ErrorResponseBody
-// @Security     BearerAuth
-// @Router       /users/me/preferences [patch]
+// PATCH /api/v1/users/me/preferences
+//
+// Upserts one or more preferences. Unknown keys and out-of-range values are
+// rejected with 400 and NOTHING is written, so a batch never half-applies; the
+// full updated map is returned. Values are canonicalised before storage —
+// `accent_color` is lower-cased and trimmed, so `"#8B5CF6"` reads back as
+// `"#8b5cf6"`.
 func (h *UserHandler) UpdatePreferences(c fiber.Ctx) error {
 	var req dto.UpdatePreferencesRequest
 	if err := c.Bind().JSON(&req); err != nil {
