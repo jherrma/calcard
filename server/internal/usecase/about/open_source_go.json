@@ -1,14 +1,8 @@
 {
   "generator": "server/tools/genlicenses (go run ./tools/genlicenses)",
   "note": "License detection is best-effort; \"unknown\" means it could not be determined automatically, not that the package is unlicensed.",
-  "count": 53,
+  "count": 38,
   "packages": [
-    {
-      "name": "github.com/KyleBanks/depth",
-      "version": "v1.2.1",
-      "license": "MIT",
-      "url": "https://github.com/KyleBanks/depth"
-    },
     {
       "name": "github.com/andybalholm/brotli",
       "version": "v1.2.2",
@@ -16,8 +10,8 @@
       "url": "https://github.com/andybalholm/brotli"
     },
     {
-      "name": "github.com/caarlos0/env/v10",
-      "version": "v10.0.0",
+      "name": "github.com/caarlos0/env/v11",
+      "version": "v11.4.1",
       "license": "MIT",
       "url": "https://github.com/caarlos0/env"
     },
@@ -50,66 +44,6 @@
       "version": "v4.1.4",
       "license": "Apache-2.0",
       "url": "https://github.com/go-jose/go-jose"
-    },
-    {
-      "name": "github.com/go-openapi/jsonpointer",
-      "version": "v1.0.0",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/jsonpointer"
-    },
-    {
-      "name": "github.com/go-openapi/jsonreference",
-      "version": "v1.0.0",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/jsonreference"
-    },
-    {
-      "name": "github.com/go-openapi/spec",
-      "version": "v0.22.9",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/spec"
-    },
-    {
-      "name": "github.com/go-openapi/swag/conv",
-      "version": "v0.27.3",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/swag"
-    },
-    {
-      "name": "github.com/go-openapi/swag/jsonutils",
-      "version": "v0.27.3",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/swag"
-    },
-    {
-      "name": "github.com/go-openapi/swag/loading",
-      "version": "v0.27.3",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/swag"
-    },
-    {
-      "name": "github.com/go-openapi/swag/pools",
-      "version": "v0.27.3",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/swag"
-    },
-    {
-      "name": "github.com/go-openapi/swag/stringutils",
-      "version": "v0.27.3",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/swag"
-    },
-    {
-      "name": "github.com/go-openapi/swag/typeutils",
-      "version": "v0.27.3",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/swag"
-    },
-    {
-      "name": "github.com/go-openapi/swag/yamlutils",
-      "version": "v0.27.3",
-      "license": "Apache-2.0",
-      "url": "https://github.com/go-openapi/swag"
     },
     {
       "name": "github.com/gofiber/fiber/v3",
@@ -214,12 +148,6 @@
       "url": "https://github.com/philhofer/fwd"
     },
     {
-      "name": "github.com/swaggo/swag",
-      "version": "v1.16.6",
-      "license": "MIT",
-      "url": "https://github.com/swaggo/swag"
-    },
-    {
       "name": "github.com/teambition/rrule-go",
       "version": "v1.8.2",
       "license": "MIT",
@@ -244,22 +172,10 @@
       "url": "https://github.com/valyala/fasthttp"
     },
     {
-      "name": "go.yaml.in/yaml/v3",
-      "version": "v3.0.4",
-      "license": "unknown",
-      "url": "https://pkg.go.dev/go.yaml.in/yaml/v3"
-    },
-    {
       "name": "golang.org/x/crypto",
       "version": "v0.54.0",
       "license": "BSD-3-Clause",
       "url": "https://pkg.go.dev/golang.org/x/crypto"
-    },
-    {
-      "name": "golang.org/x/mod",
-      "version": "v0.38.0",
-      "license": "BSD-3-Clause",
-      "url": "https://pkg.go.dev/golang.org/x/mod"
     },
     {
       "name": "golang.org/x/net",
@@ -290,12 +206,6 @@
       "version": "v0.40.0",
       "license": "BSD-3-Clause",
       "url": "https://pkg.go.dev/golang.org/x/text"
-    },
-    {
-      "name": "golang.org/x/tools",
-      "version": "v0.48.0",
-      "license": "BSD-3-Clause",
-      "url": "https://pkg.go.dev/golang.org/x/tools"
     },
     {
       "name": "gopkg.in/yaml.v3",

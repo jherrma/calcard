@@ -3,7 +3,7 @@ module github.com/jherrma/caldav-server
 go 1.26.0
 
 require (
-	github.com/caarlos0/env/v10 v10.0.0
+	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/emersion/go-vcard v0.0.0-20260618161152-d854b7e0e2d3
