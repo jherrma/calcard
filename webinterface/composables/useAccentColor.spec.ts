@@ -30,8 +30,8 @@ const accentVar = () => document.documentElement.style.getPropertyValue('--accen
 /** A fresh module instance with pinia already active, so stores resolve. */
 async function loadAccent(opts: { authenticated?: boolean; stored?: string } = {}) {
   vi.resetModules();
-  // createTestingPinia sets the active pinia itself. Importing `pinia`
-  // directly to call setActivePinia does not resolve under vue-tsc.
+  // createTestingPinia sets the active pinia itself, so there is no need to
+  // import `pinia` to call setActivePinia.
   createTestingPinia({ stubActions: true, createSpy: vi.fn });
 
   const auth = useAuthStore();
