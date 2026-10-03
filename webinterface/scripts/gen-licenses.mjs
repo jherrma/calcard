@@ -18,7 +18,7 @@
  *   - It UNDER-attributes slightly. tailwindcss / @tailwindcss/postcss are
  *     devDependencies yet do shape the shipped CSS. Their license text is not
  *     redistributed by us, so this is acceptable.
- *   - devDependencies (vitest, eslint, prettier, …) are excluded wholesale, and
+ *   - devDependencies (vitest, prettier, vue-tsc, …) are excluded wholesale, and
  *     `optionalDependencies` too (platform binaries like esbuild/@parcel/watcher).
  * The `note` field written into the JSON says "runtime npm dependency closure"
  * for exactly this reason — keep that wording honest if the scope ever changes.
