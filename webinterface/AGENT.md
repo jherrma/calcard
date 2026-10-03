@@ -425,7 +425,7 @@ pnpm gen:licenses               # Regenerate public/open-source.json (story 101)
 - **Runner**: Vitest with the `@nuxt/test-utils` Nuxt environment (happy-dom). Config in `vitest.config.ts` via `defineVitestConfig` — this wires Nuxt aliases (`~/…`) and auto-imports into specs.
 - **Specs are co-located** next to sources as `*.spec.ts`.
 - **Mock auto-imports in tests** with `mockNuxtImport('useApi', () => …)` from `@nuxt/test-utils/runtime`. `$fetch` is a Nuxt global (not an unimport auto-import) — stub it with `vi.stubGlobal('$fetch', …)`.
-- **Store setup**: use `createTestingPinia({ stubActions: false })` from `@pinia/testing` (it sets the active pinia and keeps real action logic so you assert behavior, not that an action was called). Prefer importing this over `pinia` directly, which does not resolve under `vue-tsc`.
+- **Store setup**: use `createTestingPinia({ stubActions: false })` from `@pinia/testing` (it sets the active pinia and keeps real action logic so you assert behavior, not that an action was called). Prefer it over `createPinia()` from `pinia`. (`pinia` is a direct dependency since the Pinia 4 bump, so importing from it resolves; before that it was only a transitive peer and did not resolve under `vue-tsc`.)
 - Keep specs hermetic: no network (mock `useApi`/`$fetch`), and shallow-mount heavy PrimeVue components (assert logic, not PrimeVue internals).
 - **`window.localStorage` does not work in this environment.** It is a plain empty object with no
   `getItem`/`setItem`/`clear` — Node 22's built-in Web Storage shadows happy-dom's and stays inert

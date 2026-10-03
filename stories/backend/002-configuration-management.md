@@ -35,7 +35,7 @@ As a developer, I want a configuration system that loads settings from environme
 
 ## Technical Notes
 
-- Use `github.com/caarlos0/env/v10` for environment parsing
+- Use `github.com/caarlos0/env/v11` for environment parsing
 - Use `gopkg.in/yaml.v3` for YAML config file
 - Env vars take precedence over config file values
 - Auto-detect PostgreSQL mode: if `CALDAV_DB_HOST` is set, assume postgres
