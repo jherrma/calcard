@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/adapter/middleware"
@@ -25,6 +26,13 @@ func SetupMiddleware(app *fiber.App, cfg *config.Config) {
 		TimeFormat: time.RFC3339,
 		TimeZone:   "UTC",
 	}))
+
+	// Debug payload logging (opt-in). Registered before auth and rate limiting
+	// so rejected requests are visible too.
+	if cfg.LogPayloads {
+		slog.Warn("CALDAV_LOG_PAYLOADS is on: DAV request bodies are being logged. Debugging only.")
+		app.Use(PayloadLogger(slog.Default()))
+	}
 
 	// Recover from panics
 	app.Use(recover.New())
