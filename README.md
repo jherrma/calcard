@@ -51,6 +51,26 @@ and API on separate origins); leave them disabled for the single-container setup
 > makes the UI issue same-origin relative requests. Set it only when hosting the
 > UI on a different origin than the API.
 
+### Building and publishing the Docker image
+
+The release image is multi-arch (`linux/amd64` + `linux/arm64`) and published as
+`herrj/calcard`. Run from anywhere — the script switches to the repo root itself:
+
+```bash
+docker login                                    # once, for the push
+server/scripts/docker-release.sh                # version = git tag on HEAD, "v" stripped
+server/scripts/docker-release.sh 1.0.0-rc1      # or give the version explicitly
+server/scripts/docker-release.sh 1.0.0-rc1 --no-push   # build both platforms, don't push
+```
+
+Stable versions are also tagged `latest`; pre-releases (`1.0.0-rc1`) never are.
+The arm64 image is built under QEMU, so expect it to be slow. A single-platform
+local build is just `docker build -f server/Dockerfile -t calcard .` from the
+repo root.
+
+Debugging DAV clients: set `CALDAV_LOG_PAYLOADS=true` to log every request's
+headers and `/dav` bodies (credentials redacted) — see `CONFIGURATION.md`.
+
 ### Running from Source
 
 1. Clone the repository

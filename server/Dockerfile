@@ -4,7 +4,9 @@
 # by hand, run from the repo root: `docker build -f server/Dockerfile .`
 
 # --- Web UI build stage ---
-FROM node:22-alpine AS webbuilder
+# The SPA output is architecture-independent, so build it once on the build host
+# instead of once per target platform under QEMU.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS webbuilder
 RUN npm i -g pnpm@10
 WORKDIR /web
 COPY webinterface/package.json webinterface/pnpm-lock.yaml ./

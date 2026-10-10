@@ -24,6 +24,7 @@ All configuration options can be set via environment variables. The mapping is d
 | :---------- | :----------------- | :------- | :--------------------------------------------------------------------------------------------- |
 | `data_dir`  | `CALDAV_DATA_DIR`  | `./data` | Directory where SQLite database and other data files are stored.                               |
 | `log_level` | `CALDAV_LOG_LEVEL` | `info`   | Logging intensity (`debug`, `info`, `warn`, `error`).                                          |
+| `log_payloads` | `CALDAV_LOG_PAYLOADS` | `false` | **Debugging only.** Logs every request (method, URL, headers, status) and the full body of requests under `/dav` and `/.well-known` (capped at 64 KiB) to stdout. `Authorization`/`Cookie` headers are redacted and non-DAV bodies (login etc.) are never logged. Writes user data to the log — leave off in production. |
 | `base_url`  | `CALDAV_BASE_URL`  | -        | The base URL where the server is reachable (e.g., `https://caldav.example.com`). **Required.** |
 
 ### Server Section (`server:`)
