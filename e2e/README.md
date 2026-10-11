@@ -213,7 +213,7 @@ Details, evidence and root causes are in [`FINDINGS.md`](FINDINGS.md). Summary:
 
 | ID | Severity | Summary |
 |---|---|---|
-| F01 | Critical | shared address books leak the owner's bcrypt password hash and e-mail to the sharee (`GET /addressbooks`, `GET /search`) |
+| ~~F01~~ | ~~Critical~~ | ~~shared address books leak the owner's bcrypt password hash and e-mail to the sharee~~ — fixed in #181; the test stays as a regression guard |
 | F02 | High | Basic auth and sharing by *username* fail (mixed-case usernames are lower-cased on lookup); mixed-case CardDAV credentials never authenticate |
 | F03 | High | MKCOL / MKCALENDAR on an existing collection answer 201 and create a duplicate at the same path |
 | F18 | High | deleting an account leaves its calendars shared and its public links serving |

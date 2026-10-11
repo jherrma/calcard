@@ -10,7 +10,7 @@ The server was not changed to fix any of these.
 
 | ID  | Severity | Summary |
 | --- | -------- | ------- |
-| F01 | Critical | Sharee sees the owner's bcrypt hash and e-mail |
+| ~~F01~~ | ~~Critical~~ | ~~Sharee sees the owner's bcrypt hash and e-mail~~ — **fixed in #181** |
 | F02 | High     | DAV login with the server-issued username fails |
 | F03 | High     | MKCOL/MKCALENDAR on an existing path creates a duplicate |
 | F18 | High     | Account deletion leaves shares and public links alive |
@@ -19,7 +19,12 @@ The server was not changed to fix any of these.
 
 ## Critical / High
 
-### F01 — Critical: password hash leak via shared address books
+### F01 — Critical: password hash leak via shared address books — FIXED in #181
+
+> Fixed in PR #181 (`json:"-"` on `User.PasswordHash`, `AppPassword.PasswordHash`, `AddressBook.User`).
+> The e2e test (`sharing/shared address book does not leak the owner's account data`) no longer
+> carries a `t_known` marker and now guards against a regression. Affected releases: everything
+> containing commit 6494092, including the first `v1.0.0-rc1` image.
 - **Symptom:** when A shares an address book with B, B's `GET /api/v1/addressbooks`
   and `GET /api/v1/search` include `"User":{"Email":…,"Username":…,"PasswordHash":"$2a$12$…"}`.
 - **Cause:** `adapter/repository/addressbook_share_repo.go` does

@@ -239,7 +239,6 @@ t_sh_ab_sharee_rest() {
 
 t_sh_ab_no_leak() {
 	need SH_AB_SHARE || return
-	t_known F01
 	local hash_seen=0
 	as U2 api GET /addressbooks/
 	assert_status 200 || return
