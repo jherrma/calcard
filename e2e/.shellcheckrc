@@ -1,0 +1,8 @@
+# ShellCheck settings for the e2e suite (shellcheck -x run.sh *.sh lib/*.sh).
+external-sources=true
+# Suites and library share globals across sourced files and read some through
+# indirection (SUITE_DESC_<name>, ${!var}, out-parameters set with printf -v),
+# which ShellCheck cannot follow.
+disable=SC2034
+# jq programs and XPath expressions are single-quoted on purpose.
+disable=SC2016
