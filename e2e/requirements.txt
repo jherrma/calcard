@@ -1,0 +1,5 @@
+# CalCard e2e suite — black-box HTTP tests (see README.md).
+pytest==9.1.1
+httpx==0.28.1
+httpcore==1.0.9
+lxml==6.1.3
