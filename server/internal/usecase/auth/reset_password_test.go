@@ -52,6 +52,7 @@ func TestResetPasswordUseCase_Execute_RejectsWeakPassword(t *testing.T) {
 	// The account must not have been touched on the rejected path.
 	assert.Equal(t, "original-hash", u.PasswordHash)
 	userRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	userRepo.AssertNotCalled(t, "InvalidateAccessTokens", mock.Anything, mock.Anything, mock.Anything)
 	resetRepo.AssertNotCalled(t, "DeleteByUserID", mock.Anything, mock.Anything)
 	refreshRepo.AssertNotCalled(t, "DeleteByUserID", mock.Anything, mock.Anything)
 }
@@ -72,6 +73,8 @@ func TestResetPasswordUseCase_Execute_CompliantPassword(t *testing.T) {
 	userRepo.On("Update", ctx, mock.Anything).Return(nil)
 	resetRepo.On("DeleteByUserID", ctx, uint(1)).Return(nil)
 	refreshRepo.On("DeleteByUserID", ctx, uint(1)).Return(nil)
+	// A reset must also kill access tokens already issued (P02).
+	userRepo.On("InvalidateAccessTokens", ctx, uint(1), mock.AnythingOfType("time.Time")).Return(nil)
 
 	err := uc.Execute(ctx, ResetPasswordRequest{Token: "raw-token", NewPassword: newPassword})
 

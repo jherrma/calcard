@@ -2,7 +2,13 @@ server:
   host: 0.0.0.0
   port: 8080
 
+# Public URL clients reach this server at. Optional unless SMTP or OAuth is
+# configured (e-mail links and OAuth redirect URIs are built from it, never from
+# a request). When omitted, URLs the API returns follow each request's Host.
 base_url: https://caldav.example.com
+# Only while base_url is empty, and only behind a proxy that overwrites them:
+# take scheme/host from X-Forwarded-Proto / X-Forwarded-Host.
+# trust_forwarded_headers: false
 
 # Database configuration
 # Omit this section entirely to use SQLite (default).
@@ -65,6 +71,16 @@ security:
   hsts_enabled: true
   hsts_max_age: 31536000
 
+# Rate limiting. `requests` is per client IP per window across the API, DAV,
+# MCP and public feeds; everyone behind one NAT/reverse proxy shares it, hence
+# the generous default. The auth limits (login, forgot/reset password) are the
+# brute-force control and stay tight; per-IP must stay above per-email.
+rate_limit:
+  enabled: true
+  requests: 5000
+  window: 1m
+  auth_ip_requests: 20
+  auth_email_requests: 10
 
 # Model Context Protocol endpoint (/mcp), story 104. Enabled by default; using
 # it still requires an MCP access token minted per user under Settings → MCP

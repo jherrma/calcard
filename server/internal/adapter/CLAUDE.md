@@ -10,7 +10,8 @@ The adapter layer is responsible for translating data between the application's 
 - **Key Components**:
   - **Handlers**: One handler per domain area — `auth_handler.go`, `oauth_handler.go`, `user_handler.go`, `system_handler.go`, `calendar_handler.go`, `event_handler.go`, `addressbook_handler.go`, `contact_handler.go`, `calendar_share_handler.go`, `addressbook_share_handler.go`, `calendar_public_handler.go`, `public_calendar_handler.go`, `app_password_handler.go`, `caldav_credential_handler.go`, `carddav_credential_handler.go`, `import_handler.go`, `backup_handler.go`, `mcp_token_handler.go` (MCP access tokens, #104), `subscription_handler.go` (remote calendar subscriptions, story 100), `health.go`, `about_handler.go` (open-source attribution), `search_handler.go` (unified search, #156).
   - **DTOs** (`dto/`): Data Transfer Objects for auth, user, contact, addressbook, event, and credentials.
-  - **Middleware**: `auth_middleware.go` (JWT verification), `rate_limiter.go`.
+  - **Middleware**: `auth_middleware.go` (JWT verification, then the per-user revocation check `User.AcceptsAccessTokenIssuedAt` — P02), `rate_limiter.go`.
+  - **Base URL**: `base_url.go` — `RequestBaseURL(c, cfg)` returns `cfg.BaseURL` or, when it is unset, the origin the request came in on (Host header; `X-Forwarded-Proto`/`-Host` only with `CALDAV_TRUST_FORWARDED_HEADERS`). Use it **only** for URLs returned to the caller of the same request (app-password `server_url`, calendar `public_url`). E-mail links and OAuth redirect URIs must keep using `cfg.BaseURL` — config validation requires it whenever SMTP or OAuth is configured — or a forged Host header poisons a password-reset link.
   - **Responses**: `response.go` — `SuccessResponse()` wraps a payload in `{ "status": "ok", "data": ... }`; `ErrorResponse()` writes `{ "status": "error", "message" }`. Only the auth, user, system, app-password, about and health handlers use the success envelope. Calendar, event, address book, contact, sharing, public-calendar, CalDAV/CardDAV-credential, import, MCP-token, search, subscription and OAuth-provider-list handlers return raw JSON. Some of the raw ones answer errors as `{ "error": ... }`. Match the existing shape of an area; changing one breaks the SPA and API clients.
 
 ### [mcp/](mcp/)
@@ -20,7 +21,7 @@ The adapter layer is responsible for translating data between the application's 
   - `protocol.go` — JSON-RPC and MCP message types, protocol-version negotiation, the handshake `instructions` handed to the model.
   - `errors.go` — JSON-RPC error codes and response constructors.
   - `server.go` — `Deps` (the use cases the tools delegate to), the tool registry, and the method dispatcher.
-  - `handler.go` — Fiber transport: bearer authentication (MCP token or JWT), `POST` (JSON-RPC, single or batch), `GET` (manifest or SSE stream), `DELETE` (terminate session).
+  - `handler.go` — Fiber transport: bearer authentication (MCP token or JWT; a JWT gets the same revocation check as the REST middleware), `POST` (JSON-RPC, single or batch), `GET` (manifest or SSE stream), `DELETE` (terminate session).
   - `session.go` — In-memory `Mcp-Session-Id` store. Sessions are bound to a user, so a leaked id cannot be used by another account.
   - `access.go` — `callContext` plus the permission helpers, mirroring the HTTP handlers exactly.
   - `tools_calendar.go`, `tools_contact.go`, `tools_scheduling.go` — the 13 advertised tools.
@@ -48,7 +49,7 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Implements authentication-related services.
 - **Key Components**:
-  - `jwt.go` — JWT token generation and validation.
+  - `jwt.go` — JWT token generation and validation. Access tokens carry `iat_ns` (issue time in nanoseconds) next to the standard `iat`; `ValidateAccessToken` returns it as `AccessTokenClaims.IssuedAt` (falling back to the whole-second `iat` for older tokens). Validation proves only signature and expiry — the caller must still check the user's revocation marker.
   - `basic_auth.go` — HTTP Basic Auth for CalDAV/CardDAV client access (app passwords and DAV credentials).
   - `oauth.go` — OIDC/OAuth2 provider management using `go-oidc` and `golang.org/x/oauth2`.
 

@@ -22,7 +22,15 @@ services:
       - CALDAV_DB_NAME=caldav
       - CALDAV_DB_SSLMODE=disable
       - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-}
-      - CALDAV_BASE_URL=${CALDAV_BASE_URL:-http://localhost:8080}
+      # Public URL clients reach this server at, e.g. https://cal.example.com.
+      # Optional: left empty, the URLs the server hands out (the DAV server URL
+      # shown with a new app password, public calendar links) follow the
+      # address each request came in on. REQUIRED once SMTP or OAuth is configured:
+      # e-mailed links and OAuth redirect URIs are never taken from a request.
+      - CALDAV_BASE_URL=${CALDAV_BASE_URL:-}
+      # Only behind a reverse proxy that terminates TLS and overwrites
+      # X-Forwarded-Proto / X-Forwarded-Host (clients could forge them otherwise):
+      # - CALDAV_TRUST_FORWARDED_HEADERS=true
       # Optional: require this token for first-run setup and keep registration locked
       # until the first account exists. Recommended if the server is reachable from the
       # internet; leave unset on a private network.

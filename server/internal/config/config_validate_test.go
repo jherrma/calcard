@@ -43,12 +43,43 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Missing BaseURL",
+			// Empty means "derive from the request" for URLs returned to the
+			// caller, so it is valid on its own.
+			name: "Empty BaseURL without SMTP or OAuth",
 			config: Config{
 				BaseURL: "",
 				JWT: JWTConfig{
 					Secret: "secure-secret-16",
 				},
+			},
+			wantErr: false,
+		},
+		{
+			// E-mailed links must never come from a request's Host header.
+			name: "Empty BaseURL with SMTP",
+			config: Config{
+				SMTP: SMTPConfig{Host: "smtp.example.com"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "Empty BaseURL with an OAuth provider",
+			config: Config{
+				OAuth: OAuthConfig{Custom: OAuthProviderConfig{ClientID: "id", ClientSecret: "secret"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "BaseURL without scheme",
+			config: Config{
+				BaseURL: "nas.local:8751",
+			},
+			wantErr: true,
+		},
+		{
+			name: "BaseURL with a non-http scheme",
+			config: Config{
+				BaseURL: "ftp://nas.local",
 			},
 			wantErr: true,
 		},

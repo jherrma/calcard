@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
@@ -60,4 +62,42 @@ func TestBasicAuthAcceptsUsername(t *testing.T) {
 	t.Run("unknown identifier is rejected", func(t *testing.T) {
 		assert.Equal(t, fiber.StatusUnauthorized, propfind("nobody", "primary-pass"))
 	})
+}
+
+// P02: DAV also accepts a bearer JWT; a token issued before the account's last
+// logout / password change must be refused there as well.
+func TestBearerAuthRejectsRevokedJWT(t *testing.T) {
+	app, db, cfg := setupTestApp(t)
+	defer db.Close()
+
+	userRepo := repository.NewUserRepository(db.DB())
+	// The shared harness leaves AccessExpiry at zero (tokens born expired);
+	// same secret, usable lifetime.
+	jwtCfg := cfg.JWT
+	jwtCfg.AccessExpiry = time.Hour
+	jwtManager := authadapter.NewJWTManager(&jwtCfg)
+	u := &user.User{UUID: "jwt-uuid", Email: "jwt@example.com", Username: "jwtuser", PasswordHash: "x", IsActive: true}
+	require.NoError(t, userRepo.Create(context.Background(), u))
+
+	propfind := func(token string) int {
+		body := `<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:"><D:prop><D:current-user-principal/></D:prop></D:propfind>`
+		req, _ := http.NewRequest("PROPFIND", "/dav/jwtuser/", bytes.NewReader([]byte(body)))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/xml")
+		resp, err := app.Test(req, davTestTimeout)
+		require.NoError(t, err)
+		return resp.StatusCode
+	}
+
+	old, _, err := jwtManager.GenerateAccessToken(u.UUID, u.Email)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusMultiStatus, propfind(old), "precondition: bearer auth works")
+
+	require.NoError(t, userRepo.InvalidateAccessTokens(context.Background(), u.ID, time.Now()))
+	assert.Equal(t, fiber.StatusUnauthorized, propfind(old))
+
+	fresh, _, err := jwtManager.GenerateAccessToken(u.UUID, u.Email)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusMultiStatus, propfind(fresh))
 }
