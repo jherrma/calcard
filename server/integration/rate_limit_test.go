@@ -143,7 +143,7 @@ func bootServerWithConfig(t *testing.T, tweak func(*config.Config)) (string, fun
 			RefreshExpiry: 24 * time.Hour,
 			ResetExpiry:   15 * time.Minute,
 		},
-		// Global middleware limiter: 100/min/IP matches production defaults.
+		// Global middleware limiter: matches the production default (5000/min/IP).
 		// The caller's `tweak` can still flip Enabled on. Setting the numeric
 		// fields ensures that a tweak enabling this limiter doesn't leave
 		// Max=0. The auth-specific allowances mirror the production defaults
@@ -151,7 +151,7 @@ func bootServerWithConfig(t *testing.T, tweak func(*config.Config)) (string, fun
 		// single IP); rate-limit tests override them to pin exact thresholds.
 		RateLimit: config.RateLimitConfig{
 			Enabled:           false,
-			Requests:          100,
+			Requests:          config.DefaultRateLimitRequests,
 			Window:            time.Minute,
 			AuthIPRequests:    20,
 			AuthEmailRequests: 10,

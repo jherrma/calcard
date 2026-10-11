@@ -137,6 +137,10 @@ type SubscriptionConfig struct {
 	AllowPrivateHosts bool `yaml:"allow_private_hosts" env:"CALDAV_SUBSCRIPTIONS_ALLOW_PRIVATE_HOSTS"`
 }
 
+// DefaultRateLimitRequests is the global per-IP allowance per RateLimit.Window
+// when none is configured (and what a non-positive value is clamped back to).
+const DefaultRateLimitRequests = 5000
+
 // RateLimitConfig contains rate limiting settings
 type RateLimitConfig struct {
 	Enabled  bool          `yaml:"enabled" env:"CALDAV_RATE_LIMIT_ENABLED"`
@@ -278,8 +282,15 @@ func Load(configPath string) (*Config, error) {
 			ResetExpiry:   time.Hour,
 		},
 		RateLimit: RateLimitConfig{
-			Enabled:  true,
-			Requests: 100,
+			Enabled: true,
+			// 5000/min per IP. The key is c.IP(), so every user behind one NAT
+			// or reverse proxy shares a single bucket, and the web UI fires a
+			// handful of API calls per page (the dashboard alone ~5). At 100
+			// one household browsing while a DAV client synced was enough to
+			// collect 429s. The global limiter is a flood guard, not a
+			// brute-force control — that job belongs to the auth limiters
+			// below, which stay tight.
+			Requests: DefaultRateLimitRequests,
 			Window:   time.Minute,
 			// Per-IP allowance sits ABOVE the per-email allowance on purpose so
 			// the tighter per-account control is reachable from one IP (and
@@ -392,13 +403,18 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	// Clamp non-positive auth rate-limit thresholds back to their defaults. A
+	// Clamp non-positive rate-limit thresholds back to their defaults. A
 	// misconfigured 0 (or negative) value would otherwise reach Fiber's limiter
-	// as Max<=0, which silently falls back to 5 — collapsing BOTH auth limiters
+	// as Max<=0, which silently falls back to 5 — for the global limiter that
+	// turns "0, i.e. unlimited?" into 5 requests a minute; for the auth
+	// limiters it collapses BOTH
 	// to 5/5 and resurrecting the IP-trips-first ordering bug (per-IP must stay
 	// strictly above per-email so the per-email limiter is reachable). Mirror
 	// the default literals from the defaults block above so an operator can't
 	// accidentally disable the ordering guarantee.
+	if cfg.RateLimit.Requests <= 0 {
+		cfg.RateLimit.Requests = DefaultRateLimitRequests
+	}
 	if cfg.RateLimit.AuthIPRequests <= 0 {
 		cfg.RateLimit.AuthIPRequests = 20
 	}

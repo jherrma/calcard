@@ -68,11 +68,19 @@ All configuration options can be set via environment variables. The mapping is d
 
 ### Rate Limit Section (`rate_limit:`)
 
-| YAML Key   | Env Var                      | Default | Description                               |
-| :--------- | :--------------------------- | :------ | :---------------------------------------- |
-| `enabled`  | `CALDAV_RATE_LIMIT_ENABLED`  | `true`  | Enable global rate limiting.              |
-| `requests` | `CALDAV_RATE_LIMIT_REQUESTS` | `100`   | Number of requests allowed in the window. |
-| `window`   | `CALDAV_RATE_LIMIT_WINDOW`   | `1m`    | Time window for rate limiting.            |
+| YAML Key              | Env Var                                 | Default | Description |
+| :-------------------- | :-------------------------------------- | :------ | :---------- |
+| `enabled`             | `CALDAV_RATE_LIMIT_ENABLED`             | `true`  | Enable rate limiting (the global limiter and the auth limiters below). |
+| `requests`            | `CALDAV_RATE_LIMIT_REQUESTS`            | `5000`  | Requests **per client IP** allowed in the window, across the REST API, DAV, MCP and public feeds (web UI static assets are not counted). A value `<= 0` is reset to the default. |
+| `window`              | `CALDAV_RATE_LIMIT_WINDOW`              | `1m`    | Time window for rate limiting. |
+| `auth_ip_requests`    | `CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS`    | `20`    | Login / forgot-password / reset-password attempts per IP in the window. Must stay above `auth_email_requests`. |
+| `auth_email_requests` | `CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS` | `10`    | Login / forgot-password attempts per e-mail address in the window. |
+
+The global limit is keyed on the client IP as the server sees it, and forwarded
+headers are not trusted, so **everyone behind one NAT or reverse proxy shares a
+single allowance**. That is why the default is generous: it guards against a
+flood, not against password guessing — the much tighter auth limits do that. A
+throttled request gets `429` with a `Retry-After` header (in seconds).
 
 ### Registration Section (`registration:`)
 
