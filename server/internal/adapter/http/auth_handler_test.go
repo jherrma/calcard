@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +75,79 @@ func TestAuthHandler_Register(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusConflict, resp.StatusCode)
 	})
+}
+
+// P01: with SMTP configured, POST /auth/register must answer a taken address
+// exactly like a free one, and login must not tell "the account you just
+// registered is unconfirmed" from "wrong password" — together those two
+// responses were an account-existence oracle.
+func TestAuthHandler_Register_NoEnumerationWithSMTP(t *testing.T) {
+	app, db, cfg := setupTestApp(t)
+	// The use case and handler share cfg, so this switches both to "SMTP on".
+	// The email service was built from the empty SMTP config and stays a no-op.
+	cfg.SMTP.Host = "smtp.invalid"
+	userRepo := repository.NewUserRepository(db.DB())
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("Owner123!"), bcrypt.MinCost)
+	require.NoError(t, err)
+	require.NoError(t, userRepo.Create(context.Background(), &user.User{
+		UUID: "owner-uuid", Email: "owner@example.com", Username: "owneruser",
+		PasswordHash: string(hash), IsActive: true, EmailVerified: true,
+	}))
+
+	register := func(email, password string) (int, []byte) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"email": email, "password": password, "display_name": "Probe"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, fiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode, b
+	}
+	login := func(email, password string) (int, []byte) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"email": email, "password": password})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, fiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode, b
+	}
+
+	// Same address casing on both sides so the bodies can be compared byte
+	// for byte: the only request-derived fields are email and display_name.
+	freshStatus, freshBody := register("fresh@example.com", "Probe123!")
+	takenStatus, takenBody := register("owner@example.com", "Probe123!")
+
+	assert.Equal(t, fiber.StatusOK, freshStatus)
+	assert.Equal(t, freshStatus, takenStatus, "status must not reveal a taken address")
+	assert.Equal(t,
+		strings.Replace(string(freshBody), "fresh@example.com", "X", 1),
+		strings.Replace(string(takenBody), "owner@example.com", "X", 1),
+		"body must not reveal a taken address")
+	for _, leak := range []string{`"id"`, `"username"`, `"created_at"`} {
+		assert.NotContains(t, string(freshBody), leak, "pending registrations carry no stored-row fields")
+	}
+
+	// The taken address kept its account and password.
+	owner, err := userRepo.GetByEmail(context.Background(), "owner@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "owneruser", owner.Username)
+	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(owner.PasswordHash), []byte("Owner123!")))
+
+	// Second step of the oracle: log in with the password just submitted.
+	// fresh -> account exists but is unconfirmed; owner -> wrong password.
+	pendingStatus, pendingBody := login("fresh@example.com", "Probe123!")
+	wrongStatus, wrongBody := login("owner@example.com", "Probe123!")
+	assert.Equal(t, fiber.StatusUnauthorized, pendingStatus)
+	assert.Equal(t, pendingStatus, wrongStatus)
+	assert.Equal(t, string(pendingBody), string(wrongBody), "login must not tell unconfirmed from wrong password")
 }
 
 func TestAuthHandler_Login(t *testing.T) {
