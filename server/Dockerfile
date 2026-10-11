@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # NOTE: build context is the REPO ROOT (so the web stage can see ../webinterface).
-# The compose files set `context: ..` / `dockerfile: server/Dockerfile`; to build
+# The compose files (docker-compose/) set `context: ..` / `dockerfile: server/Dockerfile`; to build
 # by hand, run from the repo root: `docker build -f server/Dockerfile .`
 
 # --- Web UI build stage ---

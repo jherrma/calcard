@@ -21,8 +21,7 @@ server/
 ├── tools/               # Build-time generators (not part of the server binary)
 │   └── genlicenses/     # Writes internal/usecase/about/open_source_go.json (#101)
 ├── Dockerfile           # Multi-stage Alpine build (static binary)
-├── docker-compose.yml   # SQLite deployment
-└── docker-compose.postgres.yml  # PostgreSQL deployment
+└── (compose files live in ../docker-compose/)
 ```
 
 ## Startup Sequence
