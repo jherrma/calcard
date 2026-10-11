@@ -20,7 +20,20 @@ import httpx
 from . import out
 from .config import Config
 
-NOT_JSON = object()
+class _NotJson:
+    """Sentinel for a body that is not JSON. FALSY on purpose, so
+    ``r.json() or {}`` falls back — but prefer ``r.jdict()``."""
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "NOT_JSON"
+
+
+NOT_JSON = _NotJson()
 
 _DUMP_HEADERS = ("Location", "ETag", "WWW-Authenticate", "DAV", "Allow", "Retry-After", "Mcp-Session-Id")
 
@@ -60,6 +73,18 @@ class Resp:
             except ValueError:
                 self._json = NOT_JSON
         return self._json
+
+    def jdict(self) -> dict:
+        """The body as a JSON object, or ``{}`` when it is not JSON or not an
+        object (an HTML error page, a list, …) — safe for ``.get`` chains."""
+        j = self.json()
+        return j if isinstance(j, dict) else {}
+
+    def jmsg(self) -> str:
+        """The ``message`` (or ``error``) string of a JSON error body, else ''."""
+        j = self.jdict()
+        m = j.get("message") or j.get("error") or ""
+        return m if isinstance(m, str) else ""
 
     # --- headers ----------------------------------------------------------
     def hdr(self, name: str) -> str:

@@ -23,8 +23,18 @@ class ConfigError(Exception):
     """The run cannot start (exit code 2)."""
 
 
+TRUE_WORDS = {"1", "true", "yes", "on", "y"}
+FALSE_WORDS = {"0", "false", "no", "off", "n"}
+
+# The longest name the suite derives from the run tag is a CardDAV credential
+# username "Mixed-<tag>-card" (tests/test_15_credentials.py), and the server
+# caps credential usernames at 50 characters (usecase/apppassword). Everything
+# else the tag ends up in (e-mails, calendar names, UIDs) allows more.
+MAX_RUN_TAG = 50 - len("Mixed-") - len("-card")
+
+
 def is_true(value: str | None) -> bool:
-    return (value or "").strip().lower() in {"1", "true", "yes", "on", "y"}
+    return (value or "").strip().lower() in TRUE_WORDS
 
 
 def load_env_file() -> tuple[str | None, list[str]]:
@@ -159,6 +169,21 @@ class Config:
         run_id = os.environ.get("E2E_RUN_ID") or (
             time.strftime("%Y%m%d%H%M%S") + f"{random.randrange(10000):04d}"
         )
+        if not re.fullmatch(r"[a-z0-9]+", run_id):
+            raise ConfigError(f"E2E_RUN_ID must be lowercase letters and digits (got '{run_id}')")
+        run_tag = f"{prefix}-{run_id}"
+        if len(run_tag) > MAX_RUN_TAG:
+            raise ConfigError(
+                f"E2E_USER_PREFIX '{prefix}' is too long: names derived from '<prefix>-<run id>' must stay "
+                f"within the server's 50-character credential usernames, so the prefix may have at most "
+                f"{MAX_RUN_TAG - 1 - len(run_id)} characters (the run id has {len(run_id)})")
+        feed = _env("E2E_FEED", "auto").strip().lower()
+        if feed in TRUE_WORDS:
+            feed = "auto"
+        elif feed in FALSE_WORDS:
+            feed = "off"
+        elif feed != "auto":
+            raise ConfigError(f"E2E_FEED must be auto (or true/on/1) or off (or false/no/0), got '{feed}'")
         return cls(
             base_url=url,
             scheme=m.group(1),
@@ -177,12 +202,12 @@ class Config:
             rate_limit_max_wait=_int("E2E_RATE_LIMIT_MAX_WAIT", 90),
             rate_limit_burst=is_true(_env("E2E_RATE_LIMIT_BURST", "false")),
             body_preview=_int("E2E_BODY_PREVIEW", 1200),
-            feed=_env("E2E_FEED", "auto"),
+            feed=feed,
             feed_host=os.environ.get("E2E_FEED_HOST", ""),
             feed_bind=os.environ.get("E2E_FEED_BIND", ""),
             feed_port=os.environ.get("E2E_FEED_PORT", ""),
             run_id=run_id,
-            run_tag=f"{prefix}-{run_id}",
+            run_tag=run_tag,
             warnings=warnings,
         )
 

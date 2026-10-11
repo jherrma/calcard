@@ -57,8 +57,8 @@ class FeedServer:
         if self.unavailable:
             raise FeedUnavailable(self.unavailable)
         try:
-            if self.cfg.feed.lower() == "off":
-                raise FeedUnavailable("disabled by E2E_FEED=off")
+            if self.cfg.feed == "off":  # normalized by Config (false/no/0 → off)
+                raise FeedUnavailable("disabled by E2E_FEED")
             host = self._detect_host()
             bind = self.cfg.feed_bind or ("127.0.0.1" if _is_loopback(host) else "0.0.0.0")
             port = int(self.cfg.feed_port) if self.cfg.feed_port else 0

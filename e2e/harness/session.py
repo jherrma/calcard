@@ -23,6 +23,11 @@ from .http import Http, Resp
 
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 
+# 401 messages of the REST auth middleware that reject the ACCESS TOKEN itself
+# (adapter/http/auth_middleware.go) — as opposed to a handler refusing the
+# request (wrong password, …). Only these make User.api re-authenticate.
+TOKEN_REJECTED = frozenset({"token revoked", "token expired", "invalid or expired token"})
+
 
 class SetupFailed(AssertionError):
     """A fixture/factory step failed (fails the test that needed it)."""
@@ -77,19 +82,26 @@ class User:
     def login(self, quiet: bool = False) -> bool:
         """Password login; stores the tokens."""
         r = self.e2e.anon("POST", "/auth/login", json={"email": self.email, "password": self.password})
-        if r.status != 200:
+        if r.status != 200 or not self._store_tokens(r):
             if not quiet:
                 out.warn(f"login for {self.email} failed with HTTP {r.status}\n{r.dump()}")
             return False
-        self._store_tokens(r)
         return True
 
-    def _store_tokens(self, r: Resp) -> None:
-        data = (r.json() or {}).get("data") or {}
-        self.token = data.get("access_token") or ""
-        self.refresh = data.get("refresh_token") or ""
+    def _store_tokens(self, r: Resp) -> bool:
+        """Take the tokens of a login/refresh response; False when the body
+        carries no access token (not JSON, unexpected shape)."""
+        data = r.jdict().get("data")
+        data = data if isinstance(data, dict) else {}
+        token = data.get("access_token")
+        if not isinstance(token, str) or not token:
+            return False
+        self.token = token
+        refresh = data.get("refresh_token")
+        self.refresh = refresh if isinstance(refresh, str) else ""
         exp = data.get("expires_at")
         self.exp = int(exp) if isinstance(exp, (int, float)) else 0
+        return True
 
     def ensure_token(self) -> None:
         """Keep the access token fresh (refresh 60s before expiry, fall back
@@ -98,27 +110,31 @@ class User:
             return
         if self.token and time.time() < self.exp - 60:
             return
+        self.reauth()
+
+    def reauth(self) -> bool:
+        """Get a new access token: /auth/refresh with the stored refresh
+        token, else a password login."""
         if self.refresh:
             r = self.e2e.anon("POST", "/auth/refresh", json={"refresh_token": self.refresh})
-            if r.status == 200:
-                self._store_tokens(r)
+            if r.status == 200 and self._store_tokens(r):
                 out.vlog(1, f"refreshed access token for {self.key}")
-                return
-        self.login(quiet=self.e2e.in_cleanup)
+                return True
+        return self.login(quiet=self.e2e.in_cleanup)
 
     def ensure_dav(self) -> bool:
         """Create the user's DAV app password on first use."""
         if self.apppw:
             return True
         r = self.api("POST", "/app-passwords/", json={"name": self.e2e.uniq("dav"), "scopes": ["caldav", "carddav"]})
-        if r.status in (200, 201):
-            data = r.json()["data"]
-            self.apppw = data["credentials"]["password"]
+        data = r.jdict().get("data")
+        if r.status in (200, 201) and isinstance(data, dict) and data.get("id") and data.get("password"):
+            self.apppw = data["password"]
             self.apppw_id = data["id"]
             self.e2e.defer(f"revoke app password of {self.key}",
                            self.e2e.cleanup_api, self, "DELETE", f"/app-passwords/{self.apppw_id}")
             return True
-        out.warn(f"could not create a DAV app password for {self.key} (HTTP {r.status})")
+        out.warn(f"could not create a DAV app password for {self.key} (HTTP {r.status})\n{r.dump()}")
         return False
 
     def require_dav(self) -> None:
@@ -128,31 +144,41 @@ class User:
             raise SetupFailed(f"could not create a DAV app password for {self.key}")
 
     def delete_account(self) -> bool:
-        """DELETE /users/me (password + "DELETE" confirmation)."""
+        """DELETE /users/me (password + "DELETE" confirmation).
+
+        Never guesses: an account counts as deleted only after this call (or
+        a test that deleted it and set ``deleted``) saw the 200/204. A 401
+        that survives ``api``'s re-login, a 429, a 5xx or a network error is
+        a failed cleanup — reported, so leftovers are never silent."""
         if self.deleted:
             return True
-        self.ensure_token()
-        body = {"password": self.password, "confirmation": "DELETE"}
-        r = self.api("DELETE", "/users/me", json=body)
+        r = self.api("DELETE", "/users/me", json={"password": self.password, "confirmation": "DELETE"})
+        self.e2e._last_cleanup_status = r.status
         if r.status in (200, 204):
             self.deleted = True
             return True
-        if r.status == 401:
-            # Token no longer valid: maybe already deleted. Confirm by login.
-            if not self.login(quiet=True):
-                self.deleted = True
-                return True
-            r = self.api("DELETE", "/users/me", json=body)
-            if r.status == 204:
-                self.deleted = True
-                return True
         return False
 
     # --- requests -------------------------------------------------------------
     def api(self, method: str, path: str, **kw) -> Resp:
-        """REST call under /api/v1 with this user's JWT."""
+        """REST call under /api/v1 with this user's JWT.
+
+        Recovers ONCE from an access token the server rejects as such (401
+        with one of TOKEN_REJECTED): since P02 (#189) a logout, password
+        change or reset revokes every access token of the account, while the
+        refresh token survives. Any other 401 — a wrong password in the body,
+        a missing token — is returned unchanged, so authentication tests see
+        exactly what the server said."""
         self.ensure_token()
-        return self.e2e.http.request(method, f"{self.e2e.base}/api/v1{path}", bearer=self.token, **kw)
+        url = f"{self.e2e.base}/api/v1{path}"
+        r = self.e2e.http.request(method, url, bearer=self.token, **kw)
+        if r.status == 401 and not self.deleted and r.jmsg() in TOKEN_REJECTED:
+            stale = self.token
+            if self.reauth() and self.token != stale:
+                self.e2e.reauths += 1
+                out.vlog(1, f"access token of {self.key} was rejected ({r.jmsg()}); re-authenticated, retrying")
+                r = self.e2e.http.request(method, url, bearer=self.token, **kw)
+        return r
 
     def dav(self, method: str, path: str, **kw) -> Resp:
         """DAV call with Basic auth (e-mail + app password)."""
@@ -164,9 +190,9 @@ class User:
         """POST /calendars/ → the raw calendar JSON (uuid, id, path, …)."""
         r = self.api("POST", "/calendars/", json={"name": name, "color": color,
                                                   "description": f"e2e {self.e2e.cfg.run_tag}"})
-        if r.status != 201:
+        cal = r.jdict()
+        if r.status != 201 or not cal.get("uuid"):
             raise SetupFailed(f"creating calendar '{name}' as {self.key} failed (HTTP {r.status})", r)
-        cal = r.json()
         self.e2e.defer(f"delete calendar '{name}'", self.e2e.cleanup_api, self, "DELETE",
                        f"/calendars/{cal['uuid']}", json={"confirmation": "DELETE"})
         return cal
@@ -174,9 +200,9 @@ class User:
     def mk_addressbook(self, name: str) -> dict:
         """POST /addressbooks/ → the raw address book JSON (UUID, ID, Path, …)."""
         r = self.api("POST", "/addressbooks/", json={"name": name, "description": f"e2e {self.e2e.cfg.run_tag}"})
-        if r.status != 201:
+        ab = r.jdict()
+        if r.status != 201 or not ab.get("UUID"):
             raise SetupFailed(f"creating address book '{name}' as {self.key} failed (HTTP {r.status})", r)
-        ab = r.json()
         self.e2e.defer(f"delete address book '{name}'", self.e2e.cleanup_api, self, "DELETE",
                        f"/addressbooks/{ab['UUID']}", json={"confirmation": "DELETE"})
         return ab
@@ -185,16 +211,16 @@ class User:
         """POST /calendars/{uuid}/events → the raw event JSON. Deleted with its calendar."""
         body = {"summary": summary, "start": start, "end": end, "timezone": "UTC", "all_day": False, **extra}
         r = self.api("POST", f"/calendars/{cal_uuid}/events", json=body)
-        if r.status != 201:
+        if r.status != 201 or not r.jdict().get("id"):
             raise SetupFailed(f"creating event '{summary}' failed (HTTP {r.status})", r)
-        return r.json()
+        return r.jdict()
 
     def mk_contact(self, ab_uuid: str, formatted_name: str, **extra: Any) -> dict:
         """POST /addressbooks/{uuid}/contacts → the raw contact JSON."""
         r = self.api("POST", f"/addressbooks/{ab_uuid}/contacts", json={"formatted_name": formatted_name, **extra})
-        if r.status != 201:
+        if r.status != 201 or not r.jdict().get("id"):
             raise SetupFailed(f"creating contact '{formatted_name}' failed (HTTP {r.status})", r)
-        return r.json()
+        return r.jdict()
 
 
 class E2E:
@@ -210,6 +236,7 @@ class E2E:
         self.cleanup_warnings: list[str] = []
         self.in_cleanup = False
         self._last_cleanup_status: int | None = None
+        self.reauths = 0  # User.api re-logins after a revoked/expired access token
         self.server_registration = None
         self.server_smtp = None
         self._feed = None
@@ -274,10 +301,10 @@ class E2E:
     def preflight(self) -> None:
         """Registration must be possible without e-mail verification."""
         r = self.anon("GET", "/system/settings")
-        if r.status != 200:
-            abort_run(f"GET {self.base}/api/v1/system/settings answered HTTP {r.status} — is CALCARD_URL "
-                      f"pointing at a CalCard server?\n{r.dump()}")
-        data = (r.json() or {}).get("data") or {}
+        data = r.jdict().get("data")
+        if r.status != 200 or not isinstance(data, dict) or "registration_enabled" not in data:
+            abort_run(f"GET {self.base}/api/v1/system/settings answered HTTP {r.status} without the CalCard "
+                      f"settings JSON — is CALCARD_URL pointing at a CalCard server?\n{r.dump()}")
         self.server_registration = data.get("registration_enabled")
         self.server_smtp = data.get("smtp_enabled")
         if self.server_registration is not True:
@@ -302,11 +329,13 @@ class E2E:
         r = self.anon("POST", "/auth/register",
                       json={"email": u.email, "password": u.password, "display_name": u.display})
         if r.status == 403:
-            abort_run(f"Registration was refused (HTTP 403: {(r.json() or {}).get('message')}). "
+            abort_run(f"Registration was refused (HTTP 403: {r.jmsg()}). "
                       "Enable self-registration on the target (CALDAV_REGISTRATION_DISABLED=false).")
         if r.status not in (200, 201):
             raise SetupFailed(f"registering {u.email} failed with HTTP {r.status}", r)
-        data = r.json().get("data") or {}
+        data = r.jdict().get("data")
+        if not isinstance(data, dict) or not data.get("email"):
+            raise SetupFailed(f"registering {u.email} answered HTTP {r.status} without the account JSON", r)
         u.id = data.get("id") or ""
         u.username = data.get("username") or ""
         if data.get("is_active") is not True:
