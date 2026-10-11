@@ -105,13 +105,9 @@ The server was not changed to fix any of these.
 
 ## Observations without a failing test
 
-- Found while porting the suite to Python (2026-10-11, master `1395e50`): a CalDAV
-  `PUT` of a *well-formed* VCALENDAR holding two VEVENTs with different UIDs answers
-  **500** `conflicting UID values in calendar: a1, b2` (nothing is stored); RFC 4791
-  §4.1 makes this a client error (4xx). The existing test
-  (`dav_caldav/PUT rejects wrong media type and malformed iCalendar`) still sends the
-  slightly malformed body the bash suite produced, which the server rejects with a 4xx
-  before it reaches the UID check. Candidate for an F-number and its own `known()` test.
+- ~~A CalDAV `PUT` of a well-formed VCALENDAR with two different UIDs answered 500~~ —
+  **fixed in #194** (answers the `valid-calendar-object-resource` precondition). Covered by
+  `dav_caldav/PUT of a well-formed object with two different UIDs` (needs a server with #194).
 - DAV Basic auth bcrypt-checks every one of the user's app passwords (~250 ms each):
   login cost grows with their number, and anyone knowing an e-mail can trigger it.
 - Handler doc comments say `PUT` for events/contacts (route is `PATCH`) and

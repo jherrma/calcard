@@ -9,7 +9,7 @@ import pytest
 
 from harness import out
 from harness.checks import known
-from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_event, ics_todo
+from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_calendar, ics_event, ics_todo, ics_vevent
 from harness.session import SetupFailed
 from harness.xml import el, lp, xstr
 
@@ -229,17 +229,25 @@ def test_put_invalid(t, e2e, u1, st):
     r = u1.dav("PUT", f"{st.col}{e2e.uniq('bad2')}.ics", data="this is not iCalendar", ctype="text/calendar")
     t.status(r, 400, msg="malformed iCalendar")
     bad4 = e2e.uniq("bad4")
-    # Byte-identical to what the original bash suite sent: the first VEVENT
-    # ends in "END:VEVENT\r\r\n" (a stray CR), so the server already rejects
-    # it as malformed. A clean two-UID object (ics_calendar(ics_vevent(a),
-    # ics_vevent(b))) currently gets a 500 "conflicting UID values in
-    # calendar" — see FINDINGS.md, "Observations without a failing test".
+    # Malformed on purpose: the first VEVENT ends in "END:VEVENT\r\r\n" (a stray
+    # CR). The clean two-UID case is test_put_two_uids.
     first = ics_event(f"{bad4}-a", "a", "20300601T100000Z", "20300601T110000Z")[:-len("END:VCALENDAR\r\n")]
     second = "".join(ics_event(f"{bad4}-b", "b", "20300601T100000Z", "20300601T110000Z")
                      .splitlines(keepends=True)[3:])
     two = first[:-1] + "\r\n" + second
     r = u1.dav("PUT", f"{st.col}{bad4}.ics", ics=two)
-    t.status_class(r, "4xx", msg="two different UIDs in one object (RFC 4791 4.1)")
+    t.status_class(r, "4xx", msg="malformed object with two UIDs")
+
+
+def test_put_two_uids(t, e2e, u1, st):
+    """PUT of a well-formed object with two different UIDs is a 4xx, nothing stored"""
+    uid = e2e.uniq("twouid")
+    body = ics_calendar(ics_vevent(f"{uid}-a", "a", "20300601T100000Z", "20300601T110000Z"),
+                        ics_vevent(f"{uid}-b", "b", "20300601T100000Z", "20300601T110000Z"))
+    r = u1.dav("PUT", f"{st.col}{uid}.ics", ics=body)
+    if t.status_class(r, "4xx", msg="two different UIDs in one object (RFC 4791 4.1), fixed in #194"):
+        t.contains(r, "valid-calendar-object-resource", "names the failed precondition")
+    t.status(u1.dav("GET", f"{st.col}{uid}.ics"), 404, msg="nothing was stored")
 
 
 @known("F16")
