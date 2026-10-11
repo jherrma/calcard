@@ -1,6 +1,10 @@
 services:
   caldav:
     image: herrj/calcard:latest
+    # The image runs as a non-root user (uid/gid 1000). A bind-mounted data
+    # directory must be writable by it. On a NAS (e.g. Synology) either
+    # `chown 1000:1000` the host folder, or run as the folder's owner:
+    #   user: "1026:100"   # <uid>:<gid> — `ls -ln` shows them
     # To build from source instead (context is the repo root so the image can
     # bundle the web UI), replace `image:` with:
     #   build:

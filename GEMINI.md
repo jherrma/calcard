@@ -25,8 +25,7 @@ This is a CalDAV/CardDAV server project with a Go backend and web interface. The
 │   │   ├── domain/           # Domain models and interfaces
 │   │   ├── infrastructure/   # Database, email, server setup
 │   │   └── usecase/          # Business logic use cases
-│   ├── Dockerfile            # Docker build configuration
-│   └── docker-compose*.yml   # Docker Compose configurations
+│   └── Dockerfile            # Docker build configuration
 └── webinterface/             # Frontend (web interface)
 ```
 
@@ -54,10 +53,10 @@ cd server && go build ./...
 cd server && go test ./...
 
 # Run with Docker (SQLite)
-cd server && docker-compose up
+cd docker-compose && docker compose up
 
 # Run with Docker (PostgreSQL)
-cd server && docker-compose -f docker-compose.postgres.yml up
+cd docker-compose && docker compose -f docker-compose.postgres.yml up
 ```
 
 ## Key Technologies

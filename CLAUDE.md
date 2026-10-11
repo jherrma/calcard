@@ -13,6 +13,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
 ├── README.md                # Quick start, deployment, API doc pointers
 ├── CONFIGURATION.md         # Every YAML key and CALDAV_* environment variable
 ├── STORIES.md               # Implementation tracker + the consolidated remaining-work list
+├── docker-compose/          # Example compose files (SQLite, PostgreSQL) using herrj/calcard
 ├── stories/                 # User stories for implementation
 │   ├── backend/             # Backend stories (Go server)
 │   ├── continuation/        # Stories after core features are implemented
@@ -26,8 +27,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
 │   │   ├── domain/          # Domain models and interfaces
 │   │   ├── infrastructure/  # Database, email, server setup
 │   │   └── usecase/         # Business logic use cases
-│   ├── Dockerfile
-│   └── docker-compose*.yml
+│   └── Dockerfile
 └── webinterface/            # Nuxt 4 SPA frontend
     ├── pages/               # File-based routing
     │   ├── index.vue        # Dashboard — the landing page after login (story 042)
@@ -100,8 +100,8 @@ cd webinterface && pnpm test:watch                   # Vitest specs (watch mode)
 cd webinterface && pnpm build                        # Production build
 
 # Docker
-cd server && docker-compose up                                    # SQLite
-cd server && docker-compose -f docker-compose.postgres.yml up     # PostgreSQL
+cd docker-compose && docker compose up                                    # SQLite (herrj/calcard image)
+cd docker-compose && docker compose -f docker-compose.postgres.yml up     # PostgreSQL
 ```
 
 ## Key Technologies

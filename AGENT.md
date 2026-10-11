@@ -10,6 +10,7 @@ CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalD
 
 ```
 /
+├── docker-compose/          # Example compose files (SQLite, PostgreSQL) using herrj/calcard
 ├── stories/                 # User stories for implementation
 │   ├── backend/             # Backend stories (001–029)
 │   ├── frontend/            # Frontend stories (031–050)
@@ -23,8 +24,7 @@ CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalD
 │   │   ├── infrastructure/  # Database, email, server setup, migrations
 │   │   ├── usecase/         # Business logic (auth, calendar, contact, sharing, import/export, mcptoken, subscription)
 │   │   └── config/          # Configuration loading
-│   ├── Dockerfile           # Multi-stage Alpine build (static binary)
-│   └── docker-compose*.yml  # SQLite and PostgreSQL configurations
+│   └── Dockerfile           # Multi-stage Alpine build (static binary)
 └── webinterface/            # Nuxt 4 SPA frontend
     ├── pages/               # File-based routing (auth, calendar, contacts, search)
     ├── components/          # Auto-imported Vue components (auth, calendar, contacts, common)
@@ -87,8 +87,8 @@ cd webinterface && pnpm test:watch                   # Vitest specs (watch mode)
 cd webinterface && pnpm build                        # Production build
 
 # Docker
-cd server && docker-compose up --build                                    # SQLite
-cd server && docker-compose -f docker-compose.postgres.yml up --build     # PostgreSQL
+cd docker-compose && docker compose up -d                                    # SQLite (herrj/calcard image)
+cd docker-compose && docker compose -f docker-compose.postgres.yml up -d     # PostgreSQL
 ```
 
 ## Development Instructions

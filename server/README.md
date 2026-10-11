@@ -171,10 +171,10 @@ The simplest way to build and run the server is with Docker Compose:
 
 ```bash
 # SQLite (default)
-cd server && docker-compose up --build
+cd docker-compose && docker compose up -d
 
 # PostgreSQL
-cd server && docker-compose -f docker-compose.postgres.yml up --build
+cd docker-compose && docker compose -f docker-compose.postgres.yml up -d
 ```
 
 The Dockerfile produces a minimal Alpine-based image with a statically linked binary. Key environment variables:

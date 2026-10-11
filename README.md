@@ -26,20 +26,47 @@ CalCard is a high-performance CalDAV and CardDAV server written in Go. It provid
 
 ### Running with Docker (single container, web UI included)
 
-The easiest way to get started is using Docker Compose (run from the `server/`
-directory — the compose files set the build context to the repo root so the
-image can bundle the web UI):
+The easiest way to get started is Docker Compose with the published image
+[`herrj/calcard`](https://hub.docker.com/r/herrj/calcard). Two example compose
+files live in [`docker-compose/`](docker-compose/) — copy one and adjust it:
+
+| File | Database |
+| :--- | :------- |
+| [`docker-compose/docker-compose.yml`](docker-compose/docker-compose.yml) | SQLite (data in the `/data` volume) |
+| [`docker-compose/docker-compose.postgres.yml`](docker-compose/docker-compose.postgres.yml) | PostgreSQL 18 (needs `POSTGRES_PASSWORD`) |
 
 ```bash
-cd server
+cd docker-compose
 docker compose up -d                                   # SQLite
 # docker compose -f docker-compose.postgres.yml up -d  # PostgreSQL
 ```
 
-This builds **one image** that serves everything on **one origin** (port 8080):
+Both files pull `herrj/calcard:latest`; pin a version (e.g. `herrj/calcard:1.0.0`)
+for anything you rely on. Each one also has a commented `build:` block for
+building from source instead.
+
+This is **one image** that serves everything on **one origin** (port 8080):
 the REST API (`/api`), DAV (`/dav`), `/.well-known`, `/health`, **and the built
 web UI**. Open `http://localhost:8080/` and the UI loads from the same
-server that answers its API calls.
+server that answers its API calls. Set `CALDAV_BASE_URL` to the address clients
+actually use (e.g. `http://<nas-ip>:8751`), not `localhost`, when it is reached
+from other devices.
+
+> **The container does not run as root.** It runs as uid/gid `1000`. A
+> bind-mounted data directory (e.g. `/volume1/docker/calcard/data:/data` on a
+> NAS) must be writable by that user, otherwise the server stops at startup with
+> `Failed to initialize database: … unable to open database file: no such file
+> or directory`. Either `chown -R 1000:1000` the host folder, or set the user
+> and group ID in the compose file to the folder's owner (find them with
+> `ls -ln`):
+>
+> ```yaml
+> services:
+>   caldav:
+>     user: "1026:100"   # <uid>:<gid>
+> ```
+>
+> Named Docker volumes (the default in the example files) need no setup.
 
 Because the UI and API share an origin, the browser never applies CORS, so
 **no CORS configuration is required**. The CORS settings
