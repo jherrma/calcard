@@ -29,6 +29,8 @@ export interface SystemSettings {
   admin_configured: boolean;
   smtp_enabled: boolean;
   registration_enabled: boolean;
+  // True only while first-run setup is open AND the server has CALDAV_SETUP_TOKEN set.
+  setup_token_required?: boolean;
 }
 
 export interface AuthMethod {

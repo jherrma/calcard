@@ -45,7 +45,7 @@ JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", 
 
 | Area | Endpoints |
 |------|-----------|
-| Auth | First-run setup (`POST /auth/setup`, creates the admin, 409 once any user exists), login, register, verify, refresh, logout, forgot/reset password |
+| Auth | First-run setup (`POST /auth/setup`, creates the admin, 409 once any user exists; optionally guarded by `CALDAV_SETUP_TOKEN`, which also locks registration until setup is done), login, register, verify, refresh, logout, forgot/reset password |
 | OAuth | Initiate, callback, link/unlink providers |
 | System | Settings (admin configured, SMTP enabled, registration enabled), auth methods |
 | User | Get/update profile, delete account, get/update preferences |

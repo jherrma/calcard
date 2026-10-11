@@ -97,3 +97,18 @@ func TestValidation(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "postgres driver requires host, user, and name")
 }
+
+// CALDAV_SETUP_TOKEN feeds Registration.SetupToken; unset means "no token", the
+// open behaviour every existing deployment has today.
+func TestLoadSetupToken(t *testing.T) {
+	os.Clearenv()
+	cfg, err := Load("")
+	assert.NoError(t, err)
+	assert.Empty(t, cfg.Registration.SetupToken, "default: no setup token")
+
+	os.Setenv("CALDAV_SETUP_TOKEN", "s3cret")
+	t.Cleanup(func() { os.Unsetenv("CALDAV_SETUP_TOKEN") })
+	cfg, err = Load("")
+	assert.NoError(t, err)
+	assert.Equal(t, "s3cret", cfg.Registration.SetupToken)
+}

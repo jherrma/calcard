@@ -21,6 +21,10 @@ services:
       # (e.g. across replicas behind a load balancer).
       - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-}
       - CALDAV_BASE_URL=${CALDAV_BASE_URL:-http://localhost:8080}
+      # Optional: require this token for first-run setup and keep registration locked
+      # until the first account exists. Recommended if the server is reachable from the
+      # internet; leave unset on a private network.
+      # - CALDAV_SETUP_TOKEN=change-me-to-a-long-random-string
     volumes:
       - caldav_data:/data
     restart: unless-stopped

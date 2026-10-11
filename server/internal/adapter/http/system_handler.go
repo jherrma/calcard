@@ -31,6 +31,8 @@ func (h *SystemHandler) Settings(c fiber.Ctx) error {
 		"admin_configured":     userCount > 0,
 		"smtp_enabled":         h.cfg.SMTP.Host != "",
 		"registration_enabled": !h.cfg.Registration.Disabled,
+		// The setup form asks for the token only while setup is still open.
+		"setup_token_required": h.cfg.Registration.SetupToken != "" && userCount == 0,
 	})
 }
 

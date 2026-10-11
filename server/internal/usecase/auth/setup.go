@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,6 +18,12 @@ var (
 	// ErrSetupCompleted is returned once any user exists: first-run setup is a
 	// one-shot that must not become a way to mint admins later.
 	ErrSetupCompleted = errors.New("setup already completed")
+	// ErrInvalidSetupToken is returned when CALDAV_SETUP_TOKEN is configured and
+	// the request does not carry it.
+	ErrInvalidSetupToken = errors.New("invalid setup token")
+	// ErrSetupRequired is returned to registration attempts while a setup token
+	// is configured and the first account does not exist yet.
+	ErrSetupRequired = errors.New("server setup is not complete")
 	// ErrInvalidUsername rejects usernames outside the allowed shape.
 	ErrInvalidUsername = errors.New("username must be 3-64 characters: lowercase letters, digits, '.', '_' or '-', starting with a letter or digit")
 )
@@ -52,11 +59,18 @@ func NewSetupUseCase(repo user.UserRepository, register *RegisterUseCase) *Setup
 	return &SetupUseCase{repo: repo, register: register}
 }
 
-func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, displayName string) (*user.User, error) {
+func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, displayName, setupToken string) (*user.User, error) {
 	// Cheap pre-check first, so a configured server answers 409 without
 	// validating or hashing anything (no bcrypt work for unauthenticated callers).
 	if err := uc.ensureEmpty(ctx); err != nil {
 		return nil, err
+	}
+
+	// Only a caller who knows the token may proceed (constant-time compare). This
+	// sits before validation and bcrypt so a wrong token costs nothing.
+	if want := uc.register.cfg.Registration.SetupToken; want != "" &&
+		subtle.ConstantTimeCompare([]byte(setupToken), []byte(want)) != 1 {
+		return nil, ErrInvalidSetupToken
 	}
 
 	username = strings.ToLower(strings.TrimSpace(username))
@@ -108,4 +122,18 @@ func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, 
 		fmt.Printf("failed to create default address book: %v\n", err)
 	}
 	return u, nil
+}
+
+// setupPending reports whether registration must be refused because a setup
+// token is configured and no account has ever existed. With no token it is
+// always false (the previous, open behaviour).
+func setupPending(ctx context.Context, repo user.UserRepository, token string) (bool, error) {
+	if token == "" {
+		return false, nil
+	}
+	count, err := repo.Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	return count == 0, nil
 }

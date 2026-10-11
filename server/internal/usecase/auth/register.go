@@ -41,6 +41,13 @@ func NewRegisterUseCase(repo user.UserRepository, calendarRepo calendar.Calendar
 func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, displayName string) (*user.User, string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 
+	// 0. With a setup token configured, the first account must come from setup.
+	if pending, err := setupPending(ctx, uc.repo, uc.cfg.Registration.SetupToken); err != nil {
+		return nil, "", err
+	} else if pending {
+		return nil, "", ErrSetupRequired
+	}
+
 	// 1. Validate domain rules
 	if err := user.ValidateEmail(email); err != nil {
 		return nil, "", err

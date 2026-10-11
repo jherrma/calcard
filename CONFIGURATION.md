@@ -74,6 +74,13 @@ All configuration options can be set via environment variables. The mapping is d
 | `requests` | `CALDAV_RATE_LIMIT_REQUESTS` | `100`   | Number of requests allowed in the window. |
 | `window`   | `CALDAV_RATE_LIMIT_WINDOW`   | `1m`    | Time window for rate limiting.            |
 
+### Registration Section (`registration:`)
+
+| YAML Key      | Env Var                       | Default | Description |
+| :------------ | :---------------------------- | :------ | :---------- |
+| `disabled`    | `CALDAV_REGISTRATION_DISABLED` | `false` | Turns off self-service registration (local and OAuth sign-up). First-run setup still works. |
+| `setup_token` | `CALDAV_SETUP_TOKEN`          | empty   | Guards **first-run setup**. When set, `POST /api/v1/auth/setup` (the "Initial Setup" page) must present this token, and until the first account exists self-service registration is refused. This stops whoever reaches a fresh, internet-exposed server first from claiming the admin account, or from registering as a plain user and so closing setup for good. **Empty keeps the previous behaviour**: no token is asked for and registration is open. Once the first account exists the token is no longer needed. |
+
 ### MCP Section (`mcp:`)
 
 Controls the Model Context Protocol endpoint at `/mcp` (story 104), which lets an

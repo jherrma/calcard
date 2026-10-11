@@ -8,6 +8,23 @@
     </p>
 
     <form @submit.prevent="handleSetup" class="space-y-4">
+      <div v-if="tokenRequired" class="flex flex-col gap-1.5">
+        <label for="setup_token" class="text-sm font-medium text-surface-700 dark:text-surface-300">Setup Token</label>
+        <InputText
+          id="setup_token"
+          v-model="form.setup_token"
+          required
+          autocomplete="off"
+          placeholder="The value of CALDAV_SETUP_TOKEN"
+          class="w-full"
+          :class="{ 'p-invalid': v$.setup_token.$error }"
+        />
+        <small v-if="v$.setup_token.$error" class="p-error">{{ v$.setup_token.$errors[0]?.$message }}</small>
+        <small class="text-surface-500 dark:text-surface-400">
+          This server requires its setup token before the first account can be created.
+        </small>
+      </div>
+
       <div class="flex flex-col gap-1.5">
         <label for="username" class="text-sm font-medium text-surface-700 dark:text-surface-300">Admin Username</label>
         <InputText
@@ -97,7 +114,7 @@
 
 <script setup lang="ts">
 import { useVuelidate } from '@vuelidate/core';
-import { required, email, minLength, sameAs, helpers } from '@vuelidate/validators';
+import { required, requiredIf, email, minLength, sameAs, helpers } from '@vuelidate/validators';
 import type { SystemSettings } from '~/types/auth';
 
 definePageMeta({
@@ -109,6 +126,7 @@ const authStore = useAuthStore();
 const router = useRouter();
 
 const form = reactive({
+  setup_token: "",
   username: "",
   email: "",
   display_name: "",
@@ -116,7 +134,13 @@ const form = reactive({
   confirmPassword: "",
 });
 
+// Whether the server wants CALDAV_SETUP_TOKEN (known after the settings fetch).
+const tokenRequired = ref(false);
+
 const rules = {
+  setup_token: {
+    required: requiredIf(tokenRequired),
+  },
   username: {
     required,
     minLength: minLength(3),
@@ -145,6 +169,7 @@ onMounted(async () => {
   try {
     const settings = await useApi()<SystemSettings>("/api/v1/system/settings");
     if (settings.admin_configured) await router.replace("/auth/login");
+    tokenRequired.value = !!settings.setup_token_required;
   } catch {
     // Settings unreachable: leave the form; submitting will surface the error.
   }
@@ -164,6 +189,7 @@ const handleSetup = async () => {
       email: form.email,
       display_name: form.display_name,
       password: form.password,
+      ...(tokenRequired.value ? { setup_token: form.setup_token } : {}),
     });
   } catch (e: any) {
     error.value = e.data?.message || "Setup failed. Please try again.";

@@ -205,6 +205,14 @@ type SecurityConfig struct {
 // configs behave as before.
 type RegistrationConfig struct {
 	Disabled bool `yaml:"disabled" env:"CALDAV_REGISTRATION_DISABLED"`
+
+	// SetupToken, when non-empty, guards first-run setup: POST /auth/setup must
+	// present it, and until the first account exists self-service registration
+	// (local and OAuth) is refused. That stops whoever reaches a fresh, exposed
+	// server first from claiming the admin account, or from registering as a
+	// plain user and so closing setup forever. Empty (the default) keeps the
+	// previous behaviour: setup needs no token and registration is open.
+	SetupToken string `yaml:"setup_token" env:"CALDAV_SETUP_TOKEN"`
 }
 
 // DSN returns the database connection string based on the driver

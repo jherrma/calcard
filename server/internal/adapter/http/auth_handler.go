@@ -74,6 +74,9 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 
 	user, _, err := h.registerUC.Execute(c.Context(), req.Email, req.Password, req.DisplayName)
 	if err != nil {
+		if errors.Is(err, authusecase.ErrSetupRequired) {
+			return ErrorResponse(c, fiber.StatusForbidden, "server setup is not complete: finish the initial setup first")
+		}
 		if errors.Is(err, authusecase.ErrUserAlreadyExists) {
 			return ErrorResponse(c, fiber.StatusConflict, "Email already registered")
 		}
