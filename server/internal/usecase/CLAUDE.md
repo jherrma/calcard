@@ -21,6 +21,7 @@ Authentication and authorization logic. See [auth/AGENT.md](auth/AGENT.md) for d
 - `change_password.go`, `forgot_password.go`, `reset_password.go` — Password management.
 - `oauth_initiate.go`, `oauth_callback.go`, `oauth_link.go`, `oauth_providers.go` — OAuth2/OIDC flows.
 - `email_service.go` — Email service interface for auth-related emails.
+- `setup.go` — First-run setup: creates the initial administrator (`IsAdmin`), only while the user table is empty.
 - `username_util.go` — Username generation utilities.
 
 ### [calendar/](calendar/)

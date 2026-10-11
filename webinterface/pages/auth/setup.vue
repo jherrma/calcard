@@ -97,10 +97,12 @@
 
 <script setup lang="ts">
 import { useVuelidate } from '@vuelidate/core';
-import { required, email, minLength, sameAs } from '@vuelidate/validators';
+import { required, email, minLength, sameAs, helpers } from '@vuelidate/validators';
+import type { SystemSettings } from '~/types/auth';
 
 definePageMeta({
   layout: "auth",
+  middleware: "guest",
 });
 
 const authStore = useAuthStore();
@@ -115,7 +117,15 @@ const form = reactive({
 });
 
 const rules = {
-  username: { required, minLength: minLength(3) },
+  username: {
+    required,
+    minLength: minLength(3),
+    // Mirrors the server rule: lower-case only, because lookups lower-case the name.
+    pattern: helpers.withMessage(
+      "Use lowercase letters, digits, '.', '_' or '-' (start with a letter or digit)",
+      helpers.regex(/^[a-z0-9][a-z0-9._-]{2,63}$/),
+    ),
+  },
   email: { required, email },
   password: { required, minLength: minLength(8) },
   confirmPassword: { 
@@ -128,6 +138,17 @@ const v$ = useVuelidate(rules, form);
 
 const isLoading = ref(false);
 const error = ref("");
+
+// Setup is one-shot: once an account exists the server refuses it (409), so
+// send anyone who lands here later to the login page instead of a dead form.
+onMounted(async () => {
+  try {
+    const settings = await useApi()<SystemSettings>("/api/v1/system/settings");
+    if (settings.admin_configured) await router.replace("/auth/login");
+  } catch {
+    // Settings unreachable: leave the form; submitting will surface the error.
+  }
+});
 
 const handleSetup = async () => {
   const isFormCorrect = await v$.value.$validate();
@@ -143,8 +164,9 @@ const handleSetup = async () => {
       display_name: form.display_name,
       password: form.password,
     });
-    // Redirect to login after setup
-    router.push("/auth/login");
+    // Setup creates the account but no session: sign the new admin straight in.
+    await authStore.login({ email: form.email, password: form.password, remember: true });
+    await router.push("/");
   } catch (e: any) {
     error.value = e.data?.message || "Setup failed. Please try again.";
   } finally {

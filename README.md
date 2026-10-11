@@ -52,6 +52,12 @@ server that answers its API calls. Set `CALDAV_BASE_URL` to the address clients
 actually use (e.g. `http://<nas-ip>:8751`), not `localhost`, when it is reached
 from other devices.
 
+**First run:** open the UI — on an empty server it redirects to **Initial Setup**,
+where you create the first account. That account is the administrator
+(`is_admin`) and is signed in straight away. Setup works exactly once: after any
+account exists, `POST /api/v1/auth/setup` answers `409`. Further users register
+via `/auth/register` (unless `CALDAV_REGISTRATION_DISABLED=true`).
+
 > **The container does not run as root.** It runs as uid/gid `1000`. A
 > bind-mounted data directory (e.g. `/volume1/docker/calcard/data:/data` on a
 > NAS) must be writable by that user, otherwise the server stops at startup with

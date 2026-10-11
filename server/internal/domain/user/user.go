@@ -16,9 +16,12 @@ type User struct {
 	DisplayName   string `gorm:"size:255"`
 	IsActive      bool   `gorm:"not null"`
 	EmailVerified bool   `gorm:"not null"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	DeletedAt     gorm.DeletedAt `gorm:"index"`
+	// IsAdmin marks the account created by first-run setup (POST /auth/setup).
+	// Nothing grants it afterwards.
+	IsAdmin   bool `gorm:"not null;default:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	OAuthConnections []OAuthConnection `gorm:"foreignKey:UserID"`
 }
