@@ -112,6 +112,13 @@ repo root.
 Debugging DAV clients: set `CALDAV_LOG_PAYLOADS=true` to log every request's
 headers and `/dav` bodies (credentials redacted) — see `CONFIGURATION.md`.
 
+### Testing a deployment end to end
+
+[`e2e/`](e2e/README.md) is a bash + curl + jq suite that tests a running server
+over HTTP only (REST, CalDAV/CardDAV, MCP): `cd e2e && cp .env.example .env`, set
+`CALCARD_URL`, then `./run.sh`. It registers throwaway users (self-registration
+must be enabled, SMTP off) and removes what it created.
+
 ### Running from Source
 
 1. Clone the repository
