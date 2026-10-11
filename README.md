@@ -48,9 +48,13 @@ building from source instead.
 This is **one image** that serves everything on **one origin** (port 8080):
 the REST API (`/api`), DAV (`/dav`), `/.well-known`, `/health`, **and the built
 web UI**. Open `http://localhost:8080/` and the UI loads from the same
-server that answers its API calls. Set `CALDAV_BASE_URL` to the address clients
-actually use (e.g. `http://<nas-ip>:8751`), not `localhost`, when it is reached
-from other devices.
+server that answers its API calls. `CALDAV_BASE_URL` is the address clients
+actually use (e.g. `http://<nas-ip>:8751` or `https://cal.example.com`). Left
+empty, the URLs the server hands out (the DAV server URL for an app password,
+public calendar links) follow the address each request came in on; set it
+anyway once you configure SMTP or OAuth, which require it. Behind a TLS-terminating
+reverse proxy either set it or, if the proxy overwrites `X-Forwarded-Proto` /
+`X-Forwarded-Host`, set `CALDAV_TRUST_FORWARDED_HEADERS=true`.
 
 **First run:** open the UI — on an empty server it redirects to **Initial Setup**,
 where you create the first account. That account is the administrator

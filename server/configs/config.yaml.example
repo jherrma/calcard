@@ -2,7 +2,13 @@ server:
   host: 0.0.0.0
   port: 8080
 
+# Public URL clients reach this server at. Optional unless SMTP or OAuth is
+# configured (e-mail links and OAuth redirect URIs are built from it, never from
+# a request). When omitted, URLs the API returns follow each request's Host.
 base_url: https://caldav.example.com
+# Only while base_url is empty, and only behind a proxy that overwrites them:
+# take scheme/host from X-Forwarded-Proto / X-Forwarded-Host.
+# trust_forwarded_headers: false
 
 # Database configuration
 # Omit this section entirely to use SQLite (default).

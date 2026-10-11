@@ -23,14 +23,10 @@ type EnablePublicOutput struct {
 
 type EnablePublicUseCase struct {
 	calendarRepo calendar.CalendarRepository
-	baseURL      string
 }
 
-func NewEnablePublicUseCase(calendarRepo calendar.CalendarRepository, baseURL string) *EnablePublicUseCase {
-	return &EnablePublicUseCase{
-		calendarRepo: calendarRepo,
-		baseURL:      baseURL,
-	}
+func NewEnablePublicUseCase(calendarRepo calendar.CalendarRepository) *EnablePublicUseCase {
+	return &EnablePublicUseCase{calendarRepo: calendarRepo}
 }
 
 func generatePublicToken() string {
@@ -39,7 +35,9 @@ func generatePublicToken() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
-func (uc *EnablePublicUseCase) Execute(ctx context.Context, userID, calendarID uint, input EnablePublicInput) (*EnablePublicOutput, error) {
+// Execute toggles public access. baseURL is the origin the returned
+// public_url is built on (the handler resolves it per request).
+func (uc *EnablePublicUseCase) Execute(ctx context.Context, userID, calendarID uint, input EnablePublicInput, baseURL string) (*EnablePublicOutput, error) {
 	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
 	if err != nil || cal == nil {
 		return nil, fmt.Errorf("calendar not found")
@@ -73,7 +71,7 @@ func (uc *EnablePublicUseCase) Execute(ctx context.Context, userID, calendarID u
 		EnabledAt: cal.PublicEnabledAt,
 	}
 	if cal.PublicEnabled && cal.PublicToken != nil && *cal.PublicToken != "" {
-		url := fmt.Sprintf("%s/public/calendar/%s.ics", uc.baseURL, *cal.PublicToken)
+		url := fmt.Sprintf("%s/public/calendar/%s.ics", baseURL, *cal.PublicToken)
 		output.PublicURL = &url
 		output.Token = cal.PublicToken
 	}

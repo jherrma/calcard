@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,8 +21,20 @@ type Config struct {
 	LogLevel string         `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
 	// LogPayloads logs every request's headers (credentials redacted) and, on
 	// DAV paths, its body. Debugging only: it writes user data to the log.
-	LogPayloads  bool               `yaml:"log_payloads" env:"CALDAV_LOG_PAYLOADS"`
-	BaseURL      string             `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	LogPayloads bool `yaml:"log_payloads" env:"CALDAV_LOG_PAYLOADS"`
+	// BaseURL is the public origin of the server (scheme://host[:port]).
+	// Optional: when empty, URLs the API hands back to the caller (app-password
+	// server URL, public calendar feed URL) are derived from the request — see
+	// adapter/http.RequestBaseURL. Required when SMTP or OAuth is configured,
+	// because e-mailed links and OAuth redirect URIs must never be built from a
+	// client-supplied Host header.
+	BaseURL string `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	// TrustForwardedHeaders lets the request-derived base URL (only used while
+	// BaseURL is empty) honour X-Forwarded-Proto / X-Forwarded-Host. Off by
+	// default: without a proxy that overwrites them, any client could set
+	// them. It has no effect on the client IP used for rate limiting.
+	TrustForwardedHeaders bool `yaml:"trust_forwarded_headers" env:"CALDAV_TRUST_FORWARDED_HEADERS"`
+
 	SMTP         SMTPConfig         `yaml:"smtp"`
 	JWT          JWTConfig          `yaml:"jwt"`
 	RateLimit    RateLimitConfig    `yaml:"rate_limit"`
@@ -166,6 +179,17 @@ type OAuthConfig struct {
 	Custom    OAuthProviderConfig `yaml:"custom" envPrefix:"CALDAV_OAUTH_CUSTOM_"`
 }
 
+// anyProviderConfigured mirrors the condition NewOAuthProviderManager uses to
+// set a provider up: both client id and secret present.
+func (o OAuthConfig) anyProviderConfigured() bool {
+	for _, p := range []OAuthProviderConfig{o.Google, o.Microsoft, o.Custom} {
+		if p.ClientID != "" && p.ClientSecret != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // OAuthProviderConfig contains settings for an OAuth/OIDC provider
 type OAuthProviderConfig struct {
 	ClientID     string `yaml:"client_id" env:"CLIENT_ID"`
@@ -272,7 +296,9 @@ func Load(configPath string) (*Config, error) {
 		},
 		DataDir:  "./data",
 		LogLevel: "info",
-		BaseURL:  "http://localhost:8080",
+		// BaseURL deliberately has no default: "http://localhost:8080" was
+		// wrong for every client that is not on the server itself, and was
+		// handed out as the DAV server URL. Empty means "derive per request".
 		SMTP: SMTPConfig{
 			Port: "587",
 		},
@@ -464,7 +490,17 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.BaseURL == "" {
-		errs = append(errs, "CALDAV_BASE_URL must be set")
+		// Links in e-mails and OAuth redirect URIs cannot be derived from the
+		// request: a forged Host header on forgot-password would mail the
+		// victim a reset link pointing at the attacker (reset-link poisoning).
+		if c.SMTP.Host != "" {
+			errs = append(errs, "CALDAV_BASE_URL must be set when SMTP is configured (verification and password-reset e-mails link to it)")
+		}
+		if c.OAuth.anyProviderConfigured() {
+			errs = append(errs, "CALDAV_BASE_URL must be set when an OAuth provider is configured (the redirect URI registered at the provider is built from it)")
+		}
+	} else if u, err := url.Parse(c.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		errs = append(errs, fmt.Sprintf("CALDAV_BASE_URL must be an absolute http(s) URL such as https://cal.example.com, got %q", c.BaseURL))
 	}
 	// /auth/setup has no stricter limiter than the global one, so a guessable
 	// token could be brute-forced while setup is open.

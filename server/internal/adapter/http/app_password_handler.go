@@ -64,7 +64,7 @@ func (h *AppPasswordHandler) Create(c fiber.Ctx) error {
 		Credentials: dto.AppPasswordCredentialsResponse{
 			Username:  res.Username,
 			Password:  res.Password,
-			ServerURL: h.cfg.BaseURL,
+			ServerURL: RequestBaseURL(c, h.cfg),
 		},
 	}
 

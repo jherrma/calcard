@@ -20,6 +20,10 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "sqlite", cfg.Database.Driver)
 	assert.Equal(t, "./data", cfg.DataDir)
 	assert.Equal(t, "info", cfg.LogLevel)
+	// No base_url default: an unset value is derived per request, which is
+	// right for every client, where "http://localhost:8080" was right for none.
+	assert.Equal(t, "", cfg.BaseURL)
+	assert.False(t, cfg.TrustForwardedHeaders)
 }
 
 func TestLoadEnvOverrides(t *testing.T) {

@@ -173,7 +173,11 @@ func bootServerWithConfig(t *testing.T, tweak func(*config.Config)) (string, fun
 	addr, err := srv.Start("127.0.0.1:0")
 	require.NoError(t, err)
 	base := "http://" + addr
-	cfg.BaseURL = base
+	// Point a configured base URL at the real listener; a tweak that cleared
+	// it (base_url_test.go) wants the request-derived origin and keeps "".
+	if cfg.BaseURL != "" {
+		cfg.BaseURL = base
+	}
 
 	require.NoError(t, waitForReady(base+"/health", 5*time.Second))
 
