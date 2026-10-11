@@ -11,7 +11,7 @@ The adapter layer is responsible for translating data between the application's 
   - **Handlers**: One handler per domain area — `auth_handler.go`, `oauth_handler.go`, `user_handler.go`, `system_handler.go`, `calendar_handler.go`, `event_handler.go`, `addressbook_handler.go`, `contact_handler.go`, `calendar_share_handler.go`, `addressbook_share_handler.go`, `calendar_public_handler.go`, `public_calendar_handler.go`, `app_password_handler.go`, `caldav_credential_handler.go`, `carddav_credential_handler.go`, `import_handler.go`, `backup_handler.go`, `mcp_token_handler.go` (MCP access tokens, #104), `subscription_handler.go` (remote calendar subscriptions, story 100), `health.go`, `about_handler.go` (open-source attribution), `search_handler.go` (unified search, #156).
   - **DTOs** (`dto/`): Data Transfer Objects for auth, user, contact, addressbook, event, and credentials.
   - **Middleware**: `auth_middleware.go` (JWT verification), `rate_limiter.go`.
-  - **Responses**: `response.go` — `SuccessResponse()` wraps most responses in `{ "status": "ok", "data": ... }`. **Exception**: AddressBook and Contact handlers return raw JSON.
+  - **Responses**: `response.go` — `SuccessResponse()` wraps a payload in `{ "status": "ok", "data": ... }`; `ErrorResponse()` writes `{ "status": "error", "message" }`. Only the auth, user, system, app-password, about and health handlers use the success envelope. Calendar, event, address book, contact, sharing, public-calendar, CalDAV/CardDAV-credential, import, MCP-token, search, subscription and OAuth-provider-list handlers return raw JSON. Some of the raw ones answer errors as `{ "error": ... }`. Match the existing shape of an area; changing one breaks the SPA and API clients.
 
 ### [mcp/](mcp/)
 

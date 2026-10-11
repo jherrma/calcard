@@ -153,9 +153,9 @@ export const useXxxStore = defineStore('xxx', {
 
 The backend has two different response patterns:
 
-1. **Standard endpoints** (auth, calendars, events, system): Responses wrapped in `{ "status": "ok", "data": ... }`. The `useApi` composable's `onResponse` handler automatically unwraps `.data`, so store code receives the inner payload directly.
+1. **Envelope endpoints**: auth, `/system/*`, `/users/me` (+ password, preferences), `/app-passwords`, `/about/open-source`. Responses are wrapped in `{ "status": "ok", "data": ... }`. The `useApi` composable's `onResponse` handler automatically unwraps `.data`, so store code receives the inner payload directly. (`POST /auth/register` answers 200, not 201.)
 
-2. **AddressBook/Contact endpoints**: Return raw JSON (NOT wrapped). Specific shapes:
+2. **Raw JSON endpoints, NOT wrapped**: everything else. That includes **calendars and events** (e.g. `GET /api/v1/calendars` → `{ "calendars": [...] }`), sharing, public access, DAV credentials, import, MCP tokens, search, subscriptions, and the address book and contact endpoints. Address-book and contact shapes:
    - `GET /api/v1/addressbooks` → `{ "addressbooks": [...] }`
    - `GET /api/v1/addressbooks/:id/contacts` → `{ "Contacts": [...], "Total", "Limit", "Offset" }` (note capital `C` in `Contacts`)
    - `GET /api/v1/contacts/search?q=...` → `{ "contacts": [...], "query", "count" }` (lowercase `c`).
