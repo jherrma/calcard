@@ -12,7 +12,7 @@ type User struct {
 	UUID          string `gorm:"uniqueIndex;size:36;not null"`
 	Email         string `gorm:"uniqueIndex;size:255;not null"`
 	Username      string `gorm:"uniqueIndex;size:100;not null;default:''"` // Default empty for migration
-	PasswordHash  string `gorm:"size:255;not null"`
+	PasswordHash  string `gorm:"size:255;not null" json:"-"`               // never serialised: a User can be embedded in API responses
 	DisplayName   string `gorm:"size:255"`
 	IsActive      bool   `gorm:"not null"`
 	EmailVerified bool   `gorm:"not null"`

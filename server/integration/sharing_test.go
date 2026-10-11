@@ -793,3 +793,37 @@ func TestCalendarShareAndPublicRequireUUID(t *testing.T) {
 	status, _ = restCall(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/public", ownerToken, nil)
 	assert.Equal(t, http.StatusNotFound, status, "numeric calendar id must 404 on /public (UUID-only now)")
 }
+
+// SCOPE: F01 regression. Sharing an address book made the sharee's REST list and
+// the search endpoints serialise the preloaded owner row, including the owner's
+// bcrypt PasswordHash. No response may ever carry a credential, for the sharee
+// or the owner, on any endpoint that returns address books or shares.
+func TestSharedAddressBookNeverLeaksPasswordHash(t *testing.T) {
+	password := "leakGuard!123"
+	ownerToken := registerAndLogin(t, "leak-owner@example.test", password, "Leak Owner")
+	targetToken := registerAndLogin(t, "leak-target@example.test", password, "Leak Target")
+
+	_, abUUID := createAddressBook(t, ownerToken, "Leak Directory")
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+abUUID+"/shares", ownerToken, map[string]string{
+		"user_identifier": "leak-target@example.test",
+		"permission":      "read",
+	}, nil)
+	require.Equal(t, http.StatusCreated, code, "create share")
+
+	for _, tc := range []struct{ who, token, path string }{
+		{"sharee", targetToken, "/addressbooks/"},
+		{"sharee", targetToken, "/search?q=Leak"},
+		{"sharee", targetToken, "/contacts/search?q=Leak"},
+		{"owner", ownerToken, "/addressbooks/"},
+		{"owner", ownerToken, "/addressbooks/" + abUUID + "/shares"},
+		{"owner", ownerToken, "/search?q=Leak"},
+	} {
+		status, body := restCall(t, http.MethodGet, tc.path, tc.token, nil)
+		require.Equalf(t, http.StatusOK, status, "%s GET %s", tc.who, tc.path)
+		text := strings.ToLower(string(body))
+		assert.NotContainsf(t, text, "passwordhash", "%s GET %s leaked a password hash field", tc.who, tc.path)
+		assert.NotContainsf(t, text, "password_hash", "%s GET %s leaked a password hash field", tc.who, tc.path)
+		assert.NotContainsf(t, text, "$2a$", "%s GET %s leaked a bcrypt hash", tc.who, tc.path)
+		assert.NotContainsf(t, text, "$2b$", "%s GET %s leaked a bcrypt hash", tc.who, tc.path)
+	}
+}

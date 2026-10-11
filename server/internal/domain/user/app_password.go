@@ -11,7 +11,7 @@ type AppPassword struct {
 	UUID         string `gorm:"uniqueIndex;size:36;not null"`
 	UserID       uint   `gorm:"index;not null"`
 	Name         string `gorm:"size:100;not null"`
-	PasswordHash string `gorm:"size:255;not null"`
+	PasswordHash string `gorm:"size:255;not null" json:"-"`
 	Scopes       string `gorm:"size:255;not null"` // JSON array of strings: ["caldav", "carddav"]
 	LastUsedAt   *time.Time
 	LastUsedIP   string `gorm:"size:45"`
