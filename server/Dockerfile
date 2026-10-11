@@ -10,7 +10,7 @@ FROM --platform=$BUILDPLATFORM node:26-alpine AS webbuilder
 RUN npm i -g pnpm@10
 WORKDIR /web
 COPY webinterface/package.json webinterface/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
 COPY webinterface/ .
 # Refresh the npm attribution manifest from the installed node_modules (#101).
 # Tolerant on purpose: public/open-source.json is committed and up to date, so a
@@ -29,19 +29,27 @@ WORKDIR /app
 
 # Cache dependencies
 COPY server/go.mod server/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-# Build
-COPY server/ .
+# Build. Copy only what the binary and the license generator need, so edits to
+# the compose files, scripts, integration tests or docs under server/ don't
+# invalidate the (slow, CGO + QEMU on arm64) compile layer below.
+COPY server/cmd ./cmd
+COPY server/internal ./internal
+COPY server/tools ./tools
 # Refresh the Go attribution manifest that internal/usecase/about embeds (#101).
 # Tolerant on purpose: the manifest is committed, so the endpoint works even if
 # this step is skipped or the module cache lacks a LICENSE file — a failure here
 # only means the embedded list stays at its committed state.
-RUN go run ./tools/genlicenses || echo "WARNING: Go license generation failed; using the committed internal/usecase/about/open_source_go.json"
-RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags '-linkmode external -extldflags "-static"' -o server ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go run ./tools/genlicenses || echo "WARNING: Go license generation failed; using the committed internal/usecase/about/open_source_go.json"
+# No `-a`: forcing a rebuild of every package (incl. the sqlite3 C code) would
+# defeat the build cache mounted here.
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux go build -ldflags '-linkmode external -extldflags "-static"' -o server ./cmd/server
 
 # Runtime stage
-FROM alpine:3.23
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates tzdata
 
