@@ -151,10 +151,10 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	aboutHandler := http.NewAboutHandler(aboutusecase.NewListOpenSourceUseCase())
 
 	// Public Calendar Use Cases
-	enablePublicUC := calendarusecase.NewEnablePublicUseCase(calendarRepo, cfg.BaseURL)
-	getPublicStatusUC := calendarusecase.NewGetPublicStatusUseCase(calendarRepo, cfg.BaseURL)
-	regenerateTokenUC := calendarusecase.NewRegenerateTokenUseCase(calendarRepo, cfg.BaseURL)
-	calendarPublicHandler := http.NewCalendarPublicHandler(enablePublicUC, getPublicStatusUC, regenerateTokenUC, calendarRepo)
+	enablePublicUC := calendarusecase.NewEnablePublicUseCase(calendarRepo)
+	getPublicStatusUC := calendarusecase.NewGetPublicStatusUseCase(calendarRepo)
+	regenerateTokenUC := calendarusecase.NewRegenerateTokenUseCase(calendarRepo)
+	calendarPublicHandler := http.NewCalendarPublicHandler(enablePublicUC, getPublicStatusUC, regenerateTokenUC, calendarRepo, cfg)
 	publicCalendarHandler := http.NewPublicCalendarHandler(calendarRepo)
 
 	// Public Routes
