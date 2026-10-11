@@ -538,3 +538,35 @@ func TestOAuthCallbackUseCase_Execute_LoginSecondAccountRejected(t *testing.T) {
 	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 	userRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
+
+// With CALDAV_SETUP_TOKEN set and no account yet, first-login OAuth provisioning
+// must be refused, otherwise a first visitor could register through a provider
+// and close setup forever.
+func TestOAuthCallbackUseCase_Execute_CreateRefusedUntilSetupWhenTokenConfigured(t *testing.T) {
+	providerManager := new(mockOAuthProviderManager)
+	userRepo := new(mockUserRepo)
+	oauthRepo := new(mockOAuthRepo)
+	refreshTokenRepo := new(mockRefreshTokenRepo)
+	tokenProvider := new(mockTokenProvider)
+	cfg := &config.Config{
+		JWT:          config.JWTConfig{RefreshExpiry: time.Hour},
+		Registration: config.RegistrationConfig{SetupToken: "s3cret-setup-token"},
+	}
+	uc := NewOAuthCallbackUseCase(providerManager, userRepo, oauthRepo, refreshTokenRepo, tokenProvider, cfg)
+
+	ctx := context.Background()
+	provider := new(mockOAuthProvider)
+	userInfo := &authadapter.UserInfo{Subject: "sub-1", Email: "new@example.com", Name: "New", EmailVerified: true}
+	providerManager.On("GetProvider", "google").Return(provider, nil)
+	provider.On("Exchange", ctx, "code").Return(&oauth2.Token{AccessToken: "t"}, nil)
+	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
+	userRepo.On("GetByOAuth", ctx, "google", "sub-1").Return(nil, nil)
+	userRepo.On("GetByEmail", ctx, "new@example.com").Return(nil, nil)
+	userRepo.On("Count", ctx).Return(int64(0), nil)
+
+	_, err := uc.Execute(ctx, "google", "code", "", "ua", "127.0.0.1", nil)
+
+	assert.ErrorIs(t, err, ErrSetupRequired)
+	userRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}

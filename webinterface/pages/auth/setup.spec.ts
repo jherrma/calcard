@@ -147,4 +147,21 @@ describe('setup page', () => {
     const sent = authStoreMock.setupAdmin.mock.calls[0]?.[0];
     expect(sent).not.toHaveProperty('setup_token');
   });
+
+  it('reveals the token field after a 403 even if the settings fetch had failed', async () => {
+    // Revert caught: with the settings call failing, the field never shows and
+    // every submit 403s with no way to enter the token.
+    apiMock.mockRejectedValue(new Error('settings unreachable'));
+    const wrapper = mount(SetupPage, { shallow: true, global: { renderStubDefaultSlot: true } });
+    await flushPromises();
+    const vm = wrapper.vm as unknown as PageVm & { tokenRequired: boolean };
+    expect(vm.tokenRequired).toBe(false);
+
+    authStoreMock.setupAdmin.mockRejectedValue({ statusCode: 403, data: { message: 'invalid setup token' } });
+    fillValidForm(vm);
+    await vm.handleSetup();
+
+    expect(vm.tokenRequired).toBe(true);
+    expect(vm.error).toBe('invalid setup token');
+  });
 });

@@ -106,9 +106,34 @@ func TestLoadSetupToken(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, cfg.Registration.SetupToken, "default: no setup token")
 
-	os.Setenv("CALDAV_SETUP_TOKEN", "s3cret")
-	t.Cleanup(func() { os.Unsetenv("CALDAV_SETUP_TOKEN") })
+	t.Setenv("CALDAV_SETUP_TOKEN", "s3cret-token-long-enough")
 	cfg, err = Load("")
 	assert.NoError(t, err)
-	assert.Equal(t, "s3cret", cfg.Registration.SetupToken)
+	assert.Equal(t, "s3cret-token-long-enough", cfg.Registration.SetupToken)
+}
+
+func TestLoadSetupToken_TrimsWhitespace(t *testing.T) {
+	// A trailing newline from a secret file must not make the token untypeable.
+	t.Setenv("CALDAV_SETUP_TOKEN", "s3cret-token-long-enough\r\n")
+	cfg, err := Load("")
+	assert.NoError(t, err)
+	assert.Equal(t, "s3cret-token-long-enough", cfg.Registration.SetupToken)
+}
+
+func TestLoadSetupToken_WhitespaceOnlyIsAnError(t *testing.T) {
+	// Switching the guard off silently would be worse than refusing to start.
+	t.Setenv("CALDAV_SETUP_TOKEN", "   ")
+	_, err := Load("")
+	assert.Error(t, err)
+}
+
+func TestValidate_SetupTokenMinimumLength(t *testing.T) {
+	cfg := &Config{BaseURL: "http://localhost:8080", Registration: RegistrationConfig{SetupToken: "admin"}}
+	assert.ErrorContains(t, cfg.Validate(), "CALDAV_SETUP_TOKEN must be at least 16 characters")
+
+	cfg.Registration.SetupToken = "0123456789abcdef"
+	assert.NoError(t, cfg.Validate())
+
+	cfg.Registration.SetupToken = ""
+	assert.NoError(t, cfg.Validate(), "empty = guard off, always valid")
 }

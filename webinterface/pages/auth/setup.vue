@@ -193,6 +193,9 @@ const handleSetup = async () => {
     });
   } catch (e: any) {
     error.value = e.data?.message || "Setup failed. Please try again.";
+    // A 403 means the server wants a setup token. If the settings fetch failed
+    // earlier the field was never shown, so reveal it now instead of dead-ending.
+    if ((e.statusCode ?? e.status) === 403) tokenRequired.value = true;
     isLoading.value = false;
     return;
   }

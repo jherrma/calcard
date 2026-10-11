@@ -16,7 +16,7 @@ func newSetupUC(repo *mockUserRepo, cfg *config.Config) (*SetupUseCase, *mockCal
 	calRepo := new(mockCalendarRepo)
 	abRepo := new(mockAddressBookRepo)
 	register := NewRegisterUseCase(repo, calRepo, abRepo, new(mockEmailService), cfg)
-	return NewSetupUseCase(repo, register), calRepo, abRepo
+	return NewSetupUseCase(repo, register, cfg.Registration.SetupToken), calRepo, abRepo
 }
 
 // SCOPE: first-run setup creates an active, verified admin only while the user
@@ -131,6 +131,19 @@ func TestSetupUseCase_RequiresConfiguredToken(t *testing.T) {
 	}
 }
 
+// The token check must come BEFORE validation and bcrypt: a wrong token with
+// otherwise invalid input is refused as a token error, not a validation error.
+func TestSetupUseCase_TokenCheckedBeforeValidation(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc, _, _ := newSetupUC(repo, tokenCfg("s3cret-token"))
+	ctx := context.Background()
+	repo.On("Count", ctx).Return(int64(0), nil)
+
+	_, err := uc.Execute(ctx, "bad name", "not-an-email", "short", "", "wrong")
+
+	assert.ErrorIs(t, err, ErrInvalidSetupToken)
+}
+
 func TestSetupUseCase_AcceptsConfiguredToken(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc, calRepo, abRepo := newSetupUC(repo, tokenCfg("s3cret-token"))
@@ -140,7 +153,8 @@ func TestSetupUseCase_AcceptsConfiguredToken(t *testing.T) {
 	calRepo.On("Create", ctx, mock.Anything).Return(nil)
 	abRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	u, err := uc.Execute(ctx, "admin", "a@example.com", "SecurePass123!", "", "s3cret-token")
+	// Surrounding whitespace from a copy/paste is tolerated.
+	u, err := uc.Execute(ctx, "admin", "a@example.com", "SecurePass123!", "", "  s3cret-token\n")
 
 	assert.NoError(t, err)
 	assert.True(t, u.IsAdmin)
