@@ -25,13 +25,13 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       - POSTGRES_USER=caldav
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in your .env}
       - POSTGRES_DB=caldav
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U caldav -d caldav"]
       interval: 10s
