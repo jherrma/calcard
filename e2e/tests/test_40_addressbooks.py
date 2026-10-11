@@ -86,10 +86,12 @@ def test_ab_foreign_status(t, u2, st):
     # The access is refused (see the isolation test); this pins the status:
     # a foreign book is "not found" like on GET — never a 5xx, never a 400.
     uuid = st.ab1_uuid
-    t.status(u2.api("PATCH", f"/addressbooks/{uuid}", json={"name": "hijacked"}), 404,
-             msg="PATCH on another user's book")
-    t.status(u2.api("DELETE", f"/addressbooks/{uuid}", json=CONFIRM), 404, msg="DELETE on another user's book")
-    t.status(u2.api("GET", f"/addressbooks/{uuid}/export"), 404, msg="export of another user's book")
+    # F05: PATCH answers 500, DELETE and export 400.
+    t.bug.status(u2.api("PATCH", f"/addressbooks/{uuid}", json={"name": "hijacked"}), 404, was=500,
+                 msg="PATCH on another user's book")
+    t.bug.status(u2.api("DELETE", f"/addressbooks/{uuid}", json=CONFIRM), 404, was=400,
+                 msg="DELETE on another user's book")
+    t.bug.status(u2.api("GET", f"/addressbooks/{uuid}/export"), 404, was=400, msg="export of another user's book")
 
 
 def test_ab_contact_create(t, e2e, u1, st):
@@ -198,9 +200,10 @@ def test_ab_contact_unknown(t, u1, st):
     base = f"/addressbooks/{st.ab1_uuid}/contacts/{ZERO_UUID}"
     t.status(u1.api("GET", base), 404, msg="GET")
     t.status(u1.api("PATCH", base, json={"formatted_name": "x"}), 404, msg="PATCH")
-    t.status(u1.api("DELETE", base), 404, msg="DELETE (must not be a 5xx)")
-    t.status(u1.api("PUT", f"{base}/photo", data=PNG_PIXEL, ctype="image/png"), 404,
-             msg="photo upload (must not be a 5xx)")
+    # F05: DELETE and the photo upload of an unknown contact answer 500.
+    t.bug.status(u1.api("DELETE", base), 404, was=500, msg="DELETE (must not be a 5xx)")
+    t.bug.status(u1.api("PUT", f"{base}/photo", data=PNG_PIXEL, ctype="image/png"), 404, was=500,
+                 msg="photo upload (must not be a 5xx)")
 
 
 def test_ab_contact_move(t, e2e, u1, u2, st):

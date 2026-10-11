@@ -233,14 +233,16 @@ def test_cal_delete_cascade(t, e2e, u1, u2):
 
 def test_by_username(t, e2e, u1, u2):
     """shares accept the username as identifier"""
-    # Usernames are mixed-case; the lookup lower-cases them (F02).
-    if re.search(r"[A-Z]", u2.username):
-        t.known("F02")
     cal = u1.mk_calendar(e2e.uniq("by-username"))
     r = _share_cal(u1, cal["uuid"], u2.username, "read")
-    if not t.status(r, 201, msg="user_identifier may be the account username"):
-        return
-    t.json(r, "shared_with.email", u2.email)
+    if re.search(r"[A-Z]", u2.username):
+        # Usernames are mixed-case; the lookup lower-cases them → 400 "user not found" (F02).
+        t.known("F02")
+        ok = t.bug.status(r, 201, was=400, msg="user_identifier may be the account username")
+    else:
+        ok = t.status(r, 201, msg="user_identifier may be the account username")
+    if ok:
+        t.json(r, "shared_with.email", u2.email)
 
 
 # --- address books ------------------------------------------------------------
@@ -440,8 +442,11 @@ def test_deleted_owner(t, e2e, u2):
     ugone.api("DELETE", f"/calendars/{cal}/events/{ev['id']}")
     if not ugone.delete_account():
         return t.fail("account deletion failed")
-    t.not_contains(u2.api("GET", "/calendars/"), cal, "the deleted owner's calendar must leave the sharee's list")
+    # F18: DELETE /users/me soft-deletes the user row only; shares and the link live on.
+    r = u2.api("GET", "/calendars/")
+    t.status(r, 200)
+    t.bug.not_contains(r, cal, "the deleted owner's calendar must leave the sharee's list")
     r = u2.api("GET", f"/calendars/{cal}/events?start=2030-01-01T00:00:00Z&end=2031-01-01T00:00:00Z")
-    t.status(r, 404, msg="the sharee must no longer read the deleted owner's calendar")
-    t.status(e2e.raw("GET", f"/public/calendar/{tok}"), 404,
-             msg="the public link of a deleted account must stop serving its calendar")
+    t.bug.status(r, 404, was=200, msg="the sharee must no longer read the deleted owner's calendar")
+    t.bug.status(e2e.raw("GET", f"/public/calendar/{tok}"), 404, was=200,
+                 msg="the public link of a deleted account must stop serving its calendar")

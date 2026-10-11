@@ -123,14 +123,18 @@ def test_cal_overrides(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.json(r, "failed", 0)
-    t.json(r, "skipped", 0, "the RECURRENCE-ID override is part of the series, not a duplicate")
+    # F14: the override is handled as a separate object and skipped as a duplicate UID.
+    t.bug.json(r, "skipped", 0, "the RECURRENCE-ID override is part of the series, not a duplicate")
     r = u1.api("GET", f"/calendars/{rec['uuid']}/events?start=2030-06-30T00:00:00Z&end=2030-07-10T00:00:00Z&expand=true")
+    if not t.status(r, 200):
+        return
+    t.jq(r, lambda j: len([x for x in j["events"] if x.get("uid") == uid]) == 3, "the series has 3 instances")
 
     def moved(j):
         e = [x for x in j["events"] if x.get("recurrence_id") == "20300702T100000Z"][0]
         return e["summary"] == "Series (moved)" and e["start"] == "2030-07-02T15:00:00Z"
 
-    t.jq(r, moved, "the overridden instance must keep its moved time and summary")
+    t.bug.jq(r, moved, "the overridden instance must keep its moved time and summary")
 
 
 @known("F15")
@@ -156,7 +160,8 @@ def test_cal_vtimezone(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.contains(r, "TZID=Europe/Berlin")
-    t.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin but carries no VTIMEZONE")
+    # F15: import re-wraps each VEVENT alone and drops the VTIMEZONE.
+    t.bug.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin but carries no VTIMEZONE")
 
 
 def test_cal_roundtrip(t, e2e, u1, imp):

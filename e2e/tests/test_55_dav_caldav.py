@@ -98,14 +98,16 @@ def test_mkcol_existing(t, e2e, u1, st):
     """MKCALENDAR / MKCOL on an existing collection is refused (405)"""
     t.need(st, "mk_slug")
     col = f"{u1.home_cal}{st.mk_slug}/"
+    # F03: both answer 201 and insert another calendar at the same path.
     r = u1.dav("MKCALENDAR", col, xml=mkcal_body("Duplicate"))
-    t.status(r, 405, 403, 409, msg="MKCALENDAR on an existing calendar (RFC 4791 5.3.1: resource-must-be-null)")
+    t.bug.status(r, 405, 403, 409, was=201,
+                 msg="MKCALENDAR on an existing calendar (RFC 4791 5.3.1: resource-must-be-null)")
     s1 = r.status
     r = u1.dav("MKCOL", col)
-    t.status(r, 405, msg="MKCOL on an existing collection (RFC 4918 9.3.1)")
+    t.bug.status(r, 405, was=201, msg="MKCOL on an existing collection (RFC 4918 9.3.1)")
     n, _, _, r = _find_cal_by_path(u1, st.mk_slug)
-    t.eq(n, 1, f"the refused requests must not create duplicate calendars at '{st.mk_slug}' "
-               f"(MKCALENDAR answered {s1})")
+    t.bug.true(n == 1, f"the refused requests must not create duplicate calendars at '{st.mk_slug}' "
+                       f"(MKCALENDAR answered {s1}; {n} calendars there now)", was=n > 1)
     # Never leave duplicates behind: delete the extra ones right away (the
     # original stays registered for cleanup).
     if n > 1:
@@ -255,8 +257,9 @@ def test_put_empty(t, e2e, u1, st):
     """PUT of a VCALENDAR without components is a 4xx"""
     r = u1.dav("PUT", f"{st.col}{e2e.uniq('empty')}.ics",
                ics="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\nEND:VCALENDAR\r\n")
-    t.status(r, 400, 403, 415, 422, msg="a VCALENDAR without any component is invalid client input "
-                                       "(RFC 4791 valid-calendar-object-resource), not a server error")
+    # F16: 500 "ical: failed to encode VCALENDAR: calendar is empty".
+    t.bug.status(r, 400, 403, 415, 422, was=500, msg="a VCALENDAR without any component is invalid client input "
+                 "(RFC 4791 valid-calendar-object-resource), not a server error")
 
 
 def test_vtodo(t, e2e, u1, st):
@@ -456,9 +459,10 @@ def test_color_readback(t, u1, st):
         "</d:propfind>"))
     if not t.status(r, 207):
         return
-    t.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'200')]//{el('calendar-color')}"
-               "[contains(.,'FF8800') or contains(.,'ff8800')]",
-            "a client must be able to read the colour it (or the web UI) set")
+    # F07: calendar-color is accepted by PROPPATCH but never returned.
+    t.bug.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'200')]//{el('calendar-color')}"
+                   "[contains(.,'FF8800') or contains(.,'ff8800')]",
+                "a client must be able to read the colour it (or the web UI) set")
 
 
 @known("F08")
@@ -471,10 +475,13 @@ def test_proppatch_atomic(t, u1, st):
         "</d:prop></d:set></d:propertyupdate>"))
     if not t.status(r, 207):
         return
-    t.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'424')]//{el('displayname')}",
-            "when one property fails, the others must be reported 424 Failed Dependency")
+    # F08: displayname is applied (200) next to the refused property (403).
+    t.bug.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'424')]//{el('displayname')}",
+                "when one property fails, the others must be reported 424 Failed Dependency")
     r = u1.api("GET", f"/calendars/{st.cal['uuid']}")
-    t.json(r, "name", "Renamed over DAV", "a PROPPATCH that partly failed must not apply anything")
+    name = r.jdict().get("name")
+    t.bug.json(r, "name", "Renamed over DAV", "a PROPPATCH that partly failed must not apply anything",
+               was=name == "Should not stick")
 
 
 def test_delete_collection(t, e2e, u1):

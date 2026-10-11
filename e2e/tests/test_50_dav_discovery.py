@@ -109,10 +109,11 @@ def test_empty_body(t, u1, dd):
     # Collections already handle this; the principal/root path does not.
     t.status(u1.dav("PROPFIND", f"{u1.home_cal}{dd.cal['path']}/", depth=0), 207,
              msg="empty-body PROPFIND on a calendar collection")
-    t.status(u1.dav("PROPFIND", "/dav/", depth=0), 207,
-             msg="empty-body PROPFIND on /dav/ (some clients probe like this)")
-    t.status(u1.dav("PROPFIND", f"/dav/{dd.user}/", depth=0), 207,
-             msg="empty-body PROPFIND on the principal")
+    # F06: go-webdav answers 400 "webdav: expected application/xml request".
+    t.bug.status(u1.dav("PROPFIND", "/dav/", depth=0), 207, was=400,
+                 msg="empty-body PROPFIND on /dav/ (some clients probe like this)")
+    t.bug.status(u1.dav("PROPFIND", f"/dav/{dd.user}/", depth=0), 207, was=400,
+                 msg="empty-body PROPFIND on the principal")
 
 
 def test_cal_home(t, e2e, u1, dd):
@@ -161,6 +162,11 @@ def test_cal_collection(t, e2e, u1, dd):
     t.xpath(r, lp("current-user-privilege-set", "**", "write"), "the owner has write privilege")
 
 
+# F07: what each Depth leaves out (FINDINGS.md).
+DEPTH0_MISSING = {"calendar-description", "supported-calendar-component-set"}
+DEPTH1_MISSING = {"sync-token", "getctag"}
+
+
 @known("F07")
 def test_depth_consistency(t, u1, dd):
     """calendar collection properties agree between Depth 0 and Depth 1"""
@@ -180,10 +186,11 @@ def test_depth_consistency(t, u1, dd):
                             f"//*[local-name()='{p}']")
         ok1 = xml.xbool(r1, f"{lp('response')}[*[local-name()='href']='{href}']/*[local-name()='propstat']"
                             f"[contains(*[local-name()='status'],'200')]//*[local-name()='{p}']")
-        if not ok0:
-            t.fail(f"Depth 0 PROPFIND on the collection does not return {p} (200)")
-        if not ok1:
-            t.fail(f"Depth 1 PROPFIND on the home does not return {p} (200) for the same collection")
+        # F07 documents exactly which ones are missing at which Depth.
+        t.bug.true(ok0, f"Depth 0 PROPFIND on the collection does not return {p} (200)",
+                   was=p in DEPTH0_MISSING)
+        t.bug.true(ok1, f"Depth 1 PROPFIND on the home does not return {p} (200) for the same collection",
+                   was=p in DEPTH1_MISSING)
 
 
 def test_ab_home(t, e2e, u1, dd):

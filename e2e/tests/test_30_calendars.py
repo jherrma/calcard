@@ -119,13 +119,17 @@ def test_notfound_status(t, e2e, u1, u2, st):
     t.need(st, "c1_uuid")
     # GET already answers 404 (the integration tests call 404 deliberate: it
     # does not leak existence). The write verbs must agree.
-    t.status(u1.api("PATCH", f"/calendars/{ZERO_UUID}", json='{"name":"x"}'), 404, msg="PATCH unknown calendar")
-    t.status(u1.api("DELETE", f"/calendars/{ZERO_UUID}", json='{"confirmation":"DELETE"}'), 404,
-             msg="DELETE unknown calendar")
-    t.status(u2.api("PATCH", f"/calendars/{st.c1_uuid}", json='{"name":"x"}'), 404, msg="PATCH another user's calendar")
+    # F12: calendar_handler.go maps every error of these verbs to 400.
+    t.bug.status(u1.api("PATCH", f"/calendars/{ZERO_UUID}", json='{"name":"x"}'), 404, was=400,
+                 msg="PATCH unknown calendar")
+    t.bug.status(u1.api("DELETE", f"/calendars/{ZERO_UUID}", json='{"confirmation":"DELETE"}'), 404, was=400,
+                 msg="DELETE unknown calendar")
+    t.bug.status(u2.api("PATCH", f"/calendars/{st.c1_uuid}", json='{"name":"x"}'), 404, was=400,
+                 msg="PATCH another user's calendar")
     r = u2.api("POST", f"/calendars/{st.c1_uuid}/import",
                data=ics_event(e2e.uniq("nf"), "x", "20300101T100000Z", "20300101T110000Z"), ctype="text/calendar")
-    t.status(r, 404, msg="import into another user's calendar")
+    t.bug.status(r, 404, was=400, msg="import into another user's calendar")
+    t.json(u1.api("GET", f"/calendars/{st.c1_uuid}"), "name", st.c1_name, "U1's calendar must be untouched")
 
 
 def test_export(t, e2e, u1, st):

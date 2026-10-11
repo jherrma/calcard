@@ -8,8 +8,15 @@ side effects (cleanups, state for the next test) still happen. When the test
 function returns, any recorded failure fails the test (see conftest.py).
 
 ``known("F03")`` marks a test that fails because of a documented server bug
-(e2e/FINDINGS.md): a strict xfail, so the failure is reported as KFAIL and a
-pass as XPASS — which fails the run until the marker is removed.
+(e2e/FINDINGS.md). Inside it, the checks that state the bug go through
+``t.bug`` (``t.bug.status(r, 405, was=201)``, ``t.bug.xpath(...)``, …) — the
+*pinning* checks. The test is a strict ``xfail(raises=KnownBug)``, and
+``KnownBug`` is raised only when every failed check is a pinning check whose
+response matches the documented behaviour. Anything else — a failed
+precondition, a factory's SetupFailed, a TypeError, a 401 — is an ordinary
+FAIL, and so is a known test that returns without evaluating its pinning
+check. When the bug is fixed the pinning checks pass: XPASS, which fails the
+run until the marker is removed.
 """
 
 from __future__ import annotations
@@ -29,17 +36,28 @@ FINDINGS = "e2e/FINDINGS.md"
 # Known server bugs
 # ---------------------------------------------------------------------------
 
+class SoftFailure(AssertionError):
+    """Raised after the test function returned, carrying every failed check."""
+
+
+class KnownBug(SoftFailure):
+    """Every failed check of a known() test was a pinning check (``t.bug``)
+    seeing the documented bug. The ONLY exception a known() xfail accepts."""
+
+
 def known_marks(fid: str) -> list[pytest.MarkDecorator]:
     marks = [pytest.mark.known(fid)]
     if not config.strict_mode():
-        marks.append(pytest.mark.xfail(strict=True, reason=f"{fid}: known server bug, see {FINDINGS}"))
+        marks.append(pytest.mark.xfail(strict=True, raises=KnownBug,
+                                       reason=f"{fid}: known server bug, see {FINDINGS}"))
     return marks
 
 
 def known(fid: str):
-    """Decorator: the test is expected to fail because of finding FID.
-    With E2E_STRICT=true (./run --strict) the marker only labels the test,
-    so the bug counts as an ordinary failure."""
+    """Decorator: the test is expected to fail because of finding FID; its
+    pinning checks go through ``t.bug``. With E2E_STRICT=true (./run
+    --strict) the marker only labels the test, so the bug counts as an
+    ordinary failure."""
     def deco(fn):
         for m in known_marks(fid):
             fn = m(fn)
@@ -86,8 +104,37 @@ def _short(v: Any, n: int = 200) -> str:
 # Test context
 # ---------------------------------------------------------------------------
 
-class SoftFailure(AssertionError):
-    """Raised after the test function returned, carrying every failed check."""
+_NOT_PINNABLE = {"skip", "need", "abort", "known", "report", "outcome", "bug"}
+
+
+class Pin:
+    """``t.bug``: the checks of a known() test that state its documented bug.
+
+    Every check of ``t`` is available (``t.bug.xpath(...)``, ``t.bug.json(...)``).
+    ``was`` says whether what the server did IS the documented bug:
+    ``t.bug.status(r, 404, was=400)`` takes the documented status code(s);
+    the other checks take a boolean (default True: failing the check is the
+    bug itself). A failure whose response is NOT the documented behaviour —
+    say a 500 where FINDINGS.md documents a 400 — is an ordinary failure."""
+
+    __slots__ = ("_ctx",)
+
+    def __init__(self, ctx: TestCtx):
+        self._ctx = ctx
+
+    def status(self, r: Resp, *codes: int, was: int | tuple[int, ...] | list[int] = (), msg: str = "") -> bool:
+        was_codes = (was,) if isinstance(was, int) else tuple(was)
+        return self._ctx._pinned(self._ctx.status, (r, *codes), {"msg": msg},
+                                 r.status in was_codes if was_codes else True)
+
+    def __getattr__(self, name: str):
+        if name.startswith("_") or name in _NOT_PINNABLE:
+            raise AttributeError(f"t.bug.{name} is not a check")
+        fn = getattr(self._ctx, name)
+
+        def pinned(*args, was: bool = True, **kwargs):
+            return self._ctx._pinned(fn, args, kwargs, bool(was))
+        return pinned
 
 
 class TestCtx:
@@ -98,6 +145,50 @@ class TestCtx:
     def __init__(self, node: pytest.Item):
         self.node = node
         self.failures: list[str] = []
+        self.pinned: set[int] = set()  # indexes into failures that pin the documented bug
+        self.pin_checks = 0  # pinning checks evaluated (passed or failed)
+
+    @property
+    def bug(self) -> Pin:
+        """Pinning checks of a known() test (see Pin)."""
+        return Pin(self)
+
+    def known_fid(self) -> str:
+        m = self.node.get_closest_marker("known")
+        return m.args[0] if m else ""
+
+    def _pinned(self, fn: Callable[..., bool], args: tuple, kwargs: dict, documented: bool) -> bool:
+        self.pin_checks += 1
+        before = len(self.failures)
+        ok = fn(*args, **kwargs)
+        fid = self.known_fid() or "?"
+        for i in range(before, len(self.failures)):
+            if documented:
+                self.pinned.add(i)
+                self.failures[i] = self.failures[i].replace("✗ ", f"✗ [{fid}] ", 1)
+            else:
+                self.failures[i] = self.failures[i].replace(
+                    "✗ ", f"✗ [neither the correct behaviour nor the documented bug {fid}] ", 1)
+        return ok
+
+    def outcome(self) -> SoftFailure | None:
+        """The exception that ends this test (None = it passed).
+
+        KnownBug only when there are failures, all of them pinned, in a
+        known() test. A known() test that failed nothing but also evaluated
+        no pinning check never reached the bug: an ordinary failure."""
+        fid = self.known_fid()
+        if self.failures:
+            if fid and len(self.pinned) == len(self.failures):
+                return KnownBug(self.report())
+            note = ""
+            if fid and self.pinned:
+                note = f"\n  (also failing: checks unrelated to the documented bug {fid} — not a KFAIL)"
+            return SoftFailure(self.report() + note)
+        if fid and self.pin_checks == 0:
+            return SoftFailure(f"✗ known({fid}) test returned before any pinning check (t.bug.…) ran: "
+                               "it never reached the documented bug, so it proves nothing")
+        return None
 
     # --- flow ---------------------------------------------------------------
     def fail(self, msg: str, resp: Resp | None = None) -> bool:
@@ -196,11 +287,15 @@ class TestCtx:
 
     # --- body ---------------------------------------------------------------
     def contains(self, r: Resp, needle: str, msg: str = "") -> bool:
+        if not needle:  # '' is in every body: the check would prove nothing
+            return self.fail(f"test bug: contains() needs a non-empty needle ({msg or 'no message'})")
         if needle in r.text:
             return True
         return self.fail(msg or f"body should contain '{needle}'", r)
 
     def not_contains(self, r: Resp, needle: str, msg: str = "") -> bool:
+        if not needle:
+            return self.fail(f"test bug: not_contains() needs a non-empty needle ({msg or 'no message'})")
         if needle not in r.text:
             return True
         return self.fail(msg or f"body must not contain '{needle}'", r)

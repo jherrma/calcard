@@ -193,24 +193,33 @@ def t(request):
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item: pytest.Item):
+    """Turn the recorded checks into the test's outcome: KnownBug (a known()
+    test whose failures are all pinning checks — the only exception its
+    xfail accepts), SoftFailure (anything else) or a pass."""
     __tracebackhide__ = True
     try:
         result = yield
     except pytest.skip.Exception:
         ctx = item.stash.get(CTX_KEY, None)
         if ctx is not None and ctx.failures:  # a skip never hides a failed check
-            raise SoftFailure(ctx.report()) from None
+            raise ctx.outcome() from None
         raise
-    except (SoftFailure, KeyboardInterrupt, pytest.exit.Exception):
+    except SoftFailure:  # t.abort(): the recorded checks decide
+        ctx = item.stash.get(CTX_KEY, None)
+        if ctx is None:
+            raise
+        raise ctx.outcome() from None
+    except (KeyboardInterrupt, pytest.exit.Exception):
         raise
     except Exception as e:
+        # A crash is never the documented bug, even after a pinned failure.
         ctx = item.stash.get(CTX_KEY, None)
         if ctx is not None and ctx.failures:
             raise SoftFailure(ctx.report() + f"\n✗ {type(e).__name__}: {e}") from e
         raise
     ctx = item.stash.get(CTX_KEY, None)
-    if ctx is not None and ctx.failures:
-        raise SoftFailure(ctx.report())
+    if ctx is not None and (exc := ctx.outcome()) is not None:
+        raise exc
     return result
 
 
@@ -372,7 +381,8 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     line()
     line(f"{out.GREEN}PASS {c['PASS']}{out.RESET}  {out.RED}FAIL {c['FAIL']}{out.RESET}  "
          f"{out.YELLOW}SKIP {c['SKIP']}{out.RESET}  {out.MAGENTA}KFAIL {c['KFAIL']}{out.RESET}  "
-         f"{out.CYAN}XPASS {c['XPASS']}{out.RESET}  {out.DIM}(429 retries: {e2e.http.rate_limit_hits}){out.RESET}")
+         f"{out.CYAN}XPASS {c['XPASS']}{out.RESET}  {out.DIM}(429 retries: {e2e.http.rate_limit_hits}, "
+         f"re-logins after a revoked token: {e2e.reauths}){out.RESET}")
     results_file = os.environ.get("E2E_RESULTS_FILE")
     if results_file:
         Path(results_file).write_text("".join(f"{s}\t{n}\n" for s, n in STATE.results), encoding="utf-8")
