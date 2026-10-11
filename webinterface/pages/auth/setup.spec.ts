@@ -1,0 +1,116 @@
+// @vitest-environment nuxt
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { mount, flushPromises } from '@vue/test-utils';
+import { mockNuxtImport } from '@nuxt/test-utils/runtime';
+import { useRouter } from '#imports';
+import SetupPage from './setup.vue';
+
+// SCOPE: the first-run setup page's behaviour that is easy to break silently —
+// it must leave once setup is done (the server answers 409 forever after), it
+// must lower-case the username the way the server does, and a failed follow-up
+// sign-in must NOT read as "setup failed" (retrying would only hit a 409).
+
+const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
+mockNuxtImport('useApi', () => () => apiMock);
+
+// Spy on the real router rather than mocking useRouter: Nuxt's own plugins call
+// useRouter() too, and a bare stub breaks them (router.beforeResolve missing).
+// (Created in beforeEach: useRouter() needs a running Nuxt app.)
+let routerSpies: { push: ReturnType<typeof vi.spyOn>; replace: ReturnType<typeof vi.spyOn> };
+
+const { authStoreMock } = vi.hoisted(() => ({
+  authStoreMock: { setupAdmin: vi.fn(), login: vi.fn() },
+}));
+mockNuxtImport('useAuthStore', () => () => authStoreMock);
+
+interface PageVm {
+  form: { username: string; email: string; display_name: string; password: string; confirmPassword: string };
+  error: string;
+  handleSetup: () => Promise<void>;
+}
+
+async function mountPage(adminConfigured: boolean) {
+  apiMock.mockResolvedValue({ admin_configured: adminConfigured, smtp_enabled: false, registration_enabled: true });
+  const wrapper = mount(SetupPage, { shallow: true, global: { renderStubDefaultSlot: true } });
+  await flushPromises();
+  return wrapper.vm as unknown as PageVm;
+}
+
+function fillValidForm(vm: PageVm, username = 'Admin') {
+  vm.form.username = username;
+  vm.form.email = 'admin@example.test';
+  vm.form.display_name = 'Admin';
+  vm.form.password = 'SecurePass123!';
+  vm.form.confirmPassword = 'SecurePass123!';
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  routerSpies = {
+    push: vi.spyOn(useRouter(), 'push').mockResolvedValue(undefined),
+    replace: vi.spyOn(useRouter(), 'replace').mockResolvedValue(undefined),
+  };
+  apiMock.mockReset();
+  authStoreMock.setupAdmin.mockReset().mockResolvedValue(undefined);
+  authStoreMock.login.mockReset().mockResolvedValue(undefined);
+});
+
+describe('setup page', () => {
+  it('sends visitors away once an account exists', async () => {
+    // Revert caught: dropping the onMounted check leaves a dead form that 409s.
+    await mountPage(true);
+    expect(routerSpies.replace).toHaveBeenCalledWith('/auth/login');
+  });
+
+  it('stays on the page while the server is unconfigured', async () => {
+    await mountPage(false);
+    expect(routerSpies.replace).not.toHaveBeenCalled();
+  });
+
+  it('lower-cases the username and signs the admin in without remember-me', async () => {
+    // Revert caught: the server lower-cases usernames, so "Admin" must not be
+    // rejected client-side or stored differently; the admin gets a session-only
+    // sign-in (remember: false), not a 7-day cookie.
+    const vm = await mountPage(false);
+    fillValidForm(vm, 'Admin');
+    await vm.handleSetup();
+
+    expect(authStoreMock.setupAdmin).toHaveBeenCalledWith(expect.objectContaining({ username: 'admin' }));
+    expect(authStoreMock.login).toHaveBeenCalledWith({
+      email: 'admin@example.test',
+      password: 'SecurePass123!',
+      remember: false,
+    });
+    expect(routerSpies.push).toHaveBeenCalledWith('/');
+  });
+
+  it('shows the server message and does not sign in when setup fails', async () => {
+    const vm = await mountPage(false);
+    authStoreMock.setupAdmin.mockRejectedValue({ data: { message: 'setup already completed' } });
+    fillValidForm(vm);
+    await vm.handleSetup();
+
+    expect(vm.error).toBe('setup already completed');
+    expect(authStoreMock.login).not.toHaveBeenCalled();
+  });
+
+  it('does not report "setup failed" when only the follow-up sign-in fails', async () => {
+    // Revert caught: one try/catch around both calls tells the user setup
+    // failed, and retrying returns 409 for an account that does exist.
+    const vm = await mountPage(false);
+    authStoreMock.login.mockRejectedValue(new Error('network'));
+    fillValidForm(vm);
+    await vm.handleSetup();
+
+    expect(vm.error).toBe('');
+    expect(routerSpies.replace).toHaveBeenCalledWith('/auth/login');
+  });
+
+  it('refuses a username the server would reject', async () => {
+    const vm = await mountPage(false);
+    fillValidForm(vm, 'bad name');
+    await vm.handleSetup();
+
+    expect(authStoreMock.setupAdmin).not.toHaveBeenCalled();
+  });
+});
