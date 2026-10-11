@@ -6,7 +6,7 @@
 # --- Web UI build stage ---
 # The SPA output is architecture-independent, so build it once on the build host
 # instead of once per target platform under QEMU.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS webbuilder
+FROM --platform=$BUILDPLATFORM node:26-alpine AS webbuilder
 RUN npm i -g pnpm@10
 WORKDIR /web
 COPY webinterface/package.json webinterface/pnpm-lock.yaml ./

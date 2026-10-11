@@ -155,7 +155,7 @@ The project includes a modern web interface built with Nuxt 4.
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js 26+
 - pnpm (Recommended)
 
 ### Running the Frontend
