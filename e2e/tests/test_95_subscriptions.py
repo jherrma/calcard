@@ -109,7 +109,7 @@ def test_create(t, e2e, u1, st):
             t.skip(st.sub_skip)
     if not t.status(r, 201):
         return
-    st.sub_id, st.sub_cal = r.json().get("id"), r.json().get("calendar_id")
+    st.sub_id, st.sub_cal = r.jdict().get("id"), r.jdict().get("calendar_id")
     e2e.defer("delete subscription", e2e.cleanup_api, u1, "DELETE", f"/calendar-subscriptions/{st.sub_id}")
     t.json(r, "name", "E2E test feed", "the calendar is named from X-WR-CALNAME")
     t.json(r, "status", "synced")

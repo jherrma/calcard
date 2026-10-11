@@ -33,7 +33,7 @@ def cc(e2e, u1):
 def _books_at(u1, path):
     """(REST response, address books whose Path is PATH)."""
     r = u1.api("GET", "/addressbooks/")
-    books = [a for a in ((r.json() or {}).get("addressbooks") or []) if a.get("Path") == path]
+    books = [a for a in (r.jdict().get("addressbooks") or []) if a.get("Path") == path]
     return r, books
 
 
@@ -114,19 +114,23 @@ def test_get(t, u1, st):
 def test_if_match(t, u1, st):
     """PUT with matching If-Match updates; stale If-Match is 412"""
     t.need(st, "etag")
-    r = u1.dav("PUT", st.obj, vcf=vcard(st.uid, "Charlie Davtest v2"), headers={"If-Match": st.etag})
-    if not t.status(r, 200, 201, 204):
-        return
-    r = u1.dav("GET", st.obj)
-    t.contains(r, "FN:Charlie Davtest v2")
-    new = r.hdr("ETag")
-    t.ne(new, st.etag, "the ETag must change")
-    r = u1.dav("PUT", st.obj, vcf=vcard(st.uid, "Stale Write"), headers={"If-Match": st.etag})
-    if not t.status(r, 412):
-        return
-    r = u1.dav("GET", st.obj)
-    t.not_contains(r, "Stale Write", "a rejected write must not change the card")
-    st.etag = new
+    old = st.etag
+    try:
+        r = u1.dav("PUT", st.obj, vcf=vcard(st.uid, "Charlie Davtest v2"), headers={"If-Match": old})
+        if not t.status(r, 200, 201, 204):
+            return
+        r = u1.dav("GET", st.obj)
+        t.contains(r, "FN:Charlie Davtest v2")
+        t.ne(r.hdr("ETag"), old, "the ETag must change")
+        r = u1.dav("PUT", st.obj, vcf=vcard(st.uid, "Stale Write"), headers={"If-Match": old})
+        if not t.status(r, 412):
+            return
+        r = u1.dav("GET", st.obj)
+        t.not_contains(r, "Stale Write", "a rejected write must not change the card")
+    finally:
+        # Whatever happened above, later tests condition on the card's CURRENT
+        # ETag — a stale one would add a second, misleading 412 failure.
+        st.etag = u1.dav("GET", st.obj).hdr("ETag") or old
 
 
 def test_uid_conflict(t, e2e, u1, cc, st):
@@ -267,7 +271,7 @@ def test_delete(t, u1, cc, st):
     t.status(u1.dav("GET", st.obj), 404)
     uid = st.uid
     r = u1.api("GET", f"/addressbooks/{cc.ab['UUID']}/contacts?limit=200")
-    t.jq(r, lambda j: len([c for c in j["Contacts"] if c["uid"] == uid]) == 0, "a DAV delete removes the REST contact")
+    t.jq(r, lambda j: len([c for c in j["Contacts"] or [] if c["uid"] == uid]) == 0, "a DAV delete removes the REST contact")
 
 
 def test_delete_collection(t, e2e, u1):

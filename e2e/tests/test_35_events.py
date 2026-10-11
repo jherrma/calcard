@@ -33,7 +33,7 @@ def test_create(t, e2e, u1, cal, st):
         "start": "2030-01-15T10:00:00Z", "end": "2030-01-15T11:00:00Z", "timezone": "UTC", "all_day": False})
     if not t.status(r, 201):
         return
-    st.ev_id, st.ev_uid = r.json().get("id"), r.json().get("uid")
+    st.ev_id, st.ev_uid = r.jdict().get("id"), r.jdict().get("uid")
     t.jq(r, lambda j: re.fullmatch(r"[0-9a-f-]{36}", j["id"]), "id is the event UUID")
     t.nonempty(r, "uid", "an iCalendar UID is generated")
     t.json(r, "summary", f"Planning {e2e.run_id}")
@@ -68,7 +68,7 @@ def test_list_window(t, u1, cal, st):
     t.jq(r, lambda j: j["count"] == len(j["events"]), "count must match the list")
     r = _list(u1, cal.ev["uuid"], "start=2031-01-01T00:00:00Z&end=2031-02-01T00:00:00Z")
     t.status(r, 200)
-    t.jq(r, lambda j: len([e for e in j["events"] if e["id"] == st.ev_id]) == 0,
+    t.jq(r, lambda j: len([e for e in j["events"] or [] if e["id"] == st.ev_id]) == 0,
          "event outside the window must not be listed")
 
 
@@ -308,7 +308,7 @@ def test_move(t, e2e, u1, cal):
     t.json(r, "uid", uid, "the UID survives a move")
     t.json(r, "calendar_id", cal.ev2["id"])
     r = _list(u1, cal.ev["uuid"], f"{WIDE}&expand=false")
-    t.jq(r, lambda j: len([e for e in j["events"] if e["uid"] == uid]) == 0, "gone from the source calendar")
+    t.jq(r, lambda j: len([e for e in j["events"] or [] if e["uid"] == uid]) == 0, "gone from the source calendar")
     r = _list(u1, cal.ev2["uuid"], f"{WIDE}&expand=false")
     t.jq(r, lambda j: len([e for e in j["events"] if e["uid"] == uid]) == 1, "present in the target calendar")
     r = u1.api("POST", f"/calendars/{cal.ev2['uuid']}/events/{id_}/move",

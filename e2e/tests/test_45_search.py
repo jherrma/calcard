@@ -2,11 +2,13 @@
 recurring series as one hit, type filters, explicit bounds, limits, isolation."""
 
 import time
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 
 from harness import out
+from harness.checks import jpath
 from harness.session import SetupFailed
 
 DESCRIPTION = "unified search across events, contacts, calendars, address books"
@@ -22,7 +24,8 @@ def sr(e2e, u1):
     cal = u1.mk_calendar(f"{token} Calendar", "#abcdef")
     ab = u1.mk_addressbook(f"{token} Contacts")
     now_y = int(time.strftime("%Y"))
-    s = SimpleNamespace(token=token, cal=cal, ab=ab, future=now_y + 3, past=now_y - 3)
+    s = SimpleNamespace(token=token, cal=cal, ab=ab, future=now_y + 3, past=now_y - 3,
+                        weekly_first=datetime(now_y - 1, 1, 3, 9, 0, tzinfo=timezone.utc))
     seeds = [
         lambda: u1.mk_event(cal["uuid"], f"{token} briefing far ahead", f"{s.future}-06-01T10:00:00Z",
                             f"{s.future}-06-01T11:00:00Z"),
@@ -78,19 +81,31 @@ def test_no_window(t, u1, sr):
     t.jq(r, lambda j: len(j["events"]["items"]) == 1, "an event 3 years back")
 
 
+def _next_weekly(first: datetime, duration: timedelta, at: datetime) -> datetime:
+    """Start of the first occurrence of a weekly series still under way or
+    ahead at AT (the server's pivot rule: overlap, so end > AT)."""
+    k = max(0, (at - duration - first) // timedelta(weeks=1) + 1)
+    return first + k * timedelta(weeks=1)
+
+
 def test_recurring(t, u1, sr):
     """a recurring series is one hit at its next occurrence"""
+    before = datetime.now(timezone.utc)
     r = _sr(u1, f"q={sr.token}+weekly&types=events")
+    after = datetime.now(timezone.utc)
     if not t.status(r, 200):
         return
     if not t.jq(r, lambda j: len(j["events"]["items"]) == 1, "one hit per series, not one per occurrence"):
         return
     t.json(r, "events.items[0].event.is_recurring", True)
     t.nonempty(r, "events.items[0].event.recurrence_id")
-    start = r.json()["events"]["items"][0]["event"].get("start") or ""
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 8 * 86400))
-    if not start > now:
-        t.fail(f"expected the upcoming occurrence, got {start}")
+    # The seeded series: weekly from Jan 3 of last year, 09:00–10:00 UTC. The
+    # hit must be exactly the next occurrence (not the last past one, which
+    # is at most 7 days back). Computed for both ends of the request.
+    first, dur = sr.weekly_first, timedelta(hours=1)
+    want = {_next_weekly(first, dur, at).strftime("%Y-%m-%dT%H:%M:%SZ") for at in (before, after)}
+    start = jpath(r.json(), "events.items[0].event.start")
+    t.true(start in want, f"expected the upcoming occurrence {' or '.join(sorted(want))}, got {start}", r)
     t.json(r, "events.items[0].calendar_uuid", sr.cal["uuid"])
     t.json(r, "events.items[0].calendar_color", "#abcdef")
 

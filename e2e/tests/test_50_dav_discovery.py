@@ -124,7 +124,7 @@ def test_cal_home(t, e2e, u1, dd):
         return
     t.xml_wellformed(r)
     href = f"{u1.home_cal}{dd.cal['path']}/"
-    t.contains(r, f"<href>{href}</href>", "the home listing must include the new calendar")
+    t.xpath(r, f"{lp('response', 'href')}[normalize-space()='{href}']", "the home listing must include the new calendar")
     t.xpath(r, f"{lp('response')}[{el('href')}='{href}']//*[local-name()='resourcetype']/*[local-name()='calendar']",
             "the calendar must have resourcetype calendar")
     t.xpath(r, f"{lp('response')}[{el('href')}='{href}']//*[local-name()='displayname'][.='{e2e.uniq('disco-cal')}']",
@@ -200,7 +200,7 @@ def test_ab_home(t, e2e, u1, dd):
     if not t.status(r, 207):
         return
     href = f"{u1.home_ab}{dd.ab['Path']}/"
-    t.contains(r, f"<href>{href}</href>")
+    t.xpath(r, f"{lp('response', 'href')}[normalize-space()='{href}']", "the home listing must include the new book")
     t.xpath(r, f"{lp('response')}[{el('href')}='{href}']//*[local-name()='resourcetype']/*[local-name()='addressbook']",
             "the book must have resourcetype addressbook")
     t.xpath(r, f"{lp('response')}[{el('href')}='{href}']//*[local-name()='displayname'][.='{e2e.uniq('disco-book')}']")

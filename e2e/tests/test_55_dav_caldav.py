@@ -11,7 +11,7 @@ from harness import out
 from harness.checks import known
 from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_calendar, ics_event, ics_todo, ics_vevent
 from harness.session import SetupFailed
-from harness.xml import el, lp, xstr
+from harness.xml import el, lp, xcount, xstr
 
 DESCRIPTION = "MKCALENDAR, PUT/GET/DELETE + ETags, REPORTs, PROPPATCH, COPY/MOVE"
 
@@ -111,20 +111,41 @@ def test_mkcol_existing(t, e2e, u1, st):
     # Never leave duplicates behind: delete the extra ones right away (the
     # original stays registered for cleanup).
     if n > 1:
-        for c in r.json()["calendars"]:
+        for c in r.jdict().get("calendars") or []:
             if c.get("path") == st.mk_slug:
                 e2e.defer(f"delete duplicate calendar at {st.mk_slug}", e2e.cleanup_api, u1, "DELETE",
                           f"/calendars/{c['uuid']}", json=CONFIRM)
 
 
+def _cal_uuids(t, u1):
+    """UUIDs of every calendar U1 lists (None when the list fails)."""
+    r = u1.api("GET", "/calendars/")
+    if not t.status(r, 200, msg="listing U1's calendars"):
+        return None
+    return {c.get("uuid") for c in r.jdict().get("calendars") or []}
+
+
 def test_mkcol_outside(t, e2e, u1):
     """MKCALENDAR outside the own calendar home is refused"""
-    r = u1.dav("MKCALENDAR", f"{u1.home_cal}{e2e.uniq('nested')}/deeper/", xml=mkcal_body("nested"))
+    before = _cal_uuids(t, u1)
+    if before is None:
+        return
+    nested, loose = e2e.uniq("nested"), e2e.uniq("loose")
+    r = u1.dav("MKCALENDAR", f"{u1.home_cal}{nested}/deeper/", xml=mkcal_body("nested"))
     t.status_class(r, "4xx", msg="a calendar inside a calendar")
-    r = u1.dav("MKCALENDAR", f"/dav/{u1.username}/{e2e.uniq('loose')}/", xml=mkcal_body("loose"))
+    r = u1.dav("MKCALENDAR", f"/dav/{u1.username}/{loose}/", xml=mkcal_body("loose"))
     t.status_class(r, "4xx", msg="a calendar outside the calendar home")
-    n, _, _, _ = _find_cal_by_path(u1, "deeper")
-    t.eq(n, 0, "nothing may have been created")
+    for path in (f"{u1.home_cal}{nested}/", f"{u1.home_cal}{nested}/deeper/", f"/dav/{u1.username}/{loose}/"):
+        r = u1.dav("PROPFIND", path, depth=0, xml=PROPFIND_LIST)
+        # Outside the homes the server answers an empty 207 (FINDINGS.md, observations).
+        t.true(r.status == 404 or (r.status == 207 and xcount(r, lp("response")) == 0),
+               f"nothing may exist at {path} (404, or a 207 without any response)", r)
+    r = u1.api("GET", "/calendars/")
+    created = [c for c in r.jdict().get("calendars") or [] if c.get("uuid") not in before]
+    for c in created:  # never leave them behind
+        e2e.defer(f"delete calendar created by a refused MKCALENDAR ({c.get('path')})", e2e.cleanup_api, u1,
+                  "DELETE", f"/calendars/{c.get('uuid')}", json=CONFIRM)
+    t.eq([c.get("path") for c in created], [], "the refused MKCALENDARs must not have created any calendar")
 
 
 def test_put_create(t, e2e, u1, st):
@@ -312,7 +333,8 @@ def test_query_timerange(t, e2e, u1, st):
     t.contains(r, e2e.uniq("q-in1"), "in-range event 1")
     t.contains(r, e2e.uniq("q-in2"), "in-range event 2")
     t.not_contains(r, e2e.uniq("q-out"), "out-of-range event must not match")
-    t.not_contains(r, getattr(st, "uid", ""), "the 2030 event must not match")
+    if getattr(st, "uid", ""):  # the 2030 object of test_put_create (absent when run alone)
+        t.not_contains(r, st.uid, "the 2030 event must not match")
     t.xpath(r, lp("response", "propstat", "prop", "calendar-data"), "calendar-data must be returned when requested")
 
 
@@ -323,7 +345,9 @@ def test_query_vtodo(t, u1, st):
     if not t.status(r, 207):
         return
     t.contains(r, st.todo_uid)
-    t.not_contains(r, getattr(st, "uid", ""), "VEVENTs must not match a VTODO filter")
+    if getattr(st, "uid", ""):
+        t.not_contains(r, st.uid, "VEVENTs must not match a VTODO filter")
+    t.not_contains(r, "BEGIN:VEVENT", "VEVENTs must not match a VTODO filter")
 
 
 def test_multiget(t, e2e, u1, st):
@@ -430,7 +454,7 @@ def test_delete(t, u1, st):
     t.status(u1.dav("DELETE", st.obj), 404)
     r = u1.api("GET", f"/calendars/{st.cal['uuid']}/events?start=2030-01-01T00:00:00Z&end=2030-12-31T00:00:00Z"
                       "&expand=false")
-    t.jq(r, lambda j: len([e for e in j["events"] if e["uid"] == st.uid]) == 0,
+    t.jq(r, lambda j: len([e for e in j["events"] or [] if e["uid"] == st.uid]) == 0,
          "a DAV delete must remove the REST event too")
 
 

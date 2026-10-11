@@ -45,7 +45,7 @@ def test_create_invalid(t, e2e, u1):
     t.status(u1.api("POST", "/calendars/", data='{"name":', ctype="application/json"), 400, msg="malformed JSON")
     # Clean up in case the server accepted any of them.
     r = u1.api("GET", "/calendars/")
-    for c in (r.json() or {}).get("calendars", []) if isinstance(r.json(), dict) else []:
+    for c in r.jdict().get("calendars") or []:
         if c.get("name") == bad:
             u1.api("DELETE", f"/calendars/{c['uuid']}", json={"confirmation": "DELETE"})
 
@@ -167,7 +167,7 @@ def test_last_guard(t, e2e):
     r = ucal.api("GET", "/calendars/")
     if not t.status(r, 200):
         return
-    cals = (r.json() or {}).get("calendars") or []
+    cals = r.jdict().get("calendars") or []
     if not t.eq(len(cals), 1, "a fresh account has exactly one calendar"):
         return
     uuid = cals[0].get("uuid")

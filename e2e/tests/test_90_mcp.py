@@ -68,7 +68,7 @@ def test_token_create(t, e2e, u1, st):
     r = u1.api("POST", "/mcp-tokens/", json={"name": e2e.uniq("mcp-client")})
     if not t.status(r, 201):
         return
-    st.mc_token, st.mc_token_id = r.json().get("token") or "", r.json().get("id") or ""
+    st.mc_token, st.mc_token_id = r.jdict().get("token") or "", r.jdict().get("id") or ""
     e2e.defer("revoke MCP token", e2e.cleanup_api, u1, "DELETE", f"/mcp-tokens/{st.mc_token_id}")
     if not st.mc_token.startswith("calcard_mcp_"):
         t.fail(f"token must start with calcard_mcp_, got '{st.mc_token[:16]}…'")
@@ -310,15 +310,24 @@ def test_isolation(t, e2e, u1, u2, st, mc):
     r = u2.api("POST", "/mcp-tokens/", json={"name": e2e.uniq("outsider")})
     if not t.status(r, 201):
         return
-    tok, tid = r.json().get("token") or "", r.json().get("id") or ""
+    tok, tid = r.jdict().get("token") or "", r.jdict().get("id") or ""
     e2e.defer("revoke U2 MCP token", e2e.cleanup_api, u2, "DELETE", f"/mcp-tokens/{tid}")
     st.mc_u2_token = tok
-    r = mcp_call(e2e, st, {"jsonrpc": "2.0", "id": 40, "method": "tools/call",
-                           "params": {"name": "get_events", "arguments": {"calendar_id": mc.cal}}}, tok, "")
+    # An event that exists while U2 looks (the MCP standup is deleted by now),
+    # plus a positive control: U1's own token does see it.
+    probe = f"MCP isolation probe {e2e.run_id}"
+    u1.mk_event(mc.cal, probe, "2030-06-07T09:00:00Z", "2030-06-07T10:00:00Z")
+    get_events = {"jsonrpc": "2.0", "id": 40, "method": "tools/call",
+                  "params": {"name": "get_events", "arguments": {"calendar_id": mc.cal, "start": "2030-06-01T00:00:00Z",
+                                                                 "end": "2030-07-01T00:00:00Z"}}}
+    r = mcp_call(e2e, st, get_events, st.mc_token, "")
+    if not t.contains(r, probe, "control: U1's own get_events lists the probe event"):
+        return
+    r = mcp_call(e2e, st, get_events, tok, "")
     if not t.status(r, 200):
         return
     t.jq(r, lambda j: jpath(j, "result.isError") is True or "error" in j, "U2 reading U1's calendar must be refused")
-    t.not_contains(r, "MCP standup")
+    t.not_contains(r, probe, "U2 must not see U1's event")
     r = mcp_call(e2e, st, {"jsonrpc": "2.0", "id": 41, "method": "tools/call", "params": {
         "name": "create_event", "arguments": {"calendar_id": mc.cal, "title": "planted",
                                               "start": "2030-06-06T09:00:00Z", "end": "2030-06-06T10:00:00Z"}}},
@@ -326,9 +335,10 @@ def test_isolation(t, e2e, u1, u2, st, mc):
     t.jq(r, lambda j: jpath(j, "result.isError") is True or "error" in j, "U2 writing into U1's calendar must be refused")
     r = mcp_call(e2e, st, '{"jsonrpc":"2.0","id":42,"method":"resources/read","params":{"uri":"calendars://list"}}',
                  tok, "")
+    t.status(r, 200, msg="U2 reads its own calendar list")
     t.not_contains(r, e2e.uniq("mcp-cal"), "U2's calendar list must not include U1's calendar")
     r = u1.api("GET", f"/calendars/{mc.cal}/events?start=2030-06-01T00:00:00Z&end=2030-07-01T00:00:00Z")
-    t.jq(r, lambda j: len([e for e in j["events"] if e["summary"] == "planted"]) == 0, "nothing may have been planted")
+    t.jq(r, lambda j: len([e for e in j["events"] or [] if e["summary"] == "planted"]) == 0, "nothing may have been planted")
 
 
 def test_session_binding(t, e2e, st):
@@ -377,7 +387,7 @@ def test_revoke(t, e2e, u1, st):
     r = u1.api("POST", "/mcp-tokens/", json={"name": e2e.uniq("short-lived")})
     if not t.status(r, 201):
         return
-    tok, tid = r.json().get("token") or "", r.json().get("id") or ""
+    tok, tid = r.jdict().get("token") or "", r.jdict().get("id") or ""
     e2e.defer("revoke MCP token", e2e.cleanup_api, u1, "DELETE", f"/mcp-tokens/{tid}")
     r = mcp_call(e2e, st, '{"jsonrpc":"2.0","id":80,"method":"ping"}', tok, "")
     if not t.status(r, 200, msg="the token works before revocation"):

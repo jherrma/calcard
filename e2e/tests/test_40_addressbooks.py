@@ -109,7 +109,7 @@ def test_ab_contact_create(t, e2e, u1, st):
     })
     if not t.status(r, 201):
         return
-    st.ct_id, st.ct_uid = r.json().get("id"), r.json().get("uid")
+    st.ct_id, st.ct_uid = r.jdict().get("id"), r.jdict().get("uid")
     t.json(r, "formatted_name", f"Jane Doe {rid}")
     t.json(r, "given_name", "Jane")
     t.json(r, "organization", "Example Corp")
@@ -218,11 +218,11 @@ def test_ab_contact_move(t, e2e, u1, u2, st):
         return
     t.json(r, "uid", uid, "the UID survives the move")
     r = u1.api("GET", f"/addressbooks/{st.ab1_uuid}/contacts?limit=200")
-    t.jq(r, lambda j: len([c for c in j["Contacts"] if c["uid"] == uid]) == 0, "gone from the source book")
+    t.jq(r, lambda j: len([c for c in j["Contacts"] or [] if c["uid"] == uid]) == 0, "gone from the source book")
     r = u1.api("GET", f"/addressbooks/{mv['UUID']}/contacts?limit=200")
     t.jq(r, lambda j: len([c for c in j["Contacts"] if c["uid"] == uid]) == 1, "present in the target book")
     r = u2.api("GET", "/addressbooks/")
-    u2ab = ((r.json() or {}).get("addressbooks") or [{}])[0].get("UUID")
+    u2ab = (r.jdict().get("addressbooks") or [{}])[0].get("UUID")
     r = u1.api("POST", f"/addressbooks/{mv['UUID']}/contacts/{cid}/move", json={"target_addressbook_id": u2ab})
     t.status_class(r, "4xx", msg="moving into another user's book must be refused")
 
@@ -285,7 +285,7 @@ def test_ab_last_guard(t, e2e):
     r = uab.api("GET", "/addressbooks/")
     if not t.status(r, 200):
         return
-    books = (r.json() or {}).get("addressbooks") or []
+    books = r.jdict().get("addressbooks") or []
     uuid = books[0].get("UUID") if books else None
     if not t.eq(len(books), 1, "a fresh account has exactly one address book"):
         return

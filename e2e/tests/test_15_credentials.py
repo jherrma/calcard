@@ -1,6 +1,8 @@
 """DAV credentials managed over REST: app passwords (scoped, revocable) and the
 dedicated CalDAV / CardDAV credentials (own username, read or read-write)."""
 
+import re
+
 import pytest
 
 from harness.checks import known
@@ -24,7 +26,7 @@ def test_ap_create(t, e2e, u1, st):
     if not t.status(r, 200, 201):
         return
     t.json(r, "status", "ok")
-    data = r.json().get("data") or {}
+    data = r.jdict().get("data") or {}
     st.ap_id = data.get("id")
     st.ap_pw = data.get("password")
     st.ap_user = (data.get("credentials") or {}).get("username")
@@ -32,7 +34,8 @@ def test_ap_create(t, e2e, u1, st):
     t.nonempty(r, "data.password", "the secret must be returned on creation")
     t.json(r, "data.credentials.password", st.ap_pw, "credentials.password mirrors password")
     t.json(r, "data.credentials.username", u1.username, "credentials.username is the account username")
-    t.nonempty(r, "data.credentials.server_url")
+    t.jq(r, lambda j: re.fullmatch(r"https?://\S+", j["data"]["credentials"]["server_url"]),
+         "credentials.server_url must be an absolute URL (derived from the request when CALDAV_BASE_URL is unset, #187)")
     t.jq(r, lambda j: j["data"]["scopes"] == ["caldav", "carddav"], 'expected JSON condition to hold: .data.scopes == ["caldav","carddav"]')
     if len(st.ap_pw or "") < 16:
         t.fail(f"app password is suspiciously short ({len(st.ap_pw or '')} chars)")
@@ -129,7 +132,7 @@ def test_ap_revoke(t, e2e, u1):
         return
     t.status(_probe(e2e, u1.email, pw, "/dav/"), 401, msg="a revoked app password must be rejected on the next request")
     r = u1.api("GET", "/app-passwords/")
-    t.jq(r, lambda j: len([a for a in j["data"]["app_passwords"] if a["id"] == aid]) == 0,
+    t.jq(r, lambda j: len([a for a in j["data"]["app_passwords"] or [] if a["id"] == aid]) == 0,
          "revoked entry must leave the list")
     t.status(u1.api("DELETE", f"/app-passwords/{aid}"), 404, msg="revoking twice is a 404")
 
@@ -142,7 +145,7 @@ def test_caldav_crud(t, e2e, u1, st):
                                                      "password": st.calcred_pw, "permission": "read"})
     if not t.status(r, 201):
         return
-    st.calcred_id = r.json().get("id")
+    st.calcred_id = r.jdict().get("id")
     e2e.defer(f"revoke CalDAV credential {st.calcred_user}", e2e.cleanup_api, u1, "DELETE",
               f"/caldav-credentials/{st.calcred_id}")
     t.json(r, "username", st.calcred_user)
@@ -173,7 +176,7 @@ def test_caldav_readonly(t, e2e, u1, st):
     """CalDAV credential: read-only may read, not write"""
     t.need(st, "calcred_id")
     r = u1.api("GET", "/calendars/")
-    own = [c for c in (r.json() or {}).get("calendars", []) if c.get("shared") is not True and c.get("subscribed") is not True]
+    own = [c for c in r.jdict().get("calendars") or [] if c.get("shared") is not True and c.get("subscribed") is not True]
     cal = own[0].get("path") if own else None
     col = f"{u1.home_cal}{cal}/"
     creds = (st.calcred_user, st.calcred_pw)
@@ -220,7 +223,7 @@ def test_caldav_expired(t, e2e, u1):
         return  # refusing a past expiry up front is fine too
     if not t.status(r, 201):
         return
-    e2e.defer(f"revoke CalDAV credential {u}", e2e.cleanup_api, u1, "DELETE", f"/caldav-credentials/{r.json().get('id')}")
+    e2e.defer(f"revoke CalDAV credential {u}", e2e.cleanup_api, u1, "DELETE", f"/caldav-credentials/{r.jdict().get('id')}")
     t.status(_probe(e2e, u, pw, "/dav/"), 401, msg="an expired credential must not authenticate")
 
 
@@ -242,7 +245,7 @@ def test_carddav_rw(t, e2e, u1, st):
                                                       "password": st.cardcred_pw, "permission": "read-write"})
     if not t.status(r, 201):
         return
-    st.cardcred_id = r.json().get("id")
+    st.cardcred_id = r.jdict().get("id")
     e2e.defer(f"revoke CardDAV credential {st.cardcred_user}", e2e.cleanup_api, u1, "DELETE",
               f"/carddav-credentials/{st.cardcred_id}")
     t.json(r, "permission", "read-write")
@@ -293,5 +296,5 @@ def test_carddav_revoke(t, e2e, u1, st):
         return
     t.status(_probe(e2e, st.cardcred_user, st.cardcred_pw, u1.home_ab), 401)
     r = u1.api("GET", "/carddav-credentials/")
-    t.jq(r, lambda j: len([c for c in j["credentials"] if c["id"] == st.cardcred_id]) == 0,
+    t.jq(r, lambda j: len([c for c in j["credentials"] or [] if c["id"] == st.cardcred_id]) == 0,
          "expected JSON condition to hold: the revoked credential leaves the list")

@@ -110,6 +110,8 @@ def test_cal_sharee_rest(t, e2e, u1, u2, sh, st):
         return
     t.jq(r, lambda j: _last_holds(_selected(j["calendars"], "uuid", sh.uuid),
                                   lambda c: c["owner"]["display_name"] == u1.display), "with the owner's name")
+    t.jq(r, lambda j: not any(_has_key(c, "user_id") for c in _selected(j["calendars"], "uuid", sh.uuid)),
+         "the sharee must not learn the owner's internal user id (P03, #190)")
     r = u2.api("GET", f"/calendars/{sh.uuid}/events?start=2030-01-01T00:00:00Z&end=2031-01-01T00:00:00Z")
     if not t.status(r, 200):
         return
@@ -124,7 +126,8 @@ def test_cal_sharee_dav(t, e2e, u2, sh, st):
     if not t.status(r, 207):
         return
     st.dav_col = f"{u2.home_cal}{sh.uuid}/"
-    t.contains(r, f"<href>{st.dav_col}</href>", "shared calendars appear under /calendars/<uuid>/ in the sharee's home")
+    t.xpath(r, f"{lp('response', 'href')}[normalize-space()='{st.dav_col}']",
+            "shared calendars appear under /calendars/<uuid>/ in the sharee's home")
     r = u2.dav("PROPFIND", st.dav_col, depth=0, xml=PROPFIND_COLLECTION)
     if not t.status(r, 207):
         return
@@ -215,7 +218,7 @@ def test_cal_revoke(t, u1, u2, sh, st):
     r = _share_cal(u1, sh.uuid, u2.email, "read")
     if not t.status(r, 201, msg="re-sharing after a revoke works"):
         return
-    u1.api("DELETE", f"/calendars/{sh.uuid}/shares/{r.json().get('id')}")
+    u1.api("DELETE", f"/calendars/{sh.uuid}/shares/{r.jdict().get('id')}")
 
 
 def test_cal_delete_cascade(t, e2e, u1, u2):
@@ -290,6 +293,9 @@ def test_ab_no_leak(t, e2e, u1, u2, sh, st):
     t.jq(r, lambda j: not any(_has_key(b, "PasswordHash") for b in _selected(j["addressbooks"], "UUID", sh.ab_uuid)),
          "GET /addressbooks must not embed the owner's user record (PasswordHash)")
     t.not_contains(r, u1.email, "the owner's e-mail address must not be disclosed to the sharee")
+    t.jq(r, lambda j: not any(_has_key(b, k) for b in _selected(j["addressbooks"], "UUID", sh.ab_uuid)
+                              for k in ("UserID", "user_id", "DeletedAt")),
+         "the sharee must not learn the owner's internal user id (P03, #190)")
     r = u2.api("GET", f"/search?q={e2e.uniq('shared-book')}&types=addressbooks")
     if not t.status(r, 200):
         return
@@ -373,7 +379,7 @@ def test_pub_enable(t, e2e, u1, sh, st):
     e2e.defer("disable public link", e2e.cleanup_api, u1, "POST", f"/calendars/{sh.uuid}/public",
               json='{"enabled":false}')
     t.json(r, "enabled", True)
-    st.pub_token = (r.json() or {}).get("token") or ""
+    st.pub_token = r.jdict().get("token") or ""
     t.nonempty(r, "public_url")
     if len(st.pub_token) < 16:
         t.fail(f"the public token is too short to be unguessable: '{st.pub_token}'")
@@ -399,7 +405,7 @@ def test_pub_regenerate(t, e2e, u1, sh, st):
     r = u1.api("POST", f"/calendars/{sh.uuid}/public/regenerate")
     if not t.status(r, 200):
         return
-    new = (r.json() or {}).get("token")
+    new = r.jdict().get("token")
     if not t.ne(new, st.pub_token, "regenerate must mint a new token"):
         return
     t.status(e2e.raw("GET", f"/public/calendar/{st.pub_token}"), 404, msg="the old link must stop working")
@@ -433,9 +439,15 @@ def test_deleted_owner(t, e2e, u2):
     if not t.status(_share_cal(ugone, cal, u2.email, "read"), 201):
         return
     r = ugone.api("POST", f"/calendars/{cal}/public", json='{"enabled":true}')
-    tok = (r.json() or {}).get("token") if isinstance(r.json(), dict) else ""
+    tok = r.jdict().get("token") or ""
+    if not t.true(tok, "enabling the public link must return its token", r):
+        return
+    # Preconditions: ordinary checks — a regression here is a FAIL, never F18.
     if not t.status(e2e.raw("GET", f"/public/calendar/{tok}"), 200,
                     msg="the public link works while the owner exists"):
+        return
+    if not t.status(u2.api("GET", f"/calendars/{cal}/events?start=2030-01-01T00:00:00Z&end=2031-01-01T00:00:00Z"),
+                    200, msg="the sharee reads the calendar while the owner exists"):
         return
     # The server offers no way to clean up after a deleted account, so empty
     # the calendar first: whatever outlives the account is an empty calendar.
