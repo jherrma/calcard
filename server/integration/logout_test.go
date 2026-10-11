@@ -15,8 +15,10 @@ import (
 // no longer mint fresh access tokens once the user has logged out.
 //
 // It also pins the logout endpoint's hardened no-body behaviour — a logout
-// request that carries no refresh_token is a 200 no-op (there is nothing to
-// revoke) rather than the old 400 "Invalid request body".
+// request that carries no refresh_token is a 200 rather than the old 400
+// "Invalid request body", and revokes no refresh token. (Since P02 the bearer
+// token it was sent with does identify whose ACCESS tokens to invalidate; that
+// part is covered by token_revocation_test.go.)
 func TestLogoutRevokesRefreshToken(t *testing.T) {
 	email := "logout-revoke@example.test"
 	password := "logoutSecret!123"
@@ -47,13 +49,13 @@ func TestLogoutRevokesRefreshToken(t *testing.T) {
 	require.NotEmpty(t, afterSanity.RefreshToken)
 	current := afterSanity.RefreshToken
 
-	// Hardening: a logout with no body is a 200 no-op — nothing to revoke.
+	// Hardening: a logout with no body is a 200 and revokes no refresh token.
 	status, raw := restCall(t, http.MethodPost, "/auth/logout", afterSanity.AccessToken, nil)
 	assert.Equalf(t, http.StatusOK, status,
 		"empty-body logout must be a no-op success, got %d: %s", status, string(raw))
 
-	// The no-op logout must NOT have revoked the still-valid current token: it
-	// still refreshes (and rotates once more).
+	// The body-less logout must NOT have revoked the still-valid current refresh
+	// token: it still refreshes (and rotates once more).
 	var afterNoop tokenResp
 	code = doJSON(t, http.MethodPost, "/auth/refresh", "",
 		map[string]string{"refresh_token": current}, &afterNoop)

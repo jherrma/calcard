@@ -90,5 +90,11 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, req ResetPasswordRe
 		return fmt.Errorf("failed to revoke sessions: %w", err)
 	}
 
+	// ...and every access token already issued: a reset is the recovery path
+	// after a compromise, so a stolen JWT must not outlive it.
+	if err := uc.userRepo.InvalidateAccessTokens(ctx, u.ID, time.Now()); err != nil {
+		return fmt.Errorf("failed to revoke access tokens: %w", err)
+	}
+
 	return nil
 }

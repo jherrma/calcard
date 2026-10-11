@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
@@ -88,6 +89,13 @@ func (uc *ChangePasswordUseCase) Execute(ctx context.Context, req ChangePassword
 	u.PasswordHash = string(hash)
 	if err := uc.userRepo.Update(ctx, u); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	// Kill every access token issued so far — including the one this request
+	// came in with. The replacement below is minted AFTER the marker, so it
+	// (and only it) keeps this session alive.
+	if err := uc.userRepo.InvalidateAccessTokens(ctx, u.ID, time.Now()); err != nil {
+		return nil, fmt.Errorf("failed to revoke access tokens: %w", err)
 	}
 
 	uc.logger.LogPasswordChange(ctx, u.ID, req.IP, req.UserAgent)

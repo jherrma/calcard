@@ -10,7 +10,7 @@ The adapter layer is responsible for translating data between the application's 
 - **Key Components**:
   - **Handlers**: One handler per domain area — `auth_handler.go`, `oauth_handler.go`, `user_handler.go`, `system_handler.go`, `calendar_handler.go`, `event_handler.go`, `addressbook_handler.go`, `contact_handler.go`, `calendar_share_handler.go`, `addressbook_share_handler.go`, `calendar_public_handler.go`, `public_calendar_handler.go`, `app_password_handler.go`, `caldav_credential_handler.go`, `carddav_credential_handler.go`, `import_handler.go`, `backup_handler.go`, `mcp_token_handler.go` (MCP access tokens, #104), `subscription_handler.go` (remote calendar subscriptions, story 100), `health.go`, `about_handler.go` (open-source attribution), `search_handler.go` (unified search, #156).
   - **DTOs** (`dto/`): Data Transfer Objects for auth, user, contact, addressbook, event, and credentials.
-  - **Middleware**: `auth_middleware.go` (JWT verification), `rate_limiter.go`.
+  - **Middleware**: `auth_middleware.go` (JWT verification, then the per-user revocation check `User.AcceptsAccessTokenIssuedAt` — P02), `rate_limiter.go`.
   - **Responses**: `response.go` — `SuccessResponse()` wraps most responses in `{ "status": "ok", "data": ... }`. **Exception**: AddressBook and Contact handlers return raw JSON.
 
 ### [mcp/](mcp/)
@@ -20,7 +20,7 @@ The adapter layer is responsible for translating data between the application's 
   - `protocol.go` — JSON-RPC and MCP message types, protocol-version negotiation, the handshake `instructions` handed to the model.
   - `errors.go` — JSON-RPC error codes and response constructors.
   - `server.go` — `Deps` (the use cases the tools delegate to), the tool registry, and the method dispatcher.
-  - `handler.go` — Fiber transport: bearer authentication (MCP token or JWT), `POST` (JSON-RPC, single or batch), `GET` (manifest or SSE stream), `DELETE` (terminate session).
+  - `handler.go` — Fiber transport: bearer authentication (MCP token or JWT; a JWT gets the same revocation check as the REST middleware), `POST` (JSON-RPC, single or batch), `GET` (manifest or SSE stream), `DELETE` (terminate session).
   - `session.go` — In-memory `Mcp-Session-Id` store. Sessions are bound to a user, so a leaked id cannot be used by another account.
   - `access.go` — `callContext` plus the permission helpers, mirroring the HTTP handlers exactly.
   - `tools_calendar.go`, `tools_contact.go`, `tools_scheduling.go` — the 13 advertised tools.
@@ -48,7 +48,7 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Implements authentication-related services.
 - **Key Components**:
-  - `jwt.go` — JWT token generation and validation.
+  - `jwt.go` — JWT token generation and validation. Access tokens carry `iat_ns` (issue time in nanoseconds) next to the standard `iat`; `ValidateAccessToken` returns it as `AccessTokenClaims.IssuedAt` (falling back to the whole-second `iat` for older tokens). Validation proves only signature and expiry — the caller must still check the user's revocation marker.
   - `basic_auth.go` — HTTP Basic Auth for CalDAV/CardDAV client access (app passwords and DAV credentials).
   - `oauth.go` — OIDC/OAuth2 provider management using `go-oidc` and `golang.org/x/oauth2`.
 

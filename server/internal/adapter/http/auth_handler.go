@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
@@ -180,16 +181,24 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	// A missing or unparseable body carries no token to revoke, so logout is a
-	// no-op success rather than a 400: the client clears its own session either
-	// way and there is nothing for the server to invalidate.
+	// A missing or unparseable body carries no refresh token to revoke, so it
+	// is a success rather than a 400: the client clears its own session either
+	// way.
 	_ = c.Bind().JSON(&req)
 
-	if req.RefreshToken == "" {
+	// The route is public (an expired access token must not prevent logout),
+	// but a bearer token, when sent, also identifies whose access tokens to
+	// invalidate.
+	var accessToken string
+	if parts := strings.SplitN(c.Get("Authorization"), " ", 2); len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+		accessToken = strings.TrimSpace(parts[1])
+	}
+
+	if req.RefreshToken == "" && accessToken == "" {
 		return SuccessResponse(c, "Logged out successfully")
 	}
 
-	if err := h.logoutUC.Execute(c.Context(), req.RefreshToken); err != nil {
+	if err := h.logoutUC.Execute(c.Context(), req.RefreshToken, accessToken); err != nil {
 		// A revoke failure usually means the token was already deleted or never
 		// existed. Return success regardless to avoid leaking token state.
 	}

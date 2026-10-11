@@ -18,12 +18,33 @@ type User struct {
 	EmailVerified bool   `gorm:"not null"`
 	// IsAdmin marks the account created by first-run setup (POST /auth/setup).
 	// Nothing grants it afterwards.
-	IsAdmin   bool `gorm:"not null;default:false"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	IsAdmin bool `gorm:"not null;default:false"`
+	// TokensValidAfter invalidates every access token (JWT) issued before it.
+	// Access tokens are stateless, so this per-user marker is the only way to
+	// kill one before it expires: logout, password change/reset and account
+	// deletion move it to "now". Nil means no token has ever been revoked.
+	// Written ONLY through UserRepository.InvalidateAccessTokens — Update
+	// deliberately leaves it alone so a stale User struct cannot roll it back.
+	TokensValidAfter *time.Time `json:"-"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	DeletedAt        gorm.DeletedAt `gorm:"index"`
 
 	OAuthConnections []OAuthConnection `gorm:"foreignKey:UserID"`
+}
+
+// AcceptsAccessTokenIssuedAt reports whether an access token issued at
+// issuedAt is still honoured for this user, i.e. was not issued before the
+// last invalidation (see TokensValidAfter).
+//
+// A token issued at exactly the marker instant is accepted: the request that
+// invalidates sessions (change password) moves the marker first and then
+// issues its own replacement token, which on a coarse clock can carry the very
+// same timestamp. Token issue times carry nanosecond precision (the iat_ns
+// claim), so "the same instant" is a sub-microsecond window, not the
+// one-second window a plain RFC 7519 iat would leave open.
+func (u *User) AcceptsAccessTokenIssuedAt(issuedAt time.Time) bool {
+	return u.TokensValidAfter == nil || !issuedAt.Before(*u.TokensValidAfter)
 }
 
 // OAuthConnection represents a linked OAuth/OIDC provider.
