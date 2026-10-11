@@ -18,7 +18,13 @@ type UserRepository interface {
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByUUID(ctx context.Context, uuid string) (*User, error)
 	GetByID(ctx context.Context, id uint) (*User, error)
+	// Update saves the user. It never writes TokensValidAfter — see
+	// InvalidateAccessTokens.
 	Update(ctx context.Context, user *User) error
+	// InvalidateAccessTokens rejects every access token the user was issued
+	// before at, by setting TokensValidAfter to at.
+	InvalidateAccessTokens(ctx context.Context, userID uint, at time.Time) error
+	// Delete soft-deletes the user and also invalidates their access tokens.
 	Delete(ctx context.Context, userID uint) error
 	GetByOAuth(ctx context.Context, provider, providerID string) (*User, error)
 	Count(ctx context.Context) (int64, error)
@@ -92,7 +98,17 @@ type TokenProvider interface {
 	GenerateAccessToken(userID string, email string) (string, time.Time, error)
 	GenerateRefreshToken() (string, error)
 	HashToken(token string) string
-	ValidateAccessToken(tokenStr string) (string, string, error) // Returns UserUUID, Email, error
+	ValidateAccessToken(tokenStr string) (*AccessTokenClaims, error)
+}
+
+// AccessTokenClaims is what a validated access token says about its bearer.
+type AccessTokenClaims struct {
+	UserUUID string
+	Email    string
+	// IssuedAt is when the token was minted, at nanosecond precision for
+	// tokens that carry the iat_ns claim and at second precision (from the
+	// standard iat) for older ones. Compared against User.TokensValidAfter.
+	IssuedAt time.Time
 }
 
 // OAuthConnectionRepository defines the interface for OAuth connection persistence

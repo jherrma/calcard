@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"strings"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"gorm.io/gorm"
@@ -69,12 +70,36 @@ func (r *gormUserRepo) GetByID(ctx context.Context, id uint) (*user.User, error)
 	return &u, nil
 }
 
+// Update saves every column EXCEPT tokens_valid_after. A User struct is
+// usually loaded at the start of a request (the auth middleware does it); if a
+// logout elsewhere moves the marker in the meantime, a full Save would write
+// the stale value back and resurrect the tokens that logout just revoked.
 func (r *gormUserRepo) Update(ctx context.Context, u *user.User) error {
-	return r.db.WithContext(ctx).Save(u).Error
+	return r.db.WithContext(ctx).Omit("TokensValidAfter").Save(u).Error
+}
+
+// InvalidateAccessTokens sets tokens_valid_after to at, written as UTC so
+// SQLite's text timestamps stay comparable whatever the host time zone. It is
+// a targeted single-column UPDATE, never a Save of a loaded User.
+func (r *gormUserRepo) InvalidateAccessTokens(ctx context.Context, userID uint, at time.Time) error {
+	return invalidateAccessTokens(r.db.WithContext(ctx), userID, at)
+}
+
+func invalidateAccessTokens(db *gorm.DB, userID uint, at time.Time) error {
+	return db.Model(&user.User{}).
+		Where("id = ?", userID).
+		UpdateColumn("tokens_valid_after", at.UTC()).Error
 }
 
 func (r *gormUserRepo) Delete(ctx context.Context, userID uint) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Revoke outstanding access tokens too. A soft-deleted user already
+		// fails the auth lookup, but the marker keeps those tokens dead even
+		// if the row is ever restored.
+		if err := invalidateAccessTokens(tx, userID, time.Now()); err != nil {
+			return err
+		}
+
 		// Hard delete related data
 		if err := tx.Where("user_id = ?", userID).Delete(&user.RefreshToken{}).Error; err != nil {
 			return err

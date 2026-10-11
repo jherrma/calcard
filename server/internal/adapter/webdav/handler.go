@@ -77,9 +77,13 @@ func (h *Handler) Authenticate() fiber.Handler {
 
 		switch strings.ToLower(parts[0]) {
 		case "bearer":
-			userUUID, _, err := h.jwtManager.ValidateAccessToken(parts[1])
+			claims, err := h.jwtManager.ValidateAccessToken(parts[1])
 			if err == nil {
-				u, _ = h.userRepo.GetByUUID(c.Context(), userUUID)
+				u, _ = h.userRepo.GetByUUID(c.Context(), claims.UserUUID)
+				// Same revocation rule as the REST middleware.
+				if u != nil && !u.AcceptsAccessTokenIssuedAt(claims.IssuedAt) {
+					u = nil
+				}
 			}
 		case "basic":
 			payload, err := base64.StdEncoding.DecodeString(parts[1])

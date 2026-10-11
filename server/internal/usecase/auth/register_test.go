@@ -74,6 +74,11 @@ func (m *mockUserRepo) Update(ctx context.Context, u *user.User) error {
 	return args.Error(0)
 }
 
+func (m *mockUserRepo) InvalidateAccessTokens(ctx context.Context, userID uint, at time.Time) error {
+	args := m.Called(ctx, userID, at)
+	return args.Error(0)
+}
+
 func (m *mockUserRepo) GetByUsername(ctx context.Context, username string) (*user.User, error) {
 	args := m.Called(ctx, username)
 	if args.Get(0) == nil {

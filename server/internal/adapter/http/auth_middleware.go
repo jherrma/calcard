@@ -22,7 +22,7 @@ func Authenticate(jwtManager user.TokenProvider, userRepo user.UserRepository) f
 			return UnauthorizedResponse(c, "invalid authentication header format")
 		}
 
-		userUUID, email, err := jwtManager.ValidateAccessToken(parts[1])
+		claims, err := jwtManager.ValidateAccessToken(parts[1])
 		if err != nil {
 			if err == authadapter.ErrExpiredToken {
 				return UnauthorizedResponse(c, "token expired")
@@ -34,17 +34,22 @@ func Authenticate(jwtManager user.TokenProvider, userRepo user.UserRepository) f
 		// tokens whose subject has since been deleted — we must treat that
 		// as an auth failure rather than falling through and NPE-ing on
 		// u.ID below.
-		u, err := userRepo.GetByUUID(c.Context(), userUUID)
+		u, err := userRepo.GetByUUID(c.Context(), claims.UserUUID)
 		if err != nil || u == nil {
 			return UnauthorizedResponse(c, "user not found")
 		}
 		if !u.IsActive {
 			return UnauthorizedResponse(c, "account is not active")
 		}
+		// A signature-valid, unexpired token may still have been revoked by a
+		// logout, password change or password reset since it was issued.
+		if !u.AcceptsAccessTokenIssuedAt(claims.IssuedAt) {
+			return UnauthorizedResponse(c, "token revoked")
+		}
 
 		// Store user info in context
-		c.Locals("user_uuid", userUUID)
-		c.Locals("user_email", email)
+		c.Locals("user_uuid", claims.UserUUID)
+		c.Locals("user_email", claims.Email)
 		c.Locals("user_id", u.ID)
 		c.Locals("user", u)
 

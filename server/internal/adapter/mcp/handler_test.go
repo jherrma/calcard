@@ -133,6 +133,27 @@ func TestTransportAcceptsJWT(t *testing.T) {
 		"story 104 specifies JWT auth; it must keep working alongside MCP tokens")
 }
 
+// P02: the MCP endpoint accepts JWTs, so it must honour the same revocation
+// marker as the REST middleware — a JWT issued before the account's last
+// logout / password change is refused, a fresh one is accepted.
+func TestTransportRejectsRevokedJWT(t *testing.T) {
+	h := newHTTPEnv(t)
+	alice := h.newUser("alice@example.com")
+
+	old, _, err := h.jwt.GenerateAccessToken(alice.UUID, alice.Email)
+	require.NoError(t, err)
+	require.NoError(t, h.userRepo.InvalidateAccessTokens(h.ctx(), alice.ID, time.Now()))
+
+	resp := h.post(old, initializeBody, nil)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "a revoked JWT must not open an MCP session")
+	assert.Contains(t, resp.Header.Get("WWW-Authenticate"), "Bearer")
+
+	fresh, _, err := h.jwt.GenerateAccessToken(alice.UUID, alice.Email)
+	require.NoError(t, err)
+	resp = h.post(fresh, initializeBody, nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "a JWT issued after the invalidation must work")
+}
+
 func TestRevokedTokenStopsWorkingImmediately(t *testing.T) {
 	h := newHTTPEnv(t)
 	alice := h.newUser("alice@example.com")
