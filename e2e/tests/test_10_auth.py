@@ -1,7 +1,11 @@
 """Authentication: registration, login, JWT refresh rotation, logout, password
 change, forgot/reset/verify edges, OAuth surface, account deletion.
-Mutating steps run on a dedicated throwaway user (UA / UDEL) so the shared
-U1/U2 sessions of other suites are never disturbed."""
+
+Since P02 (#189) a logout with a live refresh token (or a bearer), a password
+change and a password reset revoke EVERY access token of the account. So the
+steps that log in, refresh, log out or change a password never touch the
+shared U1/U2 accounts: login/refresh/logout run on their own throwaway
+account (ULOG), password changes on UA, account deletion on UDEL."""
 
 import base64
 import re
@@ -11,6 +15,7 @@ import pytest
 
 from harness.checks import known
 from harness.data import PROPFIND_PRINCIPAL
+from harness.session import TOKEN_REJECTED
 
 DESCRIPTION = "register, login, refresh, logout, password change, account deletion"
 
@@ -19,13 +24,25 @@ pytestmark = pytest.mark.usefixtures("u1")
 SMTP_REASON = "needs an SMTP server and access to the mailbox (external system)"
 
 
+@pytest.fixture(scope="module")
+def ulog(e2e):
+    """Throwaway account for the login / refresh / logout tests: each logout
+    revokes all of ITS access tokens, nobody else's."""
+    return e2e.create_user("ULOG", "E2E Logout User")
+
+
 def _session(e2e, user):
-    """Open an extra login session → (access, refresh) or None."""
+    """Open an extra login session → ((access, refresh) or None, response)."""
     r = e2e.anon("POST", "/auth/login", json={"email": user.email, "password": user.password})
-    if r.status != 200:
+    d = r.jdict().get("data") or {}
+    if r.status != 200 or not d.get("access_token") or not d.get("refresh_token"):
         return None, r
-    d = r.json()["data"]
     return (d["access_token"], d["refresh_token"]), r
+
+
+def _me(e2e, token):
+    """GET /users/me with exactly this access token (no re-login)."""
+    return e2e.req("GET", f"{e2e.base}/api/v1/users/me", bearer=token)
 
 
 def test_register(t, e2e, st):
@@ -66,9 +83,9 @@ def test_register_validation(t, e2e):
     t.status(e2e.anon("POST", "/auth/register", data="{not json", ctype="application/json"), 400)
 
 
-def test_login_shape(t, e2e, u1):
+def test_login_shape(t, e2e, ulog):
     """login returns bearer tokens with expires_at"""
-    r = e2e.anon("POST", "/auth/login", json={"email": u1.email, "password": u1.password})
+    r = e2e.anon("POST", "/auth/login", json={"email": ulog.email, "password": ulog.password})
     if not t.status(r, 200):
         return
     t.json(r, "data.token_type", "Bearer")
@@ -76,24 +93,26 @@ def test_login_shape(t, e2e, u1):
     t.nonempty(r, "data.refresh_token")
     now = int(time.time())
     t.jq(r, lambda j: j["data"]["expires_at"] > now, "expires_at must be a future Unix timestamp")
-    t.json(r, "data.user.email", u1.email)
+    t.json(r, "data.user.email", ulog.email)
     # A JWT has three base64url segments.
-    if not re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", r.json()["data"].get("access_token") or ""):
+    data = r.jdict().get("data") or {}
+    if not re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", data.get("access_token") or ""):
         t.fail("access_token does not look like a JWT")
-    # Clean up the extra session we just opened.
-    u1.api("POST", "/auth/logout", json={"refresh_token": r.json()["data"]["refresh_token"]})
+    # Close the extra session (this revokes ULOG's access tokens, nobody else's).
+    e2e.anon("POST", "/auth/logout", json={"refresh_token": data.get("refresh_token") or ""})
 
 
-def test_login_wrong(t, e2e, u1):
+def test_login_wrong(t, e2e, ulog):
     """login failure does not reveal whether the account exists"""
-    r = e2e.anon("POST", "/auth/login", json={"email": u1.email, "password": f"wrong-{e2e.run_id}"})
+    r = e2e.anon("POST", "/auth/login", json={"email": ulog.email, "password": f"wrong-{e2e.run_id}"})
     if not t.status(r, 401):
         return
-    msg_known = r.json().get("message")
+    msg_known = r.jmsg()
+    t.true(msg_known, "a failed login must carry a message", r)
     r = e2e.anon("POST", "/auth/login", json={"email": f"{e2e.uniq('nobody')}@{e2e.domain}", "password": f"wrong-{e2e.run_id}"})
     if not t.status(r, 401):
         return
-    t.eq(r.json().get("message"), msg_known, "wrong password and unknown account must produce the same message")
+    t.eq(r.jmsg(), msg_known, "wrong password and unknown account must produce the same message")
 
 
 def test_protected(t, e2e, u1):
@@ -109,10 +128,9 @@ def test_protected(t, e2e, u1):
     t.status(e2e.req("GET", me, bearer=forged), 401)
 
 
-def test_refresh(t, e2e, st):
+def test_refresh(t, e2e, ulog):
     """refresh rotates the refresh token, old one dies"""
-    t.need(st, "ua")
-    tokens, r = _session(e2e, st.ua)
+    tokens, r = _session(e2e, ulog)
     if tokens is None:
         return t.fail("login failed", r)
     first = tokens[1]
@@ -120,15 +138,17 @@ def test_refresh(t, e2e, st):
     if not t.status(r, 200):
         return
     t.json(r, "data.token_type", "Bearer")
-    second = r.json()["data"]["refresh_token"]
+    data = r.jdict().get("data") or {}
+    second = data.get("refresh_token") or ""
+    t.true(second, "refresh must return a new refresh token", r)
     t.ne(second, first, "refresh must rotate the refresh token")
-    t.status(e2e.req("GET", f"{e2e.base}/api/v1/users/me", bearer=r.json()["data"]["access_token"]), 200)
+    t.status(_me(e2e, data.get("access_token") or ""), 200, msg="the refreshed access token works")
     t.status(e2e.anon("POST", "/auth/refresh", json={"refresh_token": first}), 401,
              msg="a rotated (old) refresh token must be rejected")
     r = e2e.anon("POST", "/auth/refresh", json={"refresh_token": second})
     if not t.status(r, 200, msg="the current refresh token must keep working"):
         return
-    e2e.anon("POST", "/auth/logout", json={"refresh_token": r.json()["data"]["refresh_token"]})
+    e2e.anon("POST", "/auth/logout", json={"refresh_token": (r.jdict().get("data") or {}).get("refresh_token") or ""})
 
 
 def test_refresh_bad(t, e2e):
@@ -137,10 +157,13 @@ def test_refresh_bad(t, e2e):
     t.status(e2e.anon("POST", "/auth/refresh", json="{}"), 400, 401)
 
 
-def test_logout(t, e2e, st):
-    """logout revokes the presented refresh token"""
-    t.need(st, "ua")
-    tokens, r = _session(e2e, st.ua)
+def test_logout(t, e2e, ulog):
+    """logout revokes the refresh token and every access token of the account"""
+    # The harness's own ULOG session plays the account's other "device".
+    if not t.status(ulog.api("GET", "/users/me"), 200, msg="precondition: the other session works"):
+        return
+    other = ulog.token
+    tokens, r = _session(e2e, ulog)
     if tokens is None:
         return t.fail("login failed", r)
     access, refresh = tokens
@@ -149,32 +172,52 @@ def test_logout(t, e2e, st):
         return
     t.status(e2e.anon("POST", "/auth/refresh", json={"refresh_token": refresh}), 401,
              msg="a logged-out refresh token must be dead")
+    t.status(_me(e2e, access), 401, msg="the logged-out access token must be dead at once (P02, #189)")
+    r = _me(e2e, other)
+    t.status(r, 401, msg="logout invalidates the account's other access tokens too (by design, #189)")
+    # …while the other device's refresh token survives: one refresh and it carries on.
+    t.status(ulog.api("GET", "/users/me"), 200, msg="the other session recovers through /auth/refresh")
 
 
-def test_logout_nobody(t, e2e, st):
-    """logout without a body is a harmless no-op"""
-    t.need(st, "ua")
-    tokens, _ = _session(e2e, st.ua)
+def test_logout_bearer_only(t, e2e, ulog):
+    """logout with only a bearer keeps the refresh token; no credentials is a no-op"""
+    tokens, r = _session(e2e, ulog)
     if tokens is None:
-        return
+        return t.fail("login failed", r)
     access, refresh = tokens
+    r = e2e.anon("POST", "/auth/logout")
+    if not t.status(r, 200, msg="logout without any credential"):
+        return
+    t.status(_me(e2e, access), 200, msg="a logout naming no account must not revoke anything")
     r = e2e.req("POST", f"{e2e.base}/api/v1/auth/logout", bearer=access)
     if not t.status(r, 200):
         return
+    t.status(_me(e2e, access), 401, msg="the bearer names the account: its access tokens die")
     r = e2e.anon("POST", "/auth/refresh", json={"refresh_token": refresh})
-    t.status(r, 200, msg="a body-less logout must not revoke anything")
-    e2e.anon("POST", "/auth/logout", json={"refresh_token": (r.json() or {}).get("data", {}).get("refresh_token", "")})
+    t.status(r, 200, msg="a logout without a refresh token must not revoke the refresh token")
+    e2e.anon("POST", "/auth/logout", json={"refresh_token": (r.jdict().get("data") or {}).get("refresh_token") or ""})
 
 
 def test_pw_wrong(t, e2e, st):
     """password change validates the current password"""
     t.need(st, "ua")
     ua = st.ua
-    r = ua.api("PUT", "/users/me/password", json={"current_password": f"wrong-{e2e.run_id}", "new_password": "Brand!New12345"})
-    if not t.status(r, 400, 401, 403):
+    if not t.status(ua.api("GET", "/users/me"), 200, msg="precondition: UA's session is valid"):
         return
+    tok, url = ua.token, f"{e2e.base}/api/v1/users/me/password"
+    # Exactly this token (e2e.req, not ua.api): a 401 here cannot be a
+    # rejected session that the harness silently replaced.
+    r = e2e.req("PUT", url, bearer=tok, json={"current_password": f"wrong-{e2e.run_id}", "new_password": "Brand!New12345"})
+    t.status(r, 400, 401, 403, msg="a wrong current password must be refused")
+    t.true(r.jmsg() not in TOKEN_REJECTED, f"the refusal must come from the password check, not from the "
+           f"session (message '{r.jmsg()}')", r)
+    t.status(_me(e2e, tok), 200, msg="a refused password change must not revoke the session")
+    t.status(e2e.anon("POST", "/auth/login", json={"email": ua.email, "password": "Brand!New12345"}), 401,
+             msg="the new password must not have been set")
+    t.status(e2e.anon("POST", "/auth/login", json={"email": ua.email, "password": ua.password}), 200,
+             msg="the current password must still work")
     r = ua.api("PUT", "/users/me/password", json={"current_password": ua.password, "new_password": "short"})
-    t.status(r, 400)
+    t.status(r, 400, msg="a too-short new password")
 
 
 @known("F10")
@@ -183,29 +226,32 @@ def test_pw_same(t, st):
     t.need(st, "ua")
     ua = st.ua
     r = ua.api("PUT", "/users/me/password", json={"current_password": ua.password, "new_password": ua.password})
-    if not t.status_class(r, "4xx", msg="re-using the current password must be refused"):
-        return
+    # ua.api re-authenticates after a revoked token, so a 401 here is the handler's.
+    t.true(r.jmsg() not in TOKEN_REJECTED, f"the session must be valid (message '{r.jmsg()}')", r)
     # It is a validation error of the request body, not an authentication
     # failure: 401 makes clients (the SPA included) refresh/re-login.
-    t.status(r, 400, msg="new == current is a validation error")
+    t.bug.status(r, 400, was=401, msg="new == current is a validation error")
 
 
 def test_pw_change(t, e2e, st):
     """password change swaps credentials and revokes sessions"""
     t.need(st, "ua")
     ua = st.ua
-    tokens, _ = _session(e2e, ua)
+    tokens, r = _session(e2e, ua)
     if tokens is None:
-        return
-    old_session_refresh = tokens[1]
+        return t.fail("login failed", r)
+    old_access, old_session_refresh = tokens
     old, new = ua.password, f"{ua.password}-Nw9"
-    r = ua.api("PUT", "/users/me/password", json={"current_password": old, "new_password": new})
+    r = e2e.req("PUT", f"{e2e.base}/api/v1/users/me/password", bearer=old_access,
+                json={"current_password": old, "new_password": new})
     if not t.status(r, 200):
         return
     t.nonempty(r, "data.access_token", "password change must hand back a fresh access token")
     ua.password = new
-    ua.token = (r.json().get("data") or {}).get("access_token") or ""
+    ua.token = (r.jdict().get("data") or {}).get("access_token") or ""
     ua.refresh = ""
+    t.status(_me(e2e, ua.token), 200, msg="the access token handed back by the change works")
+    t.status(_me(e2e, old_access), 401, msg="access tokens issued before the change must be revoked (P02)")
     t.status(e2e.anon("POST", "/auth/login", json={"email": ua.email, "password": old}), 401,
              msg="the old password must stop working")
     r = e2e.anon("POST", "/auth/login", json={"email": ua.email, "password": new})
@@ -221,12 +267,12 @@ def test_forgot(t, e2e, st):
     r = e2e.anon("POST", "/auth/forgot-password", json={"email": f"{e2e.uniq('nobody')}@{e2e.domain}"})
     if not t.status(r, 200):
         return
-    unknown_msg = r.json().get("data")
+    unknown_msg = r.jdict().get("data")
     t.need(st, "ua")
     r = e2e.anon("POST", "/auth/forgot-password", json={"email": st.ua.email})
     if not t.status(r, 200):
         return
-    t.eq(r.json().get("data"), unknown_msg,
+    t.eq(r.jdict().get("data"), unknown_msg,
          "known and unknown addresses must get the same answer (no account enumeration)")
     t.status(e2e.anon("POST", "/auth/forgot-password", data="nope", ctype="application/json"), 400)
 
@@ -301,5 +347,5 @@ def test_reregister(t, e2e, st):
         udel.deleted = False
         udel.token = udel.refresh = ""
         e2e.defer(f"delete re-registered account {udel.email}", udel.delete_account)
-        return
-    t.status(r, 200, 201, msg="registering the e-mail of a deleted account")
+    # F19: the soft-deleted row keeps the unique e-mail → 400 "registration failed".
+    t.bug.status(r, 200, 201, was=400, msg="registering the e-mail of a deleted account")
