@@ -1,12 +1,11 @@
-version: '3.8'
-
 services:
   caldav:
-    # Build context is the repo root so the image can bundle the web UI
-    # (webinterface/) alongside the server (#99). Dockerfile stays in server/.
-    build:
-      context: ..
-      dockerfile: server/Dockerfile
+    image: herrj/calcard:latest
+    # To build from source instead (context is the repo root so the image can
+    # bundle the web UI), replace `image:` with:
+    #   build:
+    #     context: ..
+    #     dockerfile: server/Dockerfile
     ports:
       - "8080:8080"
     environment:

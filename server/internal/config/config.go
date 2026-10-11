@@ -14,10 +14,13 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Server       ServerConfig       `yaml:"server"`
-	Database     DatabaseConfig     `yaml:"database"`
-	DataDir      string             `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
-	LogLevel     string             `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
+	Server   ServerConfig   `yaml:"server"`
+	Database DatabaseConfig `yaml:"database"`
+	DataDir  string         `yaml:"data_dir" env:"CALDAV_DATA_DIR"`
+	LogLevel string         `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
+	// LogPayloads logs every request's headers (credentials redacted) and, on
+	// DAV paths, its body. Debugging only: it writes user data to the log.
+	LogPayloads  bool               `yaml:"log_payloads" env:"CALDAV_LOG_PAYLOADS"`
 	BaseURL      string             `yaml:"base_url" env:"CALDAV_BASE_URL"`
 	SMTP         SMTPConfig         `yaml:"smtp"`
 	JWT          JWTConfig          `yaml:"jwt"`
