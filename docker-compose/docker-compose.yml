@@ -20,9 +20,9 @@ services:
       # insecure default is needed. Set this only to pin a specific secret
       # (e.g. across replicas behind a load balancer).
       - CALDAV_JWT_SECRET=${CALDAV_JWT_SECRET:-}
-      # Public URL clients reach this server at, e.g. https://cal.example.com or
-      # http://<nas-ip>:8751. Optional: left empty, the URLs the server hands out (the
-      # DAV server URL shown with a new app password, public calendar links) follow the
+      # Public URL clients reach this server at, e.g. https://cal.example.com.
+      # Optional: left empty, the URLs the server hands out (the DAV server URL
+      # shown with a new app password, public calendar links) follow the
       # address each request came in on. REQUIRED once SMTP or OAuth is configured:
       # e-mailed links and OAuth redirect URIs are never taken from a request.
       - CALDAV_BASE_URL=${CALDAV_BASE_URL:-}
