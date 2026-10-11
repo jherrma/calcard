@@ -1,10 +1,12 @@
 # E2E findings
 
 Server bugs found by the e2e suite against master `9334b84` on 2026-10-11. Each
-is marked `t_known F<nn>` in its test: the test asserts the CORRECT behaviour and
-reports KFAIL, so the bug shows in every run without failing the exit code
-(`--strict` turns KFAIL into a failure). When a bug is fixed its test reports
-XPASS — remove the `t_known` marker then.
+is marked `@known("F<nn>")` in its test (`tests/test_*.py`; a strict pytest
+`xfail`, or `t.known("F<nn>")` where the bug only applies under a runtime
+condition): the test asserts the CORRECT behaviour and reports KFAIL, so the bug
+shows in every run without failing the exit code (`./run --strict` turns KFAIL
+into a failure). When a bug is fixed its test reports XPASS, which fails the run
+until the marker is removed and this file is updated.
 
 The server was not changed to fix any of these.
 
@@ -23,8 +25,9 @@ The server was not changed to fix any of these.
 
 > Fixed in PR #181 (`json:"-"` on `User.PasswordHash`, `AppPassword.PasswordHash`, `AddressBook.User`).
 > The e2e test (`sharing/shared address book does not leak the owner's account data`) no longer
-> carries a `t_known` marker and now guards against a regression. Affected releases: everything
-> containing commit 6494092, including the first `v1.0.0-rc1` image.
+> carries a known-bug marker and now guards against a regression: it scans the raw response body
+> and every object of the parsed JSON for a `PasswordHash` key. Affected: every build from commit
+> 6494092 until #181.
 - **Symptom:** when A shares an address book with B, B's `GET /api/v1/addressbooks`
   and `GET /api/v1/search` include `"User":{"Email":…,"Username":…,"PasswordHash":"$2a$12$…"}`.
 - **Cause:** `adapter/repository/addressbook_share_repo.go` does
@@ -102,6 +105,13 @@ The server was not changed to fix any of these.
 
 ## Observations without a failing test
 
+- Found while porting the suite to Python (2026-10-11, master `1395e50`): a CalDAV
+  `PUT` of a *well-formed* VCALENDAR holding two VEVENTs with different UIDs answers
+  **500** `conflicting UID values in calendar: a1, b2` (nothing is stored); RFC 4791
+  §4.1 makes this a client error (4xx). The existing test
+  (`dav_caldav/PUT rejects wrong media type and malformed iCalendar`) still sends the
+  slightly malformed body the bash suite produced, which the server rejects with a 4xx
+  before it reaches the UID check. Candidate for an F-number and its own `known()` test.
 - DAV Basic auth bcrypt-checks every one of the user's app passwords (~250 ms each):
   login cost grows with their number, and anyone knowing an e-mail can trigger it.
 - Handler doc comments say `PUT` for events/contacts (route is `PATCH`) and

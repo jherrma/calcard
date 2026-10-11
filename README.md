@@ -114,10 +114,11 @@ headers and `/dav` bodies (credentials redacted) — see `CONFIGURATION.md`.
 
 ### Testing a deployment end to end
 
-[`e2e/`](e2e/README.md) is a bash + curl + jq suite that tests a running server
-over HTTP only (REST, CalDAV/CardDAV, MCP): `cd e2e && cp .env.example .env`, set
-`CALCARD_URL`, then `./run.sh`. It registers throwaway users (self-registration
-must be enabled, SMTP off) and removes what it created.
+[`e2e/`](e2e/README.md) is a Python (pytest + httpx) suite that tests a running
+server over HTTP only (REST, CalDAV/CardDAV, MCP): in `e2e/` install
+`requirements.txt` into a venv, `cp .env.example .env`, set `CALCARD_URL`, then
+`./run`. It registers throwaway users (self-registration must be enabled, SMTP
+off) and removes what it created.
 
 ### Running from Source
 
