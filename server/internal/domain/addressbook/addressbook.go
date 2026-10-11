@@ -38,9 +38,12 @@ func (p AddressBookPermission) CanWrite() bool {
 }
 
 type AddressBook struct {
-	ID          uint   `gorm:"primaryKey"`
-	UUID        string `gorm:"uniqueIndex;size:36;not null"`
-	UserID      uint   `gorm:"index;not null"`
+	ID   uint   `gorm:"primaryKey"`
+	UUID string `gorm:"uniqueIndex;size:36;not null"`
+	// UserID is the owner's internal primary key. Never serialised (P03): a
+	// sharee must not learn the owner's numeric id; the list endpoint exposes
+	// the owner's UUID via its `owner` block instead.
+	UserID      uint   `gorm:"index;not null" json:"-"`
 	Path        string `gorm:"size:255;not null"`
 	Name        string `gorm:"size:255;not null"`
 	Description string `gorm:"size:1000"`
@@ -48,7 +51,7 @@ type AddressBook struct {
 	CTag        string `gorm:"size:64;not null"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
-	DeletedAt   gorm.DeletedAt  `gorm:"index"`
+	DeletedAt   gorm.DeletedAt  `gorm:"index" json:"-"`             // soft-delete bookkeeping, always null in a response
 	User        user.User       `gorm:"foreignKey:UserID" json:"-"` // preloaded for shared books; the owner is exposed via AddressBookOwner instead
 	Contacts    []AddressObject `gorm:"foreignKey:AddressBookID"`
 }

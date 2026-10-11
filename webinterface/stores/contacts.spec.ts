@@ -12,7 +12,6 @@ function book(id: number, name = `Book ${id}`): AddressBook {
   return {
     ID: id,
     UUID: `uuid-${id}`,
-    UserID: 1,
     Path: `/ab/${id}`,
     Name: name,
     Description: '',

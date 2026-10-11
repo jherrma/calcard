@@ -22,7 +22,6 @@ function calendar(id: number, name = `Calendar ${id}`, color = '#111111'): Calen
     path: `/cal/${id}`,
     name,
     color,
-    owner_id: '1',
     created_at: NOW.toISOString(),
     updated_at: NOW.toISOString(),
   };
@@ -46,7 +45,6 @@ function book(id: number, name = `Book ${id}`, description = ''): AddressBook {
   return {
     ID: id,
     UUID: `ab-uuid-${id}`,
-    UserID: 1,
     Path: `/ab/${id}`,
     Name: name,
     Description: description,

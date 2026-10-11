@@ -23,7 +23,6 @@ function calendar(id: number, name = `Cal ${id}`, extra: Partial<Calendar> = {})
     path: `/cal/${id}`,
     name,
     color: '#123456',
-    owner_id: '1',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...extra,
@@ -34,7 +33,6 @@ function book(id: number, name = `Book ${id}`): AddressBook {
   return {
     ID: id,
     UUID: `ab-uuid-${id}`,
-    UserID: 1,
     Path: `/ab/${id}`,
     Name: name,
     Description: '',

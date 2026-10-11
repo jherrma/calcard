@@ -1,7 +1,6 @@
 export interface AddressBook {
   ID: number;
   UUID: string;
-  UserID: number;
   Path: string;
   Name: string;
   Description: string;

@@ -6,7 +6,6 @@ export interface Calendar {
   description?: string;
   color: string;
   timezone?: string;
-  owner_id: string;
   shared?: boolean;
   permission?: string;
   /**

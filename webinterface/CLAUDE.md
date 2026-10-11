@@ -383,6 +383,8 @@ The second half of theming, and the one that persists DIFFERENTLY from the theme
 
 **AddressBook vs Calendar field naming**: AddressBook types use GORM-style PascalCase (`ID`, `UUID`, `Name`, `CreatedAt`) because the backend returns raw GORM models. Calendar/Event types use snake_case (`id`, `name`, `created_at`) because they go through DTOs. This inconsistency comes from the backend — don't try to "fix" it on the frontend side.
 
+Neither type carries the **owner's numeric user id** or soft-delete state: `Calendar.UserID` and `AddressBook.UserID`/`DeletedAt` are `json:"-"` on the backend (P03 — a sharee must not learn the owner's primary key). Identify the owner of a shared collection by the `owner` block (`owner.id` is the owner's UUID). The collection's own numeric `id`/`ID` and an event's `calendar_id` are still sent and still used as handles.
+
 **`noUncheckedIndexedAccess`**: TypeScript strict mode means:
 - `array[0]` returns `T | undefined` — use `array[0]!` when you know it exists, or handle the undefined case.
 - `string[0]` returns `string | undefined` — use `.charAt(0)` instead which always returns `string`.
