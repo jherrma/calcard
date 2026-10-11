@@ -80,7 +80,7 @@ The global limit is keyed on the client IP as the server sees it, and forwarded
 headers are not trusted, so **everyone behind one NAT or reverse proxy shares a
 single allowance**. That is why the default is generous: it guards against a
 flood, not against password guessing — the much tighter auth limits do that. A
-throttled request gets `429` with a `Retry-After` header (in seconds).
+throttled request gets `429` with a `Retry-After` header: the seconds until its window resets (also in the JSON body as `retry_after`).
 
 ### Registration Section (`registration:`)
 
