@@ -47,6 +47,7 @@ The OAuth implementation follows the standard authorization code flow.
 ### Utilities
 
 - **Email Service** (`email_service.go`): Interface for sending auth-related emails (verification, password reset).
+- **Setup** (`setup.go`): First-run setup. Creates the first account as admin (active + verified, SMTP or not) while `UserRepository.Count` — which includes soft-deleted rows — is 0; refuses with `ErrSetupCompleted` (409) afterwards. The check-then-insert is serialised in-process only.
 - **Username Util** (`username_util.go`): Generates unique usernames from email addresses or OAuth profile data.
 
 ## Dependencies

@@ -110,9 +110,13 @@ func (r *gormUserRepo) DeleteVerification(ctx context.Context, token string) err
 	return r.db.WithContext(ctx).Where("token = ?", token).Delete(&user.EmailVerification{}).Error
 }
 
+// Count returns how many accounts have EVER existed, soft-deleted ones
+// included. It backs first-run setup and admin_configured: if deleted rows were
+// ignored, the last user deleting their account would silently re-open setup to
+// anyone (and the unique username/email indexes still cover deleted rows).
 func (r *gormUserRepo) Count(ctx context.Context) (int64, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&user.User{}).Count(&count).Error; err != nil {
+	if err := r.db.WithContext(ctx).Unscoped().Model(&user.User{}).Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil

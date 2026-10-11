@@ -142,6 +142,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 			ID:          res.User.UUID,
 			Email:       res.User.Email,
 			DisplayName: res.User.DisplayName,
+			IsAdmin:     res.User.IsAdmin,
 		},
 	})
 }

@@ -97,10 +97,12 @@
 
 <script setup lang="ts">
 import { useVuelidate } from '@vuelidate/core';
-import { required, email, minLength, sameAs } from '@vuelidate/validators';
+import { required, email, minLength, sameAs, helpers } from '@vuelidate/validators';
+import type { SystemSettings } from '~/types/auth';
 
 definePageMeta({
   layout: "auth",
+  middleware: "guest",
 });
 
 const authStore = useAuthStore();
@@ -115,7 +117,15 @@ const form = reactive({
 });
 
 const rules = {
-  username: { required, minLength: minLength(3) },
+  username: {
+    required,
+    minLength: minLength(3),
+    // Same shape as the server rule; the server (and handleSetup) lower-case it.
+    pattern: helpers.withMessage(
+      "Use letters, digits, '.', '_' or '-' (start with a letter or digit); it is stored in lower case",
+      helpers.regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}$/),
+    ),
+  },
   email: { required, email },
   password: { required, minLength: minLength(8) },
   confirmPassword: { 
@@ -129,6 +139,17 @@ const v$ = useVuelidate(rules, form);
 const isLoading = ref(false);
 const error = ref("");
 
+// Setup is one-shot: once an account exists the server refuses it (409), so
+// send anyone who lands here later to the login page instead of a dead form.
+onMounted(async () => {
+  try {
+    const settings = await useApi()<SystemSettings>("/api/v1/system/settings");
+    if (settings.admin_configured) await router.replace("/auth/login");
+  } catch {
+    // Settings unreachable: leave the form; submitting will surface the error.
+  }
+});
+
 const handleSetup = async () => {
   const isFormCorrect = await v$.value.$validate();
   if (!isFormCorrect) return;
@@ -138,15 +159,25 @@ const handleSetup = async () => {
 
   try {
     await authStore.setupAdmin({
-      username: form.username,
+      // The server lower-cases usernames; do it here so "Admin" isn't rejected.
+      username: form.username.trim().toLowerCase(),
       email: form.email,
       display_name: form.display_name,
       password: form.password,
     });
-    // Redirect to login after setup
-    router.push("/auth/login");
   } catch (e: any) {
     error.value = e.data?.message || "Setup failed. Please try again.";
+    isLoading.value = false;
+    return;
+  }
+
+  // The account exists now. A failed sign-in must not read as "setup failed"
+  // (retrying would only answer 409), so send the admin to the login page.
+  try {
+    await authStore.login({ email: form.email, password: form.password, remember: false });
+    await router.push("/");
+  } catch {
+    await router.replace("/auth/login");
   } finally {
     isLoading.value = false;
   }

@@ -182,6 +182,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	authGroup := v1.Group("/auth")
 	authGroup.Get("/methods", systemHandler.AuthMethods)
 	authGroup.Post("/register", authHandler.Register)
+	// First-run setup: creates the initial admin, then refuses (409) forever.
+	authGroup.Post("/setup", http.NewSetupHandler(authusecase.NewSetupUseCase(userRepo, registerUC)).Setup)
 	authGroup.Get("/verify", authHandler.Verify)
 
 	// Auth limiter thresholds. The per-IP allowance is kept ABOVE the per-email

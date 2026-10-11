@@ -8,6 +8,7 @@ type UserProfileResponse struct {
 	Email         string           `json:"email"`
 	DisplayName   string           `json:"display_name"`
 	IsActive      bool             `json:"is_active"`
+	IsAdmin       bool             `json:"is_admin"`
 	EmailVerified bool             `json:"email_verified"`
 	CreatedAt     time.Time        `json:"created_at"`
 	UpdatedAt     time.Time        `json:"updated_at"`
