@@ -41,7 +41,7 @@ docker compose up -d                                   # SQLite
 # docker compose -f docker-compose.postgres.yml up -d  # PostgreSQL
 ```
 
-Both files pull `herrj/calcard:latest`; pin a version (e.g. `herrj/calcard:1.0.0-rc1`)
+Both files pull `herrj/calcard:latest`; pin a version (e.g. `herrj/calcard:1.0.0`)
 for anything you rely on. Each one also has a commented `build:` block for
 building from source instead.
 
