@@ -65,6 +65,16 @@ security:
   hsts_enabled: true
   hsts_max_age: 31536000
 
+# Rate limiting. `requests` is per client IP per window across the API, DAV,
+# MCP and public feeds; everyone behind one NAT/reverse proxy shares it, hence
+# the generous default. The auth limits (login, forgot/reset password) are the
+# brute-force control and stay tight; per-IP must stay above per-email.
+rate_limit:
+  enabled: true
+  requests: 5000
+  window: 1m
+  auth_ip_requests: 20
+  auth_email_requests: 10
 
 # Model Context Protocol endpoint (/mcp), story 104. Enabled by default; using
 # it still requires an MCP access token minted per user under Settings → MCP
