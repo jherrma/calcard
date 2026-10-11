@@ -169,7 +169,24 @@ export const useAuthStore = defineStore("auth", {
           // present a dead token and log the user out (#75).
           cookie.value = response.refresh_token;
           this.scheduleTokenRefresh(response.expires_at);
-        } catch {
+        } catch (e) {
+          if (isRateLimitError(e)) {
+            // A 429 is not a verdict on the session: the limiter refused the
+            // request before the handler ran, so the presented refresh token
+            // was neither checked nor rotated and is still valid. Logging out
+            // here would wipe that cookie and throw away a good session just
+            // because the IP was busy. Keep it; a live session retries once
+            // the window reopens, a page load simply tries again next time.
+            if (this.isAuthenticated) {
+              const seconds = retryAfterFromError(e) ?? 30;
+              if (this.refreshTimer) clearTimeout(this.refreshTimer);
+              this.refreshTimer = setTimeout(
+                () => this.refreshToken(),
+                Math.max(seconds, 1) * 1000,
+              );
+            }
+            return;
+          }
           // Refresh failed (revoked/expired): drop auth and go to login instead
           // of looping on more refresh attempts.
           this.clearAuth();
@@ -249,7 +266,10 @@ export const useAuthStore = defineStore("auth", {
         this.user = await api<User>("/api/v1/users/me");
         this.isAuthenticated = true;
         this.isAdmin = this.user.is_admin || false;
-      } catch {
+      } catch (e) {
+        // Rate-limited is not logged out: keep the refresh cookie so the next
+        // page load restores the session instead of demanding a new login.
+        if (isRateLimitError(e)) return;
         this.clearAuth();
       }
     },

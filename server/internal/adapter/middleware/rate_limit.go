@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -29,8 +29,15 @@ func GlobalRateLimiter(cfg config.RateLimitConfig) fiber.Handler {
 			return c.IP()
 		},
 		LimitReached: func(c fiber.Ctx) error {
-			retryAfter := cfg.Window.Seconds()
-			c.Set("Retry-After", fmt.Sprintf("%.0f", retryAfter))
+			// Fiber has already set Retry-After to the seconds left in the
+			// current window. Keep it: overwriting it with the full window
+			// told a client throttled 5s before the reset to wait 60s, and
+			// made the web UI give up instead of retrying after a short wait.
+			retryAfter, err := strconv.Atoi(string(c.Response().Header.Peek(fiber.HeaderRetryAfter)))
+			if err != nil || retryAfter < 0 {
+				retryAfter = int(cfg.Window.Seconds())
+				c.Set(fiber.HeaderRetryAfter, strconv.Itoa(retryAfter))
+			}
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
 				"error":       "rate_limit_exceeded",
 				"message":     "Too many requests. Please try again later.",
