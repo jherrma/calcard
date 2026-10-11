@@ -14,7 +14,12 @@ type Response struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-// SuccessResponse sends a success response with data
+// SuccessResponse sends a success response with data, wrapped as
+// {"status":"ok","data":...}. Only the auth, user, system, app-password, about
+// and health handlers use it. Calendar, event, address book, contact, sharing,
+// credential, import, MCP-token, search and subscription handlers write raw
+// JSON instead. Keep each area's existing shape: the SPA's useApi unwraps the
+// envelope only when it is present, and API clients depend on both shapes.
 func SuccessResponse(c fiber.Ctx, data interface{}) error {
 	return c.Status(fiber.StatusOK).JSON(Response{
 		Status: "ok",

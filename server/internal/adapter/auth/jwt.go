@@ -12,6 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain"
+	domainuser "github.com/jherrma/caldav-server/internal/domain/user"
 )
 
 var (
@@ -28,6 +29,12 @@ type JWTManager struct {
 type CustomClaims struct {
 	UserUUID string `json:"sub"`
 	Email    string `json:"email"`
+	// IssuedAtNano repeats iat at nanosecond precision. RFC 7519's iat is
+	// whole seconds, which would leave a one-second window in which a token
+	// minted just BEFORE a logout/password change survives it, or one minted
+	// just AFTER (the replacement token change-password hands out) dies. See
+	// user.User.AcceptsAccessTokenIssuedAt.
+	IssuedAtNano int64 `json:"iat_ns,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -38,13 +45,15 @@ func NewJWTManager(cfg *config.JWTConfig) *JWTManager {
 
 // GenerateAccessToken generates a short-lived access token
 func (m *JWTManager) GenerateAccessToken(userID string, email string) (string, time.Time, error) {
-	exp := time.Now().Add(m.cfg.AccessExpiry)
+	now := time.Now()
+	exp := now.Add(m.cfg.AccessExpiry)
 	claims := CustomClaims{
-		UserUUID: userID,
-		Email:    email,
+		UserUUID:     userID,
+		Email:        email,
+		IssuedAtNano: now.UnixNano(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(exp),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
 
@@ -53,8 +62,10 @@ func (m *JWTManager) GenerateAccessToken(userID string, email string) (string, t
 	return signed, exp, err
 }
 
-// ValidateAccessToken validates an access token and returns user details
-func (m *JWTManager) ValidateAccessToken(tokenStr string) (string, string, error) {
+// ValidateAccessToken validates an access token's signature and expiry and
+// returns its claims. It cannot know whether the token has since been revoked:
+// callers must load the user and check AcceptsAccessTokenIssuedAt.
+func (m *JWTManager) ValidateAccessToken(tokenStr string) (*domainuser.AccessTokenClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrInvalidToken
@@ -64,17 +75,35 @@ func (m *JWTManager) ValidateAccessToken(tokenStr string) (string, string, error
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return "", "", ErrExpiredToken
+			return nil, ErrExpiredToken
 		}
-		return "", "", ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 
 	claims, ok := token.Claims.(*CustomClaims)
 	if !ok || !token.Valid {
-		return "", "", ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 
-	return claims.UserUUID, claims.Email, nil
+	return &domainuser.AccessTokenClaims{
+		UserUUID: claims.UserUUID,
+		Email:    claims.Email,
+		IssuedAt: issuedAt(claims),
+	}, nil
+}
+
+// issuedAt prefers the nanosecond iat_ns claim. Tokens minted before it
+// existed fall back to the whole-second iat, which rounds DOWN — so such a
+// token compares as older than any marker set after it was issued, never
+// newer. A token with neither claim is treated as infinitely old.
+func issuedAt(c *CustomClaims) time.Time {
+	if c.IssuedAtNano != 0 {
+		return time.Unix(0, c.IssuedAtNano)
+	}
+	if c.IssuedAt != nil {
+		return c.IssuedAt.Time
+	}
+	return time.Time{}
 }
 
 // GenerateRefreshToken generates an opaque long-lived refresh token

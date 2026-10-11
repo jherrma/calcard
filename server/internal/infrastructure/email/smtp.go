@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/smtp"
 
 	"github.com/jherrma/caldav-server/internal/config"
@@ -40,7 +41,10 @@ func (s *smtpEmailService) SendActivationEmail(ctx context.Context, to, link str
 
 func (s *smtpEmailService) SendEmail(ctx context.Context, to, subject, body string) error {
 	if s.cfg.Host == "" {
-		fmt.Printf("SMTP not configured, would send email to %s: %s - %s\n", to, subject, body)
+		// Never log the recipient or body: reset and activation mails carry a
+		// live token in their link, and container logs are far less protected
+		// than the mailbox the token was meant for.
+		slog.Warn("SMTP not configured, e-mail not sent", slog.String("subject", subject))
 		return nil
 	}
 

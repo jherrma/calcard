@@ -150,9 +150,10 @@ func (m *mockTokenProvider) HashToken(token string) string {
 	return args.String(0)
 }
 
-func (m *mockTokenProvider) ValidateAccessToken(tokenStr string) (string, string, error) {
+func (m *mockTokenProvider) ValidateAccessToken(tokenStr string) (*user.AccessTokenClaims, error) {
 	args := m.Called(tokenStr)
-	return args.String(0), args.String(1), args.Error(2)
+	claims, _ := args.Get(0).(*user.AccessTokenClaims)
+	return claims, args.Error(1)
 }
 
 // Tests

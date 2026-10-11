@@ -88,7 +88,7 @@ webinterface/
 │   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
 │                            #   `sharedWithMe` derived from the two list endpoints (story 043)
 ├── composables/
-│   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
+│   ├── useApi.ts            # $fetch wrapper: JWT auth, response unwrapping, HTTP 429 retry/notice
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
 │   ├── useTheme.ts          # Light/Dark/System state — SINGLETON, see Theming below
 │   ├── useAccentColor.ts    # Accent colour — SINGLETON, server-backed, see Theming below
@@ -110,6 +110,7 @@ webinterface/
 │   ├── agendaLayout.ts      # Lane assignment for overlapping blocks on the day timeline
 │   ├── contactAvatar.ts     # Contact initials + deterministic avatar colour
 │   ├── dashboardDates.ts    # Local-date primitives + month-range merging for the dashboard
+│   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
@@ -139,6 +140,7 @@ webinterface/
 4. `scheduleTokenRefresh()` sets a `setTimeout` to refresh the access token 1 minute before it expires (using `expires_at` Unix timestamp from the backend).
 5. The `useApi()` composable automatically attaches `Authorization: Bearer <token>` to every request.
 6. On 401 response, `useApi`'s `onResponseError` attempts a token refresh. On failure, auth state is cleared and user is redirected to login.
+7. A 429 (rate limit) is NOT a failed refresh: the session and the refresh cookie are kept (see Rate limiting below).
 
 ### Store Pattern
 
@@ -162,13 +164,40 @@ export const useXxxStore = defineStore('xxx', {
 - Error handling: wrap in try/catch, set `this.error`, use `useAppToast()` for user-facing notifications.
 - Optimistic updates: after a mutation (create/update/delete), update local state immediately rather than refetching.
 
+### Rate limiting (HTTP 429)
+
+`useApi()` returns a thin wrapper around the `$fetch.create()` instance that owns every 429
+(`utils/rateLimit.ts` holds the pure parts). The server's global limiter is per IP, so everyone
+behind one NAT/proxy shares it, and a dashboard load fires several calls at once.
+
+- **GET/HEAD are re-issued after waiting `Retry-After`**, at most `RATE_LIMIT_MAX_RETRIES` (2)
+  times and only when the wait is `<= RATE_LIMIT_MAX_WAIT_SECONDS` (15). Writes are **never**
+  repeated automatically. No usable `Retry-After` means no retry (null is not "now"). The header
+  is read first, then the global limiter's body field `retry_after`: a browser hides
+  `Retry-After` from a cross-origin SPA unless the server lists it in `CALDAV_CORS_EXPOSE_HEADERS`.
+- **Otherwise the error is rewritten in place**: `message`, `data.message` and `data.error` all
+  become "Too many requests, please try again in N seconds." So every existing
+  `e.message` / `e.data?.message` / `shareErrorMessage()` reader shows that instead of
+  `[GET] "…": 429 Too Many Requests` or the machine code `rate_limit_exceeded`. Status stays 429.
+- **One toast per burst.** The de-duplication latch is module-level (each store action builds
+  its own `useApi()`), held for `Retry-After` or at least 5s. Specs reset it with
+  `resetRateLimitNotice()`. The toast is raised through `nuxtApp.vueApp.runWithContext`, because
+  `useApi()` mostly runs in store actions, where PrimeVue's inject-based `useToast()` would throw.
+  The auth layout has no `<Toast>`; login/register show the rewritten `data.message` inline.
+- **A 429 is never a logout.** The limiter rejects before the handler runs, so a rate-limited
+  `/auth/refresh` neither checked nor rotated the refresh token. `stores/auth.ts` keeps the
+  session (a live one re-schedules the refresh after `Retry-After`), and `fetchUser()` does not
+  `clearAuth()` on a 429. Before this, a busy IP logged the user out and wiped the cookie.
+- 429 is deliberately NOT in ofetch's `retryStatusCodes` (that stays `[401]` for the token
+  refresh): ofetch would retry POSTs too and ignore `Retry-After`.
+
 ### API Response Handling
 
 The backend has two different response patterns:
 
-1. **Standard endpoints** (auth, calendars, events, system): Responses wrapped in `{ "status": "ok", "data": ... }`. The `useApi` composable's `onResponse` handler automatically unwraps `.data`, so store code receives the inner payload directly.
+1. **Envelope endpoints**: auth, `/system/*`, `/users/me` (+ password, preferences), `/app-passwords`, `/about/open-source`. Responses are wrapped in `{ "status": "ok", "data": ... }`. The `useApi` composable's `onResponse` handler automatically unwraps `.data`, so store code receives the inner payload directly. (`POST /auth/register` answers 200, not 201.)
 
-2. **AddressBook/Contact endpoints**: Return raw JSON (NOT wrapped). Specific shapes:
+2. **Raw JSON endpoints, NOT wrapped**: everything else. That includes **calendars and events** (e.g. `GET /api/v1/calendars` → `{ "calendars": [...] }`), sharing, public access, DAV credentials, import, MCP tokens, search, subscriptions, and the address book and contact endpoints. Address-book and contact shapes:
    - `GET /api/v1/addressbooks` → `{ "addressbooks": [...] }`
    - `GET /api/v1/addressbooks/:id/contacts` → `{ "Contacts": [...], "Total", "Limit", "Offset" }` (note capital `C` in `Contacts`)
    - `GET /api/v1/contacts/search?q=...` → `{ "contacts": [...], "query", "count" }` (lowercase `c`).
@@ -353,6 +382,8 @@ The second half of theming, and the one that persists DIFFERENTLY from the theme
 ### Type System Gotchas
 
 **AddressBook vs Calendar field naming**: AddressBook types use GORM-style PascalCase (`ID`, `UUID`, `Name`, `CreatedAt`) because the backend returns raw GORM models. Calendar/Event types use snake_case (`id`, `name`, `created_at`) because they go through DTOs. This inconsistency comes from the backend — don't try to "fix" it on the frontend side.
+
+Neither type carries the **owner's numeric user id** or soft-delete state: `Calendar.UserID` and `AddressBook.UserID`/`DeletedAt` are `json:"-"` on the backend (P03 — a sharee must not learn the owner's primary key). Identify the owner of a shared collection by the `owner` block (`owner.id` is the owner's UUID). The collection's own numeric `id`/`ID` and an event's `calendar_id` are still sent and still used as handles.
 
 **`noUncheckedIndexedAccess`**: TypeScript strict mode means:
 - `array[0]` returns `T | undefined` — use `array[0]!` when you know it exists, or handle the undefined case.

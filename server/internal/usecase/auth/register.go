@@ -18,6 +18,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// ErrUserAlreadyExists reports that the address already has an account. With
+// SMTP configured the HTTP layer answers it exactly like a successful
+// registration (see AuthHandler.Register), so the address owner learns about
+// the attempt by e-mail and the caller learns nothing (P01). Without SMTP the
+// account would be usable immediately, so the outcome cannot be hidden and the
+// caller gets a 409.
 var ErrUserAlreadyExists = errors.New("user already exists")
 
 type RegisterUseCase struct {
@@ -62,6 +68,10 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		return nil, "", err
 	}
 	if existing != nil {
+		// Spend the same bcrypt work a real registration does, so the response
+		// time does not tell a taken address from a free one (P01).
+		_, _ = bcrypt.GenerateFromPassword([]byte(password), user.BcryptCost)
+		uc.notifyExistingAccount(ctx, existing)
 		return nil, "", ErrUserAlreadyExists
 	}
 	// 2b. Generate unique username
@@ -145,6 +155,69 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 	}
 
 	return u, token, nil
+}
+
+// notifyExistingAccount tells the owner of an already-registered address that
+// someone tried to register it. It only runs with SMTP configured: that is the
+// mode in which the HTTP response hides the duplicate, so the e-mail is the
+// only place the outcome is reported — to the one person entitled to it.
+//
+// An account that never confirmed its address gets a fresh activation link
+// instead (the usual reason to register twice is a lost activation mail). Its
+// password is NOT changed: whoever submitted this form has not proven they own
+// the mailbox, and replacing the password of a pending account would let them
+// take it over the moment the real owner clicks the link.
+//
+// Failures are logged, never returned: an error here would surface as a
+// different response and re-open the oracle this path exists to close.
+func (uc *RegisterUseCase) notifyExistingAccount(ctx context.Context, u *user.User) {
+	if uc.cfg.SMTP.Host == "" {
+		return
+	}
+
+	if !u.EmailVerified {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			log.Printf("register: failed to generate activation token for user %d: %v", u.ID, err)
+			return
+		}
+		token := hex.EncodeToString(b)
+		v := &user.EmailVerification{
+			UserID:    u.ID,
+			Token:     hashVerificationToken(token),
+			ExpiresAt: time.Now().Add(24 * time.Hour),
+		}
+		if err := uc.repo.CreateVerification(ctx, v); err != nil {
+			log.Printf("register: failed to store activation token for user %d: %v", u.ID, err)
+			return
+		}
+		link := fmt.Sprintf("%s/api/v1/auth/verify?token=%s", uc.cfg.BaseURL, token)
+		if err := uc.emailService.SendActivationEmail(ctx, u.Email, link); err != nil {
+			log.Printf("failed to re-send activation email to user %d: %v", u.ID, err)
+		}
+		return
+	}
+
+	subject := "Someone tried to register with your e-mail address"
+	body := fmt.Sprintf(`Hi %s,
+
+Someone just tried to create a new CalDAV Server account with this e-mail
+address. You already have an account, so nothing was changed.
+
+If that was you, sign in here:
+
+%s/auth/login
+
+Forgot your password? Reset it here:
+
+%s/auth/forgot-password
+
+If it wasn't you, you can safely ignore this email.
+
+- CalDAV Server`, u.DisplayName, uc.cfg.BaseURL, uc.cfg.BaseURL)
+	if err := uc.emailService.SendEmail(ctx, u.Email, subject, body); err != nil {
+		log.Printf("failed to send duplicate-registration notice to user %d: %v", u.ID, err)
+	}
 }
 
 // createDefaultCalendar creates a default "Personal" calendar for a new user

@@ -14,7 +14,7 @@ The domain layer defines:
 
 ### [user/](user/)
 
-- `user.go` — Core user entity (profile data, security status, password hashing).
+- `user.go` — Core user entity (profile data, security status, password hashing). `TokensValidAfter` (`json:"-"`, nil = never revoked) invalidates every access token issued before it; `AcceptsAccessTokenIssuedAt` is the single rule (a token issued at exactly the marker is accepted, so the replacement token change-password mints right after setting it survives).
 - `refresh_token.go` — Opaque tokens for session persistence, linked to users and client context (User Agent, IP).
 - `email_verification.go` — Email verification token model.
 - `app_password.go` — Application-specific passwords for DAV client access.
@@ -26,7 +26,7 @@ The domain layer defines:
 
 ### [calendar/](calendar/)
 
-- `calendar.go` — Calendar entity (name, color, description, public sharing token). Carries `Subscribed` (story 100) and `EffectivePermission`, which caps a subscribed calendar at read-only. That helper is the ONE place the "a subscription is read-only" rule is expressed; REST, CalDAV and MCP all funnel their permission resolution through it, so a write path that already refuses `PermissionRead` needs no new code and cannot be forgotten. It caps object access only — ownership of the collection (rename, recolour, share, delete) is unaffected, and those sites compare `cal.UserID` directly.
+- `calendar.go` — Calendar entity (name, color, description, public sharing token). Carries `Subscribed` (story 100) and `EffectivePermission`, which caps a subscribed calendar at read-only. That helper is the ONE place the "a subscription is read-only" rule is expressed; REST, CalDAV and MCP all funnel their permission resolution through it, so a write path that already refuses `PermissionRead` needs no new code and cannot be forgotten. It caps object access only — ownership of the collection (rename, recolour, share, delete) is unaffected, and those sites compare `cal.UserID` directly. `UserID` (the owner's primary key) is `json:"-"` (P03): responses expose the owner only through the list's `owner` block (UUID + display name), never as a numeric id.
 - `calendar_object.go` — CalDAV object (iCalendar data, ETag).
 - `event.go` — Event entity (title, dates, recurrence, attendees).
 - `subscription.go` — `CalendarSubscription` (story 100): the remote iCalendar feed behind a subscribed calendar, plus the status derivation, the allowed refresh-interval set, and the success/failure state machine (`RecordSuccess` / `RecordFailure`, exponential backoff anchored to the subscription's own interval, capped at 24h, auto-disable after N failures). A sidecar to `Calendar` rather than columns on it: every field here is meaningless for an ordinary calendar.
@@ -36,7 +36,7 @@ The domain layer defines:
 
 ### [addressbook/](addressbook/)
 
-- `addressbook.go` — AddressBook entity.
+- `addressbook.go` — AddressBook entity. Serialised raw (PascalCase) by the REST handlers, so `UserID`, `DeletedAt` and the preloaded owner row `User` are all `json:"-"` (P03 / F01) — a sharee must learn neither the owner's numeric id nor their account.
 - `address_object.go` — CardDAV address object (vCard data, ETag).
 - `photo.go` — Contact photo model.
 - `sync_changelog.go` — WebDAV-Sync change tracking for contacts.

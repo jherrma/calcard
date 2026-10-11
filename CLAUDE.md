@@ -126,8 +126,10 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
 ### API Layer
 
 - `useApi()` composable wraps `$fetch.create()` with auth headers and response unwrapping
-- Backend wraps most API responses in `{ "status": "ok", "data": ... }` — the `onResponse` handler in `useApi` unwraps `.data` automatically
-- **Exception**: AddressBook/Contact endpoints return raw JSON (not wrapped in `SuccessResponse`), so responses come through as-is
+- Two response shapes. Only `/auth/*` (setup, register, login, refresh, logout, verify, forgot/reset password, OAuth link), `/system/*`, `/users/me` (+ password, preferences), `/app-passwords`, `/about/open-source` and `GET /health` wrap their payload in `{ "status": "ok", "data": ... }` (`SuccessResponse`); the `onResponse` handler in `useApi` unwraps `.data` automatically
+- **Everything else returns raw JSON**, which comes through as-is: calendars (incl. shares, public access), events, address books (incl. shares), contacts, `/contacts/search`, `/search`, CalDAV/CardDAV credentials, import, `/mcp-tokens`, `/calendar-subscriptions`, `GET /auth/oauth/providers` and `GET /ready`. Check the handler before assuming a shape
+- Errors are usually `{ "status": "error", "message": ... }` (`ErrorResponse`), but some raw-JSON handlers answer `{ "error": ... }`
+- `POST /api/v1/auth/register` answers **200**, not 201, although it creates an account; kept as is so existing clients don't break
 - Backend uses `expires_at` (Unix timestamp) for JWT expiry, NOT `expires_in`
 
 ### API Response Shapes (Contacts/AddressBooks)

@@ -1,7 +1,8 @@
 package middleware
 
 import (
-	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
@@ -17,14 +18,26 @@ func GlobalRateLimiter(cfg config.RateLimitConfig) fiber.Handler {
 	}
 
 	return limiter.New(limiter.Config{
+		// The web UI is served from the same listener. One page load fetches
+		// dozens of scripts, styles and images, so counting them would burn
+		// the allowance before the user has done anything (the first
+		// dashboard load after setup tripped it).
+		Next:       isStaticAssetRequest,
 		Max:        cfg.Requests,
 		Expiration: cfg.Window,
 		KeyGenerator: func(c fiber.Ctx) string {
 			return c.IP()
 		},
 		LimitReached: func(c fiber.Ctx) error {
-			retryAfter := cfg.Window.Seconds()
-			c.Set("Retry-After", fmt.Sprintf("%.0f", retryAfter))
+			// Fiber has already set Retry-After to the seconds left in the
+			// current window. Keep it: overwriting it with the full window
+			// told a client throttled 5s before the reset to wait 60s, and
+			// made the web UI give up instead of retrying after a short wait.
+			retryAfter, err := strconv.Atoi(string(c.Response().Header.Peek(fiber.HeaderRetryAfter)))
+			if err != nil || retryAfter < 0 {
+				retryAfter = int(cfg.Window.Seconds())
+				c.Set(fiber.HeaderRetryAfter, strconv.Itoa(retryAfter))
+			}
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
 				"error":       "rate_limit_exceeded",
 				"message":     "Too many requests. Please try again later.",
@@ -32,4 +45,21 @@ func GlobalRateLimiter(cfg config.RateLimitConfig) fiber.Handler {
 			})
 		},
 	})
+}
+
+// isStaticAssetRequest reports whether the request is a GET/HEAD for the
+// bundled web UI rather than an API, DAV, MCP or public-feed endpoint. It is
+// deliberately an allow-list of what stays limited, so a new endpoint prefix
+// is limited by default only if it is added here.
+func isStaticAssetRequest(c fiber.Ctx) bool {
+	if m := c.Method(); m != fiber.MethodGet && m != fiber.MethodHead {
+		return false
+	}
+	p := c.Path()
+	for _, prefix := range []string{"/api/", "/dav/", "/.well-known/", "/public/", "/mcp"} {
+		if strings.HasPrefix(p, prefix) {
+			return false
+		}
+	}
+	return p != "/health"
 }

@@ -122,24 +122,29 @@ func (h *Handler) Authenticate() fiber.Handler {
 			return c.Next()
 		}
 
-		userUUID, email, err := h.jwt.ValidateAccessToken(credential)
+		claims, err := h.jwt.ValidateAccessToken(credential)
 		if err != nil {
 			if errors.Is(err, authadapter.ErrExpiredToken) {
 				return h.unauthorized(c, "token expired", "jwt_expired")
 			}
 			return h.unauthorized(c, "invalid or expired token", "jwt_invalid")
 		}
-		u, err := h.userRepo.GetByUUID(c.Context(), userUUID)
+		u, err := h.userRepo.GetByUUID(c.Context(), claims.UserUUID)
 		if err != nil || u == nil {
 			return h.unauthorized(c, "user not found", "jwt_user_missing")
 		}
 		if !u.IsActive {
 			return h.unauthorized(c, "account is not active", "jwt_user_inactive")
 		}
+		// Same revocation rule as the REST middleware: a JWT issued before
+		// the user's last logout/password change is dead here too.
+		if !u.AcceptsAccessTokenIssuedAt(claims.IssuedAt) {
+			return h.unauthorized(c, "token revoked", "jwt_revoked")
+		}
 		c.Locals("user", u)
 		c.Locals("user_id", u.ID)
 		c.Locals("user_uuid", u.UUID)
-		c.Locals("user_email", email)
+		c.Locals("user_email", claims.Email)
 		return c.Next()
 	}
 }

@@ -7,16 +7,16 @@ This directory contains the business logic for user authentication and authoriza
 ### Standard Authentication
 
 - **Login** (`login.go`): Authenticates users via email and password. Generates access/refresh JWT tokens via `TokenProvider`.
-- **Register** (`register.go`): Handles new user creation, password hashing, and triggering verification emails. When SMTP is not configured, users are auto-activated.
+- **Register** (`register.go`): Handles new user creation, password hashing, and triggering verification emails. When SMTP is not configured, users are auto-activated. An address that is already taken returns `ErrUserAlreadyExists` only after spending the same bcrypt work as a real registration (timing). With SMTP configured it first mails the owner — a "someone tried to register" notice, or a fresh activation link if the account was never confirmed (the password is never touched) — and `AuthHandler.Register` answers it with the same body as a new registration (P01, no account enumeration). Without SMTP the handler answers 409: the new account would be live at once, so the outcome cannot be hidden.
 - **Verify** (`verify.go`): Verifies email addresses via token.
 - **Refresh** (`refresh.go`): Exchanges a valid refresh token for a new access token AND rotates the refresh token (OWASP refresh-token rotation, #75). Every login opens a token "family" (`RefreshToken.FamilyID`); each refresh revokes the presented token (setting `ReplacedByHash` to its successor) and mints a fresh one via `RefreshTokenRepository.Rotate` (atomic). Presenting an already-revoked token is reuse detection: within a short grace window (`rotationGrace`, 15s) it's treated as a benign multi-tab race and simply rejected; outside the window (or a replayed stolen token) it revokes the entire family via `RevokeFamily`. Legacy pre-migration tokens carry an empty `FamilyID` and are only ever rejected as a single token — `RevokeFamily` refuses an empty family id so unrelated users are never logged out. Detected reuse is recorded as a `refresh_token_reuse` security event via `SecurityLogger` (Warn level), including cases where the `RevokeFamily` containment call itself fails.
-- **Logout** (`logout.go`): Revokes refresh tokens to end a session.
+- **Logout** (`logout.go`): Revokes the presented refresh token and invalidates **all** of the account's access tokens (`InvalidateAccessTokens`, P02). The account is identified by a live refresh token in the body or, failing that, a valid bearer token — a rotated/revoked refresh token identifies nobody. Account-wide on purpose: a per-token JWT denylist would need new state, and the user's other sessions lose nothing but one transparent `/auth/refresh` (their refresh tokens are untouched).
 
 ### Password Management
 
-- **Change Password** (`change_password.go`): Authenticated password change (requires current password).
+- **Change Password** (`change_password.go`): Authenticated password change (requires current password). Revokes all refresh tokens and all access tokens, THEN mints the replacement access token it returns — that order is what keeps the calling session alive.
 - **Forgot Password** (`forgot_password.go`): Initiates password reset by sending a reset email.
-- **Reset Password** (`reset_password.go`): Completes the reset flow using a token from the reset email.
+- **Reset Password** (`reset_password.go`): Completes the reset flow using a token from the reset email. Revokes all refresh and access tokens.
 
 ### OAuth2/OIDC Authentication
 
