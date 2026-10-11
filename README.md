@@ -116,6 +116,14 @@ repo root.
 Debugging DAV clients: set `CALDAV_LOG_PAYLOADS=true` to log every request's
 headers and `/dav` bodies (credentials redacted) — see `CONFIGURATION.md`.
 
+### Testing a deployment end to end
+
+[`e2e/`](e2e/README.md) is a Python (pytest + httpx) suite that tests a running
+server over HTTP only (REST, CalDAV/CardDAV, MCP): in `e2e/` install
+`requirements.txt` into a venv, `cp .env.example .env`, set `CALCARD_URL`, then
+`./run`. It registers throwaway users (self-registration must be enabled, SMTP
+off) and removes what it created.
+
 ### Running from Source
 
 1. Clone the repository

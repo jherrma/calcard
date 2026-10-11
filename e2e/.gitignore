@@ -1,0 +1,5 @@
+# Local configuration (may point at real servers / carry passwords).
+.env
+# Python
+.venv/
+__pycache__/
