@@ -11,8 +11,12 @@ import (
 // hashes must never serialise, whatever struct happens to embed them.
 func TestCredentialHashesAreNeverSerialised(t *testing.T) {
 	cases := map[string]any{
-		"User":        User{Email: "a@example.com", PasswordHash: "$2a$12$secrethashvalue"},
-		"AppPassword": AppPassword{Name: "dav", PasswordHash: "$2a$12$secrethashvalue"},
+		"User":            User{Email: "a@example.com", PasswordHash: "$2a$12$secrethashvalue"},
+		"AppPassword":     AppPassword{Name: "dav", PasswordHash: "$2a$12$secrethashvalue"},
+		"OAuthConnection": OAuthConnection{Provider: "google", AccessToken: "secrethashvalue", RefreshToken: "secrethashvalue"},
+		"RefreshToken":    RefreshToken{TokenHash: "secrethashvalue", ReplacedByHash: "secrethashvalue"},
+		"PasswordReset":   PasswordReset{TokenHash: "secrethashvalue"},
+		"EmailVerif":      EmailVerification{Token: "secrethashvalue"},
 	}
 	for name, v := range cases {
 		b, err := json.Marshal(v)

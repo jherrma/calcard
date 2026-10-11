@@ -41,8 +41,8 @@ type OAuthConnection struct {
 	Provider      string     `gorm:"size:50;not null;uniqueIndex:idx_oauth_user_provider;uniqueIndex:idx_oauth_provider_subject"` // google, microsoft, custom
 	ProviderID    string     `gorm:"size:255;not null;uniqueIndex:idx_oauth_provider_subject"`                                    // sub claim from OIDC
 	ProviderEmail string     `gorm:"size:255"`
-	AccessToken   string     `gorm:"size:2000"` // deprecated: no longer written; kept to avoid a destructive migration
-	RefreshToken  string     `gorm:"size:2000"` // deprecated: no longer written; kept to avoid a destructive migration
+	AccessToken   string     `gorm:"size:2000" json:"-"` // deprecated: no longer written; kept to avoid a destructive migration
+	RefreshToken  string     `gorm:"size:2000" json:"-"` // deprecated: no longer written; kept to avoid a destructive migration
 	TokenExpiry   *time.Time // deprecated: no longer written; kept to avoid a destructive migration
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -58,7 +58,7 @@ func (OAuthConnection) TableName() string {
 type PasswordReset struct {
 	ID        uint      `gorm:"primaryKey"`
 	UserID    uint      `gorm:"index;not null"`
-	TokenHash string    `gorm:"uniqueIndex;size:64;not null"`
+	TokenHash string    `gorm:"uniqueIndex;size:64;not null" json:"-"`
 	ExpiresAt time.Time `gorm:"index;not null"`
 	CreatedAt time.Time
 	UsedAt    *time.Time
