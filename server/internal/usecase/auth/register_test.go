@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
@@ -10,6 +12,8 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type mockUserRepo struct {
@@ -224,4 +228,111 @@ func TestRegisterUseCase_Execute_CaseInsensitive(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expectedEmail, u.Email)
 	repo.AssertExpectations(t)
+}
+
+// P01: registering an address that already has an account must not be
+// observable from the response. With SMTP the use case tells the owner by
+// mail (and the handler answers as for a fresh registration); nothing is
+// created and the stored account is left untouched.
+func TestRegisterUseCase_Execute_ExistingVerified_WithSMTP_NotifiesOwner(t *testing.T) {
+	repo := new(mockUserRepo)
+	emailSvc := new(mockEmailService)
+	cfg := &config.Config{
+		SMTP:    config.SMTPConfig{Host: "smtp.example.com"},
+		BaseURL: "https://cal.example.com",
+	}
+	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), emailSvc, cfg)
+
+	ctx := context.Background()
+	existing := &user.User{ID: 7, Email: "taken@example.com", DisplayName: "Owner", IsActive: true, EmailVerified: true, PasswordHash: "orig"}
+	repo.On("GetByEmail", ctx, "taken@example.com").Return(existing, nil)
+	emailSvc.On("SendEmail", ctx, "taken@example.com", mock.Anything, mock.MatchedBy(func(body string) bool {
+		return strings.Contains(body, "https://cal.example.com/auth/forgot-password") &&
+			strings.Contains(body, "https://cal.example.com/auth/login")
+	})).Return(nil)
+
+	u, token, err := uc.Execute(ctx, "Taken@Example.com", "SecurePass123!", "Intruder")
+
+	assert.ErrorIs(t, err, ErrUserAlreadyExists)
+	assert.Nil(t, u)
+	assert.Empty(t, token)
+	assert.Equal(t, "orig", existing.PasswordHash, "the stored password must never change")
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	emailSvc.AssertExpectations(t)
+}
+
+// A pending (never confirmed) account gets a fresh activation link — the
+// usual reason to register twice is a lost activation mail — but its password
+// is NOT replaced: the caller has not proven they own the mailbox.
+func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_ResendsActivation(t *testing.T) {
+	repo := new(mockUserRepo)
+	emailSvc := new(mockEmailService)
+	cfg := &config.Config{
+		SMTP:    config.SMTPConfig{Host: "smtp.example.com"},
+		BaseURL: "https://cal.example.com",
+	}
+	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), emailSvc, cfg)
+
+	ctx := context.Background()
+	existing := &user.User{ID: 9, Email: "pending@example.com", PasswordHash: "orig"}
+	repo.On("GetByEmail", ctx, "pending@example.com").Return(existing, nil)
+	repo.On("CreateVerification", ctx, mock.MatchedBy(func(v *user.EmailVerification) bool {
+		return v.UserID == 9 && len(v.Token) == 64
+	})).Return(nil)
+	emailSvc.On("SendActivationEmail", ctx, "pending@example.com", mock.MatchedBy(func(link string) bool {
+		return strings.HasPrefix(link, "https://cal.example.com/api/v1/auth/verify?token=")
+	})).Return(nil)
+
+	_, _, err := uc.Execute(ctx, "pending@example.com", "OtherPass123!", "Someone")
+
+	assert.ErrorIs(t, err, ErrUserAlreadyExists)
+	assert.Equal(t, "orig", existing.PasswordHash)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	repo.AssertExpectations(t)
+	emailSvc.AssertExpectations(t)
+}
+
+// Without SMTP the duplicate is reported (the handler answers 409) and no
+// mail is attempted.
+func TestRegisterUseCase_Execute_Existing_NoSMTP(t *testing.T) {
+	repo := new(mockUserRepo)
+	emailSvc := new(mockEmailService)
+	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), emailSvc, &config.Config{})
+
+	ctx := context.Background()
+	repo.On("GetByEmail", ctx, "taken@example.com").Return(&user.User{ID: 1, Email: "taken@example.com", EmailVerified: true}, nil)
+
+	_, _, err := uc.Execute(ctx, "taken@example.com", "SecurePass123!", "x")
+
+	assert.ErrorIs(t, err, ErrUserAlreadyExists)
+	emailSvc.AssertNotCalled(t, "SendEmail", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	emailSvc.AssertNotCalled(t, "SendActivationEmail", mock.Anything, mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+// The taken-address path must cost a bcrypt hash at the production work
+// factor, like a real registration does; otherwise the response time alone
+// tells a taken address (fast) from a free one (slow). Measured against one
+// reference hash and asserted at half of it, which leaves a wide margin either
+// way: without the dummy hash this path takes microseconds.
+func TestRegisterUseCase_Execute_Existing_SpendsBcryptTime(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), new(mockEmailService), &config.Config{})
+	ctx := context.Background()
+	repo.On("GetByEmail", ctx, "taken@example.com").Return(&user.User{ID: 1, Email: "taken@example.com", EmailVerified: true}, nil)
+
+	start := time.Now()
+	_, err := bcrypt.GenerateFromPassword([]byte("SecurePass123!"), user.BcryptCost)
+	require.NoError(t, err)
+	reference := time.Since(start)
+
+	start = time.Now()
+	_, _, err = uc.Execute(ctx, "taken@example.com", "SecurePass123!", "x")
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, ErrUserAlreadyExists)
+	assert.GreaterOrEqualf(t, elapsed, reference/2,
+		"taken-address path took %v, a bcrypt hash takes %v: it must hash too (P01 timing)", elapsed, reference)
 }

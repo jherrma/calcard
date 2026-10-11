@@ -90,6 +90,23 @@ throttled request gets `429` with a `Retry-After` header: the seconds until its 
 | `disabled`    | `CALDAV_REGISTRATION_DISABLED` | `false` | Turns off self-service registration (local and OAuth sign-up). First-run setup still works. |
 | `setup_token` | `CALDAV_SETUP_TOKEN`          | empty   | Guards **first-run setup**. When set, `POST /api/v1/auth/setup` (the "Initial Setup" page) must present this token, and until the first account exists self-service registration is refused. This stops whoever reaches a fresh, internet-exposed server first from claiming the admin account, or from registering as a plain user and so closing setup for good. Must be at least 16 characters (the server refuses to start otherwise); surrounding whitespace is trimmed. **Empty keeps the previous behaviour**: no token is asked for and registration is open. Once the first account exists the token is no longer needed. |
 
+**Registration and account enumeration depend on SMTP.** With SMTP configured
+(`smtp.host` / `CALDAV_SMTP_HOST` set), `POST /api/v1/auth/register` answers an
+address that already has an account exactly like a new one — same `200`, same
+body (`email`, `display_name`, `is_active: false`, `email_verified: false`; no
+`id`, `username` or `created_at`) — and the address owner gets a "someone tried
+to register with your address" e-mail instead (or, for an account that was never
+confirmed, a fresh activation link; its password is never changed). Login then
+answers a wrong password and an unconfirmed account with the same 401 message, so
+the follow-up login cannot tell the two apart either. Because each registration
+now sends a mail, `/register` carries the same per-IP and per-email limiters as
+forgot-password (`rate_limit.enabled` must be on). **Without SMTP** every new
+account is active immediately, so a taken address cannot be disguised as success
+(the caller would simply log in and find out): it answers `409 Email already
+registered`, i.e. registration reveals whether an address has an account. If that
+matters on an internet-facing server, configure SMTP or set
+`CALDAV_REGISTRATION_DISABLED=true`.
+
 ### MCP Section (`mcp:`)
 
 Controls the Model Context Protocol endpoint at `/mcp` (story 104), which lets an
