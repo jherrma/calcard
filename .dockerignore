@@ -10,6 +10,12 @@ webinterface/dist
 server/data
 server/bin
 server/tmp
+# Local env files are gitignored but exist on dev machines. webinterface/.env sets
+# NUXT_PUBLIC_API_BASE_URL=http://localhost:8080, and Nuxt would bake it into the
+# SPA, pointing every browser at its OWN localhost instead of the server.
+**/.env
+**/.env.*
+!**/.env.example
 **/*.log
 *.md
 stories/

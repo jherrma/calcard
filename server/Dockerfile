@@ -17,8 +17,12 @@ COPY webinterface/ .
 # generator hiccup must not break the image — it only means the manifest stays at
 # its committed state.
 RUN pnpm run gen:licenses || echo "WARNING: frontend license generation failed; using the committed public/open-source.json"
-# NUXT_PUBLIC_API_BASE_URL deliberately NOT set -> apiBaseUrl '' -> same-origin.
-RUN pnpm generate
+# apiBaseUrl must be '' (same-origin). Set it explicitly empty so a stray .env
+# can never win (an env var that is already defined is not overridden by dotenv),
+# then fail the build if a localhost API URL still ended up in the bundle.
+ENV NUXT_PUBLIC_API_BASE_URL=""
+RUN pnpm generate \
+    && ! grep -rqE 'apiBaseUrl:"https?://' .output/public
 
 # --- Go build stage ---
 FROM golang:1.26-alpine AS builder
