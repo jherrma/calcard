@@ -46,7 +46,6 @@ function calendar(overrides: Partial<Calendar> = {}): Calendar {
     path: 'work',
     name: 'Work',
     color: '#ff0000',
-    owner_id: '1',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -57,7 +56,6 @@ function book(overrides: Partial<AddressBook> = {}): AddressBook {
   return {
     ID: 1,
     UUID: 'ab-uuid-1',
-    UserID: 1,
     Path: 'default',
     Name: 'Colleagues',
     Description: '',

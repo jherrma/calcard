@@ -375,7 +375,7 @@ describe('rendered states', () => {
   });
 
   it('reports a partial failure as a banner ABOVE the results it did find', async () => {
-    const store = seed('family', { calendars: [{ id: '1', uuid: 'u1', path: '/c/1', name: 'Family', color: '#000', owner_id: '1', created_at: '', updated_at: '' } as Calendar] });
+    const store = seed('family', { calendars: [{ id: '1', uuid: 'u1', path: '/c/1', name: 'Family', color: '#000', created_at: '', updated_at: '' } as Calendar] });
     store.error = 'Contacts could not be searched — those results are missing.';
     const { wrapper, vm } = mountFull();
     await open(vm, 'family');
@@ -490,7 +490,7 @@ describe('keyboard', () => {
   it('address book rows are reachable by keyboard too', async () => {
     seed('a', {
       addressBooks: [
-        { ID: 2, UUID: 'ab-2', UserID: 1, Path: '/ab/2', Name: 'Work', Description: '', CreatedAt: '', UpdatedAt: '' } as AddressBook,
+        { ID: 2, UUID: 'ab-2', Path: '/ab/2', Name: 'Work', Description: '', CreatedAt: '', UpdatedAt: '' } as AddressBook,
       ],
     });
     const { wrapper, vm } = mountFull();

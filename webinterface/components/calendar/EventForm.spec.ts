@@ -50,7 +50,7 @@ let pinia: TestingPinia;
 function seedStores(prefs: Record<string, string> = {}) {
   const store = useCalendarStore();
   store.calendars = [
-    { id: 1, uuid: 'u1', path: '/c/1', name: 'Work', color: '#3b82f6', owner_id: 'o1', shared: false, created_at: '', updated_at: '' } as never,
+    { id: 1, uuid: 'u1', path: '/c/1', name: 'Work', color: '#3b82f6', shared: false, created_at: '', updated_at: '' } as never,
   ];
   const preferences = usePreferencesStore();
   preferences.preferences = { ...preferences.preferences, ...prefs };

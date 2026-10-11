@@ -21,9 +21,12 @@ const (
 
 // Calendar represents a calendar collection
 type Calendar struct {
-	ID                  uint       `gorm:"primaryKey" json:"id"`
-	UUID                string     `gorm:"uniqueIndex;size:36;not null" json:"uuid"`
-	UserID              uint       `gorm:"index;not null" json:"user_id"`
+	ID   uint   `gorm:"primaryKey" json:"id"`
+	UUID string `gorm:"uniqueIndex;size:36;not null" json:"uuid"`
+	// UserID is the owner's internal primary key. Never serialised (P03): API
+	// clients address users by UUID, and a sharee must not learn the owner's
+	// numeric id. The list endpoint exposes the owner via its `owner` block.
+	UserID              uint       `gorm:"index;not null" json:"-"`
 	Owner               user.User  `gorm:"foreignKey:UserID" json:"-"`
 	Path                string     `gorm:"size:255;not null" json:"path"` // URL path component
 	Name                string     `gorm:"size:255;not null" json:"name"`
