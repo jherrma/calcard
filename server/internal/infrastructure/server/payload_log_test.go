@@ -42,3 +42,23 @@ func TestPayloadLogger(t *testing.T) {
 	assert.NotContains(t, buf.String(), "hunter2", "non-DAV bodies must not be logged")
 	assert.Contains(t, buf.String(), "/api/v1/auth/login")
 }
+
+// SCOPE: errorLogger. Successful requests (static assets, polling) must not be
+// logged; failures must be.
+func TestErrorLogger_OnlyFailures(t *testing.T) {
+	var buf bytes.Buffer
+	app := fiber.New()
+	app.Use(errorLogger(slog.New(slog.NewTextHandler(&buf, nil))))
+	app.Get("/ok", func(c fiber.Ctx) error { return c.SendStatus(200) })
+	app.Get("/bad", func(c fiber.Ctx) error { return c.SendStatus(403) })
+
+	for _, p := range []string{"/ok", "/bad"} {
+		req, _ := http.NewRequest("GET", p, nil)
+		_, err := app.Test(req)
+		require.NoError(t, err)
+	}
+	out := buf.String()
+	assert.NotContains(t, out, "path=/ok")
+	assert.Contains(t, out, "path=/bad")
+	assert.Contains(t, out, "status=403")
+}
