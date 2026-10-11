@@ -49,7 +49,7 @@ type AddressBook struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	DeletedAt   gorm.DeletedAt  `gorm:"index"`
-	User        user.User       `gorm:"foreignKey:UserID"`
+	User        user.User       `gorm:"foreignKey:UserID" json:"-"` // preloaded for shared books; the owner is exposed via AddressBookOwner instead
 	Contacts    []AddressObject `gorm:"foreignKey:AddressBookID"`
 }
 

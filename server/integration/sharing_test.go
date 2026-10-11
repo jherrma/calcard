@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -792,4 +793,90 @@ func TestCalendarShareAndPublicRequireUUID(t *testing.T) {
 
 	status, _ = restCall(t, http.MethodGet, "/calendars/"+uintStr(calID)+"/public", ownerToken, nil)
 	assert.Equal(t, http.StatusNotFound, status, "numeric calendar id must 404 on /public (UUID-only now)")
+}
+
+// SCOPE: F01 regression. Sharing an address book made the sharee's REST list and
+// the search endpoints serialise the preloaded owner row: bcrypt PasswordHash,
+// email, username (the DAV login), UUID and status flags. A sharee must see the
+// owner only as the minimal owner block (display name), and no response anywhere
+// may carry a credential.
+func TestSharedAddressBookNeverLeaksOwnerRow(t *testing.T) {
+	password := "leakGuard!123"
+	const ownerEmail, targetEmail = "leak-owner@example.test", "leak-target@example.test"
+	ownerToken, ownerUsername := registerAndLoginFull(t, ownerEmail, password, "Leak Owner")
+	targetToken := registerAndLogin(t, targetEmail, password, "Leak Target")
+
+	abID, abUUID := createAddressBook(t, ownerToken, "Leak Directory")
+	createContactIn(t, ownerToken, abUUID, "Leaky Contact")
+	code := doJSONRaw(t, http.MethodPost, "/addressbooks/"+abUUID+"/shares", ownerToken, map[string]string{
+		"user_identifier": targetEmail,
+		"permission":      "read",
+	}, nil)
+	require.Equal(t, http.StatusCreated, code, "create share")
+
+	get := func(token, path string) string {
+		t.Helper()
+		status, body := restCall(t, http.MethodGet, path, token, nil)
+		require.Equalf(t, http.StatusOK, status, "GET %s", path)
+		return string(body)
+	}
+
+	// Positive controls: the sharee really does see the shared book (list and
+	// search) with the minimal owner block. Without these, a broken share
+	// lookup would return a clean, owner-only list and the leak checks below
+	// would pass vacuously.
+	var list struct {
+		AddressBooks []struct {
+			ID     uint   `json:"ID"`
+			UUID   string `json:"UUID"`
+			Shared bool   `json:"shared"`
+			Owner  *struct {
+				DisplayName string `json:"display_name"`
+			} `json:"owner"`
+		} `json:"addressbooks"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(get(targetToken, "/addressbooks/")), &list))
+	var found bool
+	for _, ab := range list.AddressBooks {
+		if ab.ID == abID {
+			found = true
+			assert.True(t, ab.Shared, "shared flag")
+			require.NotNil(t, ab.Owner, "owner block present")
+			assert.Equal(t, "Leak Owner", ab.Owner.DisplayName)
+		}
+	}
+	require.True(t, found, "sharee's list must contain the shared book")
+	assert.Contains(t, get(targetToken, "/search?q=Leak&types=addressbooks"), "Leak Directory",
+		"sharee's search must find the shared book")
+
+	// Everything the sharee can fetch about the owner's data.
+	sharee := map[string]string{
+		"addressbooks list":    get(targetToken, "/addressbooks/"),
+		"unified search":       get(targetToken, "/search?q=Leak"),
+		"contacts search":      get(targetToken, "/contacts/search?q=Leaky"),
+		"shared contacts list": get(targetToken, "/addressbooks/"+abUUID+"/contacts"),
+	}
+	assert.Contains(t, sharee["contacts search"], "Leaky Contact", "contact search positive control")
+	for name, body := range sharee {
+		text := strings.ToLower(body)
+		assert.NotContainsf(t, text, strings.ToLower(ownerEmail), "sharee %s leaked the owner's email", name)
+		assert.NotContainsf(t, text, strings.ToLower(ownerUsername), "sharee %s leaked the owner's username (DAV login)", name)
+		assert.NotContainsf(t, text, `"user"`, "sharee %s serialised a user object", name)
+	}
+
+	// No response — sharee's or owner's — may ever carry a credential.
+	all := map[string]string{
+		"owner addressbooks": get(ownerToken, "/addressbooks/"),
+		"owner shares list":  get(ownerToken, "/addressbooks/"+abUUID+"/shares"),
+		"owner search":       get(ownerToken, "/search?q=Leak"),
+	}
+	for k, v := range sharee {
+		all["sharee "+k] = v
+	}
+	for name, body := range all {
+		text := strings.ToLower(body)
+		for _, secret := range []string{"passwordhash", "password_hash", "$2a$", "$2b$"} {
+			assert.NotContainsf(t, text, secret, "%s leaked a credential (%q)", name, secret)
+		}
+	}
 }

@@ -15,7 +15,7 @@ import (
 type RefreshToken struct {
 	ID        uint      `gorm:"primaryKey"`
 	UserID    uint      `gorm:"index;not null"`
-	TokenHash string    `gorm:"uniqueIndex;size:64;not null"`
+	TokenHash string    `gorm:"uniqueIndex;size:64;not null" json:"-"`
 	ExpiresAt time.Time `gorm:"index;not null"`
 	UserAgent string    `gorm:"size:500"`
 	IP        string    `gorm:"size:45"`
@@ -28,8 +28,8 @@ type RefreshToken struct {
 	// hash. A non-empty value marks a token that was legitimately superseded,
 	// which lets the refresh use case distinguish a benign multi-tab race from a
 	// genuine token replay. Empty by default.
-	ReplacedByHash string
-	User           User `gorm:"foreignKey:UserID"`
+	ReplacedByHash string `json:"-"`
+	User           User   `gorm:"foreignKey:UserID"`
 }
 
 // TableName returns the table name for the RefreshToken model
