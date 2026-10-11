@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
@@ -28,6 +29,11 @@ func isSafeValidationError(err error) bool {
 		return false
 	}
 }
+
+// loginFailedUnverifiedMessage is the single 401 message login answers with
+// while e-mail verification is required, for a wrong password and an
+// unconfirmed account alike (P01).
+const loginFailedUnverifiedMessage = "invalid email or password, or the email address has not been confirmed yet"
 
 type AuthHandler struct {
 	registerUC *authusecase.RegisterUseCase
@@ -63,6 +69,13 @@ func NewAuthHandler(
 }
 
 // POST /api/v1/auth/register
+//
+// Answers 200 (not 201) with the RegisterResponse wrapped in {status, data}.
+//
+// With SMTP configured, registering an address that already has an account
+// returns exactly the same body as a fresh registration — the owner is told
+// by e-mail instead (P01). Without SMTP the new account is active at once, so
+// a duplicate cannot be disguised as success and answers 409.
 func (h *AuthHandler) Register(c fiber.Ctx) error {
 	if h.config.Registration.Disabled {
 		return ErrorResponse(c, fiber.StatusForbidden, "registration is disabled")
@@ -72,12 +85,17 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
 	}
 
+	verificationRequired := h.config.SMTP.Host != ""
+
 	user, _, err := h.registerUC.Execute(c.Context(), req.Email, req.Password, req.DisplayName)
 	if err != nil {
 		if errors.Is(err, authusecase.ErrSetupRequired) {
 			return ErrorResponse(c, fiber.StatusForbidden, "server setup is not complete: finish the initial setup first")
 		}
 		if errors.Is(err, authusecase.ErrUserAlreadyExists) {
+			if verificationRequired {
+				return SuccessResponse(c, pendingRegistrationResponse(req.Email, req.DisplayName))
+			}
 			return ErrorResponse(c, fiber.StatusConflict, "Email already registered")
 		}
 		// Email/password validation sentinels carry safe, actionable messages
@@ -91,6 +109,10 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusBadRequest, "registration failed")
 	}
 
+	if verificationRequired {
+		return SuccessResponse(c, pendingRegistrationResponse(req.Email, req.DisplayName))
+	}
+
 	return SuccessResponse(c, dto.RegisterResponse{
 		ID:            user.UUID,
 		Email:         user.Email,
@@ -98,8 +120,21 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		DisplayName:   user.DisplayName,
 		IsActive:      user.IsActive,
 		EmailVerified: user.EmailVerified,
-		CreatedAt:     user.CreatedAt,
+		CreatedAt:     &user.CreatedAt,
 	})
+}
+
+// pendingRegistrationResponse is the one body a registration answers with
+// while e-mail verification is required — for a new address and a taken one
+// alike. It is built from the request alone, never from a stored row, so no
+// field can differ between the two cases.
+func pendingRegistrationResponse(email, displayName string) dto.RegisterResponse {
+	return dto.RegisterResponse{
+		Email:         strings.ToLower(strings.TrimSpace(email)),
+		DisplayName:   displayName,
+		IsActive:      false,
+		EmailVerified: false,
+	}
 }
 
 // GET /api/v1/auth/verify
@@ -131,6 +166,14 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 	res, err := h.loginUC.Execute(c.Context(), req.Email, req.Password, c.Get("User-Agent"), c.IP())
 	if err != nil {
 		if err == authusecase.ErrInvalidCredentials || err == authusecase.ErrInactiveAccount {
+			// With SMTP on, "not active" would tell whoever just registered an
+			// address with a password of their choosing whether that created
+			// an account (inactive) or hit an existing one (wrong password) —
+			// undoing the generic register response (P01). One message
+			// covers both.
+			if h.config.SMTP.Host != "" {
+				return UnauthorizedResponse(c, loginFailedUnverifiedMessage)
+			}
 			return UnauthorizedResponse(c, err.Error())
 		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Internal server error")
@@ -180,16 +223,24 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	// A missing or unparseable body carries no token to revoke, so logout is a
-	// no-op success rather than a 400: the client clears its own session either
-	// way and there is nothing for the server to invalidate.
+	// A missing or unparseable body carries no refresh token to revoke, so it
+	// is a success rather than a 400: the client clears its own session either
+	// way.
 	_ = c.Bind().JSON(&req)
 
-	if req.RefreshToken == "" {
+	// The route is public (an expired access token must not prevent logout),
+	// but a bearer token, when sent, also identifies whose access tokens to
+	// invalidate.
+	var accessToken string
+	if parts := strings.SplitN(c.Get("Authorization"), " ", 2); len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+		accessToken = strings.TrimSpace(parts[1])
+	}
+
+	if req.RefreshToken == "" && accessToken == "" {
 		return SuccessResponse(c, "Logged out successfully")
 	}
 
-	if err := h.logoutUC.Execute(c.Context(), req.RefreshToken); err != nil {
+	if err := h.logoutUC.Execute(c.Context(), req.RefreshToken, accessToken); err != nil {
 		// A revoke failure usually means the token was already deleted or never
 		// existed. Return success regardless to avoid leaking token state.
 	}

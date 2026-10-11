@@ -50,6 +50,7 @@ func TestChangePasswordUseCase_Execute_RejectsWeakPassword(t *testing.T) {
 	assert.Equal(t, originalHash, u.PasswordHash)
 	refreshRepo.AssertNotCalled(t, "DeleteByUserID", mock.Anything, mock.Anything)
 	userRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	userRepo.AssertNotCalled(t, "InvalidateAccessTokens", mock.Anything, mock.Anything, mock.Anything)
 	jwtManager.AssertNotCalled(t, "GenerateAccessToken", mock.Anything, mock.Anything)
 }
 
@@ -67,7 +68,13 @@ func TestChangePasswordUseCase_Execute_CompliantPassword(t *testing.T) {
 	userRepo.On("GetByUUID", ctx, u.UUID).Return(u, nil)
 	refreshRepo.On("DeleteByUserID", ctx, uint(1)).Return(nil)
 	userRepo.On("Update", ctx, mock.Anything).Return(nil)
-	jwtManager.On("GenerateAccessToken", u.UUID, u.Email).Return("access-token", time.Now(), nil)
+	// Every existing access token must be revoked, and the replacement minted
+	// strictly AFTER that: minted before, it would be revoked by its own request.
+	var calls []string
+	userRepo.On("InvalidateAccessTokens", ctx, uint(1), mock.AnythingOfType("time.Time")).
+		Run(func(mock.Arguments) { calls = append(calls, "invalidate") }).Return(nil)
+	jwtManager.On("GenerateAccessToken", u.UUID, u.Email).
+		Run(func(mock.Arguments) { calls = append(calls, "issue") }).Return("access-token", time.Now(), nil)
 
 	res, err := uc.Execute(ctx, ChangePasswordRequest{
 		UserUUID:        u.UUID,
@@ -84,6 +91,7 @@ func TestChangePasswordUseCase_Execute_CompliantPassword(t *testing.T) {
 	cost, err := bcrypt.Cost([]byte(u.PasswordHash))
 	assert.NoError(t, err)
 	assert.Equal(t, user.BcryptCost, cost)
+	assert.Equal(t, []string{"invalidate", "issue"}, calls)
 	userRepo.AssertExpectations(t)
 	refreshRepo.AssertExpectations(t)
 	jwtManager.AssertExpectations(t)

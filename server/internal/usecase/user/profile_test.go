@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
@@ -45,6 +46,11 @@ func (m *mockUserRepo) GetByID(ctx context.Context, id uint) (*user.User, error)
 
 func (m *mockUserRepo) Update(ctx context.Context, u *user.User) error {
 	args := m.Called(ctx, u)
+	return args.Error(0)
+}
+
+func (m *mockUserRepo) InvalidateAccessTokens(ctx context.Context, userID uint, at time.Time) error {
+	args := m.Called(ctx, userID, at)
 	return args.Error(0)
 }
 

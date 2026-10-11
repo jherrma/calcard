@@ -184,7 +184,7 @@ The Dockerfile produces a minimal Alpine-based image with a statically linked bi
 | `CALDAV_SERVER_HOST` | `0.0.0.0` | Listen address |
 | `CALDAV_SERVER_PORT` | `8080` | Listen port |
 | `CALDAV_JWT_SECRET` | — | **Required.** Secret for signing JWTs |
-| `CALDAV_BASE_URL` | `http://localhost:8080` | Public-facing URL |
+| `CALDAV_BASE_URL` | — | Public-facing URL. Required with SMTP/OAuth; when empty, returned URLs follow the request's Host |
 | `CALDAV_DATA_DIR` | `/data` | Data directory (SQLite DB, uploads) |
 | `CALDAV_DB_HOST` | — | PostgreSQL host (omit for SQLite) |
 | `CALDAV_DB_PORT` | `5432` | PostgreSQL port |

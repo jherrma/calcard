@@ -88,7 +88,7 @@ webinterface/
 │   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
 │                            #   `sharedWithMe` derived from the two list endpoints (story 043)
 ├── composables/
-│   ├── useApi.ts            # $fetch wrapper with JWT auth + response unwrapping
+│   ├── useApi.ts            # $fetch wrapper: JWT auth, response unwrapping, HTTP 429 retry/notice
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
 │   ├── useTheme.ts          # Light/Dark/System state — SINGLETON, see Theming below
 │   ├── useAccentColor.ts    # Accent colour — SINGLETON, server-backed, see Theming below
@@ -110,6 +110,7 @@ webinterface/
 │   ├── agendaLayout.ts      # Lane assignment for overlapping blocks on the day timeline
 │   ├── contactAvatar.ts     # Contact initials + deterministic avatar colour
 │   ├── dashboardDates.ts    # Local-date primitives + month-range merging for the dashboard
+│   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
@@ -139,6 +140,7 @@ webinterface/
 4. `scheduleTokenRefresh()` sets a `setTimeout` to refresh the access token 1 minute before it expires (using `expires_at` Unix timestamp from the backend).
 5. The `useApi()` composable automatically attaches `Authorization: Bearer <token>` to every request.
 6. On 401 response, `useApi`'s `onResponseError` attempts a token refresh. On failure, auth state is cleared and user is redirected to login.
+7. A 429 (rate limit) is NOT a failed refresh: the session and the refresh cookie are kept (see Rate limiting below).
 
 ### Store Pattern
 
@@ -161,6 +163,33 @@ export const useXxxStore = defineStore('xxx', {
 - `useApi()` must be called **inside** actions (not at store top-level) because it depends on Nuxt context.
 - Error handling: wrap in try/catch, set `this.error`, use `useAppToast()` for user-facing notifications.
 - Optimistic updates: after a mutation (create/update/delete), update local state immediately rather than refetching.
+
+### Rate limiting (HTTP 429)
+
+`useApi()` returns a thin wrapper around the `$fetch.create()` instance that owns every 429
+(`utils/rateLimit.ts` holds the pure parts). The server's global limiter is per IP, so everyone
+behind one NAT/proxy shares it, and a dashboard load fires several calls at once.
+
+- **GET/HEAD are re-issued after waiting `Retry-After`**, at most `RATE_LIMIT_MAX_RETRIES` (2)
+  times and only when the wait is `<= RATE_LIMIT_MAX_WAIT_SECONDS` (15). Writes are **never**
+  repeated automatically. No usable `Retry-After` means no retry (null is not "now"). The header
+  is read first, then the global limiter's body field `retry_after`: a browser hides
+  `Retry-After` from a cross-origin SPA unless the server lists it in `CALDAV_CORS_EXPOSE_HEADERS`.
+- **Otherwise the error is rewritten in place**: `message`, `data.message` and `data.error` all
+  become "Too many requests, please try again in N seconds." So every existing
+  `e.message` / `e.data?.message` / `shareErrorMessage()` reader shows that instead of
+  `[GET] "…": 429 Too Many Requests` or the machine code `rate_limit_exceeded`. Status stays 429.
+- **One toast per burst.** The de-duplication latch is module-level (each store action builds
+  its own `useApi()`), held for `Retry-After` or at least 5s. Specs reset it with
+  `resetRateLimitNotice()`. The toast is raised through `nuxtApp.vueApp.runWithContext`, because
+  `useApi()` mostly runs in store actions, where PrimeVue's inject-based `useToast()` would throw.
+  The auth layout has no `<Toast>`; login/register show the rewritten `data.message` inline.
+- **A 429 is never a logout.** The limiter rejects before the handler runs, so a rate-limited
+  `/auth/refresh` neither checked nor rotated the refresh token. `stores/auth.ts` keeps the
+  session (a live one re-schedules the refresh after `Retry-After`), and `fetchUser()` does not
+  `clearAuth()` on a 429. Before this, a busy IP logged the user out and wiped the cookie.
+- 429 is deliberately NOT in ofetch's `retryStatusCodes` (that stays `[401]` for the token
+  refresh): ofetch would retry POSTs too and ignore `Retry-After`.
 
 ### API Response Handling
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,8 +21,20 @@ type Config struct {
 	LogLevel string         `yaml:"log_level" env:"CALDAV_LOG_LEVEL"`
 	// LogPayloads logs every request's headers (credentials redacted) and, on
 	// DAV paths, its body. Debugging only: it writes user data to the log.
-	LogPayloads  bool               `yaml:"log_payloads" env:"CALDAV_LOG_PAYLOADS"`
-	BaseURL      string             `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	LogPayloads bool `yaml:"log_payloads" env:"CALDAV_LOG_PAYLOADS"`
+	// BaseURL is the public origin of the server (scheme://host[:port]).
+	// Optional: when empty, URLs the API hands back to the caller (app-password
+	// server URL, public calendar feed URL) are derived from the request — see
+	// adapter/http.RequestBaseURL. Required when SMTP or OAuth is configured,
+	// because e-mailed links and OAuth redirect URIs must never be built from a
+	// client-supplied Host header.
+	BaseURL string `yaml:"base_url" env:"CALDAV_BASE_URL"`
+	// TrustForwardedHeaders lets the request-derived base URL (only used while
+	// BaseURL is empty) honour X-Forwarded-Proto / X-Forwarded-Host. Off by
+	// default: without a proxy that overwrites them, any client could set
+	// them. It has no effect on the client IP used for rate limiting.
+	TrustForwardedHeaders bool `yaml:"trust_forwarded_headers" env:"CALDAV_TRUST_FORWARDED_HEADERS"`
+
 	SMTP         SMTPConfig         `yaml:"smtp"`
 	JWT          JWTConfig          `yaml:"jwt"`
 	RateLimit    RateLimitConfig    `yaml:"rate_limit"`
@@ -137,6 +150,10 @@ type SubscriptionConfig struct {
 	AllowPrivateHosts bool `yaml:"allow_private_hosts" env:"CALDAV_SUBSCRIPTIONS_ALLOW_PRIVATE_HOSTS"`
 }
 
+// DefaultRateLimitRequests is the global per-IP allowance per RateLimit.Window
+// when none is configured (and what a non-positive value is clamped back to).
+const DefaultRateLimitRequests = 5000
+
 // RateLimitConfig contains rate limiting settings
 type RateLimitConfig struct {
 	Enabled  bool          `yaml:"enabled" env:"CALDAV_RATE_LIMIT_ENABLED"`
@@ -160,6 +177,17 @@ type OAuthConfig struct {
 	Google    OAuthProviderConfig `yaml:"google" envPrefix:"CALDAV_OAUTH_GOOGLE_"`
 	Microsoft OAuthProviderConfig `yaml:"microsoft" envPrefix:"CALDAV_OAUTH_MICROSOFT_"`
 	Custom    OAuthProviderConfig `yaml:"custom" envPrefix:"CALDAV_OAUTH_CUSTOM_"`
+}
+
+// anyProviderConfigured mirrors the condition NewOAuthProviderManager uses to
+// set a provider up: both client id and secret present.
+func (o OAuthConfig) anyProviderConfigured() bool {
+	for _, p := range []OAuthProviderConfig{o.Google, o.Microsoft, o.Custom} {
+		if p.ClientID != "" && p.ClientSecret != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // OAuthProviderConfig contains settings for an OAuth/OIDC provider
@@ -268,7 +296,9 @@ func Load(configPath string) (*Config, error) {
 		},
 		DataDir:  "./data",
 		LogLevel: "info",
-		BaseURL:  "http://localhost:8080",
+		// BaseURL deliberately has no default: "http://localhost:8080" was
+		// wrong for every client that is not on the server itself, and was
+		// handed out as the DAV server URL. Empty means "derive per request".
 		SMTP: SMTPConfig{
 			Port: "587",
 		},
@@ -278,8 +308,15 @@ func Load(configPath string) (*Config, error) {
 			ResetExpiry:   time.Hour,
 		},
 		RateLimit: RateLimitConfig{
-			Enabled:  true,
-			Requests: 100,
+			Enabled: true,
+			// 5000/min per IP. The key is c.IP(), so every user behind one NAT
+			// or reverse proxy shares a single bucket, and the web UI fires a
+			// handful of API calls per page (the dashboard alone ~5). At 100
+			// one household browsing while a DAV client synced was enough to
+			// collect 429s. The global limiter is a flood guard, not a
+			// brute-force control — that job belongs to the auth limiters
+			// below, which stay tight.
+			Requests: DefaultRateLimitRequests,
 			Window:   time.Minute,
 			// Per-IP allowance sits ABOVE the per-email allowance on purpose so
 			// the tighter per-account control is reachable from one IP (and
@@ -392,13 +429,18 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	// Clamp non-positive auth rate-limit thresholds back to their defaults. A
+	// Clamp non-positive rate-limit thresholds back to their defaults. A
 	// misconfigured 0 (or negative) value would otherwise reach Fiber's limiter
-	// as Max<=0, which silently falls back to 5 — collapsing BOTH auth limiters
+	// as Max<=0, which silently falls back to 5 — for the global limiter that
+	// turns "0, i.e. unlimited?" into 5 requests a minute; for the auth
+	// limiters it collapses BOTH
 	// to 5/5 and resurrecting the IP-trips-first ordering bug (per-IP must stay
 	// strictly above per-email so the per-email limiter is reachable). Mirror
 	// the default literals from the defaults block above so an operator can't
 	// accidentally disable the ordering guarantee.
+	if cfg.RateLimit.Requests <= 0 {
+		cfg.RateLimit.Requests = DefaultRateLimitRequests
+	}
 	if cfg.RateLimit.AuthIPRequests <= 0 {
 		cfg.RateLimit.AuthIPRequests = 20
 	}
@@ -448,7 +490,17 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.BaseURL == "" {
-		errs = append(errs, "CALDAV_BASE_URL must be set")
+		// Links in e-mails and OAuth redirect URIs cannot be derived from the
+		// request: a forged Host header on forgot-password would mail the
+		// victim a reset link pointing at the attacker (reset-link poisoning).
+		if c.SMTP.Host != "" {
+			errs = append(errs, "CALDAV_BASE_URL must be set when SMTP is configured (verification and password-reset e-mails link to it)")
+		}
+		if c.OAuth.anyProviderConfigured() {
+			errs = append(errs, "CALDAV_BASE_URL must be set when an OAuth provider is configured (the redirect URI registered at the provider is built from it)")
+		}
+	} else if u, err := url.Parse(c.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		errs = append(errs, fmt.Sprintf("CALDAV_BASE_URL must be an absolute http(s) URL such as https://cal.example.com, got %q", c.BaseURL))
 	}
 	// /auth/setup has no stricter limiter than the global one, so a guessable
 	// token could be brute-forced while setup is open.

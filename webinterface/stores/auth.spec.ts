@@ -266,3 +266,81 @@ describe("'Remember me' cookie lifetime (#19)", () => {
     expect(cookies.get('refresh_token')?.value).toBe('refresh-token-2');
   });
 });
+
+// A rate-limited request is rejected by the limiter BEFORE the handler runs, so
+// it says nothing about the session. Treating it like a revoked token used to
+// log the user out (and wipe the refresh cookie) whenever the IP was busy.
+describe('HTTP 429 is not a logout', () => {
+  const tooMany = (retryAfter: string) => ({
+    status: 429,
+    statusCode: 429,
+    data: { message: 'Too many requests, please try again in a moment.' },
+    response: { headers: new Headers({ 'Retry-After': retryAfter }) },
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('a rate-limited refresh keeps the session and retries after Retry-After', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', {});
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+
+    apiMock.mockRejectedValueOnce(tooMany('20'));
+    await store.refreshToken();
+
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.accessToken).toBe('access-1');
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-1');
+
+    apiMock.mockResolvedValueOnce({
+      access_token: 'access-2',
+      refresh_token: 'refresh-token-2',
+      token_type: 'Bearer',
+      expires_at: Math.floor(Date.now() / 1000) - 10,
+    } satisfies RefreshResponse);
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(store.accessToken).toBe('access-2');
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-2');
+  });
+
+  it('a rate-limited refresh at page load keeps the refresh cookie for the next try', async () => {
+    vi.stubGlobal('navigator', {});
+    cookies.set('refresh_token', { value: 'refresh-token-1' });
+    apiMock.mockRejectedValueOnce(tooMany('60'));
+
+    const store = useAuthStore();
+    await store.initAuth();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-1');
+  });
+
+  it('a rate-limited /users/me does not clear auth', async () => {
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+    apiMock.mockRejectedValueOnce(tooMany('60'));
+
+    await store.fetchUser();
+
+    expect(store.accessToken).toBe('access-1');
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-1');
+  });
+
+  it('any other refresh failure still logs out', async () => {
+    vi.stubGlobal('navigator', {});
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+    apiMock.mockRejectedValueOnce({ status: 401, statusCode: 401 });
+
+    await store.refreshToken();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(cookies.get('refresh_token')?.value).toBeNull();
+  });
+});
