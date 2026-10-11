@@ -24,13 +24,18 @@ const { authStoreMock } = vi.hoisted(() => ({
 mockNuxtImport('useAuthStore', () => () => authStoreMock);
 
 interface PageVm {
-  form: { username: string; email: string; display_name: string; password: string; confirmPassword: string };
+  form: { setup_token: string; username: string; email: string; display_name: string; password: string; confirmPassword: string };
   error: string;
   handleSetup: () => Promise<void>;
 }
 
-async function mountPage(adminConfigured: boolean) {
-  apiMock.mockResolvedValue({ admin_configured: adminConfigured, smtp_enabled: false, registration_enabled: true });
+async function mountPage(adminConfigured: boolean, tokenRequired = false) {
+  apiMock.mockResolvedValue({
+    admin_configured: adminConfigured,
+    smtp_enabled: false,
+    registration_enabled: true,
+    setup_token_required: tokenRequired,
+  });
   const wrapper = mount(SetupPage, { shallow: true, global: { renderStubDefaultSlot: true } });
   await flushPromises();
   return wrapper.vm as unknown as PageVm;
@@ -112,5 +117,51 @@ describe('setup page', () => {
     await vm.handleSetup();
 
     expect(authStoreMock.setupAdmin).not.toHaveBeenCalled();
+  });
+
+  it('sends the setup token only when the server asks for one', async () => {
+    const vm = await mountPage(false, true);
+    fillValidForm(vm);
+    vm.form.setup_token = 's3cret-token';
+    await vm.handleSetup();
+
+    expect(authStoreMock.setupAdmin).toHaveBeenCalledWith(expect.objectContaining({ setup_token: 's3cret-token' }));
+  });
+
+  it('refuses to submit without the token when one is required', async () => {
+    // Revert caught: the server answers 403 to a missing token; the form should
+    // stop first instead of burning the user's attempt.
+    const vm = await mountPage(false, true);
+    fillValidForm(vm);
+    await vm.handleSetup();
+
+    expect(authStoreMock.setupAdmin).not.toHaveBeenCalled();
+  });
+
+  it('does not send a token field when none is required', async () => {
+    const vm = await mountPage(false, false);
+    fillValidForm(vm);
+    vm.form.setup_token = 'leftover';
+    await vm.handleSetup();
+
+    const sent = authStoreMock.setupAdmin.mock.calls[0]?.[0];
+    expect(sent).not.toHaveProperty('setup_token');
+  });
+
+  it('reveals the token field after a 403 even if the settings fetch had failed', async () => {
+    // Revert caught: with the settings call failing, the field never shows and
+    // every submit 403s with no way to enter the token.
+    apiMock.mockRejectedValue(new Error('settings unreachable'));
+    const wrapper = mount(SetupPage, { shallow: true, global: { renderStubDefaultSlot: true } });
+    await flushPromises();
+    const vm = wrapper.vm as unknown as PageVm & { tokenRequired: boolean };
+    expect(vm.tokenRequired).toBe(false);
+
+    authStoreMock.setupAdmin.mockRejectedValue({ statusCode: 403, data: { message: 'invalid setup token' } });
+    fillValidForm(vm);
+    await vm.handleSetup();
+
+    expect(vm.tokenRequired).toBe(true);
+    expect(vm.error).toBe('invalid setup token');
   });
 });

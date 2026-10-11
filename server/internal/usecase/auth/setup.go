@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,6 +19,12 @@ var (
 	// ErrSetupCompleted is returned once any user exists: first-run setup is a
 	// one-shot that must not become a way to mint admins later.
 	ErrSetupCompleted = errors.New("setup already completed")
+	// ErrInvalidSetupToken is returned when CALDAV_SETUP_TOKEN is configured and
+	// the request does not carry it.
+	ErrInvalidSetupToken = errors.New("invalid setup token")
+	// ErrSetupRequired is returned to registration attempts while a setup token
+	// is configured and the first account does not exist yet.
+	ErrSetupRequired = errors.New("server setup is not complete")
 	// ErrInvalidUsername rejects usernames outside the allowed shape.
 	ErrInvalidUsername = errors.New("username must be 3-64 characters: lowercase letters, digits, '.', '_' or '-', starting with a letter or digit")
 )
@@ -32,6 +40,7 @@ var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
 type SetupUseCase struct {
 	repo     user.UserRepository
 	register *RegisterUseCase // reused for the default calendar / address book
+	token    string           // CALDAV_SETUP_TOKEN; empty = no token required
 	mu       sync.Mutex       // serialises the count-then-create check in this process
 }
 
@@ -48,15 +57,23 @@ func (uc *SetupUseCase) ensureEmpty(ctx context.Context) error {
 	return nil
 }
 
-func NewSetupUseCase(repo user.UserRepository, register *RegisterUseCase) *SetupUseCase {
-	return &SetupUseCase{repo: repo, register: register}
+// NewSetupUseCase builds the use case. token is CALDAV_SETUP_TOKEN; empty means
+// setup needs no token.
+func NewSetupUseCase(repo user.UserRepository, register *RegisterUseCase, token string) *SetupUseCase {
+	return &SetupUseCase{repo: repo, register: register, token: token}
 }
 
-func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, displayName string) (*user.User, error) {
+func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, displayName, setupToken string) (*user.User, error) {
 	// Cheap pre-check first, so a configured server answers 409 without
 	// validating or hashing anything (no bcrypt work for unauthenticated callers).
 	if err := uc.ensureEmpty(ctx); err != nil {
 		return nil, err
+	}
+
+	// Only a caller who knows the token may proceed. This sits before validation
+	// and bcrypt so a wrong token costs nothing.
+	if uc.token != "" && !tokenMatches(setupToken, uc.token) {
+		return nil, ErrInvalidSetupToken
 	}
 
 	username = strings.ToLower(strings.TrimSpace(username))
@@ -108,4 +125,26 @@ func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, 
 		fmt.Printf("failed to create default address book: %v\n", err)
 	}
 	return u, nil
+}
+
+// setupPending reports whether registration must be refused because a setup
+// token is configured and no account has ever existed. With no token it is
+// always false (the previous, open behaviour).
+func setupPending(ctx context.Context, repo user.UserRepository, token string) (bool, error) {
+	if token == "" {
+		return false, nil
+	}
+	count, err := repo.Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
+
+// tokenMatches compares the SHA-256 digests in constant time, so neither the
+// content nor the length of the configured token shows in the response time.
+func tokenMatches(given, want string) bool {
+	g := sha256.Sum256([]byte(strings.TrimSpace(given)))
+	w := sha256.Sum256([]byte(want))
+	return subtle.ConstantTimeCompare(g[:], w[:]) == 1
 }

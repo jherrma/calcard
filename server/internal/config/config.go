@@ -205,6 +205,14 @@ type SecurityConfig struct {
 // configs behave as before.
 type RegistrationConfig struct {
 	Disabled bool `yaml:"disabled" env:"CALDAV_REGISTRATION_DISABLED"`
+
+	// SetupToken, when non-empty, guards first-run setup: POST /auth/setup must
+	// present it, and until the first account exists self-service registration
+	// (local and OAuth) is refused. That stops whoever reaches a fresh, exposed
+	// server first from claiming the admin account, or from registering as a
+	// plain user and so closing setup forever. Empty (the default) keeps the
+	// previous behaviour: setup needs no token and registration is open.
+	SetupToken string `yaml:"setup_token" env:"CALDAV_SETUP_TOKEN"`
 }
 
 // DSN returns the database connection string based on the driver
@@ -361,6 +369,17 @@ func Load(configPath string) (*Config, error) {
 	// so it survives restarts. Generating one here would shadow that and mint a
 	// fresh secret every boot, invalidating all existing tokens.
 
+	// The setup token is compared byte for byte, so a stray newline or space from
+	// a secret file or CRLF env file would make it impossible to type. Trim it,
+	// and refuse a value that was set but is only whitespace instead of silently
+	// switching the guard off.
+	if cfg.Registration.SetupToken != "" {
+		cfg.Registration.SetupToken = strings.TrimSpace(cfg.Registration.SetupToken)
+		if cfg.Registration.SetupToken == "" {
+			return nil, fmt.Errorf("CALDAV_SETUP_TOKEN is set but empty after trimming whitespace; unset it or use a real token")
+		}
+	}
+
 	// Auto-detect PostgreSQL mode
 	if cfg.Database.Host != "" {
 		cfg.Database.Driver = "postgres"
@@ -430,6 +449,11 @@ func (c *Config) Validate() error {
 	}
 	if c.BaseURL == "" {
 		errs = append(errs, "CALDAV_BASE_URL must be set")
+	}
+	// /auth/setup has no stricter limiter than the global one, so a guessable
+	// token could be brute-forced while setup is open.
+	if c.Registration.SetupToken != "" && len(c.Registration.SetupToken) < 16 {
+		errs = append(errs, "CALDAV_SETUP_TOKEN must be at least 16 characters")
 	}
 
 	// Fiber's CORS middleware panics when credentials are allowed together with

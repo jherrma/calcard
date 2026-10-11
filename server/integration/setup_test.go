@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -128,4 +129,60 @@ func TestSetupStaysClosedAfterLastAccountDeleted(t *testing.T) {
 		"a deleted account still counts, so the SPA does not bounce back to /auth/setup")
 	code, _ = freshCall(t, base, http.MethodPost, "/auth/setup", "", setupBody("intruder", "intruder@example.test"))
 	assert.Equal(t, http.StatusConflict, code, "setup must stay closed")
+}
+
+// With CALDAV_SETUP_TOKEN configured: registration is locked until setup, setup
+// needs the token, and everything reverts to normal once the admin exists.
+func TestSetupTokenGuardsFirstRun(t *testing.T) {
+	const token = "s3cret-setup-token"
+	base, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
+		cfg.Registration.SetupToken = token
+	})
+	t.Cleanup(shutdown)
+
+	_, settings := freshCall(t, base, http.MethodGet, "/system/settings", "", nil)
+	assert.Equal(t, true, dataOf(settings)["setup_token_required"], "the form must ask for the token")
+
+	// Registration is refused before setup — otherwise a first visitor could
+	// register as a plain user and close setup forever.
+	code, _ := freshCall(t, base, http.MethodPost, "/auth/register", "", map[string]string{
+		"email": "early@example.test", "password": "SecurePass123!", "display_name": "Early",
+	})
+	assert.Equal(t, http.StatusForbidden, code, "registration locked until setup")
+
+	// Setup without or with a wrong token is refused and does not consume the one-shot.
+	body := setupBody("admin", "admin@example.test")
+	code, _ = freshCall(t, base, http.MethodPost, "/auth/setup", "", body)
+	assert.Equal(t, http.StatusForbidden, code, "missing token")
+	body["setup_token"] = "wrong"
+	code, _ = freshCall(t, base, http.MethodPost, "/auth/setup", "", body)
+	assert.Equal(t, http.StatusForbidden, code, "wrong token")
+
+	body["setup_token"] = token
+	code, _ = freshCall(t, base, http.MethodPost, "/auth/setup", "", body)
+	require.Equal(t, http.StatusOK, code, "right token creates the admin")
+
+	// Afterwards: no token asked for, setup closed, registration open again.
+	_, settings = freshCall(t, base, http.MethodGet, "/system/settings", "", nil)
+	assert.Equal(t, false, dataOf(settings)["setup_token_required"])
+	code, _ = freshCall(t, base, http.MethodPost, "/auth/setup", "", body)
+	assert.Equal(t, http.StatusConflict, code)
+	code, _ = freshCall(t, base, http.MethodPost, "/auth/register", "", map[string]string{
+		"email": "user@example.test", "password": "SecurePass123!", "display_name": "User",
+	})
+	assert.Equal(t, http.StatusOK, code, "registration open once setup is done")
+}
+
+// No token configured (the default): behaviour is exactly as before.
+func TestNoSetupTokenKeepsRegistrationOpen(t *testing.T) {
+	base, shutdown := bootServerWithConfig(t, nil)
+	t.Cleanup(shutdown)
+
+	_, settings := freshCall(t, base, http.MethodGet, "/system/settings", "", nil)
+	assert.Equal(t, false, dataOf(settings)["setup_token_required"])
+
+	code, _ := freshCall(t, base, http.MethodPost, "/auth/register", "", map[string]string{
+		"email": "early@example.test", "password": "SecurePass123!", "display_name": "Early",
+	})
+	assert.Equal(t, http.StatusOK, code, "open registration before setup, as today")
 }

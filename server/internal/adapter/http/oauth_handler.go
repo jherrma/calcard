@@ -141,6 +141,8 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 		switch {
 		case errors.Is(err, authUseCase.ErrRegistrationDisabled):
 			return h.redirectOAuthError(c, ctxData.Action, "registration is disabled")
+		case errors.Is(err, authUseCase.ErrSetupRequired):
+			return h.redirectOAuthError(c, ctxData.Action, "the server setup is not complete yet")
 		case errors.Is(err, authUseCase.ErrProviderAlreadyLinked):
 			return h.redirectOAuthError(c, ctxData.Action,
 				fmt.Sprintf("this %s account is already linked to another user", provider))

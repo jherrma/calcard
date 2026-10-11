@@ -58,6 +58,14 @@ where you create the first account. That account is the administrator
 account has ever existed (deleted ones count), `POST /api/v1/auth/setup` answers `409`. Further users register
 via `/auth/register` (unless `CALDAV_REGISTRATION_DISABLED=true`).
 
+> **Exposed to the internet? Set `CALDAV_SETUP_TOKEN`.** Until the first account
+> exists, anyone who can reach the server can create the administrator, or
+> register as a plain user, which closes setup for good. With
+> `CALDAV_SETUP_TOKEN=<long random string>` the setup page asks for that token
+> and registration stays locked until setup is done. Left empty (the default),
+> nothing is asked and registration is open: fine on a private network, but
+> finish setup before exposing the server.
+
 > **The container does not run as root.** It runs as uid/gid `1000`. A
 > bind-mounted data directory (e.g. `/volume1/docker/calcard/data:/data` on a
 > NAS) must be writable by that user, otherwise the server stops at startup with

@@ -182,6 +182,11 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			if uc.config.Registration.Disabled {
 				return nil, ErrRegistrationDisabled
 			}
+			if pending, perr := setupPending(ctx, uc.userRepo, uc.config.Registration.SetupToken); perr != nil {
+				return nil, perr
+			} else if pending {
+				return nil, ErrSetupRequired
+			}
 			u, err = uc.createUser(ctx, userInfo)
 			if err != nil {
 				return nil, err

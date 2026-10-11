@@ -49,4 +49,6 @@ type SetupRequest struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 	Password    string `json:"password"`
+	// SetupToken is required only when CALDAV_SETUP_TOKEN is configured.
+	SetupToken string `json:"setup_token"`
 }

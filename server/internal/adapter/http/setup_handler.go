@@ -27,10 +27,13 @@ func (h *SetupHandler) Setup(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	u, err := h.setupUC.Execute(c.Context(), req.Username, req.Email, req.Password, req.DisplayName)
+	u, err := h.setupUC.Execute(c.Context(), req.Username, req.Email, req.Password, req.DisplayName, req.SetupToken)
 	if err != nil {
 		if errors.Is(err, authusecase.ErrSetupCompleted) {
 			return ErrorResponse(c, fiber.StatusConflict, "setup already completed")
+		}
+		if errors.Is(err, authusecase.ErrInvalidSetupToken) {
+			return ErrorResponse(c, fiber.StatusForbidden, "invalid setup token")
 		}
 		if errors.Is(err, authusecase.ErrInvalidUsername) || isSafeValidationError(err) {
 			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())

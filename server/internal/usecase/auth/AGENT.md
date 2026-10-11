@@ -47,7 +47,7 @@ The OAuth implementation follows the standard authorization code flow.
 ### Utilities
 
 - **Email Service** (`email_service.go`): Interface for sending auth-related emails (verification, password reset).
-- **Setup** (`setup.go`): First-run setup. Creates the first account as admin (active + verified, SMTP or not) while `UserRepository.Count` — which includes soft-deleted rows — is 0; refuses with `ErrSetupCompleted` (409) afterwards. The check-then-insert is serialised in-process only.
+- **Setup** (`setup.go`): First-run setup. Creates the first account as admin (active + verified, SMTP or not) while `UserRepository.Count` — which includes soft-deleted rows — is 0; refuses with `ErrSetupCompleted` (409) afterwards. The check-then-insert is serialised in-process only. When `Registration.SetupToken` is set (`CALDAV_SETUP_TOKEN`) the request must carry it (constant-time compare, 403 otherwise) and `RegisterUseCase` / OAuth sign-up refuse with `ErrSetupRequired` until the first account exists; empty keeps the old open behaviour.
 - **Username Util** (`username_util.go`): Generates unique usernames from email addresses or OAuth profile data.
 
 ## Dependencies
