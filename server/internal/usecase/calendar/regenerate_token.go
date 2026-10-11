@@ -18,17 +18,15 @@ type RegenerateTokenOutput struct {
 
 type RegenerateTokenUseCase struct {
 	calendarRepo calendar.CalendarRepository
-	baseURL      string
 }
 
-func NewRegenerateTokenUseCase(calendarRepo calendar.CalendarRepository, baseURL string) *RegenerateTokenUseCase {
-	return &RegenerateTokenUseCase{
-		calendarRepo: calendarRepo,
-		baseURL:      baseURL,
-	}
+func NewRegenerateTokenUseCase(calendarRepo calendar.CalendarRepository) *RegenerateTokenUseCase {
+	return &RegenerateTokenUseCase{calendarRepo: calendarRepo}
 }
 
-func (uc *RegenerateTokenUseCase) Execute(ctx context.Context, userID, calendarID uint) (*RegenerateTokenOutput, error) {
+// Execute rotates the public token. baseURL is the origin the returned
+// public_url is built on (the handler resolves it per request).
+func (uc *RegenerateTokenUseCase) Execute(ctx context.Context, userID, calendarID uint, baseURL string) (*RegenerateTokenOutput, error) {
 	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
 	if err != nil || cal == nil {
 		return nil, fmt.Errorf("calendar not found")
@@ -51,7 +49,7 @@ func (uc *RegenerateTokenUseCase) Execute(ctx context.Context, userID, calendarI
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/public/calendar/%s.ics", uc.baseURL, *cal.PublicToken)
+	url := fmt.Sprintf("%s/public/calendar/%s.ics", baseURL, *cal.PublicToken)
 	return &RegenerateTokenOutput{
 		Enabled:   true,
 		PublicURL: &url,

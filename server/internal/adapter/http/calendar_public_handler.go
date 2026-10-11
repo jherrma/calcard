@@ -2,6 +2,7 @@ package http
 
 import (
 	"github.com/gofiber/fiber/v3"
+	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
@@ -12,6 +13,7 @@ type CalendarPublicHandler struct {
 	getPublicStatusUC *calendarusecase.GetPublicStatusUseCase
 	regenerateTokenUC *calendarusecase.RegenerateTokenUseCase
 	calendarRepo      calendar.CalendarRepository
+	cfg               *config.Config
 }
 
 func NewCalendarPublicHandler(
@@ -19,12 +21,14 @@ func NewCalendarPublicHandler(
 	getPublicStatusUC *calendarusecase.GetPublicStatusUseCase,
 	regenerateTokenUC *calendarusecase.RegenerateTokenUseCase,
 	calendarRepo calendar.CalendarRepository,
+	cfg *config.Config,
 ) *CalendarPublicHandler {
 	return &CalendarPublicHandler{
 		enablePublicUC:    enablePublicUC,
 		getPublicStatusUC: getPublicStatusUC,
 		regenerateTokenUC: regenerateTokenUC,
 		calendarRepo:      calendarRepo,
+		cfg:               cfg,
 	}
 }
 
@@ -51,7 +55,7 @@ func (h *CalendarPublicHandler) EnablePublic(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_request"})
 	}
 
-	output, err := h.enablePublicUC.Execute(c.Context(), u.ID, calendarID, req)
+	output, err := h.enablePublicUC.Execute(c.Context(), u.ID, calendarID, req, RequestBaseURL(c, h.cfg))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -67,7 +71,7 @@ func (h *CalendarPublicHandler) GetPublicStatus(c fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
-	output, err := h.getPublicStatusUC.Execute(c.Context(), u.ID, calendarID)
+	output, err := h.getPublicStatusUC.Execute(c.Context(), u.ID, calendarID, RequestBaseURL(c, h.cfg))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -83,7 +87,7 @@ func (h *CalendarPublicHandler) RegenerateToken(c fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
-	output, err := h.regenerateTokenUC.Execute(c.Context(), u.ID, calendarID)
+	output, err := h.regenerateTokenUC.Execute(c.Context(), u.ID, calendarID, RequestBaseURL(c, h.cfg))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}

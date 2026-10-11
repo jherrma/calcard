@@ -25,7 +25,8 @@ All configuration options can be set via environment variables. The mapping is d
 | `data_dir`  | `CALDAV_DATA_DIR`  | `./data` | Directory where SQLite database and other data files are stored.                               |
 | `log_level` | `CALDAV_LOG_LEVEL` | `info`   | Logging intensity (`debug`, `info`, `warn`, `error`).                                          |
 | `log_payloads` | `CALDAV_LOG_PAYLOADS` | `false` | **Debugging only.** Logs every request (method, URL, headers, status) and the full body of requests under `/dav` and `/.well-known` (capped at 64 KiB) to stdout. `Authorization`/`Cookie` headers are redacted and non-DAV bodies (login etc.) are never logged. Writes user data to the log — leave off in production. |
-| `base_url`  | `CALDAV_BASE_URL`  | -        | The base URL where the server is reachable (e.g., `https://caldav.example.com`). **Required.** |
+| `base_url`  | `CALDAV_BASE_URL`  | empty    | The public URL clients reach the server at (e.g. `https://caldav.example.com` or `http://<nas-ip>:8751`), an absolute `http(s)` URL. **Required when SMTP or an OAuth provider is configured** — e-mailed verification/reset links and OAuth redirect URIs are built from it and never from a request (a forged `Host` header would otherwise let an attacker point someone's reset link at their own server). Optional otherwise: when empty, the URLs the API returns to the caller (the DAV server URL shown with a new app password, a calendar's `public_url`) are derived from the request — `https` only if this server terminated TLS, host from the `Host` header. |
+| `trust_forwarded_headers` | `CALDAV_TRUST_FORWARDED_HEADERS` | `false` | Only used while `base_url` is empty: derive the scheme and host from `X-Forwarded-Proto` / `X-Forwarded-Host`. Enable it **only** behind a reverse proxy that overwrites those headers; otherwise any client could set them. It does not change the client IP used for rate limiting. |
 
 ### Server Section (`server:`)
 
@@ -68,11 +69,19 @@ All configuration options can be set via environment variables. The mapping is d
 
 ### Rate Limit Section (`rate_limit:`)
 
-| YAML Key   | Env Var                      | Default | Description                               |
-| :--------- | :--------------------------- | :------ | :---------------------------------------- |
-| `enabled`  | `CALDAV_RATE_LIMIT_ENABLED`  | `true`  | Enable global rate limiting.              |
-| `requests` | `CALDAV_RATE_LIMIT_REQUESTS` | `100`   | Number of requests allowed in the window. |
-| `window`   | `CALDAV_RATE_LIMIT_WINDOW`   | `1m`    | Time window for rate limiting.            |
+| YAML Key              | Env Var                                 | Default | Description |
+| :-------------------- | :-------------------------------------- | :------ | :---------- |
+| `enabled`             | `CALDAV_RATE_LIMIT_ENABLED`             | `true`  | Enable rate limiting (the global limiter and the auth limiters below). |
+| `requests`            | `CALDAV_RATE_LIMIT_REQUESTS`            | `5000`  | Requests **per client IP** allowed in the window, across the REST API, DAV, MCP and public feeds (web UI static assets are not counted). A value `<= 0` is reset to the default. |
+| `window`              | `CALDAV_RATE_LIMIT_WINDOW`              | `1m`    | Time window for rate limiting. |
+| `auth_ip_requests`    | `CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS`    | `20`    | Login / forgot-password / reset-password attempts per IP in the window. Must stay above `auth_email_requests`. |
+| `auth_email_requests` | `CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS` | `10`    | Login / forgot-password attempts per e-mail address in the window. |
+
+The global limit is keyed on the client IP as the server sees it, and forwarded
+headers are not trusted, so **everyone behind one NAT or reverse proxy shares a
+single allowance**. That is why the default is generous: it guards against a
+flood, not against password guessing — the much tighter auth limits do that. A
+throttled request gets `429` with a `Retry-After` header: the seconds until its window resets (also in the JSON body as `retry_after`).
 
 ### Registration Section (`registration:`)
 
@@ -80,6 +89,23 @@ All configuration options can be set via environment variables. The mapping is d
 | :------------ | :---------------------------- | :------ | :---------- |
 | `disabled`    | `CALDAV_REGISTRATION_DISABLED` | `false` | Turns off self-service registration (local and OAuth sign-up). First-run setup still works. |
 | `setup_token` | `CALDAV_SETUP_TOKEN`          | empty   | Guards **first-run setup**. When set, `POST /api/v1/auth/setup` (the "Initial Setup" page) must present this token, and until the first account exists self-service registration is refused. This stops whoever reaches a fresh, internet-exposed server first from claiming the admin account, or from registering as a plain user and so closing setup for good. Must be at least 16 characters (the server refuses to start otherwise); surrounding whitespace is trimmed. **Empty keeps the previous behaviour**: no token is asked for and registration is open. Once the first account exists the token is no longer needed. |
+
+**Registration and account enumeration depend on SMTP.** With SMTP configured
+(`smtp.host` / `CALDAV_SMTP_HOST` set), `POST /api/v1/auth/register` answers an
+address that already has an account exactly like a new one — same `200`, same
+body (`email`, `display_name`, `is_active: false`, `email_verified: false`; no
+`id`, `username` or `created_at`) — and the address owner gets a "someone tried
+to register with your address" e-mail instead (or, for an account that was never
+confirmed, a fresh activation link; its password is never changed). Login then
+answers a wrong password and an unconfirmed account with the same 401 message, so
+the follow-up login cannot tell the two apart either. Because each registration
+now sends a mail, `/register` carries the same per-IP and per-email limiters as
+forgot-password (`rate_limit.enabled` must be on). **Without SMTP** every new
+account is active immediately, so a taken address cannot be disguised as success
+(the caller would simply log in and find out): it answers `409 Email already
+registered`, i.e. registration reveals whether an address has an account. If that
+matters on an internet-facing server, configure SMTP or set
+`CALDAV_REGISTRATION_DISABLED=true`.
 
 ### MCP Section (`mcp:`)
 

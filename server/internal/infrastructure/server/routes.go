@@ -151,10 +151,10 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	aboutHandler := http.NewAboutHandler(aboutusecase.NewListOpenSourceUseCase())
 
 	// Public Calendar Use Cases
-	enablePublicUC := calendarusecase.NewEnablePublicUseCase(calendarRepo, cfg.BaseURL)
-	getPublicStatusUC := calendarusecase.NewGetPublicStatusUseCase(calendarRepo, cfg.BaseURL)
-	regenerateTokenUC := calendarusecase.NewRegenerateTokenUseCase(calendarRepo, cfg.BaseURL)
-	calendarPublicHandler := http.NewCalendarPublicHandler(enablePublicUC, getPublicStatusUC, regenerateTokenUC, calendarRepo)
+	enablePublicUC := calendarusecase.NewEnablePublicUseCase(calendarRepo)
+	getPublicStatusUC := calendarusecase.NewGetPublicStatusUseCase(calendarRepo)
+	regenerateTokenUC := calendarusecase.NewRegenerateTokenUseCase(calendarRepo)
+	calendarPublicHandler := http.NewCalendarPublicHandler(enablePublicUC, getPublicStatusUC, regenerateTokenUC, calendarRepo, cfg)
 	publicCalendarHandler := http.NewPublicCalendarHandler(calendarRepo)
 
 	// Public Routes
@@ -181,7 +181,8 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// Auth Routes
 	authGroup := v1.Group("/auth")
 	authGroup.Get("/methods", systemHandler.AuthMethods)
-	authGroup.Post("/register", authHandler.Register)
+	// /register is wired further down, next to the other mail-sending
+	// endpoints, because it shares their rate limiters.
 	// First-run setup: creates the initial admin, then refuses (409) forever.
 	authGroup.Post("/setup", http.NewSetupHandler(authusecase.NewSetupUseCase(userRepo, registerUC, cfg.Registration.SetupToken)).Setup)
 	authGroup.Get("/verify", authHandler.Verify)
@@ -234,6 +235,20 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	} else {
 		authGroup.Post("/forgot-password", authHandler.ForgotPassword)
 		authGroup.Post("/reset-password", authHandler.ResetPassword)
+	}
+
+	// Registration rate limiting. With SMTP configured every registration
+	// sends a mail — an activation link to a new address, or a "someone tried
+	// to register with your address" notice to an existing one (P01) — so,
+	// like forgot-password, it needs the per-EMAIL limiter or it becomes a
+	// mail-flooding primitive against one inbox. Without SMTP nothing is
+	// sent, and registration keeps only the global limiter.
+	if cfg.RateLimit.Enabled && cfg.SMTP.Host != "" {
+		registerIPLimiter := http.NewIPRateLimiter(authIPMax, authWindow)
+		registerEmailLimiter := http.NewEmailRateLimiter(authEmailMax, authWindow)
+		authGroup.Post("/register", http.ExtractEmailMiddleware(), registerIPLimiter, registerEmailLimiter, authHandler.Register)
+	} else {
+		authGroup.Post("/register", authHandler.Register)
 	}
 
 	// User Routes (Protected)
