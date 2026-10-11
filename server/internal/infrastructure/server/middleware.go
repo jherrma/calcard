@@ -9,7 +9,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/helmet"
-	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/jherrma/caldav-server/internal/config"
@@ -20,12 +19,13 @@ func SetupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Request ID
 	app.Use(requestid.New())
 
-	// Logger
-	app.Use(logger.New(logger.Config{
-		Format:     "[${time}] ${status} - ${latency} ${method} ${path}\n",
-		TimeFormat: time.RFC3339,
-		TimeZone:   "UTC",
-	}))
+	// Access log: failed requests only (status >= 400). Logging every request
+	// buries the output in static-asset and polling lines; the full per-request
+	// log is the CALDAV_LOG_PAYLOADS debug flag (which already covers failures,
+	// so this stays off when it is on).
+	if !cfg.LogPayloads {
+		app.Use(errorLogger(slog.Default()))
+	}
 
 	// Debug payload logging (opt-in). Registered before auth and rate limiting
 	// so rejected requests are visible too.
@@ -75,4 +75,21 @@ func SetupMiddleware(app *fiber.App, cfg *config.Config) {
 
 	// Rate Limiting
 	app.Use(middleware.GlobalRateLimiter(cfg.RateLimit))
+}
+
+// errorLogger logs requests that ended with a 4xx/5xx status.
+func errorLogger(logger *slog.Logger) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		if status := c.Response().StatusCode(); status >= 400 {
+			logger.Warn("http request failed",
+				slog.String("method", c.Method()),
+				slog.String("path", c.Path()),
+				slog.Int("status", status),
+				slog.Duration("latency", time.Since(start)),
+			)
+		}
+		return err
+	}
 }
