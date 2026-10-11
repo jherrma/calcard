@@ -2,12 +2,14 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func newSetupUC(repo *mockUserRepo, cfg *config.Config) (*SetupUseCase, *mockCalendarRepo, *mockAddressBookRepo) {
@@ -28,7 +30,8 @@ func TestSetupUseCase_CreatesAdminOnEmptyServer(t *testing.T) {
 	repo.On("Count", ctx).Return(int64(0), nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
 		return u.Username == "admin" && u.Email == "a@example.com" &&
-			u.IsAdmin && u.IsActive && u.EmailVerified && u.PasswordHash != "SecurePass123!"
+			u.IsAdmin && u.IsActive && u.EmailVerified &&
+			bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("SecurePass123!")) == nil
 	})).Return(nil)
 	calRepo.On("Create", ctx, mock.Anything).Return(nil)
 	abRepo.On("Create", ctx, mock.Anything).Return(nil)
@@ -78,4 +81,32 @@ func TestSetupUseCase_Validation(t *testing.T) {
 			repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 		})
 	}
+}
+
+// A repository error must fail closed: never create an account on a failed check.
+func TestSetupUseCase_CountErrorFailsClosed(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc, _, _ := newSetupUC(repo, &config.Config{})
+	ctx := context.Background()
+	boom := errors.New("db down")
+	repo.On("Count", ctx).Return(int64(0), boom)
+
+	_, err := uc.Execute(ctx, "admin", "a@example.com", "SecurePass123!", "")
+
+	assert.ErrorIs(t, err, boom)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+func TestSetupUseCase_CreateErrorIsReturned(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc, calRepo, _ := newSetupUC(repo, &config.Config{})
+	ctx := context.Background()
+	boom := errors.New("unique constraint")
+	repo.On("Count", ctx).Return(int64(0), nil)
+	repo.On("Create", ctx, mock.Anything).Return(boom)
+
+	_, err := uc.Execute(ctx, "admin", "a@example.com", "SecurePass123!", "")
+
+	assert.ErrorIs(t, err, boom)
+	calRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }

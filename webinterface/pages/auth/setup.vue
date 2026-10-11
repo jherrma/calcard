@@ -120,10 +120,10 @@ const rules = {
   username: {
     required,
     minLength: minLength(3),
-    // Mirrors the server rule: lower-case only, because lookups lower-case the name.
+    // Same shape as the server rule; the server (and handleSetup) lower-case it.
     pattern: helpers.withMessage(
-      "Use lowercase letters, digits, '.', '_' or '-' (start with a letter or digit)",
-      helpers.regex(/^[a-z0-9][a-z0-9._-]{2,63}$/),
+      "Use letters, digits, '.', '_' or '-' (start with a letter or digit); it is stored in lower case",
+      helpers.regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}$/),
     ),
   },
   email: { required, email },
@@ -159,16 +159,25 @@ const handleSetup = async () => {
 
   try {
     await authStore.setupAdmin({
-      username: form.username,
+      // The server lower-cases usernames; do it here so "Admin" isn't rejected.
+      username: form.username.trim().toLowerCase(),
       email: form.email,
       display_name: form.display_name,
       password: form.password,
     });
-    // Setup creates the account but no session: sign the new admin straight in.
-    await authStore.login({ email: form.email, password: form.password, remember: true });
-    await router.push("/");
   } catch (e: any) {
     error.value = e.data?.message || "Setup failed. Please try again.";
+    isLoading.value = false;
+    return;
+  }
+
+  // The account exists now. A failed sign-in must not read as "setup failed"
+  // (retrying would only answer 409), so send the admin to the login page.
+  try {
+    await authStore.login({ email: form.email, password: form.password, remember: false });
+    await router.push("/");
+  } catch {
+    await router.replace("/auth/login");
   } finally {
     isLoading.value = false;
   }

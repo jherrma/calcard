@@ -26,11 +26,26 @@ var (
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
 
 // SetupUseCase creates the first account, as an administrator. It is open only
-// while the user table is empty.
+// while no account has ever existed. The check-then-insert is serialised within
+// one process only (mutex); a concurrent /auth/register or a second server
+// process on a shared Postgres can still win the race.
 type SetupUseCase struct {
 	repo     user.UserRepository
 	register *RegisterUseCase // reused for the default calendar / address book
 	mu       sync.Mutex       // serialises the count-then-create check in this process
+}
+
+// ensureEmpty fails with ErrSetupCompleted once any account has ever existed.
+// A repository error fails closed.
+func (uc *SetupUseCase) ensureEmpty(ctx context.Context) error {
+	count, err := uc.repo.Count(ctx)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrSetupCompleted
+	}
+	return nil
 }
 
 func NewSetupUseCase(repo user.UserRepository, register *RegisterUseCase) *SetupUseCase {
@@ -38,15 +53,10 @@ func NewSetupUseCase(repo user.UserRepository, register *RegisterUseCase) *Setup
 }
 
 func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, displayName string) (*user.User, error) {
-	uc.mu.Lock()
-	defer uc.mu.Unlock()
-
-	count, err := uc.repo.Count(ctx)
-	if err != nil {
+	// Cheap pre-check first, so a configured server answers 409 without
+	// validating or hashing anything (no bcrypt work for unauthenticated callers).
+	if err := uc.ensureEmpty(ctx); err != nil {
 		return nil, err
-	}
-	if count > 0 {
-		return nil, ErrSetupCompleted
 	}
 
 	username = strings.ToLower(strings.TrimSpace(username))
@@ -61,9 +71,18 @@ func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, 
 		return nil, err
 	}
 
+	// Hash BEFORE taking the lock and re-checking: bcrypt takes ~250 ms, and
+	// holding the check-to-insert window open that long is what let concurrent
+	// registrations slip in ahead of the admin.
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), user.BcryptCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
+	if err := uc.ensureEmpty(ctx); err != nil {
+		return nil, err
 	}
 
 	// The administrator is active and verified immediately, SMTP or not: there

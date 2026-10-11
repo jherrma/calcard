@@ -13,7 +13,8 @@ import (
 // server already has users (other tests register them), so setup must be
 // refused with 409 — it can never be used to mint an admin on a live server.
 // The happy path (empty server -> admin) is covered by the usecase unit tests
-// and by the e2e suite against a fresh container.
+// and was verified by hand against a fresh container; there is no automated
+// fresh-server test yet.
 func TestSetupRefusedOnceUsersExist(t *testing.T) {
 	// Make sure at least one user exists regardless of test ordering.
 	doJSON(t, http.MethodPost, "/auth/register", "", map[string]string{
