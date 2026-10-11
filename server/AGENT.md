@@ -40,7 +40,7 @@ The server exposes three types of endpoints:
 
 ### REST API (`/api/v1/...`)
 
-JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", "data": ... }` via `SuccessResponse()`.
+JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, register, login, refresh, logout, verify, forgot/reset password, OAuth link), `/system/*`, `/users/me` (+ password, preferences), `/app-passwords`, `/about/open-source` and `GET /health` wrap their payload in `{ "status": "ok", "data": ... }` via `SuccessResponse()`; everything else returns raw JSON (see below).
 
 | Area | Endpoints |
 |------|-----------|
@@ -61,7 +61,7 @@ JSON API for the web frontend. Most responses are wrapped in `{ "status": "ok", 
 | Subscriptions | `GET`/`POST /api/v1/calendar-subscriptions`, `GET`/`PATCH`/`DELETE /:id`, `POST /:id/refresh` — remote iCalendar feeds mirrored into read-only calendars (story 100). Raw JSON |
 | Health | `GET /health` |
 
-**Exception**: AddressBook and Contact endpoints return raw JSON (not wrapped in `SuccessResponse`).
+**Raw JSON (no envelope)**: calendars (incl. shares, public access), events, address books (incl. shares), contacts, `/contacts/search`, `/search`, CalDAV/CardDAV credentials, import, `/mcp-tokens`, `/calendar-subscriptions`, `GET /auth/oauth/providers` and `GET /ready`. Errors are mostly `{ "status": "error", "message" }` (`ErrorResponse()`), though some raw-JSON handlers answer `{ "error": ... }`. `POST /auth/register` answers 200, not 201; that is kept for client compatibility.
 
 ### CalDAV/CardDAV (`/dav/...`)
 

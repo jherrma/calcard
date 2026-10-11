@@ -15,10 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// apiResponse matches the {status, data, ...} envelope returned by most REST
-// endpoints (the ones that go through SuccessResponse()). Handlers outside
-// that envelope (calendars, events, address books, contacts, import handlers)
-// return raw JSON; the helpers below accept both shapes via the `unwrap` flag.
+// apiResponse matches the {status, data, ...} envelope returned by the auth,
+// user, system, app-password, about and health endpoints (the ones that go
+// through SuccessResponse()). Everything else — calendars, events, address
+// books, contacts, sharing, credentials, import, MCP tokens, search,
+// subscriptions — returns raw JSON; use doJSON for the former, doJSONRaw for
+// the latter.
 type apiResponse struct {
 	Status  string          `json:"status"`
 	Message string          `json:"message,omitempty"`

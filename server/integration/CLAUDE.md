@@ -66,7 +66,7 @@ Each `go test` invocation boots one server via `TestMain` on a random localhost 
 
 ## Wrapped vs. raw JSON
 
-Most REST endpoints return `{ "status": "ok", "data": {...} }` via `SuccessResponse()` (auth, user, system, app-password, health). Calendar, event, address book, contact, and import handlers return raw JSON. Use `doJSON` for the first category and `doJSONRaw` for the second; the helpers are otherwise interchangeable.
+Auth, user, system, app-password, about and health endpoints return `{ "status": "ok", "data": {...} }` via `SuccessResponse()`. Calendar, event, address book, contact, sharing, public-calendar, DAV-credential, import, MCP-token, search and subscription handlers return raw JSON. Use `doJSON` for the first category and `doJSONRaw` for the second; the helpers are otherwise interchangeable.
 
 ## Basic Auth for DAV
 

@@ -12,7 +12,7 @@ The adapter layer is responsible for translating data between the application's 
   - **DTOs** (`dto/`): Data Transfer Objects for auth, user, contact, addressbook, event, and credentials.
   - **Middleware**: `auth_middleware.go` (JWT verification, then the per-user revocation check `User.AcceptsAccessTokenIssuedAt` — P02), `rate_limiter.go`.
   - **Base URL**: `base_url.go` — `RequestBaseURL(c, cfg)` returns `cfg.BaseURL` or, when it is unset, the origin the request came in on (Host header; `X-Forwarded-Proto`/`-Host` only with `CALDAV_TRUST_FORWARDED_HEADERS`). Use it **only** for URLs returned to the caller of the same request (app-password `server_url`, calendar `public_url`). E-mail links and OAuth redirect URIs must keep using `cfg.BaseURL` — config validation requires it whenever SMTP or OAuth is configured — or a forged Host header poisons a password-reset link.
-  - **Responses**: `response.go` — `SuccessResponse()` wraps most responses in `{ "status": "ok", "data": ... }`. **Exception**: AddressBook and Contact handlers return raw JSON.
+  - **Responses**: `response.go` — `SuccessResponse()` wraps a payload in `{ "status": "ok", "data": ... }`; `ErrorResponse()` writes `{ "status": "error", "message" }`. Only the auth, user, system, app-password, about and health handlers use the success envelope. Calendar, event, address book, contact, sharing, public-calendar, CalDAV/CardDAV-credential, import, MCP-token, search, subscription and OAuth-provider-list handlers return raw JSON. Some of the raw ones answer errors as `{ "error": ... }`. Match the existing shape of an area; changing one breaks the SPA and API clients.
 
 ### [mcp/](mcp/)
 

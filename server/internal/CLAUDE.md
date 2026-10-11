@@ -74,7 +74,7 @@ This directory contains the core business logic and implementation details of th
 3. **Usecase**: Executes business logic, interacts with **Domain** entities and calls **Repository** interfaces.
 4. **Adapter (Repository)**: The concrete implementation of the repository interface handles the actual database interaction.
 5. **Usecase**: Returns a result back to the **Adapter (HTTP)**.
-6. **Adapter (HTTP)**: Formats the result into an HTTP response (JSON). Most responses are wrapped in `{ "status": "ok", "data": ... }` via `SuccessResponse()`, except AddressBook/Contact endpoints which return raw JSON.
+6. **Adapter (HTTP)**: Formats the result into an HTTP response (JSON). Auth, user, system, app-password, about and health responses are wrapped in `{ "status": "ok", "data": ... }` via `SuccessResponse()`; calendar, event, address book, contact, sharing, credential, import, MCP-token, search and subscription handlers return raw JSON.
 
 ### CalDAV/CardDAV Protocol
 
