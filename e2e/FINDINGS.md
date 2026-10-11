@@ -1,14 +1,18 @@
 # E2E findings
 
-Server bugs found by the e2e suite against master `9334b84` on 2026-10-11. Each
-is marked `@known("F<nn>")` in its test (`tests/test_*.py`; a strict pytest
-`xfail`, or `t.known("F<nn>")` where the bug only applies under a runtime
-condition): the test asserts the CORRECT behaviour and reports KFAIL, so the bug
-shows in every run without failing the exit code (`./run --strict` turns KFAIL
-into a failure). When a bug is fixed its test reports XPASS, which fails the run
-until the marker is removed and this file is updated.
+Server bugs found by the e2e suite against master `9334b84` on 2026-10-11, and
+re-checked against master `93fce76` (after #184–#194) the same day: F02–F19 all
+still reproduce, each exactly as documented below. Each is marked
+`@known("F<nn>")` in its test (`tests/test_*.py`; `t.known("F<nn>")` where the
+bug only applies under a runtime condition). The test asserts the CORRECT
+behaviour; its *pinning* checks (`t.bug…`) name the documented wrong response,
+and only that response produces a KFAIL — anything else in the test is an
+ordinary failure (see README.md, "Known bugs in a test"). So the bug shows in
+every run without failing the exit code (`./run --strict` turns KFAIL into a
+failure). When a bug is fixed its test reports XPASS, which fails the run until
+the marker is removed and this file is updated.
 
-The server was not changed to fix any of these.
+The e2e work did not change the server to fix any of these.
 
 | ID  | Severity | Summary |
 | --- | -------- | ------- |
@@ -35,8 +39,9 @@ The server was not changed to fix any of these.
   `*AddressBook`; `domain/addressbook/addressbook.go` `User` and
   `domain/user/user.go` `PasswordHash` have no `json:"-"`. Calendars are safe
   because their `Owner` is `json:"-"`.
-- Related: the address-book JSON also exposes `UserID`, `DeletedAt` and an empty
-  `User` object to its owner.
+- Related (fixed in #190, P03): the address-book JSON also exposed `UserID` and
+  `DeletedAt` (and calendars `user_id`), to the owner and to sharees. The sharing
+  suite now checks that a sharee sees none of them.
 
 ### F02 — High: username login/share lookup is case-broken
 - **Cause:** usernames are random mixed-case (`usecase/auth/username_util.go`),
@@ -103,16 +108,26 @@ The server was not changed to fix any of these.
   found", import into a foreign calendar returns 400 "access denied", while `GET`
   returns 404 (`calendar_handler.go` maps every error to 400).
 
+## Fixed on master, guarded by the suite
+
+| Issue | Fixed in | Guarded by |
+| ----- | -------- | ---------- |
+| F01 password hash leak via shared address books | #181 | `sharing/shared address book does not leak the owner's account data` |
+| P02 access tokens kept working after logout / password change | #189 | `auth/logout revokes the refresh token and every access token of the account`, `auth/logout with only a bearer …`, `auth/password change swaps credentials and revokes sessions`, `auth/account deletion …` |
+| P03 owners' numeric user ids (`user_id`, `UserID`, `DeletedAt`) in collection JSON | #190 | `sharing/sharee sees the calendar over REST …`, `sharing/shared address book does not leak …` |
+| two-UID CalDAV PUT answered 500 | #194 | `dav_caldav/PUT of a well-formed object with two different UIDs …` |
+
 ## Observations without a failing test
 
-- ~~A CalDAV `PUT` of a well-formed VCALENDAR with two different UIDs answered 500~~ —
-  **fixed in #194** (answers the `valid-calendar-object-resource` precondition). Covered by
-  `dav_caldav/PUT of a well-formed object with two different UIDs` (needs a server with #194).
+- PROPFIND on a path directly under the principal that is no collection home
+  (`/dav/<user>/<anything>/`) answers 207 with an empty `<multistatus/>` instead
+  of 404 — the same shape as F11, for the caller's own principal.
 - DAV Basic auth bcrypt-checks every one of the user's app passwords (~250 ms each):
   login cost grows with their number, and anyone knowing an e-mail can trigger it.
 - Handler doc comments say `PUT` for events/contacts (route is `PATCH`) and
   `/api/v1/public/calendar` (route is `/public/calendar`).
-- `CONFIGURATION.md` doesn't document `CALDAV_REGISTRATION_DISABLED`, the
-  `CALDAV_SMTP_*` keys or the auth rate-limit keys.
+- `CONFIGURATION.md` documents `CALDAV_SMTP_HOST` but not `CALDAV_SMTP_PORT`,
+  `_USER`, `_PASSWORD` and `_FROM` (registration and the auth rate-limit keys are
+  documented since).
 - App passwords accept an empty name and any scope string; DAV credentials accept
   an expiry date in the past.

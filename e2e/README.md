@@ -89,7 +89,7 @@ file at all. `E2E_ENV_FILE=/path/to/file` selects another file.
 | `E2E_INSECURE` | `false` | accept self-signed / untrusted TLS certificates |
 | `E2E_TIMEOUT` / `E2E_CONNECT_TIMEOUT` | `30` / `10` | per-request limits (s) |
 | `E2E_HEALTH_WAIT` | `60` | wait this long for `GET /health` before giving up (s) |
-| `E2E_USER_PREFIX` / `E2E_EMAIL_DOMAIN` | `e2e` / `example.test` | test users are `<prefix>-<run id>-<key>@<domain>` |
+| `E2E_USER_PREFIX` / `E2E_EMAIL_DOMAIN` | `e2e` / `example.test` | test users are `<prefix>-<run id>-<key>@<domain>`. The prefix is lowercase letters, digits and `-`, **at most 20 characters**: names derived from it must fit the server's 50-character DAV credential usernames, and a longer prefix is refused at start-up (exit code 2) |
 | `E2E_PASSWORD` | random per run | password of the test users |
 | `E2E_SUITES` / `E2E_SKIP_SUITES` | all / none | suite selection (space or comma separated); `./run` arguments override `E2E_SUITES` |
 | `E2E_VERBOSE` | `0` | `1` logs every request, `2` also bodies (same as `-v` / `-vv`) |
@@ -99,7 +99,7 @@ file at all. `E2E_ENV_FILE=/path/to/file` selects another file.
 | `E2E_RESULTS_FILE` | — | write the per-test results there (`--results`) |
 | `E2E_RATE_LIMIT_RETRIES` / `E2E_RATE_LIMIT_MAX_WAIT` | `6` / `90` | 429 handling |
 | `E2E_RATE_LIMIT_BURST` | `false` | opt-in login-limiter test (see below) |
-| `E2E_FEED` | `auto` | `off` skips the subscription fetch tests |
+| `E2E_FEED` | `auto` | `off` (or `false` / `no` / `0`) skips the subscription fetch tests; `auto` (or `true` / `on` / `1`) runs them; anything else is a configuration error |
 | `E2E_FEED_HOST` / `E2E_FEED_BIND` / `E2E_FEED_PORT` | auto | where the local feed server listens and how the server reaches it |
 | `NO_COLOR` | — | disable colours (also off when stdout is not a terminal) |
 
@@ -115,7 +115,7 @@ file at all. `E2E_ENV_FILE=/path/to/file` selects another file.
   KFAIL dav_caldav/MKCALENDAR / MKCOL on an existing collection is refused (405) [known server bug F03, see e2e/FINDINGS.md]
   SKIP  subscriptions/… — server refuses private/loopback feed hosts (SSRF guard …)
 …
-PASS 238  FAIL 0  SKIP 6  KFAIL 23  XPASS 0  (429 retries: 0)
+PASS 240  FAIL 0  SKIP 5  KFAIL 23  XPASS 0  (429 retries: 0, re-logins after a revoked token: 3)
 ```
 
 | Result | Meaning |
@@ -123,13 +123,18 @@ PASS 238  FAIL 0  SKIP 6  KFAIL 23  XPASS 0  (429 retries: 0)
 | PASS | the server behaves as documented / as the RFC requires |
 | FAIL | it does not — a regression or a broken test; the run exits 1 |
 | SKIP | not run, with the reason (feature disabled, external system needed, opt-in, an earlier step it builds on failed) |
-| KFAIL | fails because of a **known server bug** listed in `FINDINGS.md` (a strict `xfail`); the test asserts the *correct* behaviour so the bug stays visible. Does not fail the run unless `--strict` |
+| KFAIL | fails because of a **known server bug** listed in `FINDINGS.md`: every failed check is one of the test's *pinning* checks and the server answered exactly as documented (see [Known bugs in a test](#known-bugs-in-a-test)). The test asserts the *correct* behaviour so the bug stays visible. Does not fail the run unless `--strict` |
 | XPASS | a known bug no longer reproduces: the run **fails** (exit 1) until the `known("F<nn>")` marker is removed and `FINDINGS.md` updated |
 
 A failed check prints the request and the response (status, key headers, body
 preview) and only fails *that* test; the run continues. With `--strict` the
 known-bug markers only label the tests: a bug that still reproduces is a FAIL
 (tagged with its F-number), a fixed one a plain PASS.
+
+`re-logins after a revoked token` counts how often a user's REST session had to
+be renewed (see [Sessions](#sessions-and-the-account-wide-logout)). A few are
+normal: the auth suite's own throwaway accounts log out, and the cleanup then
+re-authenticates them to delete them.
 
 ## Suites
 
@@ -192,6 +197,11 @@ through `DELETE /api/v1/users/me`. What the server's API cannot remove:
 None of it is reachable by anyone after the run. Use a dedicated prefix
 (`E2E_USER_PREFIX`) if you want to find these rows later.
 
+A cleanup step that fails (including an account that cannot be deleted because
+the suite can no longer authenticate as it) is listed under *Cleanup problems*
+in the summary: an account is only considered deleted after the server answered
+the `DELETE /users/me` with 200/204.
+
 ## Writing a test
 
 A suite is a module `tests/test_NN_name.py` with a `DESCRIPTION` string; each
@@ -222,7 +232,8 @@ def test_example(t, e2e, u1, u2):
 @known("F03")  # a documented server bug: KFAIL now, XPASS (= failure) once fixed
 def test_mkcol_existing(t, u1):
     """MKCOL on an existing collection is refused (405)"""
-    ...
+    r = u1.dav("MKCOL", col)
+    t.bug.status(r, 405, was=201)      # the pinning check: see "Known bugs in a test"
 ```
 
 - **Requests** (`harness/session.py`, `harness/http.py`): `u.api` (REST under
@@ -238,7 +249,8 @@ def test_mkcol_existing(t, u1):
 - **Users**: `u1` / `u2` are shared by all suites; `e2e.create_user("KEY")`
   makes a scratch user (deleted at the end). Fields: `email`, `password`,
   `username`, `token`, `apppw`, `home_cal`, `home_ab`; `u.require_dav()` creates
-  the DAV app password in a suite fixture.
+  the DAV app password in a suite fixture. **Never log out, refresh-rotate or
+  change the password of `u1` / `u2`** — use a scratch user (see below).
 - **Suite setup** (resources every test of a suite uses) lives in a
   module-scoped autouse fixture. If it fails, every test of that suite FAILs
   with the setup error and the other suites still run.
@@ -256,11 +268,55 @@ def test_mkcol_existing(t, u1):
   (`//*[local-name()='a']/…`) and `el("name")`; `xstr` / `xml_text` / `xcount`
   read values.
 - **Flow**: `t.need(st, "name")` skips when an earlier step did not produce a
-  value; `t.skip("reason")` skips; `t.abort(msg, r)` fails and stops;
-  `@known("F<nn>")` marks a known server bug (document it in `FINDINGS.md`),
-  `t.known("F<nn>")` does the same from inside a test when the bug only applies
-  under a runtime condition.
+  value; `t.skip("reason")` skips; `t.abort(msg, r)` fails and stops.
 - Names must be unique per run: use `e2e.uniq("label")` (prefix + run id).
+- `t.contains` / `t.not_contains` refuse an empty needle (`'' in body` is always
+  true, so such a check would prove nothing).
+
+### Known bugs in a test
+
+`@known("F<nn>")` marks a test that fails because of a documented server bug
+(document it in `FINDINGS.md`); `t.known("F<nn>")` does the same from inside a
+test when the bug only applies under a runtime condition. The checks that state
+the bug go through **`t.bug`** — the *pinning* checks — and say what the server
+is documented to do instead, so that only the documented bug can produce a KFAIL:
+
+```python
+@known("F12")
+def test_notfound_status(t, u1):
+    """unknown calendar is a 404 on every verb"""
+    r = u1.api("PATCH", f"/calendars/{ZERO_UUID}", json={"name": "x"})
+    t.bug.status(r, 404, was=400)   # documented: 400; any other status is a FAIL
+```
+
+Every check of `t` is available on `t.bug`. `status` takes the documented
+status code(s) as `was=`; the others take a boolean, e.g.
+`t.bug.true(n == 1, "no duplicate", was=n > 1)`; without `was` (e.g.
+`t.bug.xpath(r, expr)`) failing the check *is* the documented bug.
+
+The test is a strict `xfail(raises=KnownBug)`. `KnownBug` is raised only when
+*every* failed check is a pinning check that saw the documented behaviour.
+Everything else in a known test is an ordinary **FAIL**: a failed precondition
+check, a factory's `SetupFailed`, a crash (`TypeError`, …), a 401, a pinning
+check that saw neither the correct nor the documented response, and a known test
+that returns before any pinning check ran. When the bug is fixed the pinning
+checks pass: XPASS, and the run fails until the marker is removed.
+
+### Sessions and the account-wide logout
+
+Since #189 a logout with a live refresh token (or a bearer), a password change
+and a password reset revoke **every** access token of the account, not just
+one session's. So:
+
+- `u.api(...)` recovers once from a REST 401 whose message says the *token* was
+  rejected (`token revoked`, `token expired`, `invalid or expired token`): it
+  refreshes (or logs in again) and repeats the request. Any other 401 — a wrong
+  password in the body, a missing token — comes back unchanged, so
+  authentication tests see exactly what the server said. To assert on one
+  specific token, send it yourself: `e2e.req(..., bearer=token)`.
+- Tests that log in, refresh, log out or change a password use their own
+  scratch account (the auth suite has `ULOG`, `UA` and `UDEL`), never `u1` /
+  `u2`, so other suites keep their sessions.
 
 ## Known server bugs
 
