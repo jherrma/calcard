@@ -128,7 +128,14 @@ func (b *CalDAVBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, e
 func (b *CalDAVBackend) GetCalendar(ctx context.Context, p string) (*caldav.Calendar, error) {
 	// Single resolver so owned/shared resolution (and UUID-vs-legacy-path
 	// matching) can never diverge between GetCalendar and ResolvePath.
-	c, u, perm, err := b.ResolvePath(ctx, p)
+	//
+	// Uncapped on purpose: the permission only decides how mapCalendar
+	// addresses the collection (owner path vs. share UUID), which is a matter
+	// of ownership, not of write access. With the subscription cap an owned
+	// subscription would be mapped as a share, and emersion lists a Depth 1
+	// PROPFIND's members under the returned path — a UUID URL that does not
+	// resolve for the owner, so the PROPFIND answered 404 (F21).
+	c, u, perm, err := b.resolvePathUncapped(ctx, p)
 	if err != nil {
 		return nil, err
 	}
