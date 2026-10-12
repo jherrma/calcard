@@ -65,9 +65,9 @@ func TestEventMove(t *testing.T) {
 
 // TestContactMove creates a contact in address book A, moves it to B, and
 // verifies that the source no longer lists it while the target does, with
-// the vCard UID preserved. The contact-move endpoint is interesting because
-// it does NOT take the source addressbook id from the URL — the server looks
-// the contact up by its UUID and only uses the target id from the body.
+// the vCard UID preserved. The source is the address book in the URL and the
+// contact must live there (a wrong source book is a 404, see
+// resource_path_test.go); the target comes from the body.
 func TestContactMove(t *testing.T) {
 	email := "move-ct@example.test"
 	password := "moveSecret!123"

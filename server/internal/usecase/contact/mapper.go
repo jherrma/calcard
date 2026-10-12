@@ -248,8 +248,9 @@ func applyContactToCard(card vcard.Card, c *contact.Contact) {
 	// §6.2.1): derive it from the name, organization, … written above.
 	addressbook.EnsureFormattedName(card)
 
-	// Revision
-	card.SetValue(vcard.FieldRevision, time.Now().Format("20060102T150405Z"))
+	// Revision. The "Z" suffix promises UTC, so the clock must be UTC too — a
+	// local wall clock here is a wrong instant, off by the server's offset (F04).
+	card.SetValue(vcard.FieldRevision, time.Now().UTC().Format("20060102T150405Z"))
 }
 
 // ToVCard converts a Contact struct to a fresh vCard string (create path).

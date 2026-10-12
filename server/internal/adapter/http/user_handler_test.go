@@ -208,6 +208,58 @@ func TestUserHandler_ChangePassword(t *testing.T) {
 		require.NoError(t, err)
 		assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(unchanged.PasswordHash), []byte("OldPass123!")))
 	})
+
+	t.Run("SamePassword", func(t *testing.T) {
+		// Dedicated user with a live token, so neither the 400 nor the 401
+		// below can come from a session "Success" has already revoked.
+		sameHash, _ := bcrypt.GenerateFromPassword([]byte("OldPass123!"), bcrypt.DefaultCost)
+		sameUser := &user.User{
+			Email:         "changepw-same@example.com",
+			Username:      "changepw-same",
+			PasswordHash:  string(sameHash),
+			IsActive:      true,
+			EmailVerified: true,
+			UUID:          "changepw-same-uuid",
+		}
+		require.NoError(t, userRepo.Create(context.Background(), sameUser))
+		sameToken, _, err := jwtManager.GenerateAccessToken(sameUser.UUID, sameUser.Email)
+		require.NoError(t, err)
+
+		changePassword := func(current, next string) (int, string) {
+			body, _ := json.Marshal(map[string]string{"current_password": current, "new_password": next})
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/password", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+sameToken)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+			var respData struct {
+				Message string `json:"message"`
+			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&respData))
+			return resp.StatusCode, respData.Message
+		}
+
+		// new == current is a validation error, not an authentication failure
+		// (F10): a 401 makes the SPA refresh its session and replay the request.
+		status, msg := changePassword("OldPass123!", "OldPass123!")
+		assert.Equal(t, fiber.StatusBadRequest, status)
+		assert.Equal(t, "new password cannot be the same as the current password", msg)
+
+		// A wrong current password stays a 401, also when new == current.
+		status, msg = changePassword("WrongPass123!", "WrongPass123!")
+		assert.Equal(t, fiber.StatusUnauthorized, status)
+		assert.Equal(t, "current password is incorrect", msg)
+
+		// Neither refusal touched the password or revoked the session.
+		unchanged, err := userRepo.GetByID(context.Background(), sameUser.ID)
+		require.NoError(t, err)
+		assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(unchanged.PasswordHash), []byte("OldPass123!")))
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+		req.Header.Set("Authorization", "Bearer "+sameToken)
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	})
 }
 
 func TestUserHandler_DeleteAccount(t *testing.T) {

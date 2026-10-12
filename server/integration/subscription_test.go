@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -129,6 +130,40 @@ func TestCalendarSubscriptions(t *testing.T) {
 			"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//T//EN\r\nBEGIN:VEVENT\r\nUID:dav@x\r\nDTSTAMP:20260101T000000Z\r\nDTSTART:20260901T100000Z\r\nSUMMARY:DAV\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
 			map[string]string{"Content-Type": "text/calendar"})
 		assert.Equal(t, http.StatusForbidden, status, "DAV PUT: %s", string(body))
+	})
+
+	t.Run("the owner can list and read the collection over CalDAV", func(t *testing.T) {
+		// F21: a Depth 1 PROPFIND on an owned subscription answered 404,
+		// because the collection was mapped like a share (by UUID) and its
+		// members were then listed under a URL the owner cannot resolve.
+		davUser, davPass := createAppPassword(t, token, "subscription-dav-listing")
+		calPath := calendarPath(t, token, created.CalendarID)
+		collection := davURL(davUser, "calendars", calPath) + "/"
+		members := regexp.MustCompile(`<href>(` + regexp.QuoteMeta(collection) + `[^<]+\.ics)</href>`)
+
+		status, _, body := davCall(t, "PROPFIND", collection, "subscriber@example.com", davPass,
+			`<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><getetag/><resourcetype/></prop></propfind>`,
+			depthHeader("1"))
+		require.Equal(t, http.StatusMultiStatus, status, "Depth 1 PROPFIND: %s", string(body))
+		assert.Contains(t, string(body), "<href>"+collection+"</href>", "the collection keeps its own URL")
+		assert.Len(t, members.FindAllStringSubmatch(string(body), -1), 2, "both mirrored events are listed: %s", string(body))
+		assert.NotContains(t, string(body), "/calendars/"+created.CalendarID+"/", "an owned collection is not addressed by UUID")
+
+		status, _, body = davCall(t, "REPORT", collection, "subscriber@example.com", davPass,
+			`<?xml version="1.0" encoding="utf-8"?><C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">`+
+				`<D:prop><D:getetag/></D:prop><C:filter><C:comp-filter name="VCALENDAR"/></C:filter></C:calendar-query>`,
+			map[string]string{"Depth": "1", "Content-Type": "application/xml"})
+		require.Equal(t, http.StatusMultiStatus, status, "calendar-query: %s", string(body))
+		hrefs := members.FindAllStringSubmatch(string(body), -1)
+		require.Len(t, hrefs, 2, "both mirrored events: %s", string(body))
+
+		status, _, body = davCall(t, http.MethodGet, hrefs[0][1], "subscriber@example.com", davPass, "", nil)
+		require.Equal(t, http.StatusOK, status, "GET: %s", string(body))
+		assert.Contains(t, string(body), "Feed event")
+
+		// Reading works; deleting a mirrored event is still refused.
+		status, _, _ = davCall(t, http.MethodDelete, hrefs[0][1], "subscriber@example.com", davPass, "", nil)
+		assert.Equal(t, http.StatusForbidden, status, "DAV DELETE")
 	})
 
 	t.Run("refresh applies the feed's changes", func(t *testing.T) {

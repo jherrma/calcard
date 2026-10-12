@@ -3,8 +3,10 @@ package database
 import (
 	"fmt"
 
+	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/user"
 	"gorm.io/gorm"
 )
 
@@ -28,7 +30,46 @@ func RunDataMigrations(db *gorm.DB) error {
 	if err := purgeSoftDeletedShares(db); err != nil {
 		return fmt.Errorf("purge soft-deleted shares: %w", err)
 	}
+	if err := purgeDeletedAccounts(db); err != nil {
+		return fmt.Errorf("purge deleted accounts: %w", err)
+	}
+	if err := releaseDeletedUserIdentities(db); err != nil {
+		return fmt.Errorf("release deleted user identities: %w", err)
+	}
+	if err := releaseRevokedCredentialUsernames(db); err != nil {
+		return fmt.Errorf("release revoked credential usernames: %w", err)
+	}
 	return nil
+}
+
+// purgeDeletedAccounts removes the data of accounts deleted before account
+// deletion cascaded to it (F18). Those accounts' users rows were soft-deleted
+// but their calendars, address books, shares, public links and credentials
+// stayed — still readable by sharees and through /public/calendar/<token>.
+// Runs the same cascade DELETE /users/me now performs, for every soft-deleted
+// user. Idempotent: once purged there is nothing left to match.
+func purgeDeletedAccounts(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		deleted := tx.Unscoped().Model(&user.User{}).Select("id").Where("deleted_at IS NOT NULL")
+		return repository.PurgeAccountData(tx, deleted)
+	})
+}
+
+// releaseDeletedUserIdentities applies what UserRepository.Delete now does to
+// accounts deleted by older code (F19): those soft-deleted rows still hold
+// their e-mail and username in the non-partial unique indexes, so the address
+// could never register again, and their OAuth connections still claim the
+// provider identity. The e-mail and username become "deleted:<uuid>" and the
+// connections are removed. Idempotent: tombstoned rows are skipped, and the
+// connections are already gone.
+func releaseDeletedUserIdentities(db *gorm.DB) error {
+	expr := gorm.Expr("? || uuid", user.DeletedIdentityPrefix)
+	if err := db.Unscoped().Model(&user.User{}).
+		Where("deleted_at IS NOT NULL AND email NOT LIKE ?", user.DeletedIdentityPrefix+"%").
+		UpdateColumns(map[string]interface{}{"email": expr, "username": expr}).Error; err != nil {
+		return err
+	}
+	return db.Exec(`DELETE FROM oauth_connections WHERE user_id IN (SELECT id FROM users WHERE deleted_at IS NOT NULL)`).Error
 }
 
 // purgeSoftDeletedShares hard-deletes share rows left behind by the old
@@ -172,4 +213,22 @@ func backfillRecurrenceEnd(db *gorm.DB) error {
 			}
 			return nil
 		}).Error
+}
+
+// releaseRevokedCredentialUsernames frees the usernames of CalDAV/CardDAV
+// credentials revoked before Revoke started doing it itself (F24). Revoke only
+// stamped revoked_at, so the row kept its name in the non-partial unique
+// index while the duplicate check (which skips revoked rows) let a new
+// credential with that name through to an INSERT that always failed. The name
+// is rewritten to the same "revoked:<uuid>" tombstone Revoke now writes.
+// Idempotent: tombstoned rows no longer match the NOT LIKE guard.
+func releaseRevokedCredentialUsernames(db *gorm.DB) error {
+	prefix := user.RevokedCredentialUsernamePrefix
+	for _, table := range []string{"caldav_credentials", "card_dav_credentials"} {
+		if err := db.Exec(`UPDATE `+table+` SET username = '`+prefix+`' || uuid WHERE revoked_at IS NOT NULL AND username NOT LIKE ?`,
+			prefix+"%").Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

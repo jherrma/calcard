@@ -93,6 +93,6 @@ func TestCalDAVPutUnsupportedComponent(t *testing.T) {
 func TestCalendarComponentSetAdvertised(t *testing.T) {
 	b := &CalDAVBackend{}
 	got := b.mapCalendar("someone", &calendar.Calendar{Path: "work"}, calendar.PermissionOwner)
-	assert.Equal(t, calendarComponentSet, got.SupportedComponentSet)
+	assert.Equal(t, calendarComponentSet(""), got.SupportedComponentSet)
 	assert.ElementsMatch(t, []string{"VEVENT", "VTODO"}, got.SupportedComponentSet)
 }

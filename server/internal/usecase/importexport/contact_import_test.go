@@ -121,3 +121,12 @@ func TestContactImportMintsAndReplacesUIDs(t *testing.T) {
 	assert.Contains(t, copied.VCardData, "UID:"+copied.UID)
 	assert.NotContains(t, copied.VCardData, minted, "the copy must not keep the original UID anywhere")
 }
+
+func (s *importStubRepo) GetObjectByPath(ctx context.Context, addressBookID uint, path string) (*addressbook.AddressObject, error) {
+	for _, o := range s.created {
+		if o.Path == path {
+			return o, nil
+		}
+	}
+	return nil, nil
+}

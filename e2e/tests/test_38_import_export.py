@@ -2,11 +2,13 @@
 handling) and export (calendar .ics, address book .vcf) round trips."""
 
 from types import SimpleNamespace
+from urllib.parse import unquote
 
 import pytest
 
 from harness.checks import known
-from harness.data import ics_event
+from harness.data import PROPFIND_LIST, ics_calendar, ics_event, ics_vevent
+from harness.xml import evaluate, lp
 
 DESCRIPTION = "calendar/contact import (body, JSON, multipart, duplicates) and export"
 
@@ -109,7 +111,6 @@ def test_cal_foreign(t, e2e, u1, u2, imp):
          "nothing may land in U1's calendar")
 
 
-@known("F14")
 def test_cal_overrides(t, e2e, u1):
     """import keeps recurrence exceptions (RECURRENCE-ID)"""
     rec = u1.mk_calendar(e2e.uniq("import-rec"))
@@ -123,8 +124,10 @@ def test_cal_overrides(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.json(r, "failed", 0)
-    # F14: the override is handled as a separate object and skipped as a duplicate UID.
-    t.bug.json(r, "skipped", 0, "the RECURRENCE-ID override is part of the series, not a duplicate")
+    # One calendar object per UID (RFC 4791 4.1): the counts are per object, so
+    # the series with its override is one item, not two (F14).
+    t.json(r, "total", 1, "a series with its override counts as one object")
+    t.json(r, "skipped", 0, "the RECURRENCE-ID override is part of the series, not a duplicate")
     r = u1.api("GET", f"/calendars/{rec['uuid']}/events?start=2030-06-30T00:00:00Z&end=2030-07-10T00:00:00Z&expand=true")
     if not t.status(r, 200):
         return
@@ -134,10 +137,9 @@ def test_cal_overrides(t, e2e, u1):
         e = [x for x in j["events"] if x.get("recurrence_id") == "20300702T100000Z"][0]
         return e["summary"] == "Series (moved)" and e["start"] == "2030-07-02T15:00:00Z"
 
-    t.bug.jq(r, moved, "the overridden instance must keep its moved time and summary")
+    t.jq(r, moved, "the overridden instance must keep its moved time and summary")
 
 
-@known("F15")
 def test_cal_vtimezone(t, e2e, u1):
     """imported TZID events keep their VTIMEZONE"""
     tz = u1.mk_calendar(e2e.uniq("import-tz"))
@@ -160,8 +162,57 @@ def test_cal_vtimezone(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.contains(r, "TZID=Europe/Berlin")
-    # F15: import re-wraps each VEVENT alone and drops the VTIMEZONE.
-    t.bug.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin but carries no VTIMEZONE")
+    t.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin, so it must carry its VTIMEZONE")
+
+
+def test_cal_no_dtstamp(t, e2e, u1):
+    """import adds the DTSTAMP an event lacks (UTC) instead of failing"""
+    cal = u1.mk_calendar(e2e.uniq("import-nostamp"))
+    uid = f"{e2e.uniq('nostamp')}@e2e"
+    ics = ics_calendar(f"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTART:20300801T100000Z\r\nDTEND:20300801T110000Z\r\n"
+                       "SUMMARY:No stamp\r\nEND:VEVENT\r\n")
+    r = _import(u1, cal["uuid"], ics)
+    if not t.status(r, 200):
+        return
+    t.json(r, "imported", 1, "RFC 5545 requires DTSTAMP, but many real exports omit it")
+    t.json(r, "failed", 0)
+    r = u1.api("GET", f"/calendars/{cal['uuid']}/export")
+    if not t.status(r, 200):
+        return
+    t.contains(r, f"UID:{uid}")
+    # RFC 5545 3.8.7.2: DTSTAMP is a UTC date-time.
+    t.match(r, r"DTSTAMP:\d{8}T\d{6}Z\r?\n", "the added DTSTAMP must be in UTC")
+
+
+def test_cal_unsafe_uid(t, e2e, u1):
+    """imported UIDs with '/', '..', spaces or '?' stay reachable over CalDAV"""
+    cal = u1.mk_calendar(e2e.uniq("import-uids"))
+    tag = e2e.uniq("uid")
+    uids = [f"{tag}/slash@e2e", f"../{tag}-up@e2e", f"{tag} space?@e2e", f"{tag}-plain@e2e"]
+    ics = ics_calendar(*(ics_vevent(u, "Odd UID", "20300901T100000Z", "20300901T110000Z") for u in uids))
+    r = _import(u1, cal["uuid"], ics)
+    if not t.status(r, 200):
+        return
+    t.json(r, "imported", len(uids))
+    col = f"{u1.home_cal}{cal['path']}/"
+    r = u1.dav("PROPFIND", col, depth=1, xml=PROPFIND_LIST)
+    if not t.status(r, 207):
+        return
+    hrefs = [h for h in evaluate(r, f"{lp('response', 'href')}/text()") or [] if unquote(h).rstrip("/") != col.rstrip("/")]
+    found = []
+    for href in hrefs:
+        # A UID used verbatim as the resource name put '/' into the path (404)
+        # and let ".." climb out of the collection.
+        if not t.true(unquote(href).startswith(col), f"href {href} must lie inside {col}"):
+            continue
+        g = u1.dav("GET", href)
+        if t.status(g, 200, msg=f"GET {href}"):
+            found += [line[4:] for line in g.text.splitlines() if line.startswith("UID:")]
+    t.eq(sorted(found), sorted(uids), "every imported event must be reachable at its href")
+    t.true(any(unquote(h) == f"{col}{tag}-plain@e2e.ics" for h in hrefs), "a URL-safe UID keeps <uid>.ics")
+    r = _import(u1, cal["uuid"], ics)
+    if t.status(r, 200):
+        t.json(r, "skipped", len(uids), "re-import matches the objects by UID, whatever their path")
 
 
 def test_cal_roundtrip(t, e2e, u1, imp):

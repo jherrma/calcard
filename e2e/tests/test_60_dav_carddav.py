@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from harness import xml
-from harness.checks import known
 from harness.data import PNG_PIXEL, PROPFIND_COLLECTION, PROPFIND_LIST, vcard
 from harness.xml import el, lp
 
@@ -61,20 +60,48 @@ def test_mkcol(t, e2e, u1, st):
     t.xpath(r, lp("resourcetype", "addressbook"))
 
 
-@known("F03")
 def test_mkcol_existing(t, e2e, u1, st):
     """MKCOL on an existing address book is refused (405)"""
     t.need(st, "slug")
-    # F03: answers 201 and inserts another address book at the same path.
     r = u1.dav("MKCOL", f"{u1.home_ab}{st.slug}/", xml=MKCOL_BODY)
-    t.bug.status(r, 405, was=201, msg="MKCOL on an existing address book (RFC 4918 9.3.1)")
+    t.status(r, 405, msg="MKCOL on an existing address book (RFC 4918 9.3.1)")
     _, books = _books_at(u1, st.slug)
-    t.bug.true(len(books) == 1, f"no duplicate address book may be created at '{st.slug}' ({len(books)} there now)",
-               was=len(books) > 1)
+    t.true(len(books) == 1, f"no duplicate address book may be created at '{st.slug}' ({len(books)} there now)")
     if len(books) > 1:
         for b in books:
             e2e.defer(f"delete duplicate address book at {st.slug}", e2e.cleanup_api, u1, "DELETE",
                       f"/addressbooks/{b['UUID']}", json=CONFIRM)
+
+
+def _mkcol_props(props):
+    return ('<?xml version="1.0" encoding="utf-8"?>\n<d:mkcol xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">'
+            "<d:set><d:prop><d:resourcetype><d:collection/><c:addressbook/></d:resourcetype>"
+            f"{props}</d:prop></d:set></d:mkcol>")
+
+
+def test_mkcol_description(t, e2e, u1):
+    """extended MKCOL keeps the addressbook-description (DAVx5 payload)"""
+    slug = e2e.uniq("descbook")
+    r = u1.dav("MKCOL", f"{u1.home_ab}{slug}/", xml=_mkcol_props(
+        "<d:displayname>Described</d:displayname><c:addressbook-description>from DAVx5</c:addressbook-description>"))
+    if not t.status(r, 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    _, books = _books_at(u1, slug)
+    t.eq(books[0].get("Description") if books else None, "from DAVx5", "addressbook-description")
+
+
+def test_mkcol_refused_property(t, e2e, u1):
+    """extended MKCOL with a property the server cannot set creates nothing (403 mkcol-response)"""
+    slug = e2e.uniq("refusedbook")
+    r = u1.dav("MKCOL", f"{u1.home_ab}{slug}/", xml=_mkcol_props(
+        '<d:displayname>never created</d:displayname><x:frobnicate xmlns:x="urn:x-e2e">1</x:frobnicate>'))
+    _, books = _books_at(u1, slug)
+    if books:
+        _cleanup_path(e2e, u1, slug)
+    t.status(r, 403, msg="RFC 5689 3: the whole MKCOL fails when a property cannot be set")
+    t.xpath(r, f"{lp('mkcol-response', 'propstat')}[{el('status')}[contains(., '403')]]/{el('prop')}/{el('frobnicate')}")
+    t.eq(len(books), 0, "the refused MKCOL must not create an address book")
 
 
 def test_put_create(t, e2e, u1, cc, st):
@@ -199,6 +226,23 @@ def test_query(t, e2e, u1, cc):
     t.contains(r, e2e.uniq("q-Bob"))
     t.not_contains(r, e2e.uniq("q-Carl"), "a non-matching card must not be returned")
     t.xpath(r, lp("response", "propstat", "prop", "address-data"), "address-data must be returned when requested")
+
+
+def test_query_unicode_casemap(t, e2e, u1, cc):
+    """addressbook-query text-match folds non-ASCII case (i;unicode-casemap)"""
+    uid = e2e.uniq("q-umlaut")
+    if not t.status(u1.dav("PUT", f"{cc.col}{uid}.vcf", vcf=vcard(uid, "Ärztin Umlautova")), 201, 204):
+        return
+    # RFC 6352 §10.5.4: i;unicode-casemap is the default collation. On SQLite
+    # "Ä" was not folded, so even the exactly-cased query missed the card (F26).
+    for q in ("Ärztin", "ärztin", "ÄRZTIN", "umlautova"):
+        r = u1.dav("REPORT", cc.col, depth=1, xml=f'''<?xml version="1.0" encoding="utf-8"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+<d:prop><d:getetag/></d:prop>
+<c:filter><c:prop-filter name="FN"><c:text-match collation="i;unicode-casemap" match-type="contains">{q}</c:text-match></c:prop-filter></c:filter>
+</c:addressbook-query>''')
+        if t.status(r, 207):
+            t.contains(r, uid, f"text-match {q!r} must find FN 'Ärztin Umlautova'")
 
 
 def test_multiget(t, e2e, u1, cc, st):
