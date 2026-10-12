@@ -254,6 +254,25 @@ func escapeLike(s string) string {
 	return s
 }
 
+// foldedLike builds a case-insensitive "text occurs in any of these columns"
+// predicate plus its arguments (F26). A plain LIKE is not portable: SQLite's
+// folds ASCII case, PostgreSQL's folds none, so the same search found
+// "McpSmith" for "mcpsmith" on one driver and nothing on the other. Both sides
+// are lower-cased instead — the column by LOWER(), which is Unicode-aware on
+// PostgreSQL and on our SQLite connections (database.NewSQLite replaces the
+// ASCII-only built-in), the text in Go, so no untyped parameter is passed to
+// LOWER() on PostgreSQL.
+func foldedLike(text string, columns ...string) (string, []interface{}) {
+	pattern := "%" + escapeLike(strings.ToLower(text)) + "%"
+	conds := make([]string, len(columns))
+	args := make([]interface{}, len(columns))
+	for i, column := range columns {
+		conds[i] = "LOWER(" + column + ") LIKE ? ESCAPE '\\'"
+		args[i] = pattern
+	}
+	return strings.Join(conds, " OR "), args
+}
+
 // propertyToColumn maps vCard property names to database columns.
 func (r *AddressBookRepository) propertyToColumn(property string) string {
 	// Normalize property name to uppercase
@@ -677,7 +696,9 @@ func (r *AddressBookRepository) SearchObjectsInBooks(ctx context.Context, addres
 	}
 
 	var objs []addressbook.AddressObject
-	q := "%" + escapeLike(query) + "%"
+	where, args := foldedLike(query,
+		"address_objects.formatted_name", "address_objects.email", "address_objects.phone",
+		"address_objects.organization", "address_objects.given_name", "address_objects.family_name")
 
 	err := r.db.WithContext(ctx).
 		// GORM auto-applies the soft-delete scope to the primary model
@@ -686,7 +707,7 @@ func (r *AddressBookRepository) SearchObjectsInBooks(ctx context.Context, addres
 		// still surface here (M7). Soft delete does not cascade to the objects.
 		Joins("JOIN address_books ON address_books.id = address_objects.address_book_id AND address_books.deleted_at IS NULL").
 		Where("address_objects.address_book_id IN ?", addressBookIDs).
-		Where("address_objects.formatted_name LIKE ? ESCAPE '\\' OR address_objects.email LIKE ? ESCAPE '\\' OR address_objects.phone LIKE ? ESCAPE '\\' OR address_objects.organization LIKE ? ESCAPE '\\' OR address_objects.given_name LIKE ? ESCAPE '\\' OR address_objects.family_name LIKE ? ESCAPE '\\'", q, q, q, q, q, q).
+		Where(where, args...).
 		// Preload AddressBook so the DTO mapper can build the UUID-based photo URL (#52).
 		Preload("AddressBook").
 		Order("address_objects.formatted_name ASC, address_objects.id ASC").

@@ -48,6 +48,12 @@ All configuration options can be set via environment variables. The mapping is d
 | `ssl_mode`     | `CALDAV_DB_SSLMODE`      | `disable` | SSL mode for Postgres (e.g., `require`, `disable`). |
 | `auto_migrate` | `CALDAV_DB_AUTO_MIGRATE` | `true`    | Automatically run database migrations on startup.   |
 
+Search (`/api/v1/search`, `/api/v1/contacts/search`, the MCP search tools, CardDAV
+`text-match`) ignores case on both drivers, including non-ASCII letters (`ärztin` finds
+"Ärztin"). On PostgreSQL the folding of non-ASCII letters follows the database's
+`LC_CTYPE`: the official image's default `en_US.utf8` folds them, a database created
+with the `C` / `POSIX` locale folds ASCII only.
+
 ### JWT Section (`jwt:`)
 
 | YAML Key         | Env Var                        | Default | Description                                                      |

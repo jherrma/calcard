@@ -356,7 +356,7 @@ func (r *CalendarRepository) SearchEvents(ctx context.Context, q calendar.EventS
 		end = &utc
 	}
 
-	like := "%" + escapeLike(q.Text) + "%"
+	textWhere, textArgs := foldedLike(q.Text, "summary", "location", "description")
 	base := func() *gorm.DB {
 		db := r.db.WithContext(ctx).
 			Model(&calendar.CalendarObject{}).
@@ -364,10 +364,7 @@ func (r *CalendarRepository) SearchEvents(ctx context.Context, q calendar.EventS
 			// An object without a start time has no place on a timeline and is
 			// invisible to ListEvents too; keep both endpoints consistent.
 			Where("start_time IS NOT NULL").
-			Where(
-				"summary LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'",
-				like, like, like,
-			)
+			Where(textWhere, textArgs...)
 		// Same overlap predicate as ListEvents: COALESCE keeps a recurring
 		// series visible in windows past its first occurrence.
 		if end != nil {

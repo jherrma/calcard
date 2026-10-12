@@ -228,6 +228,23 @@ def test_query(t, e2e, u1, cc):
     t.xpath(r, lp("response", "propstat", "prop", "address-data"), "address-data must be returned when requested")
 
 
+def test_query_unicode_casemap(t, e2e, u1, cc):
+    """addressbook-query text-match folds non-ASCII case (i;unicode-casemap)"""
+    uid = e2e.uniq("q-umlaut")
+    if not t.status(u1.dav("PUT", f"{cc.col}{uid}.vcf", vcf=vcard(uid, "Ärztin Umlautova")), 201, 204):
+        return
+    # RFC 6352 §10.5.4: i;unicode-casemap is the default collation. On SQLite
+    # "Ä" was not folded, so even the exactly-cased query missed the card (F26).
+    for q in ("Ärztin", "ärztin", "ÄRZTIN", "umlautova"):
+        r = u1.dav("REPORT", cc.col, depth=1, xml=f'''<?xml version="1.0" encoding="utf-8"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+<d:prop><d:getetag/></d:prop>
+<c:filter><c:prop-filter name="FN"><c:text-match collation="i;unicode-casemap" match-type="contains">{q}</c:text-match></c:prop-filter></c:filter>
+</c:addressbook-query>''')
+        if t.status(r, 207):
+            t.contains(r, uid, f"text-match {q!r} must find FN 'Ärztin Umlautova'")
+
+
 def test_multiget(t, e2e, u1, cc, st):
     """addressbook-multiget returns requested cards, 404 for missing"""
     t.need(st, "obj")
