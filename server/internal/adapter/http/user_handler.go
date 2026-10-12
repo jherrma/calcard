@@ -190,8 +190,14 @@ func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
 
 	res, err := h.changePasswordUC.Execute(c.Context(), usecaseReq)
 	if err != nil {
-		if errors.Is(err, authusecase.ErrIncorrectPassword) || errors.Is(err, authusecase.ErrSamePassword) {
+		if errors.Is(err, authusecase.ErrIncorrectPassword) {
 			return ErrorResponse(c, fiber.StatusUnauthorized, err.Error())
+		}
+		// new == current is a validation error of the body, not an
+		// authentication failure: a 401 makes clients (the SPA included)
+		// refresh the session and replay the request (F10).
+		if errors.Is(err, authusecase.ErrSamePassword) {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
 		}
 		// Password complexity sentinels carry safe, actionable messages so the
 		// client can show the same policy feedback the register page does.
