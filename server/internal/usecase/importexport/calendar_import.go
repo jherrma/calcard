@@ -22,13 +22,14 @@ func NewCalendarImportUseCase(calendarRepo calendar.CalendarRepository) *Calenda
 
 // Execute imports calendar events from iCalendar data
 func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calendarUUID string, data []byte, opts ImportOptions) (*ImportResult, error) {
-	// Get calendar and verify ownership
+	// Get calendar and verify ownership. Not owned is the same error as
+	// missing, so the caller cannot tell whether someone else's calendar exists.
 	cal, err := uc.calendarRepo.GetByUUID(ctx, calendarUUID)
 	if err != nil {
-		return nil, fmt.Errorf("calendar not found")
+		return nil, calendar.ErrNotFound
 	}
 	if cal.UserID != userID {
-		return nil, fmt.Errorf("access denied")
+		return nil, calendar.ErrNotFound
 	}
 	// A subscribed calendar (story 100) mirrors a remote feed: anything
 	// imported into it survives only until the next refresh, which replaces
