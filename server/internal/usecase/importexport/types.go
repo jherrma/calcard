@@ -5,7 +5,9 @@ type ImportOptions struct {
 	DuplicateHandling string // "skip", "replace", "duplicate"
 }
 
-// ImportResult represents the result of an import operation
+// ImportResult represents the result of an import operation. For calendars the
+// counts are per calendar object (one per UID: a recurring series with its
+// RECURRENCE-ID overrides is one item), not per VEVENT/VTODO component.
 type ImportResult struct {
 	Total    int           `json:"total"`
 	Imported int           `json:"imported"`

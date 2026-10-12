@@ -96,7 +96,12 @@ Calendar and address book sharing:
 
 Data import and export:
 
-- `calendar_import.go` — Import iCalendar (.ics) files.
+- `calendar_import.go` — Import iCalendar (.ics) files. Components are grouped **by UID** into one
+  calendar object each (a recurring master and its `RECURRENCE-ID` overrides share a UID and must
+  live in one resource, RFC 4791 §4.1). `total`/`imported`/`skipped`/`failed` count those objects,
+  not components: a series with its overrides is one; a component without a UID is one failed item.
+  A second master or a repeated `RECURRENCE-ID` for a UID already in the file starts another object,
+  which then goes through the duplicate handling (skip/replace/duplicate) like a re-import would.
 - `contact_import.go` — Import vCard (.vcf) files.
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.
