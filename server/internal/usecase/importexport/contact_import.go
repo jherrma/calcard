@@ -75,6 +75,8 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 		// they are different identifiers, so the old GetObjectByUUID(uid) never
 		// matched and every re-import duplicated.
 		existing, _ := uc.addressBookRepo.GetObjectByUID(ctx, addressBookID, uid)
+		// A replaced contact keeps its path, so CardDAV clients see an update.
+		preferredPath := ""
 
 		if existing != nil {
 			switch opts.DuplicateHandling {
@@ -93,6 +95,7 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 					})
 					continue
 				}
+				preferredPath = existing.Path
 			case "duplicate":
 				// Generate new UID
 				uid = uuid.New().String()
@@ -107,7 +110,7 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 			UUID:          uuid.New().String(),
 			AddressBookID: addressBookID,
 			UID:           uid,
-			Path:          fmt.Sprintf("%s.vcf", uid),
+			Path:          importObjectPath(uid, ".vcf", preferredPath, uc.pathTaken(ctx, addressBookID)),
 			ETag:          addressbook.NewETag(),
 			VCardData:     vcardData,
 			VCardVersion:  "3.0",
@@ -138,6 +141,15 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 	// log from the address book row.
 
 	return result, nil
+}
+
+// pathTaken reports whether a live contact in the book already uses a path.
+// A lookup error counts as free, which is no worse than before the check.
+func (uc *ContactImportUseCase) pathTaken(ctx context.Context, addressBookID uint) func(string) bool {
+	return func(path string) bool {
+		obj, err := uc.addressBookRepo.GetObjectByPath(ctx, addressBookID, path)
+		return err == nil && obj != nil
+	}
 }
 
 // splitVCards splits a vCard file containing multiple cards into individual cards
