@@ -102,14 +102,12 @@ def test_foreign_home_leak(t, u1, az):
     t.not_contains(r, "u2-private-book")
 
 
-@known("F11")
 def test_foreign_home_status(t, u1, az):
     """another user's calendar home is refused (403/404)"""
-    # F11: 207 with an empty <multistatus/> (no data leaks — see test_foreign_home_leak).
     r = u1.dav("PROPFIND", f"/dav/{az.u2}/calendars/", depth=1, xml=PROPFIND_LIST)
-    t.bug.status(r, 403, 404, was=207, msg="PROPFIND on another user's calendar home")
+    t.status(r, 403, 404, msg="PROPFIND on another user's calendar home")
     r = u1.dav("PROPFIND", f"/dav/{az.u2}/addressbooks/", depth=1, xml=PROPFIND_LIST)
-    t.bug.status(r, 403, 404, was=207, msg="PROPFIND on another user's address-book home")
+    t.status(r, 403, 404, msg="PROPFIND on another user's address-book home")
 
 
 def _multiget(href: str) -> str:
@@ -221,13 +219,14 @@ def test_traversal(t, e2e, u1, az):
     t.not_contains(r, "U2 secret meeting")
 
 
-@known("F17")
 def test_sync_status(t, e2e, u1, az):
     """sync-collection on a missing / foreign collection is a 404, not 500"""
-    # F17: 500 with the body "404 Not Found" (go-webdav's HTTPError handed to Fiber).
+    # Fixed F17 (was 500 "404 Not Found"). Missing and foreign must look alike: no existence leak.
     r = u1.dav("REPORT", f"{u1.home_cal}no-such-calendar-{e2e.run_id}/", depth=1, xml=sync_body())
-    t.bug.status(r, 403, 404, was=500, msg="sync-collection on a calendar that does not exist")
-    t.bug.status(u1.dav("REPORT", az.col, depth=1, xml=sync_body()), 403, 404, was=500,
-                 msg="sync-collection on another user's calendar")
-    t.bug.status(u1.dav("REPORT", az.abcol, depth=1, xml=sync_body()), 403, 404, was=500,
-                 msg="sync-collection on another user's address book")
+    t.status(r, 404, msg="sync-collection on a calendar that does not exist")
+    t.status(u1.dav("REPORT", az.col, depth=1, xml=sync_body()), 404,
+             msg="sync-collection on another user's calendar")
+    t.status(u1.dav("REPORT", az.abcol, depth=1, xml=sync_body()), 404,
+             msg="sync-collection on another user's address book")
+    r = u1.dav("REPORT", f"{u1.home_ab}no-such-book-{e2e.run_id}/", depth=1, xml=sync_body())
+    t.status(r, 404, msg="sync-collection on an address book that does not exist")

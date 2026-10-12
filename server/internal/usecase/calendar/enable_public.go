@@ -38,12 +38,9 @@ func generatePublicToken() string {
 // Execute toggles public access. baseURL is the origin the returned
 // public_url is built on (the handler resolves it per request).
 func (uc *EnablePublicUseCase) Execute(ctx context.Context, userID, calendarID uint, input EnablePublicInput, baseURL string) (*EnablePublicOutput, error) {
-	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
-	if err != nil || cal == nil {
-		return nil, fmt.Errorf("calendar not found")
-	}
-	if cal.UserID != userID {
-		return nil, fmt.Errorf("permission denied")
+	cal, err := LoadOwnedCalendarByID(ctx, uc.calendarRepo, userID, calendarID)
+	if err != nil {
+		return nil, err
 	}
 
 	if input.Enabled {
@@ -63,7 +60,7 @@ func (uc *EnablePublicUseCase) Execute(ctx context.Context, userID, calendarID u
 	}
 
 	if err := uc.calendarRepo.Update(ctx, cal); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update calendar: %w", err)
 	}
 
 	output := &EnablePublicOutput{

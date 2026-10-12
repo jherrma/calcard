@@ -18,12 +18,9 @@ func NewGetPublicStatusUseCase(calendarRepo calendar.CalendarRepository) *GetPub
 // Execute reports the public-access state. baseURL is the origin the
 // returned public_url is built on (the handler resolves it per request).
 func (uc *GetPublicStatusUseCase) Execute(ctx context.Context, userID, calendarID uint, baseURL string) (*EnablePublicOutput, error) {
-	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
-	if err != nil || cal == nil {
-		return nil, fmt.Errorf("calendar not found")
-	}
-	if cal.UserID != userID {
-		return nil, fmt.Errorf("permission denied")
+	cal, err := LoadOwnedCalendarByID(ctx, uc.calendarRepo, userID, calendarID)
+	if err != nil {
+		return nil, err
 	}
 
 	output := &EnablePublicOutput{

@@ -6,9 +6,9 @@ reach it, those tests are SKIPPED with the reason — never failed."""
 
 import pytest
 
-from harness.data import ics_event
+from harness.data import PROPFIND_LIST, ics_event
 from harness.feed import FeedUnavailable
-from harness.xml import lp
+from harness.xml import lp, xstr
 
 DESCRIPTION = "calendar subscriptions: validation, fetch, read-only mirror, refresh"
 
@@ -180,6 +180,35 @@ def test_readonly_dav(t, e2e, u1, st):
     r = u1.dav("PUT", f"{col}{e2e.uniq('intruder')}.ics",
                ics=ics_event(e2e.uniq("intruder"), "Intruder", "20300305T100000Z", "20300305T110000Z"))
     t.status(r, 403, msg="DAV PUT")
+
+
+def test_dav_listing(t, u1, st):
+    """the owner can list and read the mirror over CalDAV (Depth 1, REPORT, GET)"""
+    _need(t, st)
+    r = u1.api("GET", f"/calendars/{st.sub_cal}")
+    body = r.json()
+    col = f"{u1.home_cal}{body.get('path') if isinstance(body, dict) else None}/"
+    members = f"{lp('response', 'href')}[starts-with(., '{col}') and . != '{col}']"
+    r = u1.dav("PROPFIND", col, depth=1, xml=PROPFIND_LIST)
+    if not t.status(r, 207, msg="Depth 1 PROPFIND on the owner's own subscription"):
+        return
+    t.xpath(r, f"{lp('response', 'href')}[.='{col}']", "the collection is listed under its own URL")
+    t.xpath_count(r, members, 2, "both mirrored events are listed")
+    r = u1.dav("REPORT", col, depth=1, xml=(
+        '<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" '
+        'xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/></d:prop>'
+        '<c:filter><c:comp-filter name="VCALENDAR"/></c:filter></c:calendar-query>'))
+    if not t.status(r, 207, msg="calendar-query REPORT"):
+        return
+    t.xpath_count(r, members, 2, "calendar-query returns both mirrored events")
+    href = xstr(r, f"({members})[1]")
+    if not href:
+        return
+    r = u1.dav("GET", href)
+    t.status(r, 200, msg="GET of a mirrored event")
+    t.contains(r, "Feed event")
+    t.status(u1.dav("DELETE", href), 403, msg="DAV DELETE of a mirrored event")
+    t.eq(_summaries(u1, st.sub_cal), "Feed event one|Feed event two", "the mirror must be unchanged")
 
 
 def test_refresh(t, u1, st):

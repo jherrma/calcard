@@ -103,17 +103,15 @@ def test_principal(t, u1, dd):
             "the response must describe the principal URL")
 
 
-@known("F06")
 def test_empty_body(t, u1, dd):
     """PROPFIND with an empty body is treated as allprop (RFC 4918 9.1)"""
-    # Collections already handle this; the principal/root path does not.
     t.status(u1.dav("PROPFIND", f"{u1.home_cal}{dd.cal['path']}/", depth=0), 207,
              msg="empty-body PROPFIND on a calendar collection")
-    # F06: go-webdav answers 400 "webdav: expected application/xml request".
-    t.bug.status(u1.dav("PROPFIND", "/dav/", depth=0), 207, was=400,
-                 msg="empty-body PROPFIND on /dav/ (some clients probe like this)")
-    t.bug.status(u1.dav("PROPFIND", f"/dav/{dd.user}/", depth=0), 207, was=400,
-                 msg="empty-body PROPFIND on the principal")
+    # Was a 400 "webdav: expected application/xml request" until F06 was fixed.
+    for p, what in (("/dav/", "/dav/ (some clients probe like this)"), (f"/dav/{dd.user}/", "the principal")):
+        r = u1.dav("PROPFIND", p, depth=0)
+        if t.status(r, 207, msg=f"empty-body PROPFIND on {what}"):
+            _principal_checks(t, r, dd.user)
 
 
 def test_cal_home(t, e2e, u1, dd):
@@ -162,12 +160,6 @@ def test_cal_collection(t, e2e, u1, dd):
     t.xpath(r, lp("current-user-privilege-set", "**", "write"), "the owner has write privilege")
 
 
-# F07: what each Depth leaves out (FINDINGS.md).
-DEPTH0_MISSING = {"calendar-description", "supported-calendar-component-set"}
-DEPTH1_MISSING = {"sync-token", "getctag"}
-
-
-@known("F07")
 def test_depth_consistency(t, u1, dd):
     """calendar collection properties agree between Depth 0 and Depth 1"""
     body = '''<?xml version="1.0" encoding="utf-8"?>
@@ -186,11 +178,9 @@ def test_depth_consistency(t, u1, dd):
                             f"//*[local-name()='{p}']")
         ok1 = xml.xbool(r1, f"{lp('response')}[*[local-name()='href']='{href}']/*[local-name()='propstat']"
                             f"[contains(*[local-name()='status'],'200')]//*[local-name()='{p}']")
-        # F07 documents exactly which ones are missing at which Depth.
-        t.bug.true(ok0, f"Depth 0 PROPFIND on the collection does not return {p} (200)",
-                   was=p in DEPTH0_MISSING)
-        t.bug.true(ok1, f"Depth 1 PROPFIND on the home does not return {p} (200) for the same collection",
-                   was=p in DEPTH1_MISSING)
+        # Fixed in F07: each Depth used to leave some of them out.
+        t.true(ok0, f"Depth 0 PROPFIND on the collection does not return {p} (200)", r0)
+        t.true(ok1, f"Depth 1 PROPFIND on the home does not return {p} (200) for the same collection", r1)
 
 
 def test_ab_home(t, e2e, u1, dd):
@@ -219,9 +209,59 @@ def test_ab_collection(t, u1, dd):
     t.xpath(r, lp("supported-report-set", "**", "sync-collection"))
 
 
+def test_without_slash(t, u1, dd):
+    """a home set or collection named without its trailing slash is served as the collection (RFC 4918 5.2)"""
+    for home, member in ((u1.home_cal, f"{u1.home_cal}{dd.cal['path']}/"),
+                         (u1.home_ab, f"{u1.home_ab}{dd.ab['Path']}/")):
+        r = u1.dav("PROPFIND", home.rstrip("/"), depth=1, xml=PROPFIND_LIST)
+        if not t.status(r, 207, msg=f"PROPFIND {home.rstrip('/')}"):
+            continue
+        t.xpath(r, f"{lp('response', 'href')}[normalize-space()='{home}']",
+                f"the home must be described as {home} (it was an empty multistatus)")
+        t.xpath(r, f"{lp('response', 'href')}[normalize-space()='{member}']", "the listing must include the collection")
+        t.header_eq(r, "Content-Location", home, "Content-Location names the URL with the slash")
+    col = f"{u1.home_cal}{dd.cal['path']}/"
+    for depth in (0, 1):
+        r = u1.dav("PROPFIND", col.rstrip("/"), depth=depth, xml=PROPFIND_LIST)
+        if t.status(r, 207, msg=f"Depth {depth} PROPFIND on the collection without its slash"):
+            t.xpath(r, f"{lp('response', 'href')}[normalize-space()='{col}']",
+                    f"Depth {depth} must describe the collection under its slash URL")
+
+
+def test_path_spellings(t, u1, dd):
+    """doubled slashes, a percent-encoded segment and /DAV/ name the same home"""
+    member = f"{u1.home_cal}{dd.cal['path']}/"
+    for p in (f"/dav/{dd.user}//calendars/", f"/dav//{dd.user}/calendars/", f"/dav/{dd.user}/calendars//",
+              f"/dav/{dd.user}/%63alendars/", f"/DAV/{dd.user}/calendars/"):
+        r = u1.dav("PROPFIND", p, depth=1, xml=PROPFIND_LIST, path_as_is=True)
+        if t.status(r, 207, msg=f"PROPFIND {p}"):
+            t.xpath(r, f"{lp('response', 'href')}[normalize-space()='{member}']", f"{p} must list the calendars")
+    # Path segments other than the /dav mount stay case-sensitive.
+    t.status(u1.dav("PROPFIND", f"/dav/{dd.user}/Calendars/", depth=1, xml=PROPFIND_LIST), 404)
+
+
+def test_principal_other_name(t, e2e, u1, u2, dd):
+    """a principal URL with another user's name reveals nothing about that account"""
+    # Kept lenient on purpose: any /dav/{x}/ answers with the caller's own
+    # principal, so a client configured with a slightly different URL still
+    # finds its home sets. The name is never looked up, so an existing and a
+    # non-existing account must be indistinguishable.
+    other = u1.dav("PROPFIND", f"/dav/{u2.username}/", depth=0, xml=PROPFIND_PRINCIPAL)
+    nobody = u1.dav("PROPFIND", f"/dav/nobody-{e2e.run_id}/", depth=0, xml=PROPFIND_PRINCIPAL)
+    t.eq(other.status, nobody.status, "an existing and an unknown name must get the same status")
+    for r in (other, nobody):
+        if not t.status(r, 207):
+            continue
+        _principal_checks(t, r, dd.user)
+        t.not_contains(r, f"/dav/{u2.username}/calendars/", "no home set of the other account")
+        t.not_contains(r, f"/dav/{u2.username}/addressbooks/", "no home set of the other account")
+
+
 def test_unknown(t, e2e, u1):
     """unknown DAV paths are 404, not 5xx"""
     rid = e2e.run_id
     t.status(u1.dav("PROPFIND", f"{u1.home_cal}no-such-calendar-{rid}/", depth=0, xml=PROPFIND_LIST), 404)
     t.status(u1.dav("GET", f"{u1.home_cal}no-such-calendar-{rid}/x.ics"), 404)
     t.status(u1.dav("PROPFIND", f"{u1.home_ab}no-such-book-{rid}/", depth=0, xml=PROPFIND_LIST), 404)
+    t.status(u1.dav("PROPFIND", f"/dav/{u1.username}/no-such-home-{rid}/", depth=1, xml=PROPFIND_LIST), 404,
+             msg="a path under the principal that is no home set")

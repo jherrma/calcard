@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from harness.checks import known
 from harness.data import PROPFIND_PRINCIPAL, ics_event, vcard
 
 DESCRIPTION = "app passwords, CalDAV/CardDAV credentials: CRUD, scopes, revocation"
@@ -17,8 +16,15 @@ pytestmark = pytest.mark.usefixtures("u1", "u2")
 def _probe(e2e, user, password, path, method="PROPFIND", **kw):
     """PROPFIND (default) with Basic auth."""
     if method == "PROPFIND":
-        return e2e.req("PROPFIND", f"{e2e.base}{path}", basic=(user, password), depth=0, xml=PROPFIND_PRINCIPAL)
+        return e2e.req("PROPFIND", f"{e2e.base}{path}", basic=(user, password), depth=0, xml=PROPFIND_PRINCIPAL, **kw)
     return e2e.req(method, f"{e2e.base}{path}", basic=(user, password), **kw)
+
+
+def _respelled(home):
+    """Other spellings of a home-set path, sent verbatim (path_as_is): the
+    scope must be decided on the path the server serves, not the raw bytes."""
+    user, seg = home.strip("/").split("/")[1:3]
+    return (f"/dav/{user}/%{ord(seg[0]):02x}{seg[1:]}/", f"/dav/{user}//{seg}/")
 
 
 def test_ap_create(t, e2e, u1, st):
@@ -73,11 +79,10 @@ def test_ap_dav_username(t, e2e, st):
     # The server tells clients to use this username (credentials.username) and
     # it is the segment of every DAV URL — it has to work for Basic auth.
     r = _probe(e2e, st.ap_user, st.ap_pw, "/dav/")
-    if any(c.isupper() for c in st.ap_user):
-        t.known("F02")  # the lookup lower-cases the mixed-case username → 401
-        t.bug.status(r, 207, was=401, msg="Basic auth with the username returned by POST /app-passwords")
-    else:
-        t.status(r, 207, msg="Basic auth with the username returned by POST /app-passwords")
+    t.status(r, 207, msg="Basic auth with the username returned by POST /app-passwords")
+    # Usernames are mixed-case; the lookup is case-insensitive (F02, fixed).
+    r = _probe(e2e, st.ap_user.swapcase(), st.ap_pw, "/dav/")
+    t.status(r, 207, msg="Basic auth with the username in another case")
 
 
 def test_ap_scope_caldav(t, e2e, u1):
@@ -90,6 +95,8 @@ def test_ap_scope_caldav(t, e2e, u1):
     e2e.defer(f"revoke app password {e2e.uniq('ap-caldav')}", e2e.cleanup_api, u1, "DELETE", f"/app-passwords/{aid}")
     t.status(_probe(e2e, u1.email, pw, u1.home_cal), 207, msg="caldav scope on the calendar home")
     t.status(_probe(e2e, u1.email, pw, u1.home_ab), 403, msg="caldav-only app password on the address-book home")
+    for p in _respelled(u1.home_ab):
+        t.status(_probe(e2e, u1.email, pw, p, path_as_is=True), 403, msg=f"caldav-only app password on {p}")
     t.status(_probe(e2e, u1.email, pw, "/dav/"), 207, msg="discovery (/dav/) is open to every scope")
     # Revoke right away: every live app password costs a bcrypt per DAV request.
     u1.api("DELETE", f"/app-passwords/{aid}")
@@ -105,6 +112,10 @@ def test_ap_scope_carddav(t, e2e, u1):
     e2e.defer(f"revoke app password {e2e.uniq('ap-carddav')}", e2e.cleanup_api, u1, "DELETE", f"/app-passwords/{aid}")
     t.status(_probe(e2e, u1.email, pw, u1.home_ab), 207)
     t.status(_probe(e2e, u1.email, pw, u1.home_cal), 403)
+    # A percent-encoded or doubled-slash spelling of "calendars" used to pass
+    # the scope check while the server still served the calendars.
+    for p in _respelled(u1.home_cal):
+        t.status(_probe(e2e, u1.email, pw, p, path_as_is=True), 403, msg=f"carddav-only app password on {p}")
     # Scope is decided by path segment, not substring: "calendars" in an
     # address-book object name must not unlock it for a caldav credential.
     t.status(_probe(e2e, u1.email, pw, f"{u1.home_cal}x/addressbooks.ics", "GET"), 403)
@@ -312,6 +323,37 @@ def test_caldav_revoke(t, e2e, u1, u2, st):
     t.status(_probe(e2e, st.calcred_user, st.calcred_pw, "/dav/"), 401, msg="revoked credential must stop working")
 
 
+def _reuse_after_revoke(t, e2e, u1, u2, kind):
+    """Create a credential as U1, revoke it, re-create its username as U2."""
+    # A label of at most 10 characters keeps the name within the server's
+    # 50-character limit for any accepted E2E_USER_PREFIX (config.MAX_RUN_TAG).
+    endpoint, name = f"/{kind}-credentials/", e2e.uniq(f"reuse-{kind[:-3]}")
+    body = {"name": "e2e reuse", "username": name, "permission": "read"}
+    r = u1.api("POST", endpoint, json={**body, "password": f"First_{e2e.run_id}"})
+    if not t.status(r, 201):
+        return
+    first = r.jdict().get("id")
+    e2e.defer(f"revoke {kind} credential {name} (first)", e2e.cleanup_api, u1, "DELETE", f"{endpoint}{first}")
+    r = u2.api("POST", endpoint, json={**body, "password": f"Other_{e2e.run_id}"})
+    t.status(r, 409, msg="a live username is taken, also for another account")
+    t.json(r, "message", f"username '{name}' is already in use")
+    if not t.status(u1.api("DELETE", f"{endpoint}{first}"), 204):
+        return
+    r = u2.api("POST", endpoint, json={**body, "password": f"Second_{e2e.run_id}"})
+    if not t.status(r, 201, msg="the username of a revoked credential is free again"):
+        return
+    second = r.jdict().get("id")
+    e2e.defer(f"revoke {kind} credential {name} (second)", e2e.cleanup_api, u2, "DELETE", f"{endpoint}{second}")
+    t.ne(second, first, "the re-created credential is a new one")
+    t.status(_probe(e2e, name, f"Second_{e2e.run_id}", "/dav/"), 207, msg="the re-created credential authenticates")
+    t.status(_probe(e2e, name, f"First_{e2e.run_id}", "/dav/"), 401, msg="the revoked credential's password stays dead")
+
+
+def test_caldav_reuse_after_revoke(t, e2e, u1, u2):
+    """CalDAV credential: a revoked credential's username can be used again"""
+    _reuse_after_revoke(t, e2e, u1, u2, "caldav")
+
+
 def test_carddav_rw(t, e2e, u1, st):
     """CardDAV credential: read-write may write contacts"""
     st.cardcred_user, st.cardcred_pw = e2e.uniq("cardrw"), f"ReadWrite_{e2e.run_id}"
@@ -339,6 +381,8 @@ def test_carddav_scope(t, e2e, u1, st):
     creds = (st.cardcred_user, st.cardcred_pw)
     if not t.status(_probe(e2e, *creds, u1.home_cal), 403):
         return
+    for p in _respelled(u1.home_cal):
+        t.status(_probe(e2e, *creds, p, path_as_is=True), 403, msg=f"CardDAV credential on {p}")
     r = _probe(e2e, *creds, f"/dav/{u1.username}/")
     if not t.status(r, 207):
         return
@@ -346,7 +390,6 @@ def test_carddav_scope(t, e2e, u1, st):
     t.contains(r, u1.home_ab)
 
 
-@known("F02")
 def test_carddav_mixedcase(t, e2e, u1):
     """CardDAV credential: mixed-case username authenticates"""
     # The create endpoint accepts upper-case usernames ([a-zA-Z0-9_-]); a
@@ -355,12 +398,11 @@ def test_carddav_mixedcase(t, e2e, u1):
     # configuration accepts (harness/config.py MAX_RUN_TAG).
     u, pw = f"Mixed-{e2e.uniq('card')}", f"MixedCase_{e2e.run_id}"
     r = u1.api("POST", "/carddav-credentials/", json={"name": "mixed", "username": u, "password": pw, "permission": "read"})
-    # A refusal here is NOT the fix of F02 (and never an XPASS): if the server
-    # starts rejecting upper-case usernames on purpose, update this test.
+    # If the server starts rejecting upper-case usernames on purpose, update this test.
     if not t.status(r, 201, msg="the create endpoint accepts upper-case usernames ([a-zA-Z0-9_-])"):
         return
     e2e.defer(f"revoke CardDAV credential {u}", e2e.cleanup_api, u1, "DELETE", f"/carddav-credentials/{r.jdict().get('id')}")
-    t.bug.status(_probe(e2e, u, pw, u1.home_ab), 207, was=401, msg="Basic auth with the username exactly as created")
+    t.status(_probe(e2e, u, pw, u1.home_ab), 207, msg="Basic auth with the username exactly as created")
 
 
 def test_carddav_revoke(t, e2e, u1, st):
@@ -372,3 +414,8 @@ def test_carddav_revoke(t, e2e, u1, st):
     r = u1.api("GET", "/carddav-credentials/")
     t.jq(r, lambda j: len([c for c in j["credentials"] or [] if c["id"] == st.cardcred_id]) == 0,
          "expected JSON condition to hold: the revoked credential leaves the list")
+
+
+def test_carddav_reuse_after_revoke(t, e2e, u1, u2):
+    """CardDAV credential: a revoked credential's username can be used again"""
+    _reuse_after_revoke(t, e2e, u1, u2, "carddav")

@@ -25,25 +25,28 @@ func NewRevokeCalendarShareUseCase(
 
 func (uc *RevokeCalendarShareUseCase) Execute(ctx context.Context, requestingUserID uint, calendarID uint, shareUUID string) error {
 	// 1. Verify ownership
-	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
-	if err != nil {
-		return fmt.Errorf("calendar not found")
-	}
-	if cal.UserID != requestingUserID {
-		return fmt.Errorf("permission denied")
+	if _, err := ownedCalendar(ctx, uc.calendarRepo, requestingUserID, calendarID); err != nil {
+		return err
 	}
 
-	// 2. Get share
+	// 2. Get share. The repository answers (nil, nil) for an unknown id; an
+	// error is a storage failure, not a missing share.
 	share, err := uc.shareRepo.GetByUUID(ctx, shareUUID)
-	if err != nil || share == nil {
-		return fmt.Errorf("share not found")
+	if err != nil {
+		return fmt.Errorf("failed to load share: %w", err)
+	}
+	if share == nil {
+		return ErrCalendarShareNotFound
 	}
 
 	// 3. Verify share belongs to calendar
 	if share.CalendarID != calendarID {
-		return fmt.Errorf("share not found")
+		return ErrCalendarShareNotFound
 	}
 
 	// 4. Revoke (Delete)
-	return uc.shareRepo.Revoke(ctx, share.ID)
+	if err := uc.shareRepo.Revoke(ctx, share.ID); err != nil {
+		return fmt.Errorf("failed to revoke share: %w", err)
+	}
+	return nil
 }

@@ -185,14 +185,10 @@ suite asserts that clean refusal and that the source stays in place.
 Everything a test creates is registered on a cleanup stack and removed when the
 session ends (calendars, address books, shares, public links, subscriptions,
 app passwords, DAV credentials, MCP tokens), then the test accounts are deleted
-through `DELETE /api/v1/users/me`. What the server's API cannot remove:
-
-- account deletion is a **soft delete**: the user rows and each account's
-  default *Personal* calendar and *Contacts* address book (emptied; the last
-  calendar/book cannot be deleted) stay in the database;
-- the deliberately deleted account of the account-deletion tests keeps its
-  (revoked-by-deletion) app password row, and the "deleted owner" sharing test
-  leaves one empty calendar of a deleted account (see F18).
+through `DELETE /api/v1/users/me`, which also removes everything the account
+still owns (calendars, address books, shares, credentials). What stays: the
+user row itself is only **soft-deleted**, so the user rows remain in the
+database.
 
 None of it is reachable by anyone after the run. Use a dedicated prefix
 (`E2E_USER_PREFIX`) if you want to find these rows later.

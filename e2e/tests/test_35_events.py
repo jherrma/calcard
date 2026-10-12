@@ -113,16 +113,17 @@ def test_invalid_range(t, u1, cal):
     t.status(u1.api("POST", path, json='{"summary":"bad","start":"tomorrow","end":"2030-01-01T09:00:00Z"}'), 400)
 
 
-@known("F13")
 def test_missing_times(t, e2e, u1, cal):
     """create rejects a missing start/end"""
-    r = u1.api("POST", f"/calendars/{cal.ev['uuid']}/events", json={"summary": f"no times {e2e.run_id}"})
-    if r.status == 201:  # F13: accepted and stored at 0001-01-01; do not keep it
-        u1.api("DELETE", f"/calendars/{cal.ev['uuid']}/events/{r.jdict().get('id')}")
-    t.bug.status(r, 400, was=201, msg=f"an event without start/end (got start={r.jdict().get('start')})")
+    path = f"/calendars/{cal.ev['uuid']}/events"
+    for body, what in (({}, "without start/end"), ({"start": "2030-01-01T10:00:00Z"}, "without end"),
+                       ({"end": "2030-01-01T11:00:00Z"}, "without start"), ({"start": None, "end": None}, "with null times")):
+        r = u1.api("POST", path, json={"summary": f"no times {e2e.run_id}", **body})
+        if r.status == 201:  # accepted (stored at 0001-01-01 before F13 was fixed); do not keep it
+            u1.api("DELETE", f"{path}/{r.jdict().get('id')}")
+        t.status(r, 400, msg=f"an event {what} (got start={r.jdict().get('start')})")
 
 
-@known("F04")
 def test_dtstamp(t, u1, cal, st):
     """stored iCalendar has a UTC DTSTAMP (RFC 5545 3.8.7.2)"""
     t.need(st, "ev_id")
@@ -132,10 +133,9 @@ def test_dtstamp(t, u1, cal, st):
     line = next((ln for ln in r.text.replace("\r", "").split("\n") if ln.startswith("DTSTAMP")), "")
     if not line:
         return t.fail("exported VEVENT has no DTSTAMP", r)
-    # F04: the server writes DTSTAMP;TZID=Local:… (time.Now() instead of UTC).
-    t.bug.true(re.fullmatch(r"DTSTAMP:[0-9]{8}T[0-9]{6}Z", line),
-               f"DTSTAMP must be a UTC date-time like DTSTAMP:20300101T000000Z, got '{line}'",
-               was=line.startswith("DTSTAMP;TZID="))
+    # F04 (fixed): the server used to write DTSTAMP;TZID=Local:… (time.Now() instead of UTC).
+    t.true(re.fullmatch(r"DTSTAMP:[0-9]{8}T[0-9]{6}Z", line),
+           f"DTSTAMP must be a UTC date-time like DTSTAMP:20300101T000000Z, got '{line}'")
 
 
 def test_allday(t, e2e, u1, cal):
@@ -150,15 +150,69 @@ def test_allday(t, e2e, u1, cal):
     t.match(r, "DTSTART;VALUE=DATE:20300201", "all-day events are stored as DATE values")
 
 
-@known("F09")
-def test_wrong_calendar(t, u1, cal, st):
-    """event URL must match its calendar"""
+def _dt_lines(text, summary):
+    """DTSTART/DTEND lines of the VEVENT with SUMMARY in an iCalendar body, sorted."""
+    for vevent in text.replace("\r", "").split("BEGIN:VEVENT")[1:]:
+        if f"\nSUMMARY:{summary}\n" in vevent:
+            return sorted(ln for ln in vevent.split("\n") if ln.startswith(("DTSTART", "DTEND")))
+    return []
+
+
+def test_offset_times(t, e2e, u1, cal):
+    """times with a UTC offset and no timezone keep their instant (stored as UTC)"""
+    summary = f"Offset {e2e.run_id}"
+    r = u1.api("POST", f"/calendars/{cal.ev['uuid']}/events", json={
+        "summary": summary, "start": "2030-03-01T10:00:00+05:00", "end": "2030-03-01T11:00:00+05:00", "all_day": False})
+    if not t.status(r, 201):
+        return
+    ev_id = r.jdict().get("id")
+    t.json(r, "start", "2030-03-01T05:00:00Z", "10:00+05:00 is 05:00 UTC")
+    t.json(r, "end", "2030-03-01T06:00:00Z")
+    r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/export")
+    # F22: was DTSTART;TZID=:20300301T100000 (empty TZID, read as 10:00 UTC).
+    t.eq(_dt_lines(r.text, summary), ["DTEND:20300301T060000Z", "DTSTART:20300301T050000Z"],
+         "an offset time without a timezone is stored as the same instant in UTC")
+
+    r = u1.api("PATCH", f"/calendars/{cal.ev['uuid']}/events/{ev_id}", json={
+        "start": "2030-03-02T10:00:00-03:30", "end": "2030-03-02T11:00:00-03:30"})
+    if not t.status(r, 200):
+        return
+    t.json(r, "start", "2030-03-02T13:30:00Z", "10:00-03:30 is 13:30 UTC")
+    r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/export")
+    t.eq(_dt_lines(r.text, summary), ["DTEND:20300302T143000Z", "DTSTART:20300302T133000Z"],
+         "a PATCH with offset times is stored in UTC too")
+    if u1.ensure_dav():
+        r = u1.dav("GET", f"{u1.home_cal}{cal.ev['path']}/{ev_id}.ics")
+        if t.status(r, 200):
+            t.eq(_dt_lines(r.text, summary), ["DTEND:20300302T143000Z", "DTSTART:20300302T133000Z"],
+                 "CalDAV serves the same UTC values")
+
+    r = u1.api("POST", f"/calendars/{cal.ev['uuid']}/events", json={
+        "summary": f"{summary} Berlin", "start": "2030-03-01T10:00:00+05:00", "end": "2030-03-01T11:00:00+05:00",
+        "timezone": "Europe/Berlin", "all_day": False})
+    if t.status(r, 201):
+        r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/export")
+        t.eq(_dt_lines(r.text, f"{summary} Berlin"),
+             ["DTEND;TZID=Europe/Berlin:20300301T070000", "DTSTART;TZID=Europe/Berlin:20300301T060000"],
+             "with a timezone the instant is converted into that zone")
+
+
+def test_wrong_calendar(t, e2e, u1, cal, st):
+    """event URL must match its calendar (F09, fixed)"""
     t.need(st, "ev_id")
-    # F09: the handlers look the event up by id alone and serve it (200).
-    r = u1.api("GET", f"/calendars/{cal.ev2['uuid']}/events/{st.ev_id}")
-    t.bug.status(r, 404, was=200, msg="an event addressed through a calendar it does not belong to")
-    r = u1.api("GET", f"/calendars/{ZERO}/events/{st.ev_id}")
-    t.bug.status(r, 404, was=200, msg="an event addressed through a non-existent calendar")
+    unknown = u1.api("GET", f"/calendars/{cal.ev['uuid']}/events/{ZERO}")
+    if not t.status(unknown, 404, msg="reference: an unknown event"):
+        return
+    for wrong, what in ((cal.ev2["uuid"], "a calendar it does not belong to"), (ZERO, "a non-existent calendar")):
+        path = f"/calendars/{wrong}/events/{st.ev_id}"
+        for method, kw in (("GET", {}), ("PATCH", {"json": '{"summary":"wrong calendar"}'}), ("DELETE", {}),
+                           ("POST", {"json": {"target_calendar_id": cal.ev2["uuid"]}})):
+            r = u1.api(method, path + ("/move" if method == "POST" else ""), **kw)
+            t.status(r, 404, msg=f"{method} of an event addressed through {what}")
+            t.eq(r.text, unknown.text, f"{method} through {what} must answer like an unknown event")
+    r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/events/{st.ev_id}")
+    t.json(r, "summary", f"Planning (moved) {e2e.run_id}", "the event is untouched")
+    t.json(r, "calendar_id", cal.ev["id"], "and still in its own calendar")
 
 
 def test_isolation(t, e2e, u1, u2, cal, st):

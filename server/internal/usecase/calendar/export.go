@@ -21,15 +21,10 @@ func NewExportCalendarUseCase(repo calendar.CalendarRepository) *ExportCalendarU
 
 // Execute exports a calendar as iCalendar format
 func (uc *ExportCalendarUseCase) Execute(ctx context.Context, userID uint, calendarUUID string) (string, string, error) {
-	// Get calendar
-	cal, err := uc.repo.GetByUUID(ctx, calendarUUID)
+	// Get calendar. Missing and not owned are the same ErrNotFound.
+	cal, err := LoadOwnedCalendar(ctx, uc.repo, userID, calendarUUID)
 	if err != nil {
-		return "", "", fmt.Errorf("calendar not found")
-	}
-
-	// Verify ownership
-	if cal.UserID != userID {
-		return "", "", fmt.Errorf("access denied")
+		return "", "", err
 	}
 
 	// Fetch all calendar objects (events/todos)

@@ -9,7 +9,7 @@ This directory contains the technical implementations and external library integ
 - **Purpose**: Manages the persistence layer.
 - **Key Components**:
   - `database.go` — Unified database initialization based on configuration (auto-selects SQLite or PostgreSQL).
-  - `sqlite.go` — SQLite driver setup using GORM.
+  - `sqlite.go` — SQLite driver setup using GORM. Opens through its own `database/sql` driver (`sqlite3_calcard`) that replaces SQLite's ASCII-only `lower()` with Go's Unicode `strings.ToLower` on every connection, so `LOWER()` folds case like PostgreSQL's (F26). Case-insensitive queries must use `LOWER(col) LIKE ?` with a Go-lower-cased, `escapeLike`d parameter (`repository.foldedLike`) — a plain `LIKE` folds ASCII on SQLite and nothing on PostgreSQL.
   - `postgres.go` — PostgreSQL driver setup using GORM.
   - `migrations.go` — Automatic database schema updates using GORM's `AutoMigrate`. Registers all domain models (User, Calendar, CalendarSubscription, Event, AddressBook, Contact, Sharing, etc.).
 
