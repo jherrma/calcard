@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from harness.checks import known
 from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_event, sync_body, vcard
 from harness.session import ZERO_UUID, SetupFailed
 from harness.xml import lp, xstr
@@ -423,35 +422,30 @@ def test_pub_disable(t, e2e, u1, sh, st):
     t.status(e2e.raw("GET", f"/public/calendar/{st.pub_token}"), 404, msg="a disabled link must 404")
 
 
-@known("F18")
 def test_deleted_owner(t, e2e, u2):
     """a deleted account's shares and public links stop serving its data"""
     ugone = e2e.create_user("UGONE", "E2E Leaving Owner")
     cal = ugone.mk_calendar(e2e.uniq("leaving"))["uuid"]
-    ev = ugone.mk_event(cal, f"Private appointment {e2e.run_id}", "2030-04-04T09:00:00Z", "2030-04-04T10:00:00Z")
+    ugone.mk_event(cal, f"Private appointment {e2e.run_id}", "2030-04-04T09:00:00Z", "2030-04-04T10:00:00Z")
     if not t.status(_share_cal(ugone, cal, u2.email, "read"), 201):
         return
     r = ugone.api("POST", f"/calendars/{cal}/public", json='{"enabled":true}')
     tok = r.jdict().get("token") or ""
     if not t.true(tok, "enabling the public link must return its token", r):
         return
-    # Preconditions: ordinary checks — a regression here is a FAIL, never F18.
     if not t.status(e2e.raw("GET", f"/public/calendar/{tok}"), 200,
                     msg="the public link works while the owner exists"):
         return
     if not t.status(u2.api("GET", f"/calendars/{cal}/events?start=2030-01-01T00:00:00Z&end=2031-01-01T00:00:00Z"),
                     200, msg="the sharee reads the calendar while the owner exists"):
         return
-    # The server offers no way to clean up after a deleted account, so empty
-    # the calendar first: whatever outlives the account is an empty calendar.
-    ugone.api("DELETE", f"/calendars/{cal}/events/{ev['id']}")
     if not ugone.delete_account():
         return t.fail("account deletion failed")
-    # F18: DELETE /users/me soft-deletes the user row only; shares and the link live on.
+    # Account deletion removes the account's calendars, their shares and public links.
     r = u2.api("GET", "/calendars/")
     t.status(r, 200)
-    t.bug.not_contains(r, cal, "the deleted owner's calendar must leave the sharee's list")
+    t.not_contains(r, cal, "the deleted owner's calendar must leave the sharee's list")
     r = u2.api("GET", f"/calendars/{cal}/events?start=2030-01-01T00:00:00Z&end=2031-01-01T00:00:00Z")
-    t.bug.status(r, 404, was=200, msg="the sharee must no longer read the deleted owner's calendar")
-    t.bug.status(e2e.raw("GET", f"/public/calendar/{tok}"), 404, was=200,
-                 msg="the public link of a deleted account must stop serving its calendar")
+    t.status(r, 404, msg="the sharee must no longer read the deleted owner's calendar")
+    t.status(e2e.raw("GET", f"/public/calendar/{tok}"), 404,
+             msg="the public link of a deleted account must stop serving its calendar")
