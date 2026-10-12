@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -29,10 +30,6 @@ func TestDedicatedCalDAVCredential(t *testing.T) {
 
 	// --- Create a read-only CalDAV credential ---------------------------
 	rawPass := "ReadOnlyPass_v3rY!S1x"
-	// The credential repo lowercases the username on lookup (see
-	// GetByUsername) but Create stores whatever the caller supplied, so
-	// a mixed-case username would silently fail to authenticate. We ensure
-	// the test uses lowercase to match the lookup path.
 	credUser := "readonly-" + time.Now().Format("20060102t150405")
 	var created struct {
 		ID         string `json:"id"` // UUID of the credential row
@@ -220,4 +217,54 @@ func TestDedicatedCardDAVCredential(t *testing.T) {
 	status, _, _ = davCall(t, "PROPFIND", collection, credUser, rawPass,
 		propfindAddressBookBody, depthHeader("0"))
 	assert.Equal(t, http.StatusUnauthorized, status)
+}
+
+// TestDAVCredentialUsernameReusableAfterRevoke (F24): the username's unique
+// index also covers revoked rows, while the create-time duplicate check skips
+// them, so re-creating a revoked credential's username used to pass the check
+// and fail at INSERT ("UNIQUE constraint failed", answered 400). Revoke now
+// releases the name; a live duplicate is still a 409 with the old message.
+func TestDAVCredentialUsernameReusableAfterRevoke(t *testing.T) {
+	token, _ := registerAndLoginFull(t, "cred-reuse@example.test", "credSecret!123", "Cred Reuse User")
+	other, _ := registerAndLoginFull(t, "cred-reuse-2@example.test", "credSecret!123", "Cred Reuse Other")
+
+	for _, kind := range []string{"caldav", "carddav"} {
+		t.Run(kind, func(t *testing.T) {
+			endpoint := "/" + kind + "-credentials/"
+			credUser := "reuse-" + kind + "-" + time.Now().Format("20060102t150405")
+			create := func(tok, pass string) (int, string, []byte) {
+				var out struct {
+					ID string `json:"id"`
+				}
+				status, raw := restCall(t, http.MethodPost, endpoint, tok, map[string]any{
+					"name": "reuse", "username": credUser, "password": pass, "permission": "read",
+				})
+				_ = json.Unmarshal(raw, &out)
+				return status, out.ID, raw
+			}
+
+			status, firstID, raw := create(token, "FirstPass_123")
+			require.Equalf(t, http.StatusCreated, status, "create: %s", errorMessage(raw))
+
+			status, _, raw = create(other, "OtherPass_123")
+			assert.Equalf(t, http.StatusConflict, status, "a live username is taken: %s", errorMessage(raw))
+			assert.Equal(t, "username '"+credUser+"' is already in use", errorMessage(raw))
+
+			status, raw = restCall(t, http.MethodDelete, endpoint+firstID, token, nil)
+			require.Equalf(t, http.StatusNoContent, status, "revoke: %s", errorMessage(raw))
+
+			// The other account takes the released name.
+			status, secondID, raw := create(other, "SecondPass_123")
+			require.Equalf(t, http.StatusCreated, status, "reusing a revoked credential's username: %s", errorMessage(raw))
+			assert.NotEqual(t, firstID, secondID)
+
+			status, _, _ = davCall(t, "PROPFIND", "/dav/", credUser, "SecondPass_123", propfindPrincipalBody, depthHeader("0"))
+			assert.Equal(t, http.StatusMultiStatus, status, "the new credential authenticates")
+			status, _, _ = davCall(t, "PROPFIND", "/dav/", credUser, "FirstPass_123", propfindPrincipalBody, depthHeader("0"))
+			assert.Equal(t, http.StatusUnauthorized, status, "the revoked credential's password stays dead")
+
+			status, raw = restCall(t, http.MethodDelete, endpoint+secondID, other, nil)
+			require.Equalf(t, http.StatusNoContent, status, "cleanup revoke: %s", errorMessage(raw))
+		})
+	}
 }
