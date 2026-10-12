@@ -31,6 +31,10 @@ func NewAppPasswordHandler(
 }
 
 // Create (POST /api/v1/app-passwords)
+//
+// name is required (trimmed, at most 100 characters); scopes must be a
+// non-empty subset of ["caldav", "carddav"] and default to both when omitted.
+// Anything else is a 400.
 func (h *AppPasswordHandler) Create(c fiber.Ctx) error {
 	var req dto.CreateAppPasswordRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -52,6 +56,9 @@ func (h *AppPasswordHandler) Create(c fiber.Ctx) error {
 
 	res, err := h.createUC.Execute(c.Context(), usecaseReq)
 	if err != nil {
+		if errors.Is(err, apppassword.ErrInvalidInput) {
+			return BadRequestResponse(c, err.Error())
+		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to create app password")
 	}
 

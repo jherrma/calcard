@@ -222,7 +222,7 @@ const fetchCredentials = async () => {
 };
 
 const handleCreate = async () => {
-  if (!createForm.name || !createForm.username || !createForm.password) {
+  if (!createForm.name.trim() || !createForm.username || !createForm.password) {
     createError.value = 'Name, username, and password are required';
     return;
   }
@@ -232,7 +232,7 @@ const handleCreate = async () => {
 
   try {
     const body: Record<string, unknown> = {
-      name: createForm.name,
+      name: createForm.name.trim(),
       username: createForm.username,
       password: createForm.password,
       permission: createForm.permission,

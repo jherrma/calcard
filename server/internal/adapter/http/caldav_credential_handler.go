@@ -31,6 +31,9 @@ func NewCalDAVCredentialHandler(
 }
 
 // POST /api/v1/caldav-credentials
+//
+// expires_at is optional (RFC 3339) and must lie in the future; the name is
+// trimmed and required. Validation failures are 400s.
 func (h *CalDAVCredentialHandler) Create(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 

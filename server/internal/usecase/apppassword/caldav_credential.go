@@ -48,8 +48,15 @@ func NewCreateCalDAVCredentialUseCase(credRepo user.CalDAVCredentialRepository, 
 // Execute creates a new CalDAV credential
 func (uc *CreateCalDAVCredentialUseCase) Execute(ctx context.Context, userID uint, input CreateCalDAVCredentialInput) (*CreateCalDAVCredentialOutput, error) {
 	// Validate name
-	if len(input.Name) == 0 || len(input.Name) > 100 {
-		return nil, fmt.Errorf("name is required and must be at most 100 characters")
+	name, ok := user.NormalizeCredentialName(input.Name)
+	if !ok {
+		return nil, fmt.Errorf("name is required and must be at most %d characters", user.MaxCredentialNameLength)
+	}
+
+	// An expiry must lie ahead: a credential that is already expired could
+	// never authenticate.
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now()) {
+		return nil, fmt.Errorf("expires_at must be in the future")
 	}
 
 	// Validate username
@@ -89,7 +96,7 @@ func (uc *CreateCalDAVCredentialUseCase) Execute(ctx context.Context, userID uin
 	cred := &user.CalDAVCredential{
 		UUID:         uuid.New().String(),
 		UserID:       userID,
-		Name:         input.Name,
+		Name:         name,
 		Username:     input.Username,
 		PasswordHash: string(hash),
 		Permission:   permission,
@@ -105,7 +112,7 @@ func (uc *CreateCalDAVCredentialUseCase) Execute(ctx context.Context, userID uin
 		return nil, fmt.Errorf("failed to create credential: %w", err)
 	}
 
-	uc.logger.LogAppPasswordCreated(ctx, userID, input.Name, input.IP, input.UserAgent) // Using generic app password event for now or create specific if needed
+	uc.logger.LogAppPasswordCreated(ctx, userID, name, input.IP, input.UserAgent) // Using generic app password event for now or create specific if needed
 
 	return &CreateCalDAVCredentialOutput{
 		ID:         cred.UUID,
