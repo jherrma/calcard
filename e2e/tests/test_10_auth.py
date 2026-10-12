@@ -220,7 +220,6 @@ def test_pw_wrong(t, e2e, st):
     t.status(r, 400, msg="a too-short new password")
 
 
-@known("F10")
 def test_pw_same(t, st):
     """password change rejects new == current as a validation error"""
     t.need(st, "ua")
@@ -229,8 +228,8 @@ def test_pw_same(t, st):
     # ua.api re-authenticates after a revoked token, so a 401 here is the handler's.
     t.true(r.jmsg() not in TOKEN_REJECTED, f"the session must be valid (message '{r.jmsg()}')", r)
     # It is a validation error of the request body, not an authentication
-    # failure: 401 makes clients (the SPA included) refresh/re-login.
-    t.bug.status(r, 400, was=401, msg="new == current is a validation error")
+    # failure: 401 makes clients (the SPA included) refresh/re-login (F10).
+    t.status(r, 400, msg="new == current is a validation error")
 
 
 def test_pw_change(t, e2e, st):
@@ -333,7 +332,6 @@ def test_delete_account(t, e2e, st):
     t.status(r, 401, msg="the deleted account's app password must stop working")
 
 
-@known("F19")
 def test_reregister(t, e2e, st):
     """a deleted account's e-mail can register again"""
     t.need(st, "udel")
@@ -347,5 +345,5 @@ def test_reregister(t, e2e, st):
         udel.deleted = False
         udel.token = udel.refresh = ""
         e2e.defer(f"delete re-registered account {udel.email}", udel.delete_account)
-    # F19: the soft-deleted row keeps the unique e-mail → 400 "registration failed".
-    t.bug.status(r, 200, 201, was=400, msg="registering the e-mail of a deleted account")
+    # F19 (fixed): deletion tombstones the e-mail, so this was a 400 "registration failed".
+    t.status(r, 200, 201, msg="registering the e-mail of a deleted account")

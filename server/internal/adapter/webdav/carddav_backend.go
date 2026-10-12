@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -113,6 +114,12 @@ func (b *CardDAVBackend) CreateAddressBook(ctx context.Context, ab *carddav.Addr
 	parts := strings.Split(strings.Trim(ab.Path, "/"), "/")
 	if len(parts) != 4 || parts[1] != u.Username || parts[2] != "addressbooks" {
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
+	}
+
+	// MKCOL may only create a new resource (RFC 4918 §9.3.1, RFC 5689
+	// DAV:resource-must-be-null); see CalDAVBackend.CreateCalendar.
+	if _, _, err := b.resolveAddressBook(ctx, u, ab.Path); err == nil {
+		return webdav.NewHTTPError(http.StatusMethodNotAllowed, errors.New("carddav: a collection already exists at this URL"))
 	}
 
 	abPath := parts[3]
@@ -343,10 +350,12 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 		card.SetValue(vcard.FieldUID, uid)
 	}
 
-	// Serialize vCard
+	// Serialize vCard. Its only failure is a missing VERSION (required by
+	// RFC 6350 §6.7.9), which is the client's mistake: answer with the
+	// valid-address-data precondition (RFC 6352 §6.3.2.1), not a 500.
 	var vcardData strings.Builder
 	if err := vcard.NewEncoder(&vcardData).Encode(card); err != nil {
-		return nil, err
+		return nil, carddav.NewPreconditionError(carddav.PreconditionValidAddressData)
 	}
 	data := vcardData.String()
 

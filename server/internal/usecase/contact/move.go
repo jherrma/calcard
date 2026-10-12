@@ -24,7 +24,7 @@ func (uc *MoveUseCase) Execute(ctx context.Context, userID uint, contactUUID str
 		return nil, err
 	}
 	if obj == nil {
-		return nil, fmt.Errorf("contact not found")
+		return nil, ErrContactNotFound
 	}
 
 	sourceID := obj.AddressBookID

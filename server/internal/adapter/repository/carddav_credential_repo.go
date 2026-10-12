@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
@@ -40,17 +39,12 @@ func (r *gormCardDAVCredentialRepo) GetByUUID(ctx context.Context, uuid string) 
 	return &cred, nil
 }
 
+// GetByUsername matches case-insensitively (see findByUsername): the username
+// is stored exactly as the user chose it, upper-case letters included.
 func (r *gormCardDAVCredentialRepo) GetByUsername(ctx context.Context, username string) (*user.CardDAVCredential, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
-	var cred user.CardDAVCredential
 	// Find credential that is NOT revoked. Expired ones are returned but validity checked by caller.
-	if err := r.db.WithContext(ctx).Where("username = ? AND revoked_at IS NULL", username).First(&cred).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &cred, nil
+	notRevoked := func(db *gorm.DB) *gorm.DB { return db.Where("revoked_at IS NULL") }
+	return findByUsername[user.CardDAVCredential](r.db.WithContext(ctx), username, notRevoked)
 }
 
 func (r *gormCardDAVCredentialRepo) ListByUserID(ctx context.Context, userID uint) ([]user.CardDAVCredential, error) {
