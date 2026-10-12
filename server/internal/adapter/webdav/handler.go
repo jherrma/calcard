@@ -386,6 +386,20 @@ func (h *Handler) Handler() fiber.Handler {
 			return err
 		}
 
+		// A Depth: 1 / infinity PROPFIND on a home or a collection was answered
+		// by emersion, whose collection entries lack the properties the Depth: 0
+		// handler serves (sync-token, getctag, calendar-color, the real
+		// privileges, ...). Put the same description in their place, so a
+		// collection looks the same whatever the Depth (F07). Object paths
+		// (5 segments) list no collections and are skipped.
+		if c.Method() == "PROPFIND" && collectionType != "" && (len(pathParts) == 3 || len(pathParts) == 4) &&
+			c.Response().StatusCode() == http.StatusMultiStatus {
+			if body, ok := h.rewriteCollectionResponses(stdCtx, c.Response().Body(), collectionType, parsePropfindRequest(c.Body())); ok {
+				c.Response().SetBody(body)
+				c.Set(fiber.HeaderContentLength, strconv.Itoa(len(body)))
+			}
+		}
+
 		// emersion's CardDAV GET serializes the address object through go-vcard's
 		// encoder, which escapes commas in comma-list properties (CATEGORIES),
 		// collapsing "Work,Important" into one escaped value. Restore the list
