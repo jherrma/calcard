@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,5 +221,115 @@ func TestImport_GetCalendarObjectsErrorSurfaced(t *testing.T) {
 	}
 	if len(repo.created) != 0 {
 		t.Fatalf("no objects should be created when the fetch fails, got %d", len(repo.created))
+	}
+}
+
+// icalSeriesWithOverride builds a VCALENDAR with a daily series and one
+// RECURRENCE-ID override moving its second instance. With overrideFirst the
+// override is listed before its master, which RFC 5545 allows.
+func icalSeriesWithOverride(uid string, overrideFirst bool) []byte {
+	master := "BEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTAMP:20251231T000000Z\r\n" +
+		"DTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\n" +
+		"SUMMARY:Series\r\nEND:VEVENT\r\n"
+	override := "BEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTAMP:20251231T000000Z\r\n" +
+		"RECURRENCE-ID:20260102T100000Z\r\nDTSTART:20260102T150000Z\r\nDTEND:20260102T160000Z\r\n" +
+		"SUMMARY:Series (moved)\r\nEND:VEVENT\r\n"
+	body := master + override
+	if overrideFirst {
+		body = override + master
+	}
+	return []byte("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\n" + body + "END:VCALENDAR\r\n")
+}
+
+// assertSeriesObject checks that obj holds the whole series: both VEVENTs, the
+// master's summary in the denormalized column.
+func assertSeriesObject(t *testing.T, obj *calendar.CalendarObject, uid string) {
+	t.Helper()
+	if obj.UID != uid {
+		t.Fatalf("object UID = %q, want %q", obj.UID, uid)
+	}
+	if n := strings.Count(obj.ICalData, "BEGIN:VEVENT"); n != 2 {
+		t.Fatalf("object must hold master and override, got %d VEVENTs:\n%s", n, obj.ICalData)
+	}
+	if !strings.Contains(obj.ICalData, "RECURRENCE-ID:20260102T100000Z") {
+		t.Fatalf("override lost:\n%s", obj.ICalData)
+	}
+	if obj.Summary != "Series" {
+		t.Fatalf("denormalized summary = %q, want the master's", obj.Summary)
+	}
+}
+
+// TestImport_RecurrenceOverrideKept (F14): a master and its RECURRENCE-ID
+// override share a UID and must be stored as ONE calendar object (RFC 4791
+// §4.1), counted once — not two objects, the second skipped as a duplicate.
+func TestImport_RecurrenceOverrideKept(t *testing.T) {
+	for _, overrideFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("overrideFirst=%v", overrideFirst), func(t *testing.T) {
+			uc, repo := newImportFixture()
+
+			res, err := uc.Execute(context.Background(), 42, "cal-uuid",
+				icalSeriesWithOverride("series@test", overrideFirst), ImportOptions{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res.Total != 1 || res.Imported != 1 || res.Skipped != 0 || res.Failed != 0 {
+				t.Fatalf("unexpected result: %+v", res)
+			}
+			if len(repo.created) != 1 {
+				t.Fatalf("expected 1 create, got %d", len(repo.created))
+			}
+			assertSeriesObject(t, repo.created[0], "series@test")
+		})
+	}
+}
+
+// TestImport_RecurrenceOverrideReplace (F14): replace swaps the whole series —
+// one delete, one create holding master and override.
+func TestImport_RecurrenceOverrideReplace(t *testing.T) {
+	uc, repo := newImportFixture()
+	old := &calendar.CalendarObject{ID: 99, CalendarID: 1, UID: "series@test"}
+	repo.objects = []*calendar.CalendarObject{old}
+
+	res, err := uc.Execute(context.Background(), 42, "cal-uuid",
+		icalSeriesWithOverride("series@test", false), ImportOptions{DuplicateHandling: "replace"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Total != 1 || res.Imported != 1 || res.Skipped != 0 || res.Failed != 0 {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if len(repo.deleted) != 1 || repo.deleted[0] != old {
+		t.Fatalf("expected the old object to be deleted once, got %d deletes", len(repo.deleted))
+	}
+	if len(repo.objects) != 1 {
+		t.Fatalf("expected 1 surviving object, got %d", len(repo.objects))
+	}
+	assertSeriesObject(t, repo.objects[0], "series@test")
+}
+
+// TestImport_RecurrenceOverrideDuplicate (F14): duplicate gives the series a
+// new UID on EVERY component, so the override stays attached to its master.
+func TestImport_RecurrenceOverrideDuplicate(t *testing.T) {
+	uc, repo := newImportFixture()
+	repo.objects = []*calendar.CalendarObject{{ID: 99, CalendarID: 1, UID: "series@test"}}
+
+	res, err := uc.Execute(context.Background(), 42, "cal-uuid",
+		icalSeriesWithOverride("series@test", false), ImportOptions{DuplicateHandling: "duplicate"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Total != 1 || res.Imported != 1 || res.Failed != 0 {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if len(repo.created) != 1 {
+		t.Fatalf("expected 1 create, got %d", len(repo.created))
+	}
+	obj := repo.created[0]
+	if obj.UID == "series@test" {
+		t.Fatalf("duplicate must get a new UID")
+	}
+	assertSeriesObject(t, obj, obj.UID)
+	if n := strings.Count(obj.ICalData, "UID:"+obj.UID); n != 2 {
+		t.Fatalf("both components must carry the new UID, %d do:\n%s", n, obj.ICalData)
 	}
 }

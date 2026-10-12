@@ -147,6 +147,15 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
+	// MKCOL/MKCALENDAR may only create a new resource (RFC 4918 §9.3.1, RFC
+	// 4791 §5.3.1 DAV:resource-must-be-null). emersion never checks, and there
+	// is no unique (user_id, path) index, so without this a repeat request
+	// inserted a second calendar at the same path. Resolve the URL the way
+	// every other DAV request does, so a shared calendar's URL counts too.
+	if _, _, _, err := b.resolvePathUncapped(ctx, cal.Path); err == nil {
+		return webdav.NewHTTPError(http.StatusMethodNotAllowed, errors.New("caldav: a collection already exists at this URL"))
+	}
+
 	calPath := parts[3]
 	c := &calendar.Calendar{
 		UUID:                uuid.New().String(),
@@ -275,7 +284,8 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 	for _, comp := range icalCal.Children {
 		if comp.Name == ical.CompEvent || comp.Name == ical.CompToDo {
 			if comp.Props.Get(ical.PropDateTimeStamp) == nil {
-				comp.Props.SetDateTime(ical.PropDateTimeStamp, time.Now())
+				// UTC, or go-ical writes DTSTAMP;TZID=Local:… (RFC 5545 §3.8.7.2, F04).
+				comp.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
 			}
 		}
 	}

@@ -2,7 +2,6 @@ package calendar
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 )
@@ -21,12 +20,12 @@ func NewGetCalendarUseCase(repo calendar.CalendarRepository) *GetCalendarUseCase
 func (uc *GetCalendarUseCase) Execute(ctx context.Context, userID uint, calendarUUID string) (*calendar.Calendar, error) {
 	cal, err := uc.repo.GetByUUID(ctx, calendarUUID)
 	if err != nil {
-		return nil, fmt.Errorf("calendar not found")
+		return nil, calendar.ErrNotFound
 	}
 
-	// Verify ownership
+	// Verify ownership. Not owned is the same error as missing (no existence leak).
 	if cal.UserID != userID {
-		return nil, fmt.Errorf("access denied")
+		return nil, calendar.ErrNotFound
 	}
 
 	return cal, nil

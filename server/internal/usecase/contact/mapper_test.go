@@ -3,11 +3,13 @@ package contact
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-vcard"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/contact"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestToContact(t *testing.T) {
@@ -74,6 +76,25 @@ func TestToVCard(t *testing.T) {
 	assert.Contains(t, vcardStr, "EMAIL;TYPE=WORK;TYPE=PREF:jane@tech.com")
 	assert.Contains(t, vcardStr, "TEL;TYPE=HOME:555-555-5555") // Could verify param order but contains is simpler
 	assert.Contains(t, vcardStr, "END:VCARD")
+}
+
+// TestToVCardRevIsUTC: REV is written with a "Z" suffix, so its value must be
+// the UTC clock (F04). The process zone is forced to +05:00 so a local wall
+// clock labelled "Z" shows up as five hours off on any host.
+func TestToVCardRevIsUTC(t *testing.T) {
+	saved := time.Local
+	time.Local = time.FixedZone("UTC+5", 5*60*60)
+	t.Cleanup(func() { time.Local = saved })
+
+	vcardStr, err := ToVCard(&contact.Contact{UID: "rev-uid", FormattedName: "Rev Test"})
+	require.NoError(t, err)
+
+	card, err := vcard.NewDecoder(strings.NewReader(vcardStr)).Decode()
+	require.NoError(t, err)
+	rev, err := time.Parse("20060102T150405Z", card.Value(vcard.FieldRevision))
+	require.NoError(t, err, "REV must be a UTC timestamp, got %q", card.Value(vcard.FieldRevision))
+	d := time.Since(rev)
+	assert.True(t, d > -time.Minute && d < time.Minute, "REV %s is %v away from now, want the current UTC time", rev, d)
 }
 
 // TestPatchVCard is the regression test for M6: editing a contact through the
