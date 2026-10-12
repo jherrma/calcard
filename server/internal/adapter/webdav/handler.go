@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -60,7 +61,44 @@ func NewHandler(
 	}
 }
 
+// Authenticate is the first handler of the /dav group. Before anything else it
+// rewrites the request to its canonical path (canonicalDAVPath), so the scope
+// checks below, the routing in Handler and emersion all decide on the same
+// path: Fiber's c.Path() is raw, emersion's r.URL.Path is decoded, and a
+// percent-encoded "calendars" segment used to slip past the scope check of a
+// CardDAV-only credential (F29).
 func (h *Handler) Authenticate() fiber.Handler {
+	authenticate := h.authenticate()
+	return func(c fiber.Ctx) error {
+		canonical, slashAdded, inDAV, ok := canonicalDAVPath(c.Path())
+		if !ok {
+			return c.SendStatus(fiber.StatusBadRequest)
+		}
+		if !inDAV {
+			return c.SendStatus(fiber.StatusNotFound)
+		}
+		if canonical != c.Path() {
+			// c.Path is what our code reads; the adaptor builds emersion's
+			// r.URL from the request line, so that is rewritten too (escaped,
+			// so it is decoded exactly once on the way in).
+			requestURI := (&url.URL{Path: canonical, RawQuery: string(c.Request().URI().QueryString())}).RequestURI()
+			c.Path(canonical)
+			c.Request().SetRequestURI(requestURI)
+		}
+
+		if err := authenticate(c); err != nil {
+			return err
+		}
+		// RFC 4918 §5.2: a collection named without its trailing slash is
+		// served as the collection, with Content-Location naming the slash form.
+		if slashAdded && c.Response().StatusCode() < fiber.StatusMultipleChoices {
+			c.Set(fiber.HeaderContentLocation, (&url.URL{Path: canonical}).EscapedPath())
+		}
+		return nil
+	}
+}
+
+func (h *Handler) authenticate() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
