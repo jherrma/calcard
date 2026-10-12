@@ -353,6 +353,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			effectiveEnd = effectiveEnd.In(loc)
 		}
 	}
+	// A time that is not in a named IANA zone (an RFC 3339 offset, the DB or
+	// time.Now() fallback) is stored in UTC rather than with an empty TZID or
+	// TZID=Local (F22). All-day values keep their wall-clock date.
+	if !obj.IsAllDay {
+		effectiveStart = icalDateTime(effectiveStart)
+		effectiveEnd = icalDateTime(effectiveEnd)
+	}
 
 	// Always set DTSTART and DTEND on targetEvent to ensure they match obj.IsAllDay format.
 	// An event stored via DAV may carry DURATION instead of DTEND; DTEND and DURATION cannot

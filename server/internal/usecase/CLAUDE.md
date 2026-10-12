@@ -41,6 +41,10 @@ Event management:
 - Input validation lives here, not in the DTOs (the server has no struct validator). `create.go`
   rejects a missing (zero) start or end and an end before the start with `ErrInvalidInput` (a 400 over
   REST, an error result over MCP); without that a create with no times was stored at 0001-01-01 (F13).
+- `datetime.go` — `icalDateTime`: a timed start/end written without a `timezone` (an RFC 3339
+  offset such as `+05:00`, or a `time.Local` value) is stored in UTC (`DTSTART:…Z`), never with an
+  empty `TZID=` or `TZID=Local` (F22). A `timezone` (IANA) or the event's stored TZID is kept;
+  all-day values keep their wall-clock date.
 
 ### [addressbook/](addressbook/)
 
