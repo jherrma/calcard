@@ -406,6 +406,46 @@ func TestCalDAVPutRejectsUIDChange(t *testing.T) {
 	assert.Less(t, resp.StatusCode, 300)
 }
 
+// TestCalDAVPutSuppliesUTCDTStamp: a PUT whose VEVENT lacks DTSTAMP gets one
+// filled in, and it must have the UTC form RFC 5545 §3.8.7.2 requires. F04:
+// time.Now() made go-ical store DTSTAMP;TZID=Local:<local wall clock>.
+func TestCalDAVPutSuppliesUTCDTStamp(t *testing.T) {
+	app, db, _ := setupTestApp(t)
+	defer db.Close()
+
+	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.DefaultCost)
+	require.NoError(t, repository.NewUserRepository(db.DB()).Create(context.Background(), &user.User{
+		UUID:         "dtstamp-cal",
+		Email:        "dtstamp@example.com",
+		Username:     "dtstampuser",
+		PasswordHash: string(passwordHash),
+		IsActive:     true,
+	}))
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("dtstamp@example.com:password"))
+
+	req, _ := http.NewRequest("MKCOL", "/dav/dtstampuser/calendars/work/", nil)
+	req.Header.Set("Authorization", authHeader)
+	require.Equal(t, fiber.StatusCreated, davDo(t, app, req).StatusCode)
+
+	const objURL = "/dav/dtstampuser/calendars/work/no-dtstamp.ics"
+	body := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:no-dtstamp@example.com\r\n" +
+		"DTSTART:20300122T090000Z\r\nDTEND:20300122T100000Z\r\n" +
+		"SUMMARY:No DTSTAMP\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	req, _ = http.NewRequest("PUT", objURL, bytes.NewReader([]byte(body)))
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Content-Type", "text/calendar")
+	require.Equal(t, fiber.StatusCreated, davDo(t, app, req).StatusCode)
+
+	req, _ = http.NewRequest("GET", objURL, nil)
+	req.Header.Set("Authorization", authHeader)
+	resp := davDo(t, app, req)
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+	data, _ := io.ReadAll(resp.Body)
+	assert.Regexp(t, `(?m)^DTSTAMP:[0-9]{8}T[0-9]{6}Z\r?$`, string(data))
+	assert.NotContains(t, string(data), "DTSTAMP;TZID")
+}
+
 // TestCardDAVPutRejectsUIDChange is the CardDAV counterpart to
 // TestCalDAVPutRejectsUIDChange: a PUT to an existing contact whose body
 // carries a different UID must be rejected via the no-uid-conflict precondition

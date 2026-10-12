@@ -122,7 +122,6 @@ def test_missing_times(t, e2e, u1, cal):
     t.bug.status(r, 400, was=201, msg=f"an event without start/end (got start={r.jdict().get('start')})")
 
 
-@known("F04")
 def test_dtstamp(t, u1, cal, st):
     """stored iCalendar has a UTC DTSTAMP (RFC 5545 3.8.7.2)"""
     t.need(st, "ev_id")
@@ -132,10 +131,9 @@ def test_dtstamp(t, u1, cal, st):
     line = next((ln for ln in r.text.replace("\r", "").split("\n") if ln.startswith("DTSTAMP")), "")
     if not line:
         return t.fail("exported VEVENT has no DTSTAMP", r)
-    # F04: the server writes DTSTAMP;TZID=Local:… (time.Now() instead of UTC).
-    t.bug.true(re.fullmatch(r"DTSTAMP:[0-9]{8}T[0-9]{6}Z", line),
-               f"DTSTAMP must be a UTC date-time like DTSTAMP:20300101T000000Z, got '{line}'",
-               was=line.startswith("DTSTAMP;TZID="))
+    # F04 (fixed): the server used to write DTSTAMP;TZID=Local:… (time.Now() instead of UTC).
+    t.true(re.fullmatch(r"DTSTAMP:[0-9]{8}T[0-9]{6}Z", line),
+           f"DTSTAMP must be a UTC date-time like DTSTAMP:20300101T000000Z, got '{line}'")
 
 
 def test_allday(t, e2e, u1, cal):
