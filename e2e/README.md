@@ -316,26 +316,4 @@ one session's. So:
 
 ## Known server bugs
 
-Details, evidence and root causes are in [`FINDINGS.md`](FINDINGS.md). Summary:
-
-| ID | Severity | Summary |
-|---|---|---|
-| ~~F01~~ | ~~Critical~~ | ~~shared address books leak the owner's bcrypt password hash and e-mail to the sharee~~ — fixed in #181; the test stays as a regression guard |
-| F02 | High | Basic auth and sharing by *username* fail (mixed-case usernames are lower-cased on lookup); mixed-case CardDAV credentials never authenticate |
-| F03 | High | MKCOL / MKCALENDAR on an existing collection answer 201 and create a duplicate at the same path |
-| F18 | High | deleting an account leaves its calendars shared and its public links serving |
-| F04 | Medium | server-written events carry `DTSTAMP;TZID=Local:…` (must be UTC) |
-| F05 | Medium | not-found on contacts / foreign address books answers 500 |
-| F06 | Medium | empty-body PROPFIND on `/dav/` and the principal is a 400 (must be allprop) |
-| F13 | Medium | events without start/end are accepted and stored in year 1 |
-| F14 | Medium | calendar import drops recurrence exceptions (RECURRENCE-ID) |
-| F15 | Medium | imported events lose the VTIMEZONE their TZID refers to |
-| F16 | Medium | CalDAV PUT of a VCALENDAR without components is a 500 |
-| F17 | Medium | sync-collection on a missing / foreign collection is a 500 |
-| F19 | Medium | a deleted account's e-mail can never register again |
-| F07 | Low | collection properties differ between Depth 0 and 1; `calendar-color` is write-only |
-| F08 | Low | PROPPATCH is not atomic |
-| F09 | Low | event URLs ignore their calendar segment |
-| F10 | Low | password change with new == current answers 401 instead of 400 |
-| F11 | Low | PROPFIND on another user's home answers 207 with an empty body |
-| F12 | Low | calendar PATCH/DELETE/import answer 400 instead of 404 for unknown/foreign calendars |
+None open. Every finding the suite has made so far (F01–F31) is fixed; details are in [`FINDINGS.md`](FINDINGS.md). Their tests are ordinary regression tests now. A new bug is documented there and marked with `known("F<nn>")` until it is fixed.
