@@ -8,7 +8,7 @@ The server can be configured using a YAML file and/or environment variables. Env
 
 ### YAML File
 
-By default, the server looks for a configuration file specified by the `--config` flag or the `CALDAV_CONFIG_PATH` environment variable. A template is provided at [server/configs/config.yaml.example](server/configs/config.yaml.example).
+By default, the server looks for a configuration file specified by the `--config` flag or the `CALDAV_CONFIG_PATH` environment variable (`CALDAV_CONFIG_FILE` is accepted as an alias and only consulted when neither of the other two is set). Without any of them the server runs on environment variables and defaults alone; a file that was named but cannot be read is a startup error. A template is provided at [server/configs/config.yaml.example](server/configs/config.yaml.example).
 
 ### Environment Variables
 
@@ -52,10 +52,39 @@ All configuration options can be set via environment variables. The mapping is d
 
 | YAML Key         | Env Var                        | Default | Description                                                      |
 | :--------------- | :----------------------------- | :------ | :--------------------------------------------------------------- |
-| `secret`         | `CALDAV_JWT_SECRET`            | -       | Secret key used to sign JWT tokens. **Required (min 32 chars).** |
+| `secret`         | `CALDAV_JWT_SECRET`            | -       | Secret key used to sign JWT tokens. Optional: when unset, the server generates one on first start and stores it in the database, so it survives restarts. Set it only to pin a specific secret (e.g. several replicas sharing one database); a value that is set must be at least 16 characters and not `change-me-in-production`. |
 | `access_expiry`  | `CALDAV_JWT_ACCESS_EXPIRY`     | `10m`   | Expiration time for access tokens.                               |
 | `refresh_expiry` | `CALDAV_JWT_REFRESH_EXPIRY`    | `168h`  | Expiration time for refresh tokens (7 days).                     |
 | `reset_expiry`   | `CALDAV_PASSWORD_RESET_EXPIRY` | `1h`    | Expiration time for password reset tokens.                       |
+
+### SMTP Section (`smtp:`)
+
+Outgoing e-mail: account activation links, password-reset links and the "someone
+tried to register with your address" notice. SMTP counts as configured as soon as
+`host` is set; the other keys are ignored while it is empty.
+
+| YAML Key   | Env Var                | Default | Description |
+| :--------- | :--------------------- | :------ | :---------- |
+| `host`     | `CALDAV_SMTP_HOST`     | empty   | Mail server host name. **Empty turns e-mail off**: nothing is sent (the server only logs that a mail was suppressed, never its recipient or link), new accounts are active immediately, and registration behaves as described under Registration below. Setting it requires `base_url`, because the e-mailed links are built from it. |
+| `port`     | `CALDAV_SMTP_PORT`     | `587`   | Mail server port. The connection always starts unencrypted and is upgraded with STARTTLS (see below), so use the submission port; implicit-TLS ports (SMTPS, usually `465`) do not work. |
+| `user`     | `CALDAV_SMTP_USER`     | empty   | User name for SMTP `AUTH PLAIN`. |
+| `password` | `CALDAV_SMTP_PASSWORD` | empty   | Password for SMTP `AUTH PLAIN`. |
+| `from`     | `CALDAV_SMTP_FROM`     | empty   | Sender address, used both as the envelope sender (`MAIL FROM`) and in the `From:` header. Not validated and has no default, so set it whenever `host` is set. |
+
+**TLS and authentication behaviour.** The server uses Go's `net/smtp.SendMail`
+and has no further TLS options:
+
+- It connects to `host:port` in plain text and switches to TLS with **STARTTLS
+  whenever the server offers it**. The certificate is verified against `host`, so
+  `host` must be a name the certificate is valid for; there is no way to skip
+  verification.
+- It **always authenticates** with `AUTH PLAIN` using `user` / `password`, even
+  when both are empty. A server that does not advertise `AUTH` fails every mail
+  with `smtp: server doesn't support AUTH`, so an unauthenticated relay cannot be
+  used.
+- Credentials are only sent over TLS: a server that offers no STARTTLS fails with
+  `unencrypted connection`, unless `host` is exactly `localhost`, `127.0.0.1` or
+  `::1`.
 
 ### Security Section (`security:`)
 
@@ -106,6 +135,11 @@ account is active immediately, so a taken address cannot be disguised as success
 registered`, i.e. registration reveals whether an address has an account. If that
 matters on an internet-facing server, configure SMTP or set
 `CALDAV_REGISTRATION_DISABLED=true`.
+
+Deleting an account (`DELETE /api/v1/users/me`) frees its e-mail address: it can
+register again (or sign in again through OAuth) as a brand-new account. The deleted
+row is kept with its e-mail and username replaced by `deleted:<uuid>`, so it still
+counts as "an account has existed" and first-run setup stays closed.
 
 ### MCP Section (`mcp:`)
 
@@ -198,6 +232,9 @@ Each provider accepts:
 - `client_id` (`CLIENT_ID`)
 - `client_secret` (`CLIENT_SECRET`)
 - `issuer` (`ISSUER`) - Required for `custom` providers.
+- `assume_email_verified` (`ASSUME_EMAIL_VERIFIED`) - Default `false`. Treat every e-mail address this provider returns as verified. Without a verified address the server refuses to create an account from an OAuth login or to link it onto an existing account with the same address; some providers (e.g. Microsoft's userinfo endpoint) never send the `email_verified` claim, so their logins are refused unless this is on. Enable it only for a provider you trust to return addresses its users actually control.
+
+A provider is set up once both its client id and client secret are set; that also makes `base_url` required.
 
 ---
 
@@ -205,7 +242,7 @@ Each provider accepts:
 
 > [!IMPORTANT]
 > **JWT Secret Length**
-> The `CALDAV_JWT_SECRET` must be at least **32 characters long** and should be a cryptographically secure random string. If it is shorter or set to the default "change-me-in-production", the server will fail to start for security reasons.
+> `CALDAV_JWT_SECRET` may be left unset: the server then generates a secret on first start and keeps it in the database. If you set it, use a cryptographically secure random string; a value shorter than **16 characters** or equal to "change-me-in-production" makes the server refuse to start.
 
 > [!CAUTION]
 > **Production Deployment**

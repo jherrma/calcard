@@ -22,13 +22,14 @@ func NewCalendarImportUseCase(calendarRepo calendar.CalendarRepository) *Calenda
 
 // Execute imports calendar events from iCalendar data
 func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calendarUUID string, data []byte, opts ImportOptions) (*ImportResult, error) {
-	// Get calendar and verify ownership
+	// Get calendar and verify ownership. Not owned is the same error as
+	// missing, so the caller cannot tell whether someone else's calendar exists.
 	cal, err := uc.calendarRepo.GetByUUID(ctx, calendarUUID)
 	if err != nil {
-		return nil, fmt.Errorf("calendar not found")
+		return nil, calendar.ErrNotFound
 	}
 	if cal.UserID != userID {
-		return nil, fmt.Errorf("access denied")
+		return nil, calendar.ErrNotFound
 	}
 	// A subscribed calendar (story 100) mirrors a remote feed: anything
 	// imported into it survives only until the next refresh, which replaces
@@ -65,18 +66,20 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 	for _, obj := range existingObjects {
 		byUID[obj.UID] = obj
 	}
+	paths := newObjectPaths(existingObjects)
 
-	// Get all VEVENT and VTODO components
-	for _, child := range parsedCal.Children {
-		if child.Name != ical.CompEvent && child.Name != ical.CompToDo {
-			continue
-		}
+	// VTIMEZONEs are declared once per file; each object below gets a copy of
+	// the ones it references.
+	timezones := vtimezonesByID(parsedCal)
 
+	// One calendar object per UID: a recurring master and its RECURRENCE-ID
+	// overrides are sibling components in the file, but CalDAV requires them in
+	// ONE resource (RFC 4791 §4.1). Every count in the result is per object.
+	for _, item := range groupImportItems(parsedCal.Children) {
 		result.Total++
 
 		// Get UID
-		uidProp := child.Props.Get(ical.PropUID)
-		if uidProp == nil {
+		if !item.hasUID {
 			result.Failed++
 			result.Errors = append(result.Errors, ImportError{
 				Index: result.Total - 1,
@@ -84,17 +87,15 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 			})
 			continue
 		}
-		uid := uidProp.Value
+		uid := item.uid
 
 		// Get Summary for error reporting
-		summaryProp := child.Props.Get(ical.PropSummary)
-		summary := ""
-		if summaryProp != nil {
-			summary = summaryProp.Value
-		}
+		summary := item.summary()
 
 		// Check for existing event by UID (indexed once, above the loop)
 		existing := byUID[uid]
+		// A replaced object keeps its path, so DAV clients see an update.
+		preferredPath := ""
 
 		if existing != nil {
 			switch opts.DuplicateHandling {
@@ -117,11 +118,19 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 				// event with the same UID (or a create failure below) sees the
 				// same state a fresh re-fetch would.
 				delete(byUID, uid)
+				delete(paths, existing.Path)
+				preferredPath = existing.Path
 			case "duplicate":
 				// Generate new UID
 				uid = uuid.New().String() + "@imported"
-				child.Props.SetText(ical.PropUID, uid)
+				for _, comp := range item.comps {
+					comp.Props.SetText(ical.PropUID, uid)
+				}
 			}
+		}
+
+		for _, comp := range item.comps {
+			ensureDTStamp(comp)
 		}
 
 		// Convert component back to iCalendar string. The encoder insists on
@@ -133,7 +142,8 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		wrapperCal := ical.NewCalendar()
 		wrapperCal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
 		wrapperCal.Props.SetText(ical.PropVersion, "2.0")
-		wrapperCal.Children = append(wrapperCal.Children, child)
+		wrapperCal.Children = append(wrapperCal.Children, referencedVTimezones(timezones, item.comps...)...)
+		wrapperCal.Children = append(wrapperCal.Children, item.comps...)
 		if err := encoder.Encode(wrapperCal); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, ImportError{
@@ -152,7 +162,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 			UUID:       uuid.New().String(),
 			CalendarID: cal.ID,
 			UID:        uid,
-			Path:       fmt.Sprintf("%s.ics", uid),
+			Path:       paths.assign(uid, preferredPath),
 			ETag:       calendar.NewETag(),
 			ICalData:   buf.String(),
 		}
@@ -192,4 +202,73 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 	// pre-import values and desync the change log from the calendar row.
 
 	return result, nil
+}
+
+// importItem is one calendar object to be imported: every component of one UID
+// that belongs in the same resource (the master plus its RECURRENCE-ID
+// overrides), in file order.
+type importItem struct {
+	uid       string
+	hasUID    bool
+	compName  string
+	comps     []*ical.Component
+	instances map[string]bool // RECURRENCE-ID values held; "" is the master
+}
+
+// summary returns the master's SUMMARY (the first component without a
+// RECURRENCE-ID), falling back to the first component's, for error reporting.
+func (it *importItem) summary() string {
+	primary := it.comps[0]
+	for _, comp := range it.comps {
+		if comp.Props.Get(ical.PropRecurrenceID) == nil {
+			primary = comp
+			break
+		}
+	}
+	if p := primary.Props.Get(ical.PropSummary); p != nil {
+		return p.Value
+	}
+	return ""
+}
+
+// groupImportItems groups the VEVENT/VTODO children of a VCALENDAR into calendar
+// objects, ordered by their first component in the file. Components sharing a
+// UID go into one object (RFC 4791 §4.1), whatever their order in the file.
+//
+// A component only starts a second object for a UID already seen when it could
+// not share the first one's resource: a second master, the same RECURRENCE-ID
+// twice, or a different component type. Such a file is not one valid series, so
+// the extra object goes through the duplicate handling like a re-imported event
+// would. Components without a UID are an item each, so each one is reported.
+func groupImportItems(children []*ical.Component) []*importItem {
+	var items []*importItem
+	latest := map[string]*importItem{}
+	for _, child := range children {
+		if child.Name != ical.CompEvent && child.Name != ical.CompToDo {
+			continue
+		}
+		uidProp := child.Props.Get(ical.PropUID)
+		if uidProp == nil {
+			items = append(items, &importItem{comps: []*ical.Component{child}})
+			continue
+		}
+		instance := ""
+		if rid := child.Props.Get(ical.PropRecurrenceID); rid != nil {
+			instance = rid.Value
+		}
+		it := latest[uidProp.Value]
+		if it == nil || it.compName != child.Name || it.instances[instance] {
+			it = &importItem{
+				uid:       uidProp.Value,
+				hasUID:    true,
+				compName:  child.Name,
+				instances: map[string]bool{},
+			}
+			items = append(items, it)
+			latest[uidProp.Value] = it
+		}
+		it.comps = append(it.comps, child)
+		it.instances[instance] = true
+	}
+	return items
 }

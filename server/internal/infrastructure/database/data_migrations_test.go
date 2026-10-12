@@ -245,3 +245,117 @@ func TestPurgeSoftDeletedShares(t *testing.T) {
 	}
 	require.NoError(t, g.Create(reshare).Error, "re-sharing the purged pair must succeed")
 }
+
+// TestPurgeDeletedAccounts covers accounts deleted before account deletion
+// cascaded to their data (F18): the users row is soft-deleted but the calendar,
+// its public link, its events and its shares are still there. The migration
+// must remove them, leave live accounts alone, and be a no-op on re-run.
+func TestPurgeDeletedAccounts(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "caldav-account-purge-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	cfg := &config.Config{
+		DataDir:  dataDir,
+		Database: config.DatabaseConfig{Driver: "sqlite", AutoMigrate: true},
+	}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	defer db.Close()
+	require.NoError(t, db.Migrate(Models()...))
+	g := db.DB()
+
+	gone := &user.User{ID: 1, UUID: "u-gone", Username: "gone", Email: "gone@x", PasswordHash: "x"}
+	live := &user.User{ID: 2, UUID: "u-live", Username: "live", Email: "live@x", PasswordHash: "x"}
+	require.NoError(t, g.Create(gone).Error)
+	require.NoError(t, g.Create(live).Error)
+	token := "pub-gone"
+	for _, c := range []*calendar.Calendar{
+		{ID: 1, UUID: "cal-gone", UserID: 1, Path: "c1", Name: "Gone", Color: "#ffffff", Timezone: "UTC",
+			SupportedComponents: "VEVENT", PublicToken: &token, PublicEnabled: true},
+		{ID: 2, UUID: "cal-live", UserID: 2, Path: "c2", Name: "Live", Color: "#ffffff", Timezone: "UTC",
+			SupportedComponents: "VEVENT"},
+	} {
+		require.NoError(t, g.Create(c).Error)
+	}
+	require.NoError(t, g.Create(&calendar.CalendarObject{
+		UUID: "obj-gone", CalendarID: 1, Path: "e.ics", UID: "e@gone", ETag: "1",
+		ComponentType: "VEVENT", ICalData: wrap("BEGIN:VEVENT\r\nUID:e@gone\r\nEND:VEVENT\r\n"),
+	}).Error)
+	require.NoError(t, g.Create(&sharing.CalendarShare{UUID: "cs-out", CalendarID: 1, SharedWithID: 2, Permission: "read"}).Error)
+	require.NoError(t, g.Create(&sharing.CalendarShare{UUID: "cs-in", CalendarID: 2, SharedWithID: 1, Permission: "read"}).Error)
+	require.NoError(t, g.Create(&addressbook.AddressBook{ID: 1, UUID: "ab-gone", UserID: 1, Path: "ab", Name: "AB"}).Error)
+	require.NoError(t, g.Create(&addressbook.AddressBook{ID: 2, UUID: "ab-live", UserID: 2, Path: "ab", Name: "AB"}).Error)
+
+	// What DELETE /users/me did before the fix: soft-delete the user row only.
+	require.NoError(t, g.Delete(gone).Error)
+
+	run := func() { require.NoError(t, RunDataMigrations(g)) }
+	run()
+	run() // idempotent
+
+	count := func(model any, where string, args ...any) int64 {
+		var n int64
+		require.NoError(t, g.Unscoped().Model(model).Where(where, args...).Count(&n).Error)
+		return n
+	}
+	require.Zero(t, count(&calendar.Calendar{}, "user_id = ?", 1), "the deleted account's calendar must be purged")
+	require.Zero(t, count(&calendar.Calendar{}, "public_token = ?", token), "its public link must stop resolving")
+	require.Zero(t, count(&calendar.CalendarObject{}, "calendar_id = ?", 1), "its events must be purged")
+	require.Zero(t, count(&sharing.CalendarShare{}, "1 = 1"), "shares from and to the deleted account must be purged")
+	require.Zero(t, count(&addressbook.AddressBook{}, "user_id = ?", 1), "its address book must be purged")
+
+	require.EqualValues(t, 1, count(&calendar.Calendar{}, "user_id = ?", 2), "a live account keeps its calendar")
+	require.EqualValues(t, 1, count(&addressbook.AddressBook{}, "user_id = ?", 2), "a live account keeps its address book")
+	require.EqualValues(t, 2, count(&user.User{}, "1 = 1"), "user rows themselves are not touched")
+}
+
+// TestReleaseDeletedUserIdentities covers accounts deleted before F19 was
+// fixed: the soft-deleted row still holds its e-mail and username (and its
+// OAuth connection the provider identity). The migration tombstones them so the
+// address can register again, leaves live accounts alone, and is idempotent.
+func TestReleaseDeletedUserIdentities(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "caldav-user-release-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	cfg := &config.Config{
+		DataDir:  dataDir,
+		Database: config.DatabaseConfig{Driver: "sqlite", AutoMigrate: true},
+	}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	defer db.Close()
+	require.NoError(t, db.Migrate(Models()...))
+	g := db.DB()
+
+	// Deleted the old way: soft delete only, identity kept.
+	gone := &user.User{ID: 1, UUID: "u-gone", Username: "gone", Email: "gone@x", PasswordHash: "x"}
+	require.NoError(t, g.Create(gone).Error)
+	require.NoError(t, g.Create(&user.OAuthConnection{UserID: 1, Provider: "google", ProviderID: "sub-gone"}).Error)
+	require.NoError(t, g.Delete(gone).Error)
+	live := &user.User{ID: 2, UUID: "u-live", Username: "live", Email: "live@x", PasswordHash: "x"}
+	require.NoError(t, g.Create(live).Error)
+	require.NoError(t, g.Create(&user.OAuthConnection{UserID: 2, Provider: "google", ProviderID: "sub-live"}).Error)
+
+	require.NoError(t, RunDataMigrations(g))
+	require.NoError(t, RunDataMigrations(g)) // idempotent
+
+	var got user.User
+	require.NoError(t, g.Unscoped().First(&got, 1).Error)
+	require.True(t, got.DeletedAt.Valid, "the row stays soft-deleted (setup keeps counting it)")
+	require.Equal(t, "deleted:u-gone", got.Email)
+	require.Equal(t, "deleted:u-gone", got.Username)
+	got = user.User{}
+	require.NoError(t, g.First(&got, 2).Error)
+	require.Equal(t, "live@x", got.Email)
+	require.Equal(t, "live", got.Username)
+
+	var conns []user.OAuthConnection
+	require.NoError(t, g.Find(&conns).Error)
+	require.Len(t, conns, 1, "only the deleted account's provider link is removed")
+	require.Equal(t, "sub-live", conns[0].ProviderID)
+
+	// The address and username are free again.
+	require.NoError(t, g.Create(&user.User{UUID: "u-back", Username: "gone", Email: "gone@x", PasswordHash: "x"}).Error)
+}

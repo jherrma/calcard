@@ -18,7 +18,7 @@ func NewPublicCalendarHandler(calendarRepo calendar.CalendarRepository) *PublicC
 	}
 }
 
-// GET /api/v1/public/calendar/:token
+// GET /public/calendar/:token
 func (h *PublicCalendarHandler) GetICalFeed(c fiber.Ctx) error {
 	token := c.Params("token")
 	// Remove .ics extension if present
