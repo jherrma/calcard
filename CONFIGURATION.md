@@ -107,6 +107,11 @@ registered`, i.e. registration reveals whether an address has an account. If tha
 matters on an internet-facing server, configure SMTP or set
 `CALDAV_REGISTRATION_DISABLED=true`.
 
+Deleting an account (`DELETE /api/v1/users/me`) frees its e-mail address: it can
+register again (or sign in again through OAuth) as a brand-new account. The deleted
+row is kept with its e-mail and username replaced by `deleted:<uuid>`, so it still
+counts as "an account has existed" and first-run setup stays closed.
+
 ### MCP Section (`mcp:`)
 
 Controls the Model Context Protocol endpoint at `/mcp` (story 104), which lets an

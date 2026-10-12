@@ -14,7 +14,7 @@ The domain layer defines:
 
 ### [user/](user/)
 
-- `user.go` — Core user entity (profile data, security status, password hashing). `TokensValidAfter` (`json:"-"`, nil = never revoked) invalidates every access token issued before it; `AcceptsAccessTokenIssuedAt` is the single rule (a token issued at exactly the marker is accepted, so the replacement token change-password mints right after setting it survives).
+- `user.go` — Core user entity (profile data, security status, password hashing). `TokensValidAfter` (`json:"-"`, nil = never revoked) invalidates every access token issued before it; `AcceptsAccessTokenIssuedAt` is the single rule (a token issued at exactly the marker is accepted, so the replacement token change-password mints right after setting it survives). `DeletedIdentityPrefix` (`deleted:`) builds the tombstone a deleted account's e-mail and username are replaced with.
 - `refresh_token.go` — Opaque tokens for session persistence, linked to users and client context (User Agent, IP).
 - `email_verification.go` — Email verification token model.
 - `app_password.go` — Application-specific passwords for DAV client access.

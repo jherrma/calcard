@@ -33,6 +33,14 @@ type User struct {
 	OAuthConnections []OAuthConnection `gorm:"foreignKey:UserID"`
 }
 
+// DeletedIdentityPrefix starts the tombstone that replaces both the e-mail and
+// the username of a deleted account: "deleted:<uuid>". Deletion is a soft
+// delete and the email/username unique indexes cover deleted rows, so without
+// it the address could never register again (F19). The value is unique per
+// account (the UUID is) and has no '@' and a ':', so neither ValidateEmail nor
+// the setup username pattern accepts it: no live account can pre-claim one.
+const DeletedIdentityPrefix = "deleted:"
+
 // AcceptsAccessTokenIssuedAt reports whether an access token issued at
 // issuedAt is still honoured for this user, i.e. was not issued before the
 // last invalidation (see TokensValidAfter).

@@ -33,6 +33,9 @@ func RunDataMigrations(db *gorm.DB) error {
 	if err := purgeDeletedAccounts(db); err != nil {
 		return fmt.Errorf("purge deleted accounts: %w", err)
 	}
+	if err := releaseDeletedUserIdentities(db); err != nil {
+		return fmt.Errorf("release deleted user identities: %w", err)
+	}
 	return nil
 }
 
@@ -47,6 +50,23 @@ func purgeDeletedAccounts(db *gorm.DB) error {
 		deleted := tx.Unscoped().Model(&user.User{}).Select("id").Where("deleted_at IS NOT NULL")
 		return repository.PurgeAccountData(tx, deleted)
 	})
+}
+
+// releaseDeletedUserIdentities applies what UserRepository.Delete now does to
+// accounts deleted by older code (F19): those soft-deleted rows still hold
+// their e-mail and username in the non-partial unique indexes, so the address
+// could never register again, and their OAuth connections still claim the
+// provider identity. The e-mail and username become "deleted:<uuid>" and the
+// connections are removed. Idempotent: tombstoned rows are skipped, and the
+// connections are already gone.
+func releaseDeletedUserIdentities(db *gorm.DB) error {
+	expr := gorm.Expr("? || uuid", user.DeletedIdentityPrefix)
+	if err := db.Unscoped().Model(&user.User{}).
+		Where("deleted_at IS NOT NULL AND email NOT LIKE ?", user.DeletedIdentityPrefix+"%").
+		UpdateColumns(map[string]interface{}{"email": expr, "username": expr}).Error; err != nil {
+		return err
+	}
+	return db.Exec(`DELETE FROM oauth_connections WHERE user_id IN (SELECT id FROM users WHERE deleted_at IS NOT NULL)`).Error
 }
 
 // purgeSoftDeletedShares hard-deletes share rows left behind by the old

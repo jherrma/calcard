@@ -33,7 +33,7 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Implements persistence logic for domain entities using GORM.
 - **Key Components**:
-  - `user_repo.go` — User persistence. `Delete` soft-deletes the user row but first hard-deletes everything the account owns or was granted, via `PurgeAccountData` (`account_purge.go`, F18).
+  - `user_repo.go` — User persistence. `Delete` soft-deletes the user row but first hard-deletes everything the account owns or was granted, via `PurgeAccountData` (`account_purge.go`, F18). It then rewrites the e-mail and username to `deleted:<uuid>` (a tombstone), because the unique indexes cover soft-deleted rows (F19); `Count` is `Unscoped` so deleted accounts still keep first-run setup closed.
   - `account_purge.go` — `PurgeAccountData`: the account-deletion cascade (calendars with objects, change logs, subscriptions and public links; address books with contacts and photos; shares of those collections AND shares granted to the account; app passwords, DAV credentials, MCP tokens, OAuth links, preferences). Children before parents, because SQLite (`_foreign_keys=on`) and PostgreSQL enforce the GORM foreign keys. A table that gains a `user_id` must be added here, or deleted accounts leak it. The data migration `purgeDeletedAccounts` runs the same cascade for accounts deleted before it existed.
   - `username_lookup.go` — `findByUsername`, shared by the user and CardDAV-credential repos: exact spelling first, then a case-insensitive match that must be unambiguous (F02 — generated usernames are mixed-case and are also the `/dav/{username}/` segment, so stored names are never rewritten).
   - `refresh_token_repo.go` — Refresh token storage.
