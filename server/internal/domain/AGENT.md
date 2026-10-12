@@ -17,11 +17,11 @@ The domain layer defines:
 - `user.go` — Core user entity (profile data, security status, password hashing). `TokensValidAfter` (`json:"-"`, nil = never revoked) invalidates every access token issued before it; `AcceptsAccessTokenIssuedAt` is the single rule (a token issued at exactly the marker is accepted, so the replacement token change-password mints right after setting it survives).
 - `refresh_token.go` — Opaque tokens for session persistence, linked to users and client context (User Agent, IP).
 - `email_verification.go` — Email verification token model.
-- `app_password.go` — Application-specific passwords for DAV client access.
+- `app_password.go` — Application-specific passwords for DAV client access. The only scopes are `ScopeCalDAV` / `ScopeCardDAV` (`AppPasswordScopes()`, also the default for a create without scopes).
 - `caldav_credential.go` — CalDAV-specific access credentials.
 - `carddav_credential.go` — CardDAV-specific access credentials.
 - `mcp_token.go` — Long-lived bearer credential for the `/mcp` endpoint (story 104). Unlike the DAV credentials it stores a **unique-indexed SHA-256** of a 256-bit random secret rather than a bcrypt hash: an MCP client presents only the opaque token, so it must be findable from that string alone, which a per-row salted hash cannot do. `TokenPrefix` is the only cleartext fragment, kept so a shown-once token stays recognizable in the settings list.
-- `validation.go` — User input validation logic.
+- `validation.go` — User input validation logic, incl. `NormalizeCredentialName` (trimmed, 1–100 characters) shared by app passwords, DAV credentials and MCP tokens.
 - `repository.go` — Repository interfaces for user, refresh token, email verification, app password, OAuth connection, MCP token, and credential persistence.
 
 ### [calendar/](calendar/)

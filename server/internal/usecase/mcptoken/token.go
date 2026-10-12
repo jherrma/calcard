@@ -115,9 +115,9 @@ func NewCreateUseCase(repo user.MCPTokenRepository, logger *logging.SecurityLogg
 
 // Execute mints a token for userID and returns the secret exactly once.
 func (uc *CreateUseCase) Execute(ctx context.Context, userID uint, input CreateInput) (*CreateOutput, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" || len(name) > 100 {
-		return nil, fmt.Errorf("%w: name is required and must be at most 100 characters", ErrInvalidInput)
+	name, ok := user.NormalizeCredentialName(input.Name)
+	if !ok {
+		return nil, fmt.Errorf("%w: name is required and must be at most %d characters", ErrInvalidInput, user.MaxCredentialNameLength)
 	}
 	if input.ExpiresAt != nil {
 		if !input.ExpiresAt.After(time.Now()) {

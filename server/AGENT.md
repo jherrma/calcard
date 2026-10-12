@@ -54,7 +54,7 @@ JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, re
 | Contacts | CRUD, search (over every readable address book, shared included — #162), move, photo |
 | Search | `GET /api/v1/search` — unified search over events (no date bound), contacts, calendars and address books (#156) |
 | Sharing | Calendar and address book share CRUD |
-| Credentials | App passwords, CalDAV/CardDAV credentials |
+| Credentials | App passwords, CalDAV/CardDAV credentials. Creation validates (F31): the name is trimmed and required (max 100 characters, as for MCP tokens); app-password `scopes` must be a non-empty subset of `caldav`/`carddav` and default to both when omitted; a DAV credential's `expires_at` must lie in the future. Each violation is a 400. Only creation is checked: rows stored before keep working unchanged |
 | Import/Export | Calendar import (.ics), contact import (.vcf), full backup export |
 | About | Open-source attribution list (`GET /api/v1/about/open-source`, authenticated) |
 | MCP tokens | `GET`/`POST /api/v1/mcp-tokens`, `DELETE /api/v1/mcp-tokens/:id` — the bearer credentials MCP clients use (#104) |

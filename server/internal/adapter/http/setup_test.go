@@ -108,6 +108,20 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	listAppPwdUC := apppassword.NewListUseCase(appPwdRepo)
 	revokeAppPwdUC := apppassword.NewRevokeUseCase(appPwdRepo, securityLogger)
 
+	// CalDAV / CardDAV Credential Use Cases
+	caldavCredRepo := repository.NewCalDAVCredentialRepository(db.DB())
+	carddavCredRepo := repository.NewCardDAVCredentialRepository(db.DB())
+	caldavCredHandler := NewCalDAVCredentialHandler(
+		apppassword.NewCreateCalDAVCredentialUseCase(caldavCredRepo, securityLogger),
+		apppassword.NewListCalDAVCredentialsUseCase(caldavCredRepo),
+		apppassword.NewRevokeCalDAVCredentialUseCase(caldavCredRepo, securityLogger),
+	)
+	carddavCredHandler := NewCardDAVCredentialHandler(
+		apppassword.NewCreateCardDAVCredentialUseCase(carddavCredRepo, securityLogger),
+		apppassword.NewListCardDAVCredentialsUseCase(carddavCredRepo),
+		apppassword.NewRevokeCardDAVCredentialUseCase(carddavCredRepo, securityLogger),
+	)
+
 	// Calendar Use Cases
 	calendarCreateUC := calendarusecase.NewCreateCalendarUseCase(calendarRepo)
 	calShareRepo := repository.NewCalendarShareRepository(db.DB())
@@ -230,7 +244,18 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	// App Password Routes
 	appPwdGroup := api.Group("/app-passwords", Authenticate(jwtManager, userRepo))
 	appPwdGroup.Get("/", appPwdHandler.List)
+	appPwdGroup.Post("/", appPwdHandler.Create)
 	appPwdGroup.Delete("/:id", appPwdHandler.Revoke)
+
+	// CalDAV / CardDAV Credential Routes
+	caldavCredGroup := api.Group("/caldav-credentials", Authenticate(jwtManager, userRepo))
+	caldavCredGroup.Post("/", caldavCredHandler.Create)
+	caldavCredGroup.Get("/", caldavCredHandler.List)
+	caldavCredGroup.Delete("/:id", caldavCredHandler.Revoke)
+	carddavCredGroup := api.Group("/carddav-credentials", Authenticate(jwtManager, userRepo))
+	carddavCredGroup.Post("/", carddavCredHandler.Create)
+	carddavCredGroup.Get("/", carddavCredHandler.List)
+	carddavCredGroup.Delete("/:id", carddavCredHandler.Revoke)
 
 	// MCP Access Token Routes
 	mcpTokenGroup := api.Group("/mcp-tokens", Authenticate(jwtManager, userRepo))

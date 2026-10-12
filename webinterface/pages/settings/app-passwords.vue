@@ -215,7 +215,7 @@ const fetchAppPasswords = async () => {
 };
 
 const handleCreate = async () => {
-  if (!createForm.name) {
+  if (!createForm.name.trim()) {
     createError.value = 'Name is required';
     return;
   }
@@ -231,7 +231,7 @@ const handleCreate = async () => {
     const response = await api<CreateAppPasswordResponse>('/api/v1/app-passwords', {
       method: 'POST',
       body: {
-        name: createForm.name,
+        name: createForm.name.trim(),
         scopes: createForm.scopes,
       },
     });

@@ -2,6 +2,7 @@
 dedicated CalDAV / CardDAV credentials (own username, read or read-write)."""
 
 import re
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -107,6 +108,44 @@ def test_ap_scope_carddav(t, e2e, u1):
     # Scope is decided by path segment, not substring: "calendars" in an
     # address-book object name must not unlock it for a caldav credential.
     t.status(_probe(e2e, u1.email, pw, f"{u1.home_cal}x/addressbooks.ics", "GET"), 403)
+    u1.api("DELETE", f"/app-passwords/{aid}")
+
+
+def test_ap_validation(t, e2e, u1):
+    """app password: blank name, unknown or empty scopes are refused (400)"""
+    cases = [
+        ({"name": "", "scopes": ["caldav"]}, "an empty name"),
+        ({"name": "   ", "scopes": ["caldav"]}, "a whitespace-only name"),
+        ({"scopes": ["caldav"]}, "a missing name"),
+        ({"name": "x" * 101, "scopes": ["caldav"]}, "a name over 100 characters"),
+        ({"name": e2e.uniq("ap-bad"), "scopes": ["admin"]}, "an unknown scope"),
+        ({"name": e2e.uniq("ap-bad"), "scopes": ["caldav", "CardDAV"]}, "an unknown scope next to a valid one"),
+        ({"name": e2e.uniq("ap-bad"), "scopes": []}, "an empty scope list"),
+    ]
+    for body, what in cases:
+        r = u1.api("POST", "/app-passwords/", json=body)
+        if r.status in (200, 201):  # accepted after all: do not leave it behind
+            aid = (r.jdict().get("data") or {}).get("id")
+            e2e.defer(f"revoke app password ({what})", e2e.cleanup_api, u1, "DELETE", f"/app-passwords/{aid}")
+        if t.status(r, 400, msg=f"{what} must be refused"):
+            t.json(r, "status", "error")
+            t.true(r.jmsg(), f"the 400 for {what} must say what is wrong", r)
+
+
+def test_ap_default_scopes(t, e2e, u1):
+    """app password: omitted scopes default to caldav + carddav, the name is trimmed"""
+    name = e2e.uniq("ap-default")
+    r = u1.api("POST", "/app-passwords/", json={"name": f"  {name}  "})
+    if not t.status(r, 200, 201):
+        return
+    data = r.jdict().get("data") or {}
+    aid, pw = data.get("id"), data.get("password")
+    e2e.defer(f"revoke app password {name}", e2e.cleanup_api, u1, "DELETE", f"/app-passwords/{aid}")
+    t.json(r, "data.name", name, "the name is stored trimmed")
+    t.jq(r, lambda j: j["data"]["scopes"] == ["caldav", "carddav"],
+         'expected JSON condition to hold: .data.scopes == ["caldav","carddav"] when scopes are omitted')
+    t.status(_probe(e2e, u1.email, pw, u1.home_cal), 207, msg="default scope covers calendars")
+    t.status(_probe(e2e, u1.email, pw, u1.home_ab), 207, msg="default scope covers address books")
     u1.api("DELETE", f"/app-passwords/{aid}")
 
 
@@ -225,6 +264,41 @@ def test_caldav_expired(t, e2e, u1):
         return
     e2e.defer(f"revoke CalDAV credential {u}", e2e.cleanup_api, u1, "DELETE", f"/caldav-credentials/{r.jdict().get('id')}")
     t.status(_probe(e2e, u, pw, "/dav/"), 401, msg="an expired credential must not authenticate")
+
+
+def test_dav_cred_validation(t, e2e, u1):
+    """CalDAV / CardDAV credential: past expiry and blank name are refused (400)"""
+    a_minute_ago = (datetime.now(timezone.utc) - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pw = f"Validate_{e2e.run_id}"
+    for kind in ("caldav", "carddav"):
+        path = f"/{kind}-credentials/"
+        cases = [
+            ({"name": "past", "username": e2e.uniq(f"{kind[:4]}past"), "password": pw,
+              "expires_at": "2020-01-01T00:00:00Z"}, "an expiry in the past", "future"),
+            ({"name": "past", "username": e2e.uniq(f"{kind[:4]}ago"), "password": pw,
+              "expires_at": a_minute_ago}, "an expiry a minute ago", "future"),
+            ({"name": "   ", "username": e2e.uniq(f"{kind[:4]}blank"), "password": pw}, "a whitespace-only name", "name"),
+        ]
+        for body, what, word in cases:
+            r = u1.api("POST", path, json=body)
+            if r.status == 201:  # accepted after all: do not leave it behind
+                e2e.defer(f"revoke {kind} credential {body['username']}", e2e.cleanup_api, u1, "DELETE",
+                          f"{path}{r.jdict().get('id')}")
+            if t.status(r, 400, msg=f"{kind}: {what} must be refused"):
+                t.true(word in r.jmsg(), f"{kind}: the 400 for {what} must mention '{word}', got {r.jmsg()!r}", r)
+        # A future expiry and a padded name are fine; the name comes back trimmed.
+        u = e2e.uniq(f"{kind[:4]}fut")
+        r = u1.api("POST", path, json={"name": "  Phone  ", "username": u, "password": pw, "expires_at": tomorrow})
+        if not t.status(r, 201, msg=f"{kind}: an expiry tomorrow is accepted"):
+            continue
+        cid = r.jdict().get("id")
+        e2e.defer(f"revoke {kind} credential {u}", e2e.cleanup_api, u1, "DELETE", f"{path}{cid}")
+        t.json(r, "name", "Phone", f"{kind}: the name is stored trimmed")
+        t.nonempty(r, "expires_at")
+        home = u1.home_cal if kind == "caldav" else u1.home_ab
+        t.status(_probe(e2e, u, pw, home), 207, msg=f"{kind}: a credential expiring tomorrow authenticates")
+        u1.api("DELETE", f"{path}{cid}")
 
 
 def test_caldav_revoke(t, e2e, u1, u2, st):

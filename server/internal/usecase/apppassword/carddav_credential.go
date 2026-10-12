@@ -47,8 +47,15 @@ func NewCreateCardDAVCredentialUseCase(credRepo user.CardDAVCredentialRepository
 // Execute creates a new CardDAV credential
 func (uc *CreateCardDAVCredentialUseCase) Execute(ctx context.Context, userID uint, input CreateCardDAVCredentialInput) (*CreateCardDAVCredentialOutput, error) {
 	// Validate name
-	if len(input.Name) == 0 || len(input.Name) > 100 {
-		return nil, fmt.Errorf("name is required and must be at most 100 characters")
+	name, ok := user.NormalizeCredentialName(input.Name)
+	if !ok {
+		return nil, fmt.Errorf("name is required and must be at most %d characters", user.MaxCredentialNameLength)
+	}
+
+	// An expiry must lie ahead: a credential that is already expired could
+	// never authenticate.
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now()) {
+		return nil, fmt.Errorf("expires_at must be in the future")
 	}
 
 	// Validate username
@@ -88,7 +95,7 @@ func (uc *CreateCardDAVCredentialUseCase) Execute(ctx context.Context, userID ui
 	cred := &user.CardDAVCredential{
 		UUID:         uuid.New().String(),
 		UserID:       userID,
-		Name:         input.Name,
+		Name:         name,
 		Username:     input.Username,
 		PasswordHash: string(hash),
 		Permission:   permission,
@@ -100,7 +107,7 @@ func (uc *CreateCardDAVCredentialUseCase) Execute(ctx context.Context, userID ui
 		return nil, fmt.Errorf("failed to create credential: %w", err)
 	}
 
-	uc.logger.LogAppPasswordCreated(ctx, userID, input.Name, input.IP, input.UserAgent)
+	uc.logger.LogAppPasswordCreated(ctx, userID, name, input.IP, input.UserAgent)
 
 	return &CreateCardDAVCredentialOutput{
 		ID:         cred.UUID,

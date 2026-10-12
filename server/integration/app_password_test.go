@@ -122,18 +122,26 @@ func TestAppPasswordScopeEnforcement(t *testing.T) {
 	assert.Equalf(t, http.StatusForbidden, status,
 		"carddav-only app password must be forbidden on calendar paths, got %d", status)
 
-	// (3) An empty-scope password must be forbidden on BOTH protocol trees.
-	code = doJSON(t, http.MethodPost, "/app-passwords/", token, map[string]any{
+	// (3) A password that could reach neither tree is refused up front (F31):
+	// an empty scope list and an unknown scope are 400s. Omitting the field
+	// gives the default, both scopes.
+	status, raw := restCall(t, http.MethodPost, "/app-passwords/", token, map[string]any{
 		"name": "no-scope", "scopes": []string{},
-	}, &resp)
+	})
+	assert.Equalf(t, http.StatusBadRequest, status, "an empty scope list must be refused: %s", raw)
+	status, raw = restCall(t, http.MethodPost, "/app-passwords/", token, map[string]any{
+		"name": "bogus-scope", "scopes": []string{"admin"},
+	})
+	assert.Equalf(t, http.StatusBadRequest, status, "an unknown scope must be refused: %s", raw)
+	code = doJSON(t, http.MethodPost, "/app-passwords/", token, map[string]any{"name": "default-scope"}, &resp)
 	require.Equal(t, http.StatusOK, code)
-	noScopePass := resp.Credentials.Password
-	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/calendars/", email, noScopePass,
+	defaultPass := resp.Credentials.Password
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/calendars/", email, defaultPass,
 		propfindCalendarHomeBody, depthHeader("1"))
-	assert.Equalf(t, http.StatusForbidden, status, "empty-scope password must be forbidden on calendar paths, got %d", status)
-	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/", email, noScopePass,
+	assert.Equalf(t, http.StatusMultiStatus, status, "omitted scopes default to caldav, got %d", status)
+	status, _, _ = davCall(t, "PROPFIND", "/dav/"+username+"/addressbooks/", email, defaultPass,
 		propfindPrincipalBody, depthHeader("1"))
-	assert.Equalf(t, http.StatusForbidden, status, "empty-scope password must be forbidden on addressbook paths, got %d", status)
+	assert.Equalf(t, http.StatusMultiStatus, status, "omitted scopes default to carddav, got %d", status)
 
 	// (4) Naming edge case: an addressbook object path that merely contains the
 	// word "calendars" must still be classified by its collection-type segment
