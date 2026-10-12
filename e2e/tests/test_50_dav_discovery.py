@@ -103,17 +103,15 @@ def test_principal(t, u1, dd):
             "the response must describe the principal URL")
 
 
-@known("F06")
 def test_empty_body(t, u1, dd):
     """PROPFIND with an empty body is treated as allprop (RFC 4918 9.1)"""
-    # Collections already handle this; the principal/root path does not.
     t.status(u1.dav("PROPFIND", f"{u1.home_cal}{dd.cal['path']}/", depth=0), 207,
              msg="empty-body PROPFIND on a calendar collection")
-    # F06: go-webdav answers 400 "webdav: expected application/xml request".
-    t.bug.status(u1.dav("PROPFIND", "/dav/", depth=0), 207, was=400,
-                 msg="empty-body PROPFIND on /dav/ (some clients probe like this)")
-    t.bug.status(u1.dav("PROPFIND", f"/dav/{dd.user}/", depth=0), 207, was=400,
-                 msg="empty-body PROPFIND on the principal")
+    # Was a 400 "webdav: expected application/xml request" until F06 was fixed.
+    for p, what in (("/dav/", "/dav/ (some clients probe like this)"), (f"/dav/{dd.user}/", "the principal")):
+        r = u1.dav("PROPFIND", p, depth=0)
+        if t.status(r, 207, msg=f"empty-body PROPFIND on {what}"):
+            _principal_checks(t, r, dd.user)
 
 
 def test_cal_home(t, e2e, u1, dd):
