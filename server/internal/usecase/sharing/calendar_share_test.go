@@ -2,6 +2,7 @@ package sharing
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -213,12 +214,36 @@ func TestCreateCalendarShare(t *testing.T) {
 		assert.Equal(t, "target", output.SharedWith.Username)
 	})
 
-	t.Run("Permission Denied (Not Owner)", func(t *testing.T) {
+	t.Run("Not Owner Is Not Found", func(t *testing.T) {
+		// Same error as a missing calendar, so it cannot be told apart (F12/F28).
 		otherCal := &calendar.Calendar{ID: calID, UserID: 999}
 		calendarRepo.On("GetByID", ctx, calID).Return(otherCal, nil).Once()
 
 		_, err := uc.Execute(ctx, ownerID, input)
+		assert.ErrorIs(t, err, calendar.ErrNotFound)
+	})
+
+	t.Run("Unknown User Is A Rejected Request", func(t *testing.T) {
+		calendarRepo.On("GetByID", ctx, calID).Return(cal, nil).Once()
+		userRepo.On("GetByEmail", ctx, "nobody").Return(nil, nil).Once()
+		userRepo.On("GetByUsername", ctx, "nobody").Return(nil, nil).Once()
+
+		_, err := uc.Execute(ctx, ownerID, CreateCalendarShareInput{
+			CalendarID: calID, UserIdentifier: "nobody", Permission: "read",
+		})
+		assert.ErrorIs(t, err, calendar.ErrInvalidInput)
+		assert.EqualError(t, err, "user 'nobody' not found")
+	})
+
+	t.Run("User Lookup Failure Is Not 'User Not Found'", func(t *testing.T) {
+		calendarRepo.On("GetByID", ctx, calID).Return(cal, nil).Once()
+		userRepo.On("GetByEmail", ctx, "broken").Return(nil, errors.New("database is locked")).Once()
+
+		_, err := uc.Execute(ctx, ownerID, CreateCalendarShareInput{
+			CalendarID: calID, UserIdentifier: "broken", Permission: "read",
+		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "permission denied")
+		assert.NotErrorIs(t, err, calendar.ErrInvalidInput)
+		assert.NotErrorIs(t, err, calendar.ErrNotFound)
 	})
 }

@@ -8,6 +8,7 @@ import (
 	ical "github.com/emersion/go-ical"
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	calendaruc "github.com/jherrma/caldav-server/internal/usecase/calendar"
 )
 
 // CalendarImportUseCase handles calendar import from iCalendar format
@@ -20,23 +21,38 @@ func NewCalendarImportUseCase(calendarRepo calendar.CalendarRepository) *Calenda
 	return &CalendarImportUseCase{calendarRepo: calendarRepo}
 }
 
-// Execute imports calendar events from iCalendar data
-func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calendarUUID string, data []byte, opts ImportOptions) (*ImportResult, error) {
-	// Get calendar and verify ownership. Not owned is the same error as
-	// missing, so the caller cannot tell whether someone else's calendar exists.
-	cal, err := uc.calendarRepo.GetByUUID(ctx, calendarUUID)
+// CheckTarget reports whether userID may import into the calendar, without
+// looking at any data: calendar.ErrNotFound for a missing or not-owned
+// calendar, an ErrInvalidInput error for a subscribed one. The handler calls it
+// before reading the request body, so an unknown or foreign calendar is the
+// same 404 whatever was uploaded (F28).
+func (uc *CalendarImportUseCase) CheckTarget(ctx context.Context, userID uint, calendarUUID string) error {
+	_, err := uc.target(ctx, userID, calendarUUID)
+	return err
+}
+
+func (uc *CalendarImportUseCase) target(ctx context.Context, userID uint, calendarUUID string) (*calendar.Calendar, error) {
+	// Not owned is the same error as missing, so the caller cannot tell
+	// whether someone else's calendar exists.
+	cal, err := calendaruc.LoadOwnedCalendar(ctx, uc.calendarRepo, userID, calendarUUID)
 	if err != nil {
-		return nil, calendar.ErrNotFound
-	}
-	if cal.UserID != userID {
-		return nil, calendar.ErrNotFound
+		return nil, err
 	}
 	// A subscribed calendar (story 100) mirrors a remote feed: anything
 	// imported into it survives only until the next refresh, which replaces
 	// the collection's contents wholesale. Accepting the import and reporting
 	// "42 events imported" would be a lie with a delay on it.
 	if cal.Subscribed {
-		return nil, fmt.Errorf("cannot import into a subscribed calendar: it mirrors a remote feed and is read-only")
+		return nil, calendar.Invalidf("cannot import into a subscribed calendar: it mirrors a remote feed and is read-only")
+	}
+	return cal, nil
+}
+
+// Execute imports calendar events from iCalendar data
+func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calendarUUID string, data []byte, opts ImportOptions) (*ImportResult, error) {
+	cal, err := uc.target(ctx, userID, calendarUUID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Default options
@@ -48,7 +64,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 	decoder := ical.NewDecoder(bytes.NewReader(data))
 	parsedCal, err := decoder.Decode()
 	if err != nil {
-		return nil, fmt.Errorf("invalid iCalendar format: %w", err)
+		return nil, calendar.Invalidf("invalid iCalendar format: %w", err)
 	}
 
 	result := &ImportResult{}
@@ -60,7 +76,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 	// the same file behave exactly as a fresh per-event fetch would.
 	existingObjects, err := uc.calendarRepo.GetCalendarObjects(ctx, cal.ID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch calendar objects: %w", err)
 	}
 	byUID := make(map[string]*calendar.CalendarObject, len(existingObjects))
 	for _, obj := range existingObjects {

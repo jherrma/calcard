@@ -30,17 +30,19 @@ func NewUpdateCalendarShareUseCase(
 
 func (uc *UpdateCalendarShareUseCase) Execute(ctx context.Context, requestingUserID uint, calendarID uint, shareUUID string, input UpdateCalendarShareInput) (*CreateCalendarShareOutput, error) {
 	// 1. Verify ownership
-	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
+	cal, err := ownedCalendar(ctx, uc.calendarRepo, requestingUserID, calendarID)
 	if err != nil {
-		return nil, fmt.Errorf("calendar not found")
-	}
-	if cal.UserID != requestingUserID {
-		return nil, fmt.Errorf("permission denied")
+		return nil, err
 	}
 
 	// 2. Get share
+	// The repository answers (nil, nil) for an unknown id; an error is a
+	// storage failure, not a missing share.
 	share, err := uc.shareRepo.GetByUUID(ctx, shareUUID)
-	if err != nil || share == nil {
+	if err != nil {
+		return nil, fmt.Errorf("failed to load share: %w", err)
+	}
+	if share == nil {
 		return nil, ErrCalendarShareNotFound
 	}
 
@@ -51,7 +53,7 @@ func (uc *UpdateCalendarShareUseCase) Execute(ctx context.Context, requestingUse
 
 	// 4. Validate permission
 	if input.Permission != "read" && input.Permission != "read-write" {
-		return nil, fmt.Errorf("invalid permission")
+		return nil, calendar.Invalidf("invalid permission")
 	}
 
 	// 5. Update share
@@ -59,7 +61,7 @@ func (uc *UpdateCalendarShareUseCase) Execute(ctx context.Context, requestingUse
 	share.UpdatedAt = time.Now()
 
 	if err := uc.shareRepo.Update(ctx, share); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update share: %w", err)
 	}
 
 	// 6. Return output

@@ -127,6 +127,30 @@ def test_notfound_status(t, e2e, u1, u2, st):
     t.json(u1.api("GET", f"/calendars/{st.c1_uuid}"), "name", st.c1_name, "U1's calendar must be untouched")
 
 
+def test_notfound_before_body(t, u1, u2, st):
+    """an unknown or foreign calendar is a 404 whatever the request body says"""
+    t.need(st, "c1_uuid")
+    # The calendar is resolved before the body is validated (F28), so a bad
+    # body cannot turn the 404 into a 400, and unknown and foreign stay alike.
+    cases = [
+        ("DELETE", "", {"json": '{"confirmation":"yes"}'}, "DELETE with a wrong confirmation"),
+        ("PATCH", "", {"data": '{"name":', "ctype": "application/json"}, "PATCH with malformed JSON"),
+        ("POST", "/import", {"json": "{}"}, "import without data"),
+    ]
+    for method, suffix, kw, what in cases:
+        unknown = u1.api(method, f"/calendars/{ZERO_UUID}{suffix}", **kw)
+        foreign = u2.api(method, f"/calendars/{st.c1_uuid}{suffix}", **kw)
+        t.status(unknown, 404, msg=f"{what}, unknown calendar")
+        t.status(foreign, 404, msg=f"{what}, another user's calendar")
+        t.eq(foreign.text, unknown.text, f"{what}: unknown and foreign answer the same body")
+    # On an owned calendar the same bodies are still rejected as bad requests.
+    t.status(u1.api("DELETE", f"/calendars/{st.c1_uuid}", json='{"confirmation":"yes"}'), 400,
+             msg="a wrong confirmation on an owned calendar")
+    t.status(u1.api("PATCH", f"/calendars/{st.c1_uuid}", data='{"name":', ctype="application/json"), 400,
+             msg="malformed JSON on an owned calendar")
+    t.json(u1.api("GET", f"/calendars/{st.c1_uuid}"), "name", st.c1_name, "U1's calendar must be untouched")
+
+
 def test_export(t, e2e, u1, st):
     """export returns an iCalendar file with the events"""
     t.need(st, "c1_uuid")
