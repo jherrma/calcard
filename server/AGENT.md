@@ -49,9 +49,9 @@ JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, re
 | System | Settings (admin configured, SMTP enabled, registration enabled, setup token required), auth methods |
 | User | Get/update profile, delete account, get/update preferences |
 | Calendars | CRUD, public sharing, export |
-| Events | CRUD, move between calendars |
+| Events | CRUD, move between calendars. An event is reachable only under the calendar that holds it: a mismatched or unknown `:calendar_id` is the same 404 as an unknown event (F09) |
 | Address Books | CRUD, export |
-| Contacts | CRUD, search (over every readable address book, shared included — #162), move, photo |
+| Contacts | CRUD, search (over every readable address book, shared included — #162), move, photo. The contact must live in the URL's `:addressbook_id` (move included), else 404 |
 | Search | `GET /api/v1/search` — unified search over events (no date bound), contacts, calendars and address books (#156) |
 | Sharing | Calendar and address book share CRUD |
 | Credentials | App passwords, CalDAV/CardDAV credentials |
