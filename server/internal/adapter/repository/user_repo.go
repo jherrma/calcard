@@ -110,6 +110,11 @@ func (r *gormUserRepo) Delete(ctx context.Context, userID uint) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&user.EmailVerification{}).Error; err != nil {
 			return err
 		}
+		// Calendars, address books, shares in both directions, credentials:
+		// a soft-deleted owner alone left all of it reachable (F18).
+		if err := PurgeAccountData(tx, userID); err != nil {
+			return err
+		}
 
 		// Soft delete user
 		return tx.Delete(&user.User{}, userID).Error

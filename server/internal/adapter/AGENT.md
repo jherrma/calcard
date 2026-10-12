@@ -32,7 +32,8 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Implements persistence logic for domain entities using GORM.
 - **Key Components**:
-  - `user_repo.go` — User persistence.
+  - `user_repo.go` — User persistence. `Delete` soft-deletes the user row but first hard-deletes everything the account owns or was granted, via `PurgeAccountData` (`account_purge.go`, F18).
+  - `account_purge.go` — `PurgeAccountData`: the account-deletion cascade (calendars with objects, change logs, subscriptions and public links; address books with contacts and photos; shares of those collections AND shares granted to the account; app passwords, DAV credentials, MCP tokens, OAuth links, preferences). Children before parents, because SQLite (`_foreign_keys=on`) and PostgreSQL enforce the GORM foreign keys. A table that gains a `user_id` must be added here, or deleted accounts leak it. The data migration `purgeDeletedAccounts` runs the same cascade for accounts deleted before it existed.
   - `refresh_token_repo.go` — Refresh token storage.
   - `password_reset_repo.go` — Password reset token storage.
   - `calendar_repo.go` — Calendar persistence. `ReplaceFeedObjects` makes a subscribed calendar's contents match a feed in one transaction (story 100) — one sync token per changed resource but a single calendar-row update, and an unchanged feed touches neither, so a static `.ics` republished hourly does not wake every DAV client. `Delete` cascades to the calendar's subscription row, because a calendar can be deleted from three places and only one of them knows subscriptions exist.

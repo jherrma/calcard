@@ -83,7 +83,7 @@ Application password management (for DAV client access):
 User profile management:
 
 - `get_profile.go`, `update_profile.go` — Profile CRUD.
-- `delete_account.go` — Account deletion.
+- `delete_account.go` — Account deletion: password + `DELETE` confirmation, then `UserRepository.Delete`, which removes all of the account's data (its collections, the shares in both directions, credentials) and soft-deletes the user row (F18).
 
 ### [sharing/](sharing/)
 
