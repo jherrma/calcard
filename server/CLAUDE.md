@@ -116,7 +116,7 @@ Integration tests are gated behind the `integration` build tag so they're exclud
 
 ## Key Conventions
 
-- **Configuration**: Loaded from environment variables (`CALDAV_*`) and/or `config.yaml`. See `configs/config.yaml.example`.
+- **Configuration**: Loaded from environment variables (`CALDAV_*`) and/or `config.yaml`. See `configs/config.yaml.example`. Every env-bound field of `config.Config` (and every `CALDAV_*` that `cmd/server` reads directly) must have a row in `/CONFIGURATION.md` naming its YAML key and env var — `internal/config/config_doc_test.go` fails otherwise.
 - **Database**: SQLite by default (zero config), PostgreSQL when `CALDAV_DB_HOST` is set.
 - **Migrations**: GORM `AutoMigrate` — all models registered in `infrastructure/database/migrations.go`.
 - **Auth**: JWT for REST API, HTTP Basic Auth for DAV endpoints. Backend uses `expires_at` (Unix timestamp) for JWT expiry.

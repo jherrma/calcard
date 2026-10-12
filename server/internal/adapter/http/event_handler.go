@@ -280,7 +280,7 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(eventResponseFromObject(obj))
 }
 
-// PUT /api/v1/calendars/:calendar_id/events/:event_id
+// PATCH /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Update(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
 	perm := h.eventPermission(c, eventID)

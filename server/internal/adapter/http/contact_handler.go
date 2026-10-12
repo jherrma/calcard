@@ -245,7 +245,7 @@ func (h *ContactHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(res)
 }
 
-// PUT /api/v1/addressbooks/:addressbook_id/contacts/:contact_id
+// PATCH /api/v1/addressbooks/:addressbook_id/contacts/:contact_id
 func (h *ContactHandler) Update(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookWrite(c)
 	if !ok {
