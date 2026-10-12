@@ -350,10 +350,12 @@ func (b *CardDAVBackend) PutAddressObject(ctx context.Context, p string, card vc
 		card.SetValue(vcard.FieldUID, uid)
 	}
 
-	// Serialize vCard
+	// Serialize vCard. Its only failure is a missing VERSION (required by
+	// RFC 6350 §6.7.9), which is the client's mistake: answer with the
+	// valid-address-data precondition (RFC 6352 §6.3.2.1), not a 500.
 	var vcardData strings.Builder
 	if err := vcard.NewEncoder(&vcardData).Encode(card); err != nil {
-		return nil, err
+		return nil, carddav.NewPreconditionError(carddav.PreconditionValidAddressData)
 	}
 	data := vcardData.String()
 

@@ -270,14 +270,14 @@ def test_put_two_uids(t, e2e, u1, st):
     t.status(u1.dav("GET", f"{st.col}{uid}.ics"), 404, msg="nothing was stored")
 
 
-@known("F16")
 def test_put_empty(t, e2e, u1, st):
-    """PUT of a VCALENDAR without components is a 4xx"""
-    r = u1.dav("PUT", f"{st.col}{e2e.uniq('empty')}.ics",
-               ics="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\nEND:VCALENDAR\r\n")
-    # F16: 500 "ical: failed to encode VCALENDAR: calendar is empty".
-    t.bug.status(r, 400, 403, 415, 422, was=500, msg="a VCALENDAR without any component is invalid client input "
-                 "(RFC 4791 valid-calendar-object-resource), not a server error")
+    """PUT of a VCALENDAR without components is a 4xx, nothing stored"""
+    obj = f"{st.col}{e2e.uniq('empty')}.ics"
+    r = u1.dav("PUT", obj, ics="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\nEND:VCALENDAR\r\n")
+    if t.status_class(r, "4xx", msg="a VCALENDAR without any component is invalid client input, "
+                      "not a server error (was a 500 before F16 was fixed)"):
+        t.contains(r, "valid-calendar-object-resource", "RFC 4791 4.1: names the failed precondition")
+    t.status(u1.dav("GET", obj), 404, msg="nothing was stored")
 
 
 def test_vtodo(t, e2e, u1, st):
