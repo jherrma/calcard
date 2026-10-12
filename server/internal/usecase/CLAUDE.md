@@ -97,6 +97,7 @@ Calendar and address book sharing:
 Data import and export:
 
 - `calendar_import.go` — Import iCalendar (.ics) files.
+- `calendar_import_timezone.go` — Copies the file's `VTIMEZONE`s into each imported object that references their TZID (RFC 5545 §3.2.19), sorted so the encoding is stable.
 - `contact_import.go` — Import vCard (.vcf) files.
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.

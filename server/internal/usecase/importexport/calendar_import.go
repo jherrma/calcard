@@ -66,6 +66,10 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		byUID[obj.UID] = obj
 	}
 
+	// VTIMEZONEs are declared once per file; each object below gets a copy of
+	// the ones it references.
+	timezones := vtimezonesByID(parsedCal)
+
 	// Get all VEVENT and VTODO components
 	for _, child := range parsedCal.Children {
 		if child.Name != ical.CompEvent && child.Name != ical.CompToDo {
@@ -133,6 +137,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		wrapperCal := ical.NewCalendar()
 		wrapperCal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
 		wrapperCal.Props.SetText(ical.PropVersion, "2.0")
+		wrapperCal.Children = append(wrapperCal.Children, referencedVTimezones(timezones, child)...)
 		wrapperCal.Children = append(wrapperCal.Children, child)
 		if err := encoder.Encode(wrapperCal); err != nil {
 			result.Failed++
