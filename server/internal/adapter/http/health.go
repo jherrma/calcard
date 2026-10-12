@@ -20,7 +20,7 @@ func (h *HealthHandler) Liveness(c fiber.Ctx) error {
 	return SuccessResponse(c, nil)
 }
 
-// Readiness probe (GET /health/ready)
+// Readiness probe (GET /ready)
 func (h *HealthHandler) Readiness(c fiber.Ctx) error {
 	checks := make(map[string]string)
 	status := "ok"

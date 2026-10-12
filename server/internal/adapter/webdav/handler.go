@@ -25,6 +25,9 @@ import (
 // timing doesn't reveal whether an email is registered.
 var dummyBcryptHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password-for-constant-time-compare"), bcrypt.DefaultCost)
 
+// allpropBody is the explicit form of an empty PROPFIND body (RFC 4918 §9.1).
+const allpropBody = `<?xml version="1.0" encoding="UTF-8"?><propfind xmlns="DAV:"><allprop/></propfind>`
+
 type Handler struct {
 	caldavHandler   *caldav.Handler
 	carddavHandler  *carddav.Handler
@@ -243,7 +246,10 @@ func (h *Handler) authenticate() fiber.Handler {
 }
 
 func (h *Handler) Handler() fiber.Handler {
-	return func(c fiber.Ctx) error {
+	// Every error leaving the dispatcher goes through serveDAVError, so a
+	// backend "404 Not Found" from one of our own sub-handlers is a 404 and not
+	// Fiber's 500 (F17).
+	serve := func(c fiber.Ctx) error {
 		u := c.Locals("user").(*user.User)
 		stdCtx := WithUser(c.Context(), u)
 		reqPath := c.Path()
@@ -261,44 +267,17 @@ func (h *Handler) Handler() fiber.Handler {
 		}
 
 		// MKCALENDAR (RFC 4791 §5.3.1) — some clients (Apple Calendar, DAVx5)
-		// send this instead of MKCOL for calendar creation. emersion/go-webdav
-		// only dispatches MKCOL, so normalise here; the caldav backend treats
-		// both identically (CreateCalendar).
-		//
-		// The MKCALENDAR body is mkcalendar-rooted XML emersion's MKCOL parser
-		// can't read. Rather than drop it (which lost the client-chosen name
-		// forever — emersion's PROPPATCH is a hard 501, so it could never be set
-		// afterwards), transform it into the extended-MKCOL body emersion DOES
-		// parse (set>prop>displayname + resourcetype), so the name survives.
-		if c.Method() == "MKCALENDAR" {
-			var mkcal struct {
-				XMLName     xml.Name `xml:"mkcalendar"`
-				DisplayName string   `xml:"set>prop>displayname"`
+		// send this instead of MKCOL for calendar creation, and emersion only
+		// dispatches MKCOL. Both, and an extended MKCOL (RFC 5689), are checked
+		// property by property first: emersion keeps only the displayname (and
+		// an address book's description) and would otherwise answer 201 while
+		// silently dropping colour, description, timezone and component set.
+		if m := c.Method(); m == "MKCALENDAR" || m == "MKCOL" {
+			var handled bool
+			var err error
+			if stdCtx, handled, err = h.prepareCollectionMkcol(c, stdCtx, reqPath); handled {
+				return err
 			}
-			name := ""
-			// Go's decoder matches "mkcalendar"/"set>prop>displayname" in any
-			// namespace; an empty/unparseable body just yields an empty name.
-			if err := xml.Unmarshal(c.Body(), &mkcal); err == nil {
-				name = mkcal.DisplayName
-			}
-
-			var buf bytes.Buffer
-			buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
-			buf.WriteString(`<mkcol xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><set><prop>`)
-			// emersion's Mkcol rejects a body whose resourcetype lacks either
-			// DAV:collection or CALDAV:calendar, so always include both.
-			buf.WriteString(`<resourcetype><collection/><C:calendar/></resourcetype>`)
-			if name != "" {
-				buf.WriteString(`<displayname>`)
-				_ = xml.EscapeText(&buf, []byte(name))
-				buf.WriteString(`</displayname>`)
-			}
-			buf.WriteString(`</prop></set></mkcol>`)
-
-			c.Request().Header.SetMethod("MKCOL")
-			c.Request().SetBody(buf.Bytes())
-			c.Request().Header.SetContentLength(buf.Len())
-			c.Request().Header.SetContentType("application/xml; charset=utf-8")
 		}
 
 		// Combined principal discovery (RFC 6764). emersion/go-webdav's
@@ -321,6 +300,16 @@ func (h *Handler) Handler() fiber.Handler {
 			if proto != "caldav" {
 				opts.HomeSets = append(opts.HomeSets, carddav.NewAddressBookHomeSet(fmt.Sprintf("/dav/%s/addressbooks/", u.Username)))
 				opts.Capabilities = append(opts.Capabilities, carddav.CapabilityAddressBook)
+			}
+			// RFC 4918 §9.1: an empty PROPFIND body MUST be treated as allprop.
+			// emersion's collection handler does that, but ServePrincipal insists
+			// on an XML body and answers 400 "expected application/xml request",
+			// so spell the allprop out for it (F06). Same zero-byte test emersion
+			// applies; a non-empty body is passed through untouched.
+			if c.Method() == "PROPFIND" && len(c.Body()) == 0 {
+				c.Request().SetBodyString(allpropBody)
+				c.Request().Header.SetContentLength(len(allpropBody))
+				c.Request().Header.SetContentType("application/xml; charset=utf-8")
 			}
 			return adaptor.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gowebdav.ServePrincipal(w, r.WithContext(stdCtx), opts)
@@ -422,6 +411,20 @@ func (h *Handler) Handler() fiber.Handler {
 			return err
 		}
 
+		// A Depth: 1 / infinity PROPFIND on a home or a collection was answered
+		// by emersion, whose collection entries lack the properties the Depth: 0
+		// handler serves (sync-token, getctag, calendar-color, the real
+		// privileges, ...). Put the same description in their place, so a
+		// collection looks the same whatever the Depth (F07). Object paths
+		// (5 segments) list no collections and are skipped.
+		if c.Method() == "PROPFIND" && collectionType != "" && (len(pathParts) == 3 || len(pathParts) == 4) &&
+			c.Response().StatusCode() == http.StatusMultiStatus {
+			if body, ok := h.rewriteCollectionResponses(stdCtx, c.Response().Body(), collectionType, parsePropfindRequest(c.Body())); ok {
+				c.Response().SetBody(body)
+				c.Set(fiber.HeaderContentLength, strconv.Itoa(len(body)))
+			}
+		}
+
 		// emersion's CardDAV GET serializes the address object through go-vcard's
 		// encoder, which escapes commas in comma-list properties (CATEGORIES),
 		// collapsing "Work,Important" into one escaped value. Restore the list
@@ -438,6 +441,9 @@ func (h *Handler) Handler() fiber.Handler {
 			}
 		}
 		return nil
+	}
+	return func(c fiber.Ctx) error {
+		return serveDAVError(c, serve(c))
 	}
 }
 

@@ -4,6 +4,7 @@ recurring series as one hit, type filters, explicit bounds, limits, isolation.""
 import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from urllib.parse import urlencode
 
 import pytest
 
@@ -121,6 +122,34 @@ def test_types(t, u1, sr):
     r = _sr(u1, f"q={sr.token}&types=calendars,addressbooks")
     t.jq(r, lambda j: j["calendars"]["searched"] and j["addressbooks"]["searched"]
          and not j["events"]["searched"] and not j["contacts"]["searched"])
+
+
+def test_case_insensitive(t, e2e, u1, sr):
+    """search ignores case, also for non-ASCII letters, on /search and /contacts/search"""
+    # Its own token, so the exact-result checks of the other tests stay valid.
+    tok = f"MixCase{e2e.run_id[-8:]}"
+    try:
+        u1.mk_event(sr.cal["uuid"], f"Übergabe {tok}", f"{sr.future}-03-01T10:00:00Z",
+                    f"{sr.future}-03-01T11:00:00Z")
+        u1.mk_contact(sr.ab["UUID"], f"Ärztin {tok}")
+    except SetupFailed as exc:
+        t.abort(f"seeding failed: {exc}")
+    # SQLite's LIKE used to fold ASCII only and PostgreSQL's nothing (F26), so a
+    # query that differs from the stored text only in case missed it.
+    for q in (tok, tok.lower(), tok.upper(), f"übergabe {tok.lower()}", f"ÜBERGABE {tok}"):
+        r = _sr(u1, urlencode({"q": q, "types": "events"}))
+        if t.status(r, 200):
+            t.jq(r, lambda j: [i["event"]["summary"] for i in j["events"]["items"]] == [f"Übergabe {tok}"],
+                 f"events q={q!r} must find 'Übergabe {tok}'")
+    for q in (tok.lower(), tok.upper(), f"ärztin {tok.lower()}", f"ÄRZTIN {tok}"):
+        r = _sr(u1, urlencode({"q": q, "types": "contacts"}))
+        if t.status(r, 200):
+            t.jq(r, lambda j: [i["contact"]["formatted_name"] for i in j["contacts"]["items"]] == [f"Ärztin {tok}"],
+                 f"/search contacts q={q!r} must find 'Ärztin {tok}'")
+        r = u1.api("GET", "/contacts/search?" + urlencode({"q": q}))
+        if t.status(r, 200):
+            t.jq(r, lambda j: [c["formatted_name"] for c in j["contacts"]] == [f"Ärztin {tok}"],
+                 f"/contacts/search q={q!r} must find 'Ärztin {tok}'")
 
 
 def test_bounds(t, u1, sr):

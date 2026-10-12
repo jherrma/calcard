@@ -11,6 +11,18 @@ import (
 // in that case — treat it like presenting an already-rotated token.
 var ErrRefreshTokenRotated = errors.New("refresh token: already rotated by a concurrent request")
 
+// ErrCredentialUsernameTaken is returned by the CalDAV/CardDAV credential
+// repositories' Create when the username's unique index rejects the insert
+// (a live credential holds it, e.g. one created concurrently).
+var ErrCredentialUsernameTaken = errors.New("credential username already in use")
+
+// RevokedCredentialUsernamePrefix starts the username a CalDAV/CardDAV
+// credential is rewritten to on revoke ("revoked:<uuid>"), so the revoked row
+// stops holding its name in the unique index and the name can be reused (F24).
+// ':' is outside the accepted username alphabet and cannot appear in a Basic
+// auth user-id (RFC 7617), so the tombstone never collides or authenticates.
+const RevokedCredentialUsernamePrefix = "revoked:"
+
 // UserRepository defines the interface for user persistence
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error

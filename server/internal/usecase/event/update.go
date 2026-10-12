@@ -304,7 +304,7 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	// Determine current effective times
-	effectiveStart := time.Now()
+	effectiveStart := time.Now().UTC()
 	if obj.StartTime != nil {
 		effectiveStart = *obj.StartTime
 	}
@@ -353,6 +353,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			effectiveEnd = effectiveEnd.In(loc)
 		}
 	}
+	// A time that is not in a named IANA zone (an RFC 3339 offset, the DB or
+	// time.Now() fallback) is stored in UTC rather than with an empty TZID or
+	// TZID=Local (F22). All-day values keep their wall-clock date.
+	if !obj.IsAllDay {
+		effectiveStart = icalDateTime(effectiveStart)
+		effectiveEnd = icalDateTime(effectiveEnd)
+	}
 
 	// Always set DTSTART and DTEND on targetEvent to ensure they match obj.IsAllDay format.
 	// An event stored via DAV may carry DURATION instead of DTEND; DTEND and DURATION cannot
@@ -394,8 +401,9 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 	}
 
-	// Update DTSTAMP
-	targetEvent.Props.SetDateTime(ical.PropDateTimeStamp, time.Now())
+	// Update DTSTAMP. It must be UTC (RFC 5545 §3.8.7.2); go-ical writes a
+	// time.Local value as DTSTAMP;TZID=Local:… (F04).
+	targetEvent.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
 
 	// Regenerate ICalData
 	var sb strings.Builder

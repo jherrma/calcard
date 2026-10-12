@@ -51,6 +51,18 @@ func TestPrincipalDiscovery(t *testing.T) {
 		})
 	}
 
+	// F06: RFC 4918 §9.1 — a PROPFIND with no body is allprop. Some clients
+	// probe the root/principal like this; it used to be a 400.
+	for _, target := range []string{"/dav/", "/dav/" + username + "/"} {
+		t.Run("empty-body PROPFIND "+target, func(t *testing.T) {
+			status, _, body := davCall(t, "PROPFIND", target, email, appPass, "", depthHeader("0"))
+			require.Equalf(t, http.StatusMultiStatus, status, "PROPFIND %s: %s", target, string(body))
+			assert.Containsf(t, string(body), "current-user-principal", "allprop must include current-user-principal: %s", string(body))
+			assert.Containsf(t, string(body), calendarHome, "allprop must include the calendar home set: %s", string(body))
+			assert.Containsf(t, string(body), addressbookHome, "allprop must include the addressbook home set: %s", string(body))
+		})
+	}
+
 	// OPTIONS on the principal advertises both DAV capabilities in one response.
 	t.Run("OPTIONS principal advertises both capabilities", func(t *testing.T) {
 		status, hdrs, body := davCall(t, "OPTIONS", "/dav/"+username+"/", email, appPass, "", nil)

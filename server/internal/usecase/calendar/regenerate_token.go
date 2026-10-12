@@ -27,16 +27,13 @@ func NewRegenerateTokenUseCase(calendarRepo calendar.CalendarRepository) *Regene
 // Execute rotates the public token. baseURL is the origin the returned
 // public_url is built on (the handler resolves it per request).
 func (uc *RegenerateTokenUseCase) Execute(ctx context.Context, userID, calendarID uint, baseURL string) (*RegenerateTokenOutput, error) {
-	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
-	if err != nil || cal == nil {
-		return nil, fmt.Errorf("calendar not found")
-	}
-	if cal.UserID != userID {
-		return nil, fmt.Errorf("permission denied")
+	cal, err := LoadOwnedCalendarByID(ctx, uc.calendarRepo, userID, calendarID)
+	if err != nil {
+		return nil, err
 	}
 
 	if !cal.PublicEnabled {
-		return nil, fmt.Errorf("public access is not enabled")
+		return nil, calendar.Invalidf("public access is not enabled")
 	}
 
 	// Generate new token
@@ -46,7 +43,7 @@ func (uc *RegenerateTokenUseCase) Execute(ctx context.Context, userID, calendarI
 	cal.PublicEnabledAt = &now
 
 	if err := uc.calendarRepo.Update(ctx, cal); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update calendar: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/public/calendar/%s.ics", baseURL, *cal.PublicToken)

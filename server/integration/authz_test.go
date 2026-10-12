@@ -75,8 +75,7 @@ func TestAuthorizationBoundaries(t *testing.T) {
 		newName := "Owned by Bob"
 		status, _ := restCall(t, http.MethodPatch, "/calendars/"+aliceCalUUID, bobToken,
 			map[string]*string{"name": &newName})
-		assert.GreaterOrEqual(t, status, 400)
-		assert.Less(t, status, 500)
+		assert.Equal(t, http.StatusNotFound, status)
 
 		// And Alice's calendar really wasn't renamed.
 		var cal struct {
@@ -89,8 +88,7 @@ func TestAuthorizationBoundaries(t *testing.T) {
 	t.Run("Bob cannot DELETE Alice's calendar", func(t *testing.T) {
 		status, _ := restCall(t, http.MethodDelete, "/calendars/"+aliceCalUUID, bobToken,
 			map[string]string{"confirmation": "DELETE"})
-		assert.GreaterOrEqual(t, status, 400)
-		assert.Less(t, status, 500)
+		assert.Equal(t, http.StatusNotFound, status)
 	})
 
 	// ------ Event-level boundaries (via Alice's calendar id) -------------

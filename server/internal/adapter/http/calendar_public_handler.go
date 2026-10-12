@@ -32,22 +32,16 @@ func NewCalendarPublicHandler(
 	}
 }
 
-// resolveOwnedCalendarID maps the :id path segment — a calendar UUID (#52) — to
-// its internal numeric id, scoped to the caller (missing/non-owned → 404).
-func (h *CalendarPublicHandler) resolveOwnedCalendarID(c fiber.Ctx, userID uint) (uint, bool) {
-	cal, err := h.calendarRepo.GetByUUID(c.Context(), c.Params("id"))
-	if err != nil || cal == nil || cal.UserID != userID {
-		return 0, false
-	}
-	return cal.ID, true
-}
+// The :id path segment is a calendar UUID (#52), resolved by
+// resolveOwnedCalendarID (calendar_share_handler.go): missing/non-owned → 404.
+// Errors go through calendarSubresourceError, like the share routes.
 
 // POST /api/v1/calendars/:id/public
 func (h *CalendarPublicHandler) EnablePublic(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	calendarID, ok := h.resolveOwnedCalendarID(c, u.ID)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	calendarID, err := resolveOwnedCalendarID(c, h.calendarRepo, u.ID)
+	if err != nil {
+		return calendarSubresourceError(c, err)
 	}
 
 	var req calendarusecase.EnablePublicInput
@@ -57,7 +51,7 @@ func (h *CalendarPublicHandler) EnablePublic(c fiber.Ctx) error {
 
 	output, err := h.enablePublicUC.Execute(c.Context(), u.ID, calendarID, req, RequestBaseURL(c, h.cfg))
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return calendarSubresourceError(c, err)
 	}
 
 	return c.JSON(output)
@@ -66,14 +60,14 @@ func (h *CalendarPublicHandler) EnablePublic(c fiber.Ctx) error {
 // GET /api/v1/calendars/:id/public
 func (h *CalendarPublicHandler) GetPublicStatus(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	calendarID, ok := h.resolveOwnedCalendarID(c, u.ID)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	calendarID, err := resolveOwnedCalendarID(c, h.calendarRepo, u.ID)
+	if err != nil {
+		return calendarSubresourceError(c, err)
 	}
 
 	output, err := h.getPublicStatusUC.Execute(c.Context(), u.ID, calendarID, RequestBaseURL(c, h.cfg))
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return calendarSubresourceError(c, err)
 	}
 
 	return c.JSON(output)
@@ -82,14 +76,14 @@ func (h *CalendarPublicHandler) GetPublicStatus(c fiber.Ctx) error {
 // POST /api/v1/calendars/:id/public/regenerate
 func (h *CalendarPublicHandler) RegenerateToken(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	calendarID, ok := h.resolveOwnedCalendarID(c, u.ID)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	calendarID, err := resolveOwnedCalendarID(c, h.calendarRepo, u.ID)
+	if err != nil {
+		return calendarSubresourceError(c, err)
 	}
 
 	output, err := h.regenerateTokenUC.Execute(c.Context(), u.ID, calendarID, RequestBaseURL(c, h.cfg))
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return calendarSubresourceError(c, err)
 	}
 
 	return c.JSON(output)

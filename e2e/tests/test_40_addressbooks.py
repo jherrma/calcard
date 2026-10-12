@@ -6,7 +6,6 @@ import re
 
 import pytest
 
-from harness.checks import known
 from harness.data import PNG_PIXEL
 from harness.session import ZERO_UUID, SetupFailed
 
@@ -79,19 +78,16 @@ def test_ab_isolation(t, u1, u2, st):
     t.json(r, "Name", st.ab1_name, "U1's book must be unchanged")
 
 
-@known("F05")
 def test_ab_foreign_status(t, u2, st):
     """another user's book is a clean 404 (no 5xx / 400)"""
     t.need(st, "ab1_uuid")
     # The access is refused (see the isolation test); this pins the status:
     # a foreign book is "not found" like on GET — never a 5xx, never a 400.
     uuid = st.ab1_uuid
-    # F05: PATCH answers 500, DELETE and export 400.
-    t.bug.status(u2.api("PATCH", f"/addressbooks/{uuid}", json={"name": "hijacked"}), 404, was=500,
-                 msg="PATCH on another user's book")
-    t.bug.status(u2.api("DELETE", f"/addressbooks/{uuid}", json=CONFIRM), 404, was=400,
-                 msg="DELETE on another user's book")
-    t.bug.status(u2.api("GET", f"/addressbooks/{uuid}/export"), 404, was=400, msg="export of another user's book")
+    t.status(u2.api("PATCH", f"/addressbooks/{uuid}", json={"name": "hijacked"}), 404,
+             msg="PATCH on another user's book")
+    t.status(u2.api("DELETE", f"/addressbooks/{uuid}", json=CONFIRM), 404, msg="DELETE on another user's book")
+    t.status(u2.api("GET", f"/addressbooks/{uuid}/export"), 404, msg="export of another user's book")
 
 
 def test_ab_contact_create(t, e2e, u1, st):
@@ -139,6 +135,22 @@ def test_ab_contact_get_patch(t, e2e, u1, st):
     r = u1.api("GET", url)
     t.json(r, "formatted_name", f"Jane Q. Doe {rid}", "the update must persist")
     t.json(r, "uid", st.ct_uid, "the UID never changes")
+
+
+def test_ab_contact_derived_fn(t, e2e, u1):
+    """a contact created without formatted_name gets an FN derived from its name"""
+    ab = u1.mk_addressbook(e2e.uniq("derive-fn"))
+    rid = e2e.run_id
+    r = u1.api("POST", f"/addressbooks/{ab['UUID']}/contacts", json={"given_name": "Grace",
+                                                                     "family_name": f"Hopper{rid}"})
+    if not t.status(r, 201):
+        return
+    # RFC 6350 6.2.1: FN is required; it used to be stored as an empty "FN:".
+    t.json(r, "formatted_name", f"Grace Hopper{rid}")
+    r = u1.api("GET", f"/addressbooks/{ab['UUID']}/export")
+    if t.status(r, 200):
+        t.contains(r, f"FN:Grace Hopper{rid}")
+        t.true("FN:\r\n" not in r.text, "no exported card may carry an empty FN", r)
 
 
 def test_ab_contact_paging(t, e2e, u1):
@@ -193,17 +205,16 @@ def test_ab_photo_type(t, u1, st):
     t.status(r, 415)
 
 
-@known("F05")
 def test_ab_contact_unknown(t, u1, st):
     """unknown contact is a 404 for every verb"""
     t.need(st, "ab1_uuid")
     base = f"/addressbooks/{st.ab1_uuid}/contacts/{ZERO_UUID}"
     t.status(u1.api("GET", base), 404, msg="GET")
     t.status(u1.api("PATCH", base, json={"formatted_name": "x"}), 404, msg="PATCH")
-    # F05: DELETE and the photo upload of an unknown contact answer 500.
-    t.bug.status(u1.api("DELETE", base), 404, was=500, msg="DELETE (must not be a 5xx)")
-    t.bug.status(u1.api("PUT", f"{base}/photo", data=PNG_PIXEL, ctype="image/png"), 404, was=500,
-                 msg="photo upload (must not be a 5xx)")
+    t.status(u1.api("DELETE", base), 404, msg="DELETE (must not be a 5xx)")
+    t.status(u1.api("PUT", f"{base}/photo", data=PNG_PIXEL, ctype="image/png"), 404,
+             msg="photo upload (must not be a 5xx)")
+    t.status(u1.api("DELETE", f"{base}/photo"), 404, msg="photo delete (must not be a 5xx)")
 
 
 def test_ab_contact_move(t, e2e, u1, u2, st):
