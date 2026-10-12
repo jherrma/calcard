@@ -71,6 +71,7 @@ The adapter layer is responsible for translating data between the application's 
   - `carddav_backend.go` — CardDAV protocol operations (address books, contacts, vCard parsing).
   - `propfind_collection.go` — the hand-rolled Depth:0 collection PROPFIND (sync-token, getctag, supported-report-set, displayname). Also reports `DAV:current-user-privilege-set` — the interoperable way to tell a client a collection is read-only, for subscriptions and read-only shares alike — and `CS:source` for a subscription. The resourcetype deliberately stays `<C:calendar/>` rather than `<CS:subscribed/>`: a client that does not know the subscribed type would stop treating the collection as a calendar and hide its events entirely.
   - `sync.go`, `sync_elements.go`, `sync_addressbook.go` — WebDAV-Sync (RFC 6578) for efficient incremental sync.
+  - `proppatch.go` — the hand-rolled collection PROPPATCH (emersion's is a 501): `DAV:displayname` for both collection types, Apple `calendar-color` for calendars. All-or-nothing per RFC 4918 §9.2: any other property or any `remove` is 403, an invalid value (empty/over-long name, non-hex colour) 409, and then every other property is 424 Failed Dependency and nothing is written. A successful one goes through `UpdateMetadata`, so the rename and its sync-token bump commit together.
 
 ## Design Philosophy
 

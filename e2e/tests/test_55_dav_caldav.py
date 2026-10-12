@@ -489,7 +489,6 @@ def test_color_readback(t, u1, st):
                 "a client must be able to read the colour it (or the web UI) set")
 
 
-@known("F08")
 def test_proppatch_atomic(t, u1, st):
     """PROPPATCH is atomic: one bad property fails them all (RFC 4918 9.2)"""
     r = u1.dav("PROPPATCH", st.col, xml=(
@@ -499,13 +498,12 @@ def test_proppatch_atomic(t, u1, st):
         "</d:prop></d:set></d:propertyupdate>"))
     if not t.status(r, 207):
         return
-    # F08: displayname is applied (200) next to the refused property (403).
-    t.bug.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'424')]//{el('displayname')}",
-                "when one property fails, the others must be reported 424 Failed Dependency")
+    t.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'424')]//{el('displayname')}",
+            "when one property fails, the others must be reported 424 Failed Dependency")
+    t.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'403')]//{el('unsupported')}",
+            "the property the server cannot set must be reported 403")
     r = u1.api("GET", f"/calendars/{st.cal['uuid']}")
-    name = r.jdict().get("name")
-    t.bug.json(r, "name", "Renamed over DAV", "a PROPPATCH that partly failed must not apply anything",
-               was=name == "Should not stick")
+    t.json(r, "name", "Renamed over DAV", "a PROPPATCH that partly failed must not apply anything")
 
 
 def test_delete_collection(t, e2e, u1):
