@@ -474,7 +474,6 @@ def test_proppatch(t, u1, st):
     t.json(r, "color", "#FF8800", "Apple's #RRGGBBAA colour is stored as #RRGGBB")
 
 
-@known("F07")
 def test_color_readback(t, u1, st):
     """the colour set by PROPPATCH is readable over PROPFIND"""
     r = u1.dav("PROPFIND", st.col, depth=0, xml=(
@@ -483,10 +482,10 @@ def test_color_readback(t, u1, st):
         "</d:propfind>"))
     if not t.status(r, 207):
         return
-    # F07: calendar-color is accepted by PROPPATCH but never returned.
-    t.bug.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'200')]//{el('calendar-color')}"
-                   "[contains(.,'FF8800') or contains(.,'ff8800')]",
-                "a client must be able to read the colour it (or the web UI) set")
+    # Fixed in F07: calendar-color used to be accepted by PROPPATCH but never returned.
+    t.xpath(r, f"{lp('response', 'propstat')}[contains({el('status')},'200')]//{el('calendar-color')}"
+               "[contains(.,'FF8800') or contains(.,'ff8800')]",
+            "a client must be able to read the colour it (or the web UI) set")
 
 
 @known("F08")
