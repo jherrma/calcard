@@ -2,7 +2,6 @@
 sees over REST and DAV, read vs read-write enforcement, revocation) and
 public calendar links."""
 
-import re
 from types import SimpleNamespace
 
 import pytest
@@ -238,13 +237,7 @@ def test_by_username(t, e2e, u1, u2):
     """shares accept the username as identifier"""
     cal = u1.mk_calendar(e2e.uniq("by-username"))
     r = _share_cal(u1, cal["uuid"], u2.username, "read")
-    if re.search(r"[A-Z]", u2.username):
-        # Usernames are mixed-case; the lookup lower-cases them → 400 "user not found" (F02).
-        t.known("F02")
-        ok = t.bug.status(r, 201, was=400, msg="user_identifier may be the account username")
-    else:
-        ok = t.status(r, 201, msg="user_identifier may be the account username")
-    if ok:
+    if t.status(r, 201, msg="user_identifier may be the account username"):
         t.json(r, "shared_with.email", u2.email)
 
 

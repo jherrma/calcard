@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -113,6 +114,12 @@ func (b *CardDAVBackend) CreateAddressBook(ctx context.Context, ab *carddav.Addr
 	parts := strings.Split(strings.Trim(ab.Path, "/"), "/")
 	if len(parts) != 4 || parts[1] != u.Username || parts[2] != "addressbooks" {
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
+	}
+
+	// MKCOL may only create a new resource (RFC 4918 §9.3.1, RFC 5689
+	// DAV:resource-must-be-null); see CalDAVBackend.CreateCalendar.
+	if _, _, err := b.resolveAddressBook(ctx, u, ab.Path); err == nil {
+		return webdav.NewHTTPError(http.StatusMethodNotAllowed, errors.New("carddav: a collection already exists at this URL"))
 	}
 
 	abPath := parts[3]

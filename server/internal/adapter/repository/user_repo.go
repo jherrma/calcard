@@ -36,16 +36,11 @@ func (r *gormUserRepo) GetByEmail(ctx context.Context, email string) (*user.User
 	return &u, nil
 }
 
+// GetByUsername matches case-insensitively (see findByUsername): generated
+// usernames are mixed-case, set-up admin usernames lower-case, and DAV clients
+// and share dialogs send whatever the user typed.
 func (r *gormUserRepo) GetByUsername(ctx context.Context, username string) (*user.User, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
-	var u user.User
-	if err := r.db.WithContext(ctx).Where("username = ?", username).First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &u, nil
+	return findByUsername[user.User](r.db.WithContext(ctx), username)
 }
 
 func (r *gormUserRepo) GetByUUID(ctx context.Context, uuid string) (*user.User, error) {

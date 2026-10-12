@@ -14,7 +14,7 @@ This directory contains the business logic for user authentication and authoriza
 
 ### Password Management
 
-- **Change Password** (`change_password.go`): Authenticated password change (requires current password). Revokes all refresh tokens and all access tokens, THEN mints the replacement access token it returns — that order is what keeps the calling session alive.
+- **Change Password** (`change_password.go`): Authenticated password change (requires current password). Revokes all refresh tokens and all access tokens, THEN mints the replacement access token it returns — that order is what keeps the calling session alive. `UserHandler.ChangePassword` answers a wrong current password (`ErrIncorrectPassword`, checked first) with 401, but a new password equal to the current one (`ErrSamePassword`) or one failing the policy with 400: those are body validation errors, and a 401 would make the SPA refresh its session and replay the request (F10).
 - **Forgot Password** (`forgot_password.go`): Initiates password reset by sending a reset email.
 - **Reset Password** (`reset_password.go`): Completes the reset flow using a token from the reset email. Revokes all refresh and access tokens.
 
