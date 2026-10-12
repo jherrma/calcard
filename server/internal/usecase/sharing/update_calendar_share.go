@@ -41,12 +41,12 @@ func (uc *UpdateCalendarShareUseCase) Execute(ctx context.Context, requestingUse
 	// 2. Get share
 	share, err := uc.shareRepo.GetByUUID(ctx, shareUUID)
 	if err != nil || share == nil {
-		return nil, fmt.Errorf("share not found")
+		return nil, ErrCalendarShareNotFound
 	}
 
 	// 3. Verify share belongs to calendar
 	if share.CalendarID != calendarID {
-		return nil, fmt.Errorf("share not found")
+		return nil, ErrCalendarShareNotFound
 	}
 
 	// 4. Validate permission
