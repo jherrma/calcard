@@ -67,6 +67,10 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		byUID[obj.UID] = obj
 	}
 
+	// VTIMEZONEs are declared once per file; each object below gets a copy of
+	// the ones it references.
+	timezones := vtimezonesByID(parsedCal)
+
 	// One calendar object per UID: a recurring master and its RECURRENCE-ID
 	// overrides are sibling components in the file, but CalDAV requires them in
 	// ONE resource (RFC 4791 §4.1). Every count in the result is per object.
@@ -129,6 +133,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		wrapperCal := ical.NewCalendar()
 		wrapperCal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
 		wrapperCal.Props.SetText(ical.PropVersion, "2.0")
+		wrapperCal.Children = append(wrapperCal.Children, referencedVTimezones(timezones, item.comps...)...)
 		wrapperCal.Children = append(wrapperCal.Children, item.comps...)
 		if err := encoder.Encode(wrapperCal); err != nil {
 			result.Failed++

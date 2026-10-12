@@ -105,6 +105,7 @@ Data import and export:
   not components: a series with its overrides is one; a component without a UID is one failed item.
   A second master or a repeated `RECURRENCE-ID` for a UID already in the file starts another object,
   which then goes through the duplicate handling (skip/replace/duplicate) like a re-import would.
+- `calendar_import_timezone.go` — Copies the file's `VTIMEZONE`s into each imported object that references their TZID (RFC 5545 §3.2.19), sorted so the encoding is stable.
 - `contact_import.go` — Import vCard (.vcf) files.
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.

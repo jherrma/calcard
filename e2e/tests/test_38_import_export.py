@@ -138,7 +138,6 @@ def test_cal_overrides(t, e2e, u1):
     t.jq(r, moved, "the overridden instance must keep its moved time and summary")
 
 
-@known("F15")
 def test_cal_vtimezone(t, e2e, u1):
     """imported TZID events keep their VTIMEZONE"""
     tz = u1.mk_calendar(e2e.uniq("import-tz"))
@@ -161,8 +160,7 @@ def test_cal_vtimezone(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.contains(r, "TZID=Europe/Berlin")
-    # F15: import re-wraps each VEVENT alone and drops the VTIMEZONE.
-    t.bug.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin but carries no VTIMEZONE")
+    t.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin, so it must carry its VTIMEZONE")
 
 
 def test_cal_roundtrip(t, e2e, u1, imp):
