@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from harness import xml
-from harness.checks import known
 from harness.data import PNG_PIXEL, PROPFIND_COLLECTION, PROPFIND_LIST, vcard
 from harness.xml import el, lp
 
@@ -61,16 +60,13 @@ def test_mkcol(t, e2e, u1, st):
     t.xpath(r, lp("resourcetype", "addressbook"))
 
 
-@known("F03")
 def test_mkcol_existing(t, e2e, u1, st):
     """MKCOL on an existing address book is refused (405)"""
     t.need(st, "slug")
-    # F03: answers 201 and inserts another address book at the same path.
     r = u1.dav("MKCOL", f"{u1.home_ab}{st.slug}/", xml=MKCOL_BODY)
-    t.bug.status(r, 405, was=201, msg="MKCOL on an existing address book (RFC 4918 9.3.1)")
+    t.status(r, 405, msg="MKCOL on an existing address book (RFC 4918 9.3.1)")
     _, books = _books_at(u1, st.slug)
-    t.bug.true(len(books) == 1, f"no duplicate address book may be created at '{st.slug}' ({len(books)} there now)",
-               was=len(books) > 1)
+    t.true(len(books) == 1, f"no duplicate address book may be created at '{st.slug}' ({len(books)} there now)")
     if len(books) > 1:
         for b in books:
             e2e.defer(f"delete duplicate address book at {st.slug}", e2e.cleanup_api, u1, "DELETE",
