@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 
+	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
@@ -29,10 +30,26 @@ func RunDataMigrations(db *gorm.DB) error {
 	if err := purgeSoftDeletedShares(db); err != nil {
 		return fmt.Errorf("purge soft-deleted shares: %w", err)
 	}
+	if err := purgeDeletedAccounts(db); err != nil {
+		return fmt.Errorf("purge deleted accounts: %w", err)
+	}
 	if err := releaseDeletedUserIdentities(db); err != nil {
 		return fmt.Errorf("release deleted user identities: %w", err)
 	}
 	return nil
+}
+
+// purgeDeletedAccounts removes the data of accounts deleted before account
+// deletion cascaded to it (F18). Those accounts' users rows were soft-deleted
+// but their calendars, address books, shares, public links and credentials
+// stayed — still readable by sharees and through /public/calendar/<token>.
+// Runs the same cascade DELETE /users/me now performs, for every soft-deleted
+// user. Idempotent: once purged there is nothing left to match.
+func purgeDeletedAccounts(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		deleted := tx.Unscoped().Model(&user.User{}).Select("id").Where("deleted_at IS NOT NULL")
+		return repository.PurgeAccountData(tx, deleted)
+	})
 }
 
 // releaseDeletedUserIdentities applies what UserRepository.Delete now does to

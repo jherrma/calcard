@@ -19,7 +19,7 @@ import (
 func TestUserRepoDelete_ReleasesIdentity(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&user.User{}, &user.RefreshToken{}, &user.PasswordReset{}, &user.EmailVerification{}, &user.OAuthConnection{}))
+	require.NoError(t, db.AutoMigrate(accountModels...)) // Delete purges every per-account table (F18)
 	users := repository.NewUserRepository(db)
 	oauth := repository.NewOAuthConnectionRepository(db)
 	ctx := context.Background()

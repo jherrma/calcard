@@ -32,6 +32,7 @@ The domain layer defines:
 - `subscription.go` — `CalendarSubscription` (story 100): the remote iCalendar feed behind a subscribed calendar, plus the status derivation, the allowed refresh-interval set, and the success/failure state machine (`RecordSuccess` / `RecordFailure`, exponential backoff anchored to the subscription's own interval, capped at 24h, auto-disable after N failures). A sidecar to `Calendar` rather than columns on it: every field here is meaningless for an ordinary calendar.
 - `sync_changelog.go` — WebDAV-Sync change tracking.
 - `validation.go` — Calendar/event validation.
+- `errors.go` — `ErrNotFound`: a missing calendar and one the caller may not access are the same error (and the same 404), so no endpoint leaks existence (F12).
 - `repository.go` — Repository interfaces for calendars, events, sync, and calendar subscriptions. `CalendarRepository.ReplaceFeedObjects` is the transactional feed diff the subscription sync uses — and the only writer permitted on a subscribed calendar.
 
 ### [addressbook/](addressbook/)

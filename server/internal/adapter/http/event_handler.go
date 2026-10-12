@@ -110,9 +110,20 @@ func (h *EventHandler) calendarPermission(c fiber.Ctx, calendarID uint) calendar
 // eventPermission returns the user's permission on the calendar that contains
 // the event identified by eventUUID (PermissionNone when the event doesn't
 // exist or the calendar is neither owned nor shared with the user).
+//
+// The event must also live in the calendar named by the :calendar_id path
+// segment (F09). It used to be looked up by its UUID alone, so the event
+// answered under any calendar UUID, even an all-zero one. An unknown calendar,
+// an unknown event and an event filed under a different calendar all yield
+// PermissionNone, so callers answer one identical 404 and the URL cannot be
+// used to probe which calendar holds an event.
 func (h *EventHandler) eventPermission(c fiber.Ctx, eventUUID string) calendar.CalendarPermission {
+	calendarID, ok := h.resolveCalendarID(c)
+	if !ok {
+		return calendar.PermissionNone
+	}
 	obj, err := h.calendarRepo.GetCalendarObjectByUUID(c.Context(), eventUUID)
-	if err != nil || obj == nil {
+	if err != nil || obj == nil || obj.CalendarID != calendarID {
 		return calendar.PermissionNone
 	}
 	return h.calendarPermission(c, obj.CalendarID)

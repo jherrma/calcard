@@ -220,7 +220,6 @@ def test_pw_wrong(t, e2e, st):
     t.status(r, 400, msg="a too-short new password")
 
 
-@known("F10")
 def test_pw_same(t, st):
     """password change rejects new == current as a validation error"""
     t.need(st, "ua")
@@ -229,8 +228,8 @@ def test_pw_same(t, st):
     # ua.api re-authenticates after a revoked token, so a 401 here is the handler's.
     t.true(r.jmsg() not in TOKEN_REJECTED, f"the session must be valid (message '{r.jmsg()}')", r)
     # It is a validation error of the request body, not an authentication
-    # failure: 401 makes clients (the SPA included) refresh/re-login.
-    t.bug.status(r, 400, was=401, msg="new == current is a validation error")
+    # failure: 401 makes clients (the SPA included) refresh/re-login (F10).
+    t.status(r, 400, msg="new == current is a validation error")
 
 
 def test_pw_change(t, e2e, st):

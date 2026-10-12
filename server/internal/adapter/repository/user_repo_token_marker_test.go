@@ -17,7 +17,7 @@ func newTokenMarkerRepo(t *testing.T) (user.UserRepository, *gorm.DB, *user.User
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&user.User{}, &user.RefreshToken{}, &user.PasswordReset{}, &user.EmailVerification{}, &user.OAuthConnection{}))
+	require.NoError(t, db.AutoMigrate(accountModels...)) // Delete purges every per-account table (F18)
 	repo := repository.NewUserRepository(db)
 	u := &user.User{UUID: "u1", Email: "a@example.com", Username: "a", PasswordHash: "x", IsActive: true}
 	require.NoError(t, repo.Create(context.Background(), u))
