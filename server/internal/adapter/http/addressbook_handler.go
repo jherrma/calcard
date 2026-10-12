@@ -42,16 +42,30 @@ func NewAddressBookHandler(
 	}
 }
 
-// resolveAddressBookID maps the :id path segment — an address-book UUID, the
-// canonical external identifier (#52) — to its internal numeric id. Returns
-// (0, false) when the UUID doesn't resolve; callers turn that into a 404 so
-// existence isn't leaked (the use cases still enforce ownership via userID).
-func (h *AddressBookHandler) resolveAddressBookID(c fiber.Ctx) (uint, bool) {
+// resolveOwnedAddressBookID maps the :id path segment — an address-book UUID,
+// the canonical external identifier (#52) — to its internal numeric id, but
+// only for a book the caller owns: these endpoints are owner-only (a sharee's
+// GET is a 404 too). Returns (0, false) when the UUID doesn't resolve OR the
+// book belongs to someone else; callers turn both into the same 404, and do so
+// before parsing the body, so a foreign book is indistinguishable from a
+// missing one whatever the request carries (F05). The use cases still enforce
+// ownership themselves.
+func (h *AddressBookHandler) resolveOwnedAddressBookID(c fiber.Ctx, userID uint) (uint, bool) {
 	ab, err := h.addressBookRepo.GetByUUID(c.Context(), c.Params("id"))
-	if err != nil || ab == nil {
+	if err != nil || ab == nil || ab.UserID != userID {
 		return 0, false
 	}
 	return ab.ID, true
+}
+
+// addressBookErrorResponse answers a failed use case: a book that vanished
+// or is not the caller's is the same 404 as an unknown UUID, anything
+// unexpected is a 500.
+func addressBookErrorResponse(c fiber.Ctx, err error) error {
+	if errors.Is(err, addressbook.ErrNotFound) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	}
+	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 }
 
 // POST /api/v1/addressbooks
@@ -107,7 +121,7 @@ func (h *AddressBookHandler) Get(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, ok := h.resolveAddressBookID(c)
+	id, ok := h.resolveOwnedAddressBookID(c, userID)
 	if !ok {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
@@ -130,7 +144,7 @@ func (h *AddressBookHandler) Update(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, ok := h.resolveAddressBookID(c)
+	id, ok := h.resolveOwnedAddressBookID(c, userID)
 	if !ok {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
@@ -149,7 +163,7 @@ func (h *AddressBookHandler) Update(c fiber.Ctx) error {
 
 	ab, err := h.updateUC.Execute(c.Context(), input)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return addressBookErrorResponse(c, err)
 	}
 
 	return c.JSON(ab)
@@ -162,7 +176,7 @@ func (h *AddressBookHandler) Delete(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, ok := h.resolveAddressBookID(c)
+	id, ok := h.resolveOwnedAddressBookID(c, userID)
 	if !ok {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
@@ -177,7 +191,10 @@ func (h *AddressBookHandler) Delete(c fiber.Ctx) error {
 	}
 
 	if err := h.deleteUC.Execute(c.Context(), id, userID); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		if errors.Is(err, addressbook.ErrLastAddressBook) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		return addressBookErrorResponse(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -190,14 +207,14 @@ func (h *AddressBookHandler) Export(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	id, ok := h.resolveAddressBookID(c)
+	id, ok := h.resolveOwnedAddressBookID(c, userID)
 	if !ok {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
 	}
 
 	data, filename, err := h.exportUC.Execute(c.Context(), id, userID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return addressBookErrorResponse(c, err)
 	}
 
 	c.Set("Content-Type", "text/vcard")

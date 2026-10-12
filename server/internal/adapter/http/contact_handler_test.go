@@ -331,6 +331,25 @@ func TestContactHandler_Move(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&res)
 	contactID := res.ID
 
+	// The source is the book in the path, so the contact must live there (the
+	// event handler's F09 rule): addressing it through another book — even the
+	// move target itself, or a UUID that does not exist — is a 404 and moves
+	// nothing.
+	t.Run("Move Through The Wrong Source Book", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]string{"target_addressbook_id": ab2.UUID})
+		for _, wrong := range []string{ab2.UUID, "00000000-0000-0000-0000-000000000000"} {
+			req, _ := http.NewRequest("POST", "/api/v1/addressbooks/"+wrong+"/contacts/"+contactID+"/move", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+			assert.Equal(t, fiber.StatusNotFound, resp.StatusCode, "move via book %s", wrong)
+		}
+		obj, err := abRepo.GetObjectByUUID(context.Background(), contactID)
+		require.NoError(t, err)
+		assert.Equal(t, ab1.ID, obj.AddressBookID, "the contact must still be in its original book")
+	})
+
 	t.Run("Move Contact", func(t *testing.T) {
 		targetIDStr := ab2.UUID
 		moveInput := map[string]string{

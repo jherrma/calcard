@@ -6,12 +6,14 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 )
 
+// CreateEventRequest is bound without a struct validator; the required
+// start/end are enforced by event.CreateEventUseCase, which MCP shares.
 type CreateEventRequest struct {
-	Summary     string             `json:"summary" validate:"required"`
+	Summary     string             `json:"summary"`
 	Description string             `json:"description"`
 	Location    string             `json:"location"`
-	Start       time.Time          `json:"start" validate:"required"`
-	End         time.Time          `json:"end" validate:"required"`
+	Start       time.Time          `json:"start"`
+	End         time.Time          `json:"end"`
 	Timezone    string             `json:"timezone"`
 	AllDay      bool               `json:"all_day"`
 	Recurrence  *RecurrenceRuleDTO `json:"recurrence"`
@@ -69,7 +71,7 @@ type UpdateEventRequest struct {
 }
 
 type MoveEventRequest struct {
-	TargetCalendarID string `json:"target_calendar_id" validate:"required"`
+	TargetCalendarID string `json:"target_calendar_id"`
 }
 
 type EventResponse struct {

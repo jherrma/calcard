@@ -244,8 +244,13 @@ func applyContactToCard(card vcard.Card, c *contact.Contact) {
 		card.Add(vcard.FieldPhoto, &vcard.Field{Value: c.Photo, Params: params})
 	}
 
-	// Revision
-	card.SetValue(vcard.FieldRevision, time.Now().Format("20060102T150405Z"))
+	// A contact saved without a formatted name still needs an FN (RFC 6350
+	// §6.2.1): derive it from the name, organization, … written above.
+	addressbook.EnsureFormattedName(card)
+
+	// Revision. The "Z" suffix promises UTC, so the clock must be UTC too — a
+	// local wall clock here is a wrong instant, off by the server's offset (F04).
+	card.SetValue(vcard.FieldRevision, time.Now().UTC().Format("20060102T150405Z"))
 }
 
 // ToVCard converts a Contact struct to a fresh vCard string (create path).

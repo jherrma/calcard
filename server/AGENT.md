@@ -49,12 +49,12 @@ JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, re
 | System | Settings (admin configured, SMTP enabled, registration enabled, setup token required), auth methods |
 | User | Get/update profile, delete account, get/update preferences |
 | Calendars | CRUD, public sharing, export |
-| Events | CRUD, move between calendars |
+| Events | CRUD, move between calendars. An event is reachable only under the calendar that holds it: a mismatched or unknown `:calendar_id` is the same 404 as an unknown event (F09) |
 | Address Books | CRUD, export |
-| Contacts | CRUD, search (over every readable address book, shared included — #162), move, photo |
+| Contacts | CRUD, search (over every readable address book, shared included — #162), move, photo. The contact must live in the URL's `:addressbook_id` (move included), else 404 |
 | Search | `GET /api/v1/search` — unified search over events (no date bound), contacts, calendars and address books (#156) |
 | Sharing | Calendar and address book share CRUD |
-| Credentials | App passwords, CalDAV/CardDAV credentials |
+| Credentials | App passwords, CalDAV/CardDAV credentials. Creation validates (F31): the name is trimmed and required (max 100 characters, as for MCP tokens); app-password `scopes` must be a non-empty subset of `caldav`/`carddav` and default to both when omitted; a DAV credential's `expires_at` must lie in the future. Each violation is a 400. Only creation is checked: rows stored before keep working unchanged |
 | Import/Export | Calendar import (.ics), contact import (.vcf), full backup export |
 | About | Open-source attribution list (`GET /api/v1/about/open-source`, authenticated) |
 | MCP tokens | `GET`/`POST /api/v1/mcp-tokens`, `DELETE /api/v1/mcp-tokens/:id` — the bearer credentials MCP clients use (#104) |
@@ -124,4 +124,5 @@ document endpoint areas in the API Surface table above.
 - **MCP**: `/mcp` is a facade over the existing use cases (story 104). Tools must never query or authorize on their own — reuse the use case and the `GetUserPermission` helpers in `adapter/mcp/access.go`, or the MCP surface silently becomes a way around the sharing model.
 - **Subscribed calendars** (story 100): `Calendar.Subscribed` marks a read-only mirror of a remote iCalendar feed. Read-only is enforced by `calendar.EffectivePermission`, which caps the resolved permission at read — REST, CalDAV and MCP all funnel through it, so a new write path inherits the rule for free. **Never add a write that bypasses it**: the next refresh replaces the collection wholesale, so anything written there disappears silently. Collection-level ownership (rename, share, delete) is deliberately unaffected. The only permitted writer is `CalendarRepository.ReplaceFeedObjects`, used by the sync path.
 - **Outbound HTTP**: subscriptions are the only feature that fetches a URL a user supplies. Anything similar must go through `usecase/subscription.Fetcher` or reproduce its dial-time address guard — a pre-flight DNS check is not equivalent (rebinding), and a failure message must never repeat the URL.
+- **Server-written timestamps are UTC**: go-ical's `SetDateTime` writes the `…Z` form only for `time.UTC`; a `time.Now()` (zone `time.Local`) becomes `DTSTAMP;TZID=Local:…`, which RFC 5545 §3.8.7.2 forbids. Always pass `time.Now().UTC()`, and the same for a vCard `REV` formatted with a literal `Z` (F04).
 - **Dependency injection**: All wiring happens in `infrastructure/server/routes.go`.

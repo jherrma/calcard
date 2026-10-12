@@ -18,9 +18,14 @@ func NewCalDAVCredentialRepository(db *gorm.DB) *CalDAVCredentialRepository {
 	return &CalDAVCredentialRepository{db: db}
 }
 
-// Create creates a new CalDAV credential
+// Create creates a new CalDAV credential. A username the unique index already
+// holds yields user.ErrCredentialUsernameTaken, never the raw driver error.
 func (r *CalDAVCredentialRepository) Create(ctx context.Context, cred *user.CalDAVCredential) error {
-	return r.db.WithContext(ctx).Create(cred).Error
+	err := r.db.WithContext(ctx).Create(cred).Error
+	if err != nil && isUniqueViolation(r.db, err) {
+		return user.ErrCredentialUsernameTaken
+	}
+	return err
 }
 
 // GetByUUID retrieves a CalDAV credential by UUID
@@ -50,10 +55,14 @@ func (r *CalDAVCredentialRepository) ListByUserID(ctx context.Context, userID ui
 	return creds, nil
 }
 
-// Revoke soft-deletes a CalDAV credential by setting revoked_at
+// Revoke soft-deletes a CalDAV credential by setting revoked_at and releases
+// its username (rewritten to "revoked:<uuid>") so it can be used again (F24).
 func (r *CalDAVCredentialRepository) Revoke(ctx context.Context, id uint) error {
 	now := time.Now()
-	return r.db.WithContext(ctx).Model(&user.CalDAVCredential{}).Where("id = ?", id).Update("revoked_at", now).Error
+	return r.db.WithContext(ctx).Model(&user.CalDAVCredential{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"revoked_at": now,
+		"username":   revokedCredentialUsername,
+	}).Error
 }
 
 // UpdateLastUsed updates the last used timestamp and IP

@@ -27,15 +27,10 @@ func NewUpdateCalendarUseCase(repo calendar.CalendarRepository) *UpdateCalendarU
 
 // Execute updates a calendar
 func (uc *UpdateCalendarUseCase) Execute(ctx context.Context, userID uint, calendarUUID string, req UpdateCalendarRequest) (*calendar.Calendar, error) {
-	// Get existing calendar
-	cal, err := uc.repo.GetByUUID(ctx, calendarUUID)
+	// Get existing calendar. Missing and not owned are the same ErrNotFound.
+	cal, err := LoadOwnedCalendar(ctx, uc.repo, userID, calendarUUID)
 	if err != nil {
-		return nil, fmt.Errorf("calendar not found")
-	}
-
-	// Verify ownership
-	if cal.UserID != userID {
-		return nil, fmt.Errorf("access denied")
+		return nil, err
 	}
 
 	// Update fields if provided

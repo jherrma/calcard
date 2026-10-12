@@ -1,6 +1,7 @@
 package user
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,6 +50,30 @@ func TestValidatePassword(t *testing.T) {
 			assert.NoError(t, err, "Password: %s", tt.password)
 		} else {
 			assert.ErrorIs(t, err, tt.err, "Password: %s", tt.password)
+		}
+	}
+}
+
+func TestNormalizeCredentialName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"Phone", "Phone", true},
+		{"  Phone \t", "Phone", true},
+		{"", "", false},
+		{"   ", "", false},
+		{strings.Repeat("x", MaxCredentialNameLength), strings.Repeat("x", MaxCredentialNameLength), true},
+		{strings.Repeat("x", MaxCredentialNameLength+1), "", false},
+		// The limit counts characters (like PostgreSQL varchar), not bytes.
+		{strings.Repeat("ä", MaxCredentialNameLength), strings.Repeat("ä", MaxCredentialNameLength), true},
+	}
+	for _, tt := range tests {
+		got, ok := NormalizeCredentialName(tt.in)
+		assert.Equal(t, tt.ok, ok, "input %q", tt.in)
+		if tt.ok {
+			assert.Equal(t, tt.want, got)
 		}
 	}
 }

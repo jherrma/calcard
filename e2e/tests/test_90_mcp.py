@@ -88,6 +88,9 @@ def test_token_list(t, u1, st):
 def test_token_validation(t, e2e, u1, u2, st):
     """token: validation and cross-user revoke"""
     t.status(u1.api("POST", "/mcp-tokens/", json='{"name":""}'), 400, msg="a name is required")
+    t.status(u1.api("POST", "/mcp-tokens/", json='{"name":"   "}'), 400, msg="a whitespace-only name is no name")
+    t.status(u1.api("POST", "/mcp-tokens/", json='{"name":"x","expires_at":"2020-01-01T00:00:00Z"}'), 400,
+             msg="expires_at must be in the future")
     t.status(u1.api("POST", "/mcp-tokens/", json='{"name":"x","expires_at":"next week"}'), 400,
              msg="expires_at must be RFC 3339")
     t.need(st, "mc_token_id")

@@ -5,6 +5,25 @@ import (
 	"time"
 )
 
+// App password scopes. These are the only two the server enforces: a calendar
+// path needs ScopeCalDAV, an address-book path ScopeCardDAV (see
+// requiredScopeForPath in adapter/webdav).
+const (
+	ScopeCalDAV  = "caldav"
+	ScopeCardDAV = "carddav"
+)
+
+// AppPasswordScopes returns every scope an app password can carry, in
+// canonical order. It is also the default when a request names none.
+func AppPasswordScopes() []string {
+	return []string{ScopeCalDAV, ScopeCardDAV}
+}
+
+// IsAppPasswordScope reports whether scope is one the server knows.
+func IsAppPasswordScope(scope string) bool {
+	return scope == ScopeCalDAV || scope == ScopeCardDAV
+}
+
 // AppPassword represents an app-specific password for DAV clients
 type AppPassword struct {
 	ID           uint   `gorm:"primaryKey"`

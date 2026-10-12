@@ -50,6 +50,14 @@ func TestDAVMkcolCalendar(t *testing.T) {
 	assert.Contains(t, string(body), "calendar xmlns=\"urn:ietf:params:xml:ns:caldav\"",
 		"new collection must advertise the calendar resourcetype")
 
+	// A repeat MKCOL / MKCALENDAR on the now-mapped URL is refused (RFC 4918
+	// §9.3.1) and must not insert a second calendar at the same path (F03).
+	status, _, body = davCall(t, "MKCOL", path, email, appPass, mkcol,
+		map[string]string{"Content-Type": "application/xml; charset=utf-8"})
+	assert.Equalf(t, http.StatusMethodNotAllowed, status, "MKCOL on an existing calendar: %s", string(body))
+	status, _, body = davCall(t, "MKCALENDAR", path, email, appPass, "", nil)
+	assert.Equalf(t, http.StatusMethodNotAllowed, status, "MKCALENDAR on an existing calendar: %s", string(body))
+
 	// REST list should also see it. The slug is stored as the calendar.Path
 	// field, and the list exposes that via the calendar JSON — there's no
 	// matching `displayname` roundtrip here (the MKCOL sets displayname on
@@ -63,14 +71,13 @@ func TestDAVMkcolCalendar(t *testing.T) {
 	}
 	code := doJSONRaw(t, http.MethodGet, "/calendars/", token, nil, &wrap)
 	require.Equal(t, http.StatusOK, code)
-	found := false
+	found := 0
 	for _, c := range wrap.Calendars {
 		if c.Path == slug {
-			found = true
-			break
+			found++
 		}
 	}
-	assert.True(t, found, "DAV-created calendar must be visible in REST /calendars list (slug %q)", slug)
+	assert.Equal(t, 1, found, "DAV-created calendar must be visible exactly once in REST /calendars list (slug %q)", slug)
 }
 
 // TestDAVMkcolAddressBook creates an addressbook via MKCOL over CardDAV.
@@ -101,7 +108,12 @@ func TestDAVMkcolAddressBook(t *testing.T) {
 	require.Containsf(t, []int{http.StatusCreated, http.StatusOK, http.StatusNoContent}, status,
 		"MKCOL addressbook should succeed: %d %s", status, string(body))
 
-	// REST list must include the new addressbook by Path.
+	// A repeat MKCOL is refused and must not insert a duplicate (F03).
+	status, _, body = davCall(t, "MKCOL", path, email, appPass, mkcol,
+		map[string]string{"Content-Type": "application/xml; charset=utf-8"})
+	assert.Equalf(t, http.StatusMethodNotAllowed, status, "MKCOL on an existing addressbook: %s", string(body))
+
+	// REST list must include the new addressbook by Path, exactly once.
 	var wrap struct {
 		AddressBooks []struct {
 			Name string `json:"Name"`
@@ -110,14 +122,13 @@ func TestDAVMkcolAddressBook(t *testing.T) {
 	}
 	code := doJSONRaw(t, http.MethodGet, "/addressbooks/", token, nil, &wrap)
 	require.Equal(t, http.StatusOK, code)
-	found := false
+	found := 0
 	for _, ab := range wrap.AddressBooks {
 		if ab.Path == slug {
-			found = true
-			break
+			found++
 		}
 	}
-	assert.True(t, found, "DAV-created addressbook must be visible in REST /addressbooks list")
+	assert.Equal(t, 1, found, "DAV-created addressbook must be visible exactly once in REST /addressbooks list")
 }
 
 // TestDAVMkcalendar creates a calendar using the RFC 4791 MKCALENDAR method

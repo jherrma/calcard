@@ -26,7 +26,7 @@ func (uc *PhotoUseCase) Upload(ctx context.Context, addressBookID uint, contactU
 		return err
 	}
 	if obj == nil || obj.AddressBookID != addressBookID {
-		return fmt.Errorf("contact not found")
+		return ErrContactNotFound
 	}
 
 	// 2. Parse
@@ -76,7 +76,7 @@ func (uc *PhotoUseCase) Delete(ctx context.Context, addressBookID uint, contactU
 		return err
 	}
 	if obj == nil || obj.AddressBookID != addressBookID {
-		return fmt.Errorf("contact not found")
+		return ErrContactNotFound
 	}
 
 	currentContact, err := ToContact(obj.VCardData)

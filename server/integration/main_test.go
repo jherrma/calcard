@@ -90,6 +90,24 @@ func runTests(m *testing.M) (int, error) {
 		},
 	}
 
+	// CALCARD_TEST_DB_DRIVER=postgres runs the shared server against PostgreSQL
+	// instead (F26: plain-LIKE search passed on SQLite and failed there), using
+	// the server's own CALDAV_DB_* variables. The database must be empty — the
+	// first-boot check below needs a pristine one. Servers started through
+	// bootServerWithConfig stay on SQLite.
+	if os.Getenv("CALCARD_TEST_DB_DRIVER") == "postgres" {
+		cfg.Database = config.DatabaseConfig{
+			Driver:      "postgres",
+			Host:        os.Getenv("CALDAV_DB_HOST"),
+			Port:        envOr("CALDAV_DB_PORT", "5432"),
+			User:        os.Getenv("CALDAV_DB_USER"),
+			Password:    os.Getenv("CALDAV_DB_PASSWORD"),
+			Name:        envOr("CALDAV_DB_NAME", "caldav"),
+			SSLMode:     envOr("CALDAV_DB_SSLMODE", "disable"),
+			AutoMigrate: true,
+		}
+	}
+
 	db, err := database.New(cfg)
 	if err != nil {
 		return 1, fmt.Errorf("database.New: %w", err)
@@ -129,6 +147,13 @@ func runTests(m *testing.M) (int, error) {
 	_ = srv.Shutdown(ctx)
 
 	return code, nil
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func verifyFirstBoot(base string) error {

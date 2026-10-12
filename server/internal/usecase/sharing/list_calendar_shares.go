@@ -25,18 +25,15 @@ func NewListCalendarSharesUseCase(
 
 func (uc *ListCalendarSharesUseCase) Execute(ctx context.Context, requestingUserID uint, calendarID uint) ([]CreateCalendarShareOutput, error) {
 	// 1. Verify ownership
-	cal, err := uc.calendarRepo.GetByID(ctx, calendarID)
+	cal, err := ownedCalendar(ctx, uc.calendarRepo, requestingUserID, calendarID)
 	if err != nil {
-		return nil, fmt.Errorf("calendar not found")
-	}
-	if cal.UserID != requestingUserID {
-		return nil, fmt.Errorf("permission denied")
+		return nil, err
 	}
 
 	// 2. List shares
 	shares, err := uc.shareRepo.ListByCalendarID(ctx, calendarID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list shares: %w", err)
 	}
 
 	// 3. Map to output
