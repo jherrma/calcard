@@ -33,6 +33,15 @@ func NewCreateEventUseCase(calendarRepo calendar.CalendarRepository) *CreateEven
 }
 
 func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInput) (*calendar.CalendarObject, error) {
+	// A missing (or JSON null) start/end arrives as the zero time. Without this
+	// check two zero times pass the ordering test below and the event is stored
+	// at 0001-01-01 (F13).
+	if input.Start.IsZero() {
+		return nil, fmt.Errorf("%w: start is required", ErrInvalidInput)
+	}
+	if input.End.IsZero() {
+		return nil, fmt.Errorf("%w: end is required", ErrInvalidInput)
+	}
 	if input.End.Before(input.Start) {
 		return nil, fmt.Errorf("%w: end time is before start time", ErrInvalidInput)
 	}

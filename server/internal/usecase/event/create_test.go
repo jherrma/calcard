@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -89,5 +90,38 @@ func TestCreateEvent_AllDaySeriesUntilIsDateValueAndIncludesEndDate(t *testing.T
 	}
 	if !foundEndDate {
 		t.Errorf("expected an expanded occurrence on the chosen end date 2026-08-01, got %d instances: %v", len(instances), instances)
+	}
+}
+
+// TestCreateEvent_RequiresStartAndEnd is the regression test for F13: a create
+// request without start or end (the zero time after JSON binding) must be an
+// ErrInvalidInput, not an event stored at 0001-01-01.
+func TestCreateEvent_RequiresStartAndEnd(t *testing.T) {
+	uc := NewCreateEventUseCase(&stubCalendarRepo{})
+	at := time.Date(2030, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	cases := map[string]struct {
+		start, end time.Time
+		want       string
+	}{
+		"both missing":  {want: "start is required"},
+		"start missing": {end: at, want: "start is required"},
+		"end missing":   {start: at, want: "end is required"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			obj, err := uc.Execute(context.Background(), CreateEventInput{
+				CalendarID: 1,
+				Summary:    "no times",
+				Start:      tc.start,
+				End:        tc.end,
+			})
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput, got obj=%v err=%v", obj, err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not say %q", err.Error(), tc.want)
+			}
+		})
 	}
 }
