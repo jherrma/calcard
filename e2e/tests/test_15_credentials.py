@@ -238,6 +238,37 @@ def test_caldav_revoke(t, e2e, u1, u2, st):
     t.status(_probe(e2e, st.calcred_user, st.calcred_pw, "/dav/"), 401, msg="revoked credential must stop working")
 
 
+def _reuse_after_revoke(t, e2e, u1, u2, kind):
+    """Create a credential as U1, revoke it, re-create its username as U2."""
+    # A label of at most 10 characters keeps the name within the server's
+    # 50-character limit for any accepted E2E_USER_PREFIX (config.MAX_RUN_TAG).
+    endpoint, name = f"/{kind}-credentials/", e2e.uniq(f"reuse-{kind[:-3]}")
+    body = {"name": "e2e reuse", "username": name, "permission": "read"}
+    r = u1.api("POST", endpoint, json={**body, "password": f"First_{e2e.run_id}"})
+    if not t.status(r, 201):
+        return
+    first = r.jdict().get("id")
+    e2e.defer(f"revoke {kind} credential {name} (first)", e2e.cleanup_api, u1, "DELETE", f"{endpoint}{first}")
+    r = u2.api("POST", endpoint, json={**body, "password": f"Other_{e2e.run_id}"})
+    t.status(r, 409, msg="a live username is taken, also for another account")
+    t.json(r, "message", f"username '{name}' is already in use")
+    if not t.status(u1.api("DELETE", f"{endpoint}{first}"), 204):
+        return
+    r = u2.api("POST", endpoint, json={**body, "password": f"Second_{e2e.run_id}"})
+    if not t.status(r, 201, msg="the username of a revoked credential is free again"):
+        return
+    second = r.jdict().get("id")
+    e2e.defer(f"revoke {kind} credential {name} (second)", e2e.cleanup_api, u2, "DELETE", f"{endpoint}{second}")
+    t.ne(second, first, "the re-created credential is a new one")
+    t.status(_probe(e2e, name, f"Second_{e2e.run_id}", "/dav/"), 207, msg="the re-created credential authenticates")
+    t.status(_probe(e2e, name, f"First_{e2e.run_id}", "/dav/"), 401, msg="the revoked credential's password stays dead")
+
+
+def test_caldav_reuse_after_revoke(t, e2e, u1, u2):
+    """CalDAV credential: a revoked credential's username can be used again"""
+    _reuse_after_revoke(t, e2e, u1, u2, "caldav")
+
+
 def test_carddav_rw(t, e2e, u1, st):
     """CardDAV credential: read-write may write contacts"""
     st.cardcred_user, st.cardcred_pw = e2e.uniq("cardrw"), f"ReadWrite_{e2e.run_id}"
@@ -298,3 +329,8 @@ def test_carddav_revoke(t, e2e, u1, st):
     r = u1.api("GET", "/carddav-credentials/")
     t.jq(r, lambda j: len([c for c in j["credentials"] or [] if c["id"] == st.cardcred_id]) == 0,
          "expected JSON condition to hold: the revoked credential leaves the list")
+
+
+def test_carddav_reuse_after_revoke(t, e2e, u1, u2):
+    """CardDAV credential: a revoked credential's username can be used again"""
+    _reuse_after_revoke(t, e2e, u1, u2, "carddav")

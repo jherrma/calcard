@@ -5,6 +5,7 @@ import (
 
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/user"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +28,27 @@ func RunDataMigrations(db *gorm.DB) error {
 	}
 	if err := purgeSoftDeletedShares(db); err != nil {
 		return fmt.Errorf("purge soft-deleted shares: %w", err)
+	}
+	if err := releaseRevokedCredentialUsernames(db); err != nil {
+		return fmt.Errorf("release revoked credential usernames: %w", err)
+	}
+	return nil
+}
+
+// releaseRevokedCredentialUsernames frees the usernames of CalDAV/CardDAV
+// credentials revoked before Revoke started doing it itself (F24). Revoke only
+// stamped revoked_at, so the row kept its name in the non-partial unique
+// index while the duplicate check (which skips revoked rows) let a new
+// credential with that name through to an INSERT that always failed. The name
+// is rewritten to the same "revoked:<uuid>" tombstone Revoke now writes.
+// Idempotent: tombstoned rows no longer match the NOT LIKE guard.
+func releaseRevokedCredentialUsernames(db *gorm.DB) error {
+	prefix := user.RevokedCredentialUsernamePrefix
+	for _, table := range []string{"caldav_credentials", "card_dav_credentials"} {
+		if err := db.Exec(`UPDATE `+table+` SET username = '`+prefix+`' || uuid WHERE revoked_at IS NOT NULL AND username NOT LIKE ?`,
+			prefix+"%").Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
