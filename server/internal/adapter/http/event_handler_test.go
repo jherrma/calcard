@@ -184,6 +184,35 @@ func TestEventHandlerListPopulatesRecurrenceFields(t *testing.T) {
 	assert.Equal(t, count, occurrences, "all %d occurrences should be listed", count)
 }
 
+// TestEventHandlerCreateRequiresStartAndEnd is the regression test for F13:
+// POST /events without start or end (missing or null) answered 201 and stored
+// the event at 0001-01-01. It must be a 400 that stores nothing.
+func TestEventHandlerCreateRequiresStartAndEnd(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+
+	for name, body := range map[string]string{
+		"no times":    `{"summary":"x"}`,
+		"null times":  `{"summary":"x","start":null,"end":null}`,
+		"only start":  `{"summary":"x","start":"2030-01-15T10:00:00Z"}`,
+		"only end":    `{"summary":"x","end":"2030-01-15T11:00:00Z"}`,
+		"end is null": `{"summary":"x","start":"2030-01-15T10:00:00Z","end":null}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			req, _ := http.NewRequest("POST", "/api/v1/calendars/"+cal.UUID+"/events", bytes.NewReader([]byte(body)))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+			assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+		})
+	}
+
+	var count int64
+	require.NoError(t, db.DB().Model(&calendar.CalendarObject{}).Count(&count).Error)
+	assert.Zero(t, count, "a rejected create must not store an event")
+}
+
 // TestEventHandlerRejectsWrongCalendar is the regression test for F09: the
 // event routes looked the event up by its UUID alone and ignored :calendar_id,
 // so an event answered under any calendar UUID the caller could name — another

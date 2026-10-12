@@ -113,13 +113,15 @@ def test_invalid_range(t, u1, cal):
     t.status(u1.api("POST", path, json='{"summary":"bad","start":"tomorrow","end":"2030-01-01T09:00:00Z"}'), 400)
 
 
-@known("F13")
 def test_missing_times(t, e2e, u1, cal):
     """create rejects a missing start/end"""
-    r = u1.api("POST", f"/calendars/{cal.ev['uuid']}/events", json={"summary": f"no times {e2e.run_id}"})
-    if r.status == 201:  # F13: accepted and stored at 0001-01-01; do not keep it
-        u1.api("DELETE", f"/calendars/{cal.ev['uuid']}/events/{r.jdict().get('id')}")
-    t.bug.status(r, 400, was=201, msg=f"an event without start/end (got start={r.jdict().get('start')})")
+    path = f"/calendars/{cal.ev['uuid']}/events"
+    for body, what in (({}, "without start/end"), ({"start": "2030-01-01T10:00:00Z"}, "without end"),
+                       ({"end": "2030-01-01T11:00:00Z"}, "without start"), ({"start": None, "end": None}, "with null times")):
+        r = u1.api("POST", path, json={"summary": f"no times {e2e.run_id}", **body})
+        if r.status == 201:  # accepted (stored at 0001-01-01 before F13 was fixed); do not keep it
+            u1.api("DELETE", f"{path}/{r.jdict().get('id')}")
+        t.status(r, 400, msg=f"an event {what} (got start={r.jdict().get('start')})")
 
 
 def test_dtstamp(t, u1, cal, st):

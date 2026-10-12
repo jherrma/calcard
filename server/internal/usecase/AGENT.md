@@ -38,6 +38,9 @@ Event management:
 
 - `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations.
 - `move.go` — Move event between calendars.
+- Input validation lives here, not in the DTOs (the server has no struct validator). `create.go`
+  rejects a missing (zero) start or end and an end before the start with `ErrInvalidInput` (a 400 over
+  REST, an error result over MCP); without that a create with no times was stored at 0001-01-01 (F13).
 
 ### [addressbook/](addressbook/)
 
