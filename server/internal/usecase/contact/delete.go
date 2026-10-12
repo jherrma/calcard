@@ -2,7 +2,6 @@ package contact
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 )
@@ -22,7 +21,7 @@ func (uc *DeleteUseCase) Execute(ctx context.Context, addressBookID uint, contac
 		return err
 	}
 	if obj == nil || obj.AddressBookID != addressBookID {
-		return fmt.Errorf("contact not found") // Simple error for handler to map to 404
+		return ErrContactNotFound
 	}
 
 	// 2. Delete object. DeleteObjectByUUID atomically bumps the address

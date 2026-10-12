@@ -33,6 +33,15 @@ func NewCreateEventUseCase(calendarRepo calendar.CalendarRepository) *CreateEven
 }
 
 func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInput) (*calendar.CalendarObject, error) {
+	// A missing (or JSON null) start/end arrives as the zero time. Without this
+	// check two zero times pass the ordering test below and the event is stored
+	// at 0001-01-01 (F13).
+	if input.Start.IsZero() {
+		return nil, fmt.Errorf("%w: start is required", ErrInvalidInput)
+	}
+	if input.End.IsZero() {
+		return nil, fmt.Errorf("%w: end is required", ErrInvalidInput)
+	}
 	if input.End.Before(input.Start) {
 		return nil, fmt.Errorf("%w: end time is before start time", ErrInvalidInput)
 	}
@@ -87,7 +96,9 @@ func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (
 
 	event := ical.NewEvent()
 	event.Props.SetText(ical.PropUID, uid)
-	event.Props.SetDateTime(ical.PropDateTimeStamp, time.Now())
+	// DTSTAMP must be UTC (RFC 5545 §3.8.7.2). go-ical writes the "Z" form only
+	// for time.UTC; a time.Now() in time.Local becomes DTSTAMP;TZID=Local:… (F04).
+	event.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
 	event.Props.SetText(ical.PropSummary, input.Summary)
 
 	if input.IsAllDay {

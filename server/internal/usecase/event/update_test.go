@@ -339,3 +339,29 @@ func TestUpdateEvent_AllDayExceptionRecurrenceIDIsDateValue(t *testing.T) {
 		t.Errorf("expected RECURRENCE-ID value %q, got %q", "20240105", rid.Value)
 	}
 }
+
+// TestUpdateEvent_DTStampIsUTC: an API update re-stamps the event with a UTC
+// DTSTAMP (F04), not DTSTAMP;TZID=Local.
+func TestUpdateEvent_DTStampIsUTC(t *testing.T) {
+	repo := &stubCalendarRepo{
+		obj: &calendar.CalendarObject{
+			UUID:          "obj-uuid",
+			UID:           "stamp-event-1",
+			ComponentType: "VEVENT",
+			ICalData: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" +
+				"BEGIN:VEVENT\r\nUID:stamp-event-1\r\nDTSTAMP:20240101T000000Z\r\n" +
+				"DTSTART:20240101T100000Z\r\nDTEND:20240101T110000Z\r\nSUMMARY:Original\r\n" +
+				"END:VEVENT\r\nEND:VCALENDAR\r\n",
+		},
+	}
+	newSummary := "Edited"
+	got, err := NewUpdateEventUseCase(repo).Execute(context.Background(), UpdateEventInput{
+		UUID:    "obj-uuid",
+		Summary: &newSummary,
+		Scope:   "all",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	assertUTCDTStamp(t, got.ICalData)
+}
