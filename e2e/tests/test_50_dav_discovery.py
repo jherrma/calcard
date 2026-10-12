@@ -103,17 +103,15 @@ def test_principal(t, u1, dd):
             "the response must describe the principal URL")
 
 
-@known("F06")
 def test_empty_body(t, u1, dd):
     """PROPFIND with an empty body is treated as allprop (RFC 4918 9.1)"""
-    # Collections already handle this; the principal/root path does not.
     t.status(u1.dav("PROPFIND", f"{u1.home_cal}{dd.cal['path']}/", depth=0), 207,
              msg="empty-body PROPFIND on a calendar collection")
-    # F06: go-webdav answers 400 "webdav: expected application/xml request".
-    t.bug.status(u1.dav("PROPFIND", "/dav/", depth=0), 207, was=400,
-                 msg="empty-body PROPFIND on /dav/ (some clients probe like this)")
-    t.bug.status(u1.dav("PROPFIND", f"/dav/{dd.user}/", depth=0), 207, was=400,
-                 msg="empty-body PROPFIND on the principal")
+    # Was a 400 "webdav: expected application/xml request" until F06 was fixed.
+    for p, what in (("/dav/", "/dav/ (some clients probe like this)"), (f"/dav/{dd.user}/", "the principal")):
+        r = u1.dav("PROPFIND", p, depth=0)
+        if t.status(r, 207, msg=f"empty-body PROPFIND on {what}"):
+            _principal_checks(t, r, dd.user)
 
 
 def test_cal_home(t, e2e, u1, dd):
@@ -162,12 +160,6 @@ def test_cal_collection(t, e2e, u1, dd):
     t.xpath(r, lp("current-user-privilege-set", "**", "write"), "the owner has write privilege")
 
 
-# F07: what each Depth leaves out (FINDINGS.md).
-DEPTH0_MISSING = {"calendar-description", "supported-calendar-component-set"}
-DEPTH1_MISSING = {"sync-token", "getctag"}
-
-
-@known("F07")
 def test_depth_consistency(t, u1, dd):
     """calendar collection properties agree between Depth 0 and Depth 1"""
     body = '''<?xml version="1.0" encoding="utf-8"?>
@@ -186,11 +178,9 @@ def test_depth_consistency(t, u1, dd):
                             f"//*[local-name()='{p}']")
         ok1 = xml.xbool(r1, f"{lp('response')}[*[local-name()='href']='{href}']/*[local-name()='propstat']"
                             f"[contains(*[local-name()='status'],'200')]//*[local-name()='{p}']")
-        # F07 documents exactly which ones are missing at which Depth.
-        t.bug.true(ok0, f"Depth 0 PROPFIND on the collection does not return {p} (200)",
-                   was=p in DEPTH0_MISSING)
-        t.bug.true(ok1, f"Depth 1 PROPFIND on the home does not return {p} (200) for the same collection",
-                   was=p in DEPTH1_MISSING)
+        # Fixed in F07: each Depth used to leave some of them out.
+        t.true(ok0, f"Depth 0 PROPFIND on the collection does not return {p} (200)", r0)
+        t.true(ok1, f"Depth 1 PROPFIND on the home does not return {p} (200) for the same collection", r1)
 
 
 def test_ab_home(t, e2e, u1, dd):

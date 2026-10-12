@@ -87,7 +87,9 @@ func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (
 
 	event := ical.NewEvent()
 	event.Props.SetText(ical.PropUID, uid)
-	event.Props.SetDateTime(ical.PropDateTimeStamp, time.Now())
+	// DTSTAMP must be UTC (RFC 5545 §3.8.7.2). go-ical writes the "Z" form only
+	// for time.UTC; a time.Now() in time.Local becomes DTSTAMP;TZID=Local:… (F04).
+	event.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
 	event.Props.SetText(ical.PropSummary, input.Summary)
 
 	if input.IsAllDay {

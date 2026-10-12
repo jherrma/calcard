@@ -145,6 +145,10 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
   Events have **no date bound** unless `start`/`end` are passed; `limit` is per group, capped at
   `max_limit` (100)
 - `DELETE` endpoints return 204 No Content
+- Not found is a **404** on every verb (F05): an unknown contact (also for `DELETE` and the
+  photo routes), and an address book that is unknown, another user's, or only shared with the
+  caller on `GET`/`PATCH`/`DELETE`/`export` — these are owner-only, and a foreign book answers
+  byte-for-byte like an unknown one, checked before the body is parsed
 
 ### Patterns
 
