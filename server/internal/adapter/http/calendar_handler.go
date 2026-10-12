@@ -1,12 +1,26 @@
 package http
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 	domaincalendar "github.com/jherrma/caldav-server/internal/domain/calendar"
 	calendaruc "github.com/jherrma/caldav-server/internal/usecase/calendar"
 )
 
 var _ = domaincalendar.Calendar{}
+
+// calendarError maps a calendar use-case error onto a response. A missing
+// calendar and one the caller does not own are both domaincalendar.ErrNotFound
+// and answer the same 404 body GET always gave, so no verb tells a caller that
+// another user's calendar exists (F12). Everything else is a rejected request
+// (validation, DELETE confirmation, last-calendar guard): 400.
+func calendarError(c fiber.Ctx, err error) error {
+	if errors.Is(err, domaincalendar.ErrNotFound) {
+		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+}
 
 // CalendarHandler handles calendar HTTP requests
 type CalendarHandler struct {
@@ -93,7 +107,7 @@ func (h *CalendarHandler) Update(c fiber.Ctx) error {
 
 	calendar, err := h.updateUC.Execute(c.Context(), userID, calendarUUID, req)
 	if err != nil {
-		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		return calendarError(c, err)
 	}
 
 	return c.JSON(calendar)
@@ -110,7 +124,7 @@ func (h *CalendarHandler) Delete(c fiber.Ctx) error {
 	}
 
 	if err := h.deleteUC.Execute(c.Context(), userID, calendarUUID, req); err != nil {
-		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		return calendarError(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)

@@ -209,3 +209,78 @@ func TestCalendarHandler_Export(t *testing.T) {
 		assert.Contains(t, resp.Header.Get("Content-Disposition"), "attachment")
 	})
 }
+
+// TestCalendarHandler_NotFoundIsIdenticalForUnknownAndForeign guards F12:
+// PATCH and DELETE on an unknown calendar, and on another user's calendar,
+// must answer the same 404 as GET (status AND body, so the two cases cannot be
+// told apart), while a genuine validation error on an owned calendar stays 400.
+func TestCalendarHandler_NotFoundIsIdenticalForUnknownAndForeign(t *testing.T) {
+	app, db, cfg := setupTestApp(t)
+	userRepo := repository.NewUserRepository(db.DB())
+	calRepo := repository.NewCalendarRepository(db.DB())
+	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
+
+	mkUser := func(name string) (*user.User, string) {
+		u := &user.User{
+			Email:         name + "@example.com",
+			Username:      name,
+			PasswordHash:  "hash",
+			IsActive:      true,
+			EmailVerified: true,
+			UUID:          name + "-uuid",
+		}
+		require.NoError(t, userRepo.Create(context.Background(), u))
+		token, _, err := jwtManager.GenerateAccessToken(u.UUID, u.Email)
+		require.NoError(t, err)
+		return u, token
+	}
+	owner, ownerToken := mkUser("f12owner")
+	_, strangerToken := mkUser("f12stranger")
+
+	// Two calendars, so the last-calendar guard cannot be what rejects a DELETE.
+	for _, uid := range []string{"f12-cal-a", "f12-cal-b"} {
+		require.NoError(t, calRepo.Create(context.Background(), &calendar.Calendar{
+			UUID: uid, UserID: owner.ID, Name: uid, Path: uid + ".ics", Timezone: "UTC", Color: "#112233",
+		}))
+	}
+	const unknownUUID = "00000000-0000-0000-0000-000000000000"
+
+	call := func(method, uuid, token, body string) (int, string) {
+		req := httptest.NewRequest(method, "/api/v1/calendars/"+uuid, bytes.NewReader([]byte(body)))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(resp.Body)
+		return resp.StatusCode, buf.String()
+	}
+
+	for _, tc := range []struct {
+		method, body string
+	}{
+		{http.MethodGet, ""},
+		{http.MethodPatch, `{"name":"hijacked"}`},
+		{http.MethodDelete, `{"confirmation":"DELETE"}`},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
+			unknownStatus, unknownBody := call(tc.method, unknownUUID, ownerToken, tc.body)
+			foreignStatus, foreignBody := call(tc.method, "f12-cal-a", strangerToken, tc.body)
+			assert.Equal(t, fiber.StatusNotFound, unknownStatus, "unknown calendar: %s", unknownBody)
+			assert.Equal(t, fiber.StatusNotFound, foreignStatus, "another user's calendar: %s", foreignBody)
+			assert.Equal(t, unknownBody, foreignBody, "unknown and foreign must be indistinguishable")
+		})
+	}
+
+	// The owner's calendar is untouched by the stranger's attempts.
+	cal, err := calRepo.GetByUUID(context.Background(), "f12-cal-a")
+	require.NoError(t, err)
+	assert.Equal(t, "f12-cal-a", cal.Name)
+
+	// Real request errors on an owned calendar keep their 400.
+	status, body := call(http.MethodPatch, "f12-cal-a", ownerToken, `{"color":"blue"}`)
+	assert.Equal(t, fiber.StatusBadRequest, status, "invalid colour: %s", body)
+	status, body = call(http.MethodDelete, "f12-cal-a", ownerToken, `{"confirmation":"yes"}`)
+	assert.Equal(t, fiber.StatusBadRequest, status, "wrong confirmation: %s", body)
+}

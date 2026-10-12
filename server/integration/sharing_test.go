@@ -37,10 +37,9 @@ func TestCalendarSharing(t *testing.T) {
 		map[string]*string{"name": &rename})
 	// Assert the exact denial status, not just "!= 200": NotEqual(200) also
 	// passes on a 500, which would hide a broken authz path. UpdateCalendarUseCase
-	// rejects a non-owner with "access denied", which the handler maps to 400
-	// (the calendar-mutation endpoints answer 400 here, unlike the event
-	// endpoints' existence-hiding 404).
-	assert.Equal(t, http.StatusBadRequest, status, "target user must NOT be able to rename owner's calendar before sharing")
+	// treats a non-owner exactly like a missing calendar: 404, the same
+	// existence-hiding answer GET and the event endpoints give (F12).
+	assert.Equal(t, http.StatusNotFound, status, "target user must NOT be able to rename owner's calendar before sharing")
 
 	// Target should not see the calendar in their listing either.
 	targetIdx := listCalendarsIndex(t, targetToken)
