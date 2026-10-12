@@ -93,21 +93,18 @@ def test_mkcol(t, e2e, u1):
     t.eq(name, "Made by MKCOL")
 
 
-@known("F03")
 def test_mkcol_existing(t, e2e, u1, st):
     """MKCALENDAR / MKCOL on an existing collection is refused (405)"""
     t.need(st, "mk_slug")
     col = f"{u1.home_cal}{st.mk_slug}/"
-    # F03: both answer 201 and insert another calendar at the same path.
     r = u1.dav("MKCALENDAR", col, xml=mkcal_body("Duplicate"))
-    t.bug.status(r, 405, 403, 409, was=201,
-                 msg="MKCALENDAR on an existing calendar (RFC 4791 5.3.1: resource-must-be-null)")
+    t.status(r, 405, 403, 409, msg="MKCALENDAR on an existing calendar (RFC 4791 5.3.1: resource-must-be-null)")
     s1 = r.status
     r = u1.dav("MKCOL", col)
-    t.bug.status(r, 405, was=201, msg="MKCOL on an existing collection (RFC 4918 9.3.1)")
+    t.status(r, 405, msg="MKCOL on an existing collection (RFC 4918 9.3.1)")
     n, _, _, r = _find_cal_by_path(u1, st.mk_slug)
-    t.bug.true(n == 1, f"the refused requests must not create duplicate calendars at '{st.mk_slug}' "
-                       f"(MKCALENDAR answered {s1}; {n} calendars there now)", was=n > 1)
+    t.true(n == 1, f"the refused requests must not create duplicate calendars at '{st.mk_slug}' "
+                   f"(MKCALENDAR answered {s1}; {n} calendars there now)")
     # Never leave duplicates behind: delete the extra ones right away (the
     # original stays registered for cleanup).
     if n > 1:
