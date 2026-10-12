@@ -36,7 +36,7 @@ Calendar management:
 
 Event management:
 
-- `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations.
+- `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations. An optional IANA `timezone` (REST and MCP alike) stores DTSTART/DTEND with `TZID=<zone>`; create and update then call `calendar.SyncVTimezones`, so the object carries a VTIMEZONE for every TZID it uses and none it no longer uses (F20, RFC 5545 §3.2.19). Objects written before that heal on their next REST/MCP edit. The zone name `Local` is ignored like an unknown one (it would mean the server host's zone).
 - `move.go` — Move event between calendars.
 
 ### [addressbook/](addressbook/)

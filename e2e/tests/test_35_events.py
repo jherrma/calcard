@@ -138,6 +138,42 @@ def test_dtstamp(t, u1, cal, st):
                was=line.startswith("DTSTAMP;TZID="))
 
 
+def _tzids(text):
+    """(TZIDs the event properties use, TZIDs a VTIMEZONE defines) in an iCalendar text."""
+    lines = text.replace("\r\n ", "").replace("\r", "").split("\n")
+    defined = {ln[len("TZID:"):] for ln in lines if ln.startswith("TZID:")}
+    # DTSTAMP is skipped: its TZID=Local is F04, a separate bug.
+    used = {m for ln in lines if not ln.startswith("DTSTAMP") for m in re.findall(r";TZID=([^;:]+)", ln)}
+    return used, defined
+
+
+def test_timezone_vtimezone(t, e2e, u1):
+    """an event with a timezone carries that zone's VTIMEZONE (RFC 5545 3.2.19)"""
+    tzcal = u1.mk_calendar(e2e.uniq("events-tz"))
+    ev = u1.mk_event(tzcal["uuid"], f"Berlin {e2e.run_id}", "2030-06-01T08:00:00Z", "2030-06-01T09:00:00Z",
+                     timezone="Europe/Berlin", recurrence={"frequency": "weekly", "interval": 1})
+    r = u1.api("GET", f"/calendars/{tzcal['uuid']}/export")
+    if not t.status(r, 200):
+        return
+    t.contains(r, "DTSTART;TZID=Europe/Berlin:20300601T100000")
+    used, defined = _tzids(r.text)
+    t.eq(sorted(used), ["Europe/Berlin"], "TZIDs used by the event")
+    t.eq(sorted(defined), ["Europe/Berlin"], "VTIMEZONEs in the object")
+    t.contains(r, "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU", "the VTIMEZONE states the EU summer-time rule")
+
+    # Switching the zone swaps the VTIMEZONE: the new one is added, the unused one dropped.
+    r = u1.api("PATCH", f"/calendars/{tzcal['uuid']}/events/{ev['id']}", json={"timezone": "America/New_York"})
+    if not t.status(r, 200):
+        return
+    r = u1.api("GET", f"/calendars/{tzcal['uuid']}/export")
+    if not t.status(r, 200):
+        return
+    t.contains(r, "DTSTART;TZID=America/New_York:20300601T040000")
+    used, defined = _tzids(r.text)
+    t.eq(sorted(used), ["America/New_York"], "TZIDs used after the zone change")
+    t.eq(sorted(defined), ["America/New_York"], "VTIMEZONEs after the zone change")
+
+
 def test_allday(t, e2e, u1, cal):
     """all-day events round-trip as DATE values"""
     ev = u1.mk_event(cal.ev["uuid"], f"All day {e2e.run_id}", "2030-02-01T00:00:00Z", "2030-02-02T00:00:00Z",

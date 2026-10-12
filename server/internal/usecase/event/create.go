@@ -46,11 +46,10 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 	eventUID := fmt.Sprintf("%s@calcard.io", eventUUID)
 
 	// Convert times to the named IANA timezone so go-ical produces TZID parameters
-	if input.Timezone != "" {
-		if loc, err := time.LoadLocation(input.Timezone); err == nil {
-			input.Start = input.Start.In(loc)
-			input.End = input.End.In(loc)
-		}
+	// (generateICal adds the matching VTIMEZONE).
+	if loc, ok := calendar.LoadEventLocation(input.Timezone); ok {
+		input.Start = input.Start.In(loc)
+		input.End = input.End.In(loc)
 	}
 
 	icalData, err := uc.generateICal(input, eventUID)
@@ -112,6 +111,8 @@ func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (
 	}
 
 	cal.Children = append(cal.Children, event.Component)
+	// RFC 5545 §3.2.19: a TZID must name a VTIMEZONE in the same object.
+	calendar.SyncVTimezones(cal)
 
 	var sb strings.Builder
 	err := ical.NewEncoder(&sb).Encode(cal)
