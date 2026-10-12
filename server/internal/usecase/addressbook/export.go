@@ -22,7 +22,7 @@ func (uc *ExportUseCase) Execute(ctx context.Context, id uint, userID uint) ([]b
 		return nil, "", err
 	}
 	if ab == nil || ab.UserID != userID {
-		return nil, "", fmt.Errorf("address book not found")
+		return nil, "", ErrNotFound
 	}
 
 	// Fetch all contacts (AddressObjects) for this address book

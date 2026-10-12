@@ -1,6 +1,8 @@
 package http
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
@@ -96,7 +98,7 @@ func (h *CalendarShareHandler) Update(c fiber.Ctx) error {
 
 	output, err := h.updateUC.Execute(c.Context(), u.ID, calendarID, shareUUID, req)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(calendarShareErrorStatus(err)).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.JSON(output)
@@ -112,8 +114,18 @@ func (h *CalendarShareHandler) Revoke(c fiber.Ctx) error {
 	shareUUID := c.Params("share_id")
 
 	if err := h.revokeUC.Execute(c.Context(), u.ID, calendarID, shareUUID); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(calendarShareErrorStatus(err)).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// calendarShareErrorStatus picks the status for an update/revoke error: an
+// unknown :share_id (or one of another calendar) is a 404 like any unknown
+// resource in the path; everything else (e.g. an invalid permission) is a 400.
+func calendarShareErrorStatus(err error) int {
+	if errors.Is(err, sharing.ErrCalendarShareNotFound) {
+		return fiber.StatusNotFound
+	}
+	return fiber.StatusBadRequest
 }

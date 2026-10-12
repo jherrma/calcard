@@ -213,6 +213,77 @@ func TestEventHandlerCreateRequiresStartAndEnd(t *testing.T) {
 	assert.Zero(t, count, "a rejected create must not store an event")
 }
 
+// TestEventHandlerRejectsWrongCalendar is the regression test for F09: the
+// event routes looked the event up by its UUID alone and ignored :calendar_id,
+// so an event answered under any calendar UUID the caller could name — another
+// of their calendars, an all-zero UUID, or one that does not exist. Every verb
+// must now answer the same 404 an unknown event gets and leave the event alone.
+func TestEventHandlerRejectsWrongCalendar(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+
+	other := &calendar.Calendar{UUID: "cal-uuid-other", UserID: cal.UserID, Name: "Personal", Path: "personal"}
+	require.NoError(t, db.DB().Create(other).Error)
+
+	send := func(method, path string, body any) (int, string) {
+		var rd *bytes.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		} else {
+			rd = bytes.NewReader(nil)
+		}
+		req, _ := http.NewRequest(method, "/api/v1/calendars/"+path, rd)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(resp.Body)
+		return resp.StatusCode, buf.String()
+	}
+
+	code, raw := send("POST", cal.UUID+"/events", dto.CreateEventRequest{
+		Summary: "Anchored",
+		Start:   time.Date(2030, 1, 15, 10, 0, 0, 0, time.UTC),
+		End:     time.Date(2030, 1, 15, 11, 0, 0, 0, time.UTC),
+	})
+	require.Equal(t, fiber.StatusCreated, code, raw)
+	var created dto.EventResponse
+	require.NoError(t, json.Unmarshal([]byte(raw), &created))
+	eventID := created.ID
+
+	// The reference answer: an event id that does not exist at all.
+	notFoundCode, notFoundBody := send("GET", cal.UUID+"/events/00000000-0000-0000-0000-000000000001", nil)
+	require.Equal(t, fiber.StatusNotFound, notFoundCode)
+
+	summary := "hijacked"
+	for _, wrong := range []string{other.UUID, "00000000-0000-0000-0000-000000000000", "7d3f0c52-0000-4000-8000-000000000000"} {
+		base := wrong + "/events/" + eventID
+		for _, tc := range []struct {
+			method, path string
+			body         any
+		}{
+			{"GET", base, nil},
+			{"PUT", base, dto.UpdateEventRequest{Summary: &summary}},
+			{"DELETE", base, nil},
+			{"POST", base + "/move", dto.MoveEventRequest{TargetCalendarID: other.UUID}},
+		} {
+			code, body := send(tc.method, tc.path, tc.body)
+			assert.Equal(t, fiber.StatusNotFound, code, "%s %s", tc.method, tc.path)
+			assert.JSONEq(t, notFoundBody, body, "%s %s must look exactly like an unknown event", tc.method, tc.path)
+		}
+	}
+
+	// The event is untouched and still lives where it was created.
+	code, raw = send("GET", cal.UUID+"/events/"+eventID, nil)
+	require.Equal(t, fiber.StatusOK, code, raw)
+	var got dto.EventResponse
+	require.NoError(t, json.Unmarshal([]byte(raw), &got))
+	assert.Equal(t, "Anchored", got.Summary)
+	assert.Equal(t, cal.ID, got.CalendarID)
+}
+
 func TestEventHandler(t *testing.T) {
 	app, db, _, cal, token := setupEventHandlerTest(t)
 	defer db.Close()
@@ -321,7 +392,9 @@ func TestEventHandler(t *testing.T) {
 	})
 
 	t.Run("Delete Event", func(t *testing.T) {
-		req, _ := http.NewRequest("DELETE", "/api/v1/calendars/"+cal.UUID+"/events/"+eventID, nil)
+		// "Move Event" filed the event under cal-uuid-2, so that is now its URL
+		// (F09): the old calendar's URL no longer reaches it.
+		req, _ := http.NewRequest("DELETE", "/api/v1/calendars/cal-uuid-2/events/"+eventID, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := app.Test(req)
@@ -329,7 +402,7 @@ func TestEventHandler(t *testing.T) {
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 
 		// Verify it's gone
-		reqGet, _ := http.NewRequest("GET", "/api/v1/calendars/"+cal.UUID+"/events/"+eventID, nil)
+		reqGet, _ := http.NewRequest("GET", "/api/v1/calendars/cal-uuid-2/events/"+eventID, nil)
 		reqGet.Header.Set("Authorization", "Bearer "+token)
 		respGet, _ := app.Test(reqGet)
 		assert.Equal(t, fiber.StatusNotFound, respGet.StatusCode)

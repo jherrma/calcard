@@ -25,7 +25,7 @@ func (uc *DeleteUseCase) Execute(ctx context.Context, id uint, userID uint) erro
 		return err
 	}
 	if ab == nil || ab.UserID != userID {
-		return fmt.Errorf("address book not found")
+		return ErrNotFound
 	}
 
 	// Check if it's the last address book
@@ -34,7 +34,7 @@ func (uc *DeleteUseCase) Execute(ctx context.Context, id uint, userID uint) erro
 		return err
 	}
 	if len(list) <= 1 {
-		return fmt.Errorf("cannot delete your last address book")
+		return ErrLastAddressBook
 	}
 
 	if err := uc.repo.Delete(ctx, id); err != nil {

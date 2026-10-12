@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -124,4 +125,53 @@ func TestCreateEvent_RequiresStartAndEnd(t *testing.T) {
 			}
 		})
 	}
+}
+
+var dtstampUTC = regexp.MustCompile(`^DTSTAMP:[0-9]{8}T[0-9]{6}Z$`)
+
+// assertUTCDTStamp checks that every DTSTAMP line of icalData has the UTC form
+// RFC 5545 §3.8.7.2 requires (DTSTAMP:20060102T150405Z, no TZID) and names the
+// current instant. F04: time.Now() made go-ical write
+// DTSTAMP;TZID=Local:<local wall clock>.
+func assertUTCDTStamp(t *testing.T, icalData string) {
+	t.Helper()
+	found := 0
+	for _, line := range strings.Split(strings.ReplaceAll(icalData, "\r\n", "\n"), "\n") {
+		if !strings.HasPrefix(line, "DTSTAMP") {
+			continue
+		}
+		found++
+		if !dtstampUTC.MatchString(line) {
+			t.Errorf("DTSTAMP must be a UTC date-time like DTSTAMP:20300101T000000Z, got %q", line)
+			continue
+		}
+		stamp, err := time.Parse("20060102T150405Z", strings.TrimPrefix(line, "DTSTAMP:"))
+		if err != nil {
+			t.Errorf("unparseable DTSTAMP %q: %v", line, err)
+			continue
+		}
+		if d := time.Since(stamp); d < -time.Minute || d > time.Minute {
+			t.Errorf("DTSTAMP %q is %v away from now, want the current UTC time", line, d)
+		}
+	}
+	if found == 0 {
+		t.Fatalf("no DTSTAMP in iCal:\n%s", icalData)
+	}
+}
+
+// TestCreateEvent_DTStampIsUTC: an event created through the API (REST and MCP
+// share this use case) is stored with a UTC DTSTAMP (F04).
+func TestCreateEvent_DTStampIsUTC(t *testing.T) {
+	uc := NewCreateEventUseCase(&stubCalendarRepo{})
+	obj, err := uc.Execute(context.Background(), CreateEventInput{
+		CalendarID: 1,
+		Summary:    "Stamped",
+		Start:      time.Date(2030, 1, 1, 10, 0, 0, 0, time.UTC),
+		End:        time.Date(2030, 1, 1, 11, 0, 0, 0, time.UTC),
+		Timezone:   "Europe/Berlin",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	assertUTCDTStamp(t, obj.ICalData)
 }
