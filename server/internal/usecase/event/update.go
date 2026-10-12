@@ -304,7 +304,7 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	// Determine current effective times
-	effectiveStart := time.Now()
+	effectiveStart := time.Now().UTC()
 	if obj.StartTime != nil {
 		effectiveStart = *obj.StartTime
 	}
@@ -401,8 +401,9 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 	}
 
-	// Update DTSTAMP
-	targetEvent.Props.SetDateTime(ical.PropDateTimeStamp, time.Now())
+	// Update DTSTAMP. It must be UTC (RFC 5545 §3.8.7.2); go-ical writes a
+	// time.Local value as DTSTAMP;TZID=Local:… (F04).
+	targetEvent.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
 
 	// Regenerate ICalData
 	var sb strings.Builder

@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A calendar object resource may hold only one UID and one component type
-// (RFC 4791 §4.1). A PUT that breaks that is the client's mistake and must be
-// answered with a 4xx precondition error, not a 500.
+// A calendar object resource holds exactly one calendar component type and one
+// UID (RFC 4791 §4.1), and must be valid iCalendar (§5.3.2.1). A PUT that breaks
+// that is the client's mistake and must be answered with a 409 precondition
+// error, not a 500.
 func TestCalDAVPutRejectsInvalidCalendarObject(t *testing.T) {
 	email := "caldav-invalid@example.test"
 	password := "caldavSecret!123"
@@ -33,10 +34,25 @@ func TestCalDAVPutRejectsInvalidCalendarObject(t *testing.T) {
 		return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" + body + "END:VCALENDAR\r\n"
 	}
 	vtodo := "BEGIN:VTODO\r\nUID:one\r\nDTSTAMP:20300101T000000Z\r\nSUMMARY:t\r\nEND:VTODO\r\n"
+	vtimezone := "BEGIN:VTIMEZONE\r\nTZID:Europe/Berlin\r\nBEGIN:STANDARD\r\n" +
+		"DTSTART:19701025T030000\r\nTZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n"
+	withProp := func(uid, prop string) string {
+		return strings.Replace(vevent(uid), "SUMMARY:x\r\n", "SUMMARY:x\r\n"+prop, 1)
+	}
 
-	cases := map[string]string{
-		"two different UIDs":    wrap(vevent("uid-one") + vevent("uid-two")),
-		"mixed component types": wrap(vevent("one") + vtodo),
+	const objectResource, calendarData = "valid-calendar-object-resource", "valid-calendar-data"
+	// Each body parses, so it reaches the backend; the ones without a
+	// component or a UID used to fail only when re-encoded, as a 500 (F16).
+	cases := map[string]struct{ body, precondition string }{
+		"two different UIDs":    {wrap(vevent("uid-one") + vevent("uid-two")), objectResource},
+		"mixed component types": {wrap(vevent("one") + vtodo), objectResource},
+		"no component":          {wrap(""), objectResource},
+		"only a VTIMEZONE":      {wrap(vtimezone), objectResource},
+		"event without UID": {wrap(strings.Replace(vevent("gone"), "UID:gone\r\n", "", 1)),
+			objectResource},
+		"DTEND and DURATION": {wrap(withProp("dur", "DTEND:20300701T100000Z\r\nDURATION:PT1H\r\n")),
+			calendarData},
+		"two SUMMARY properties": {wrap(withProp("sum", "SUMMARY:y\r\n")), calendarData},
 	}
 	put := func(name, body string) (int, []byte) {
 		status, _, resp := davCall(t, "PUT", collection+name+".ics", email, appPassword, body,
@@ -44,13 +60,12 @@ func TestCalDAVPutRejectsInvalidCalendarObject(t *testing.T) {
 		return status, resp
 	}
 
-	for name, body := range cases {
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			status, resp := put("invalid", body)
-			assert.GreaterOrEqual(t, status, 400, "must be a client error: %s", string(resp))
-			assert.Less(t, status, 500, "must not be a server error: %s", string(resp))
-			assert.True(t, strings.Contains(string(resp), "valid-calendar-object-resource"),
-				"body should name the failed precondition: %s", string(resp))
+			status, resp := put("invalid", tc.body)
+			assert.Equal(t, http.StatusConflict, status, "must be a precondition error: %s", string(resp))
+			assert.True(t, strings.Contains(string(resp), tc.precondition),
+				"body should name the failed precondition %s: %s", tc.precondition, string(resp))
 		})
 	}
 

@@ -38,6 +38,9 @@ Event management:
 
 - `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations.
 - `move.go` — Move event between calendars.
+- Input validation lives here, not in the DTOs (the server has no struct validator). `create.go`
+  rejects a missing (zero) start or end and an end before the start with `ErrInvalidInput` (a 400 over
+  REST, an error result over MCP); without that a create with no times was stored at 0001-01-01 (F13).
 - `datetime.go` — `icalDateTime`: a timed start/end written without a `timezone` (an RFC 3339
   offset such as `+05:00`, or a `time.Local` value) is stored in UTC (`DTSTART:…Z`), never with an
   empty `TZID=` or `TZID=Local` (F22). A `timezone` (IANA) or the event's stored TZID is kept;
@@ -87,7 +90,7 @@ Application password management (for DAV client access):
 User profile management:
 
 - `get_profile.go`, `update_profile.go` — Profile CRUD.
-- `delete_account.go` — Account deletion.
+- `delete_account.go` — Account deletion: password + `DELETE` confirmation, then `UserRepository.Delete`, which removes all of the account's data (its collections, the shares in both directions, credentials) and soft-deletes the user row (F18).
 
 ### [sharing/](sharing/)
 
@@ -100,8 +103,15 @@ Calendar and address book sharing:
 
 Data import and export:
 
-- `calendar_import.go` — Import iCalendar (.ics) files.
+- `calendar_import.go` — Import iCalendar (.ics) files. Components are grouped **by UID** into one
+  calendar object each (a recurring master and its `RECURRENCE-ID` overrides share a UID and must
+  live in one resource, RFC 4791 §4.1). `total`/`imported`/`skipped`/`failed` count those objects,
+  not components: a series with its overrides is one; a component without a UID is one failed item.
+  A second master or a repeated `RECURRENCE-ID` for a UID already in the file starts another object,
+  which then goes through the duplicate handling (skip/replace/duplicate) like a re-import would.
+- `calendar_import_timezone.go` — Copies the file's `VTIMEZONE`s into each imported object that references their TZID (RFC 5545 §3.2.19), sorted so the encoding is stable.
 - `contact_import.go` — Import vCard (.vcf) files.
+- `import_path.go` — Helpers shared by both imports (F23): a missing DTSTAMP is added (import time, UTC) instead of failing the event, and the DAV resource name is `<uid>.ics`/`.vcf` only for a short URL-safe UID on a free path, otherwise `<uuid>.ics` — a UID may contain `/` or `..`. Duplicates are matched by UID, never by path; `replace` keeps the replaced object's path when it is still a usable segment.
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.
 

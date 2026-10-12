@@ -57,7 +57,9 @@ func (h *ImportHandler) ImportCalendar(c fiber.Ctx) error {
 
 	result, err := h.calendarImportUC.Execute(c.Context(), userID, calendarUUID, data, opts)
 	if err != nil {
-		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		// Missing or not owned → 404 (same body as GET /calendars/:id);
+		// a subscribed calendar or unparseable data → 400.
+		return calendarError(c, err)
 	}
 
 	return c.JSON(result)

@@ -35,12 +35,12 @@ func (uc *DeleteCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 	// Get calendar
 	cal, err := uc.repo.GetByUUID(ctx, calendarUUID)
 	if err != nil {
-		return fmt.Errorf("calendar not found")
+		return calendar.ErrNotFound
 	}
 
-	// Verify ownership
+	// Verify ownership. Not owned is the same error as missing (no existence leak).
 	if cal.UserID != userID {
-		return fmt.Errorf("access denied")
+		return calendar.ErrNotFound
 	}
 
 	// Check if this is the last calendar

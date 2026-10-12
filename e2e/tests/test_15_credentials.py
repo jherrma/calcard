@@ -5,7 +5,6 @@ import re
 
 import pytest
 
-from harness.checks import known
 from harness.data import PROPFIND_PRINCIPAL, ics_event, vcard
 
 DESCRIPTION = "app passwords, CalDAV/CardDAV credentials: CRUD, scopes, revocation"
@@ -72,11 +71,10 @@ def test_ap_dav_username(t, e2e, st):
     # The server tells clients to use this username (credentials.username) and
     # it is the segment of every DAV URL — it has to work for Basic auth.
     r = _probe(e2e, st.ap_user, st.ap_pw, "/dav/")
-    if any(c.isupper() for c in st.ap_user):
-        t.known("F02")  # the lookup lower-cases the mixed-case username → 401
-        t.bug.status(r, 207, was=401, msg="Basic auth with the username returned by POST /app-passwords")
-    else:
-        t.status(r, 207, msg="Basic auth with the username returned by POST /app-passwords")
+    t.status(r, 207, msg="Basic auth with the username returned by POST /app-passwords")
+    # Usernames are mixed-case; the lookup is case-insensitive (F02, fixed).
+    r = _probe(e2e, st.ap_user.swapcase(), st.ap_pw, "/dav/")
+    t.status(r, 207, msg="Basic auth with the username in another case")
 
 
 def test_ap_scope_caldav(t, e2e, u1):
@@ -272,7 +270,6 @@ def test_carddav_scope(t, e2e, u1, st):
     t.contains(r, u1.home_ab)
 
 
-@known("F02")
 def test_carddav_mixedcase(t, e2e, u1):
     """CardDAV credential: mixed-case username authenticates"""
     # The create endpoint accepts upper-case usernames ([a-zA-Z0-9_-]); a
@@ -281,12 +278,11 @@ def test_carddav_mixedcase(t, e2e, u1):
     # configuration accepts (harness/config.py MAX_RUN_TAG).
     u, pw = f"Mixed-{e2e.uniq('card')}", f"MixedCase_{e2e.run_id}"
     r = u1.api("POST", "/carddav-credentials/", json={"name": "mixed", "username": u, "password": pw, "permission": "read"})
-    # A refusal here is NOT the fix of F02 (and never an XPASS): if the server
-    # starts rejecting upper-case usernames on purpose, update this test.
+    # If the server starts rejecting upper-case usernames on purpose, update this test.
     if not t.status(r, 201, msg="the create endpoint accepts upper-case usernames ([a-zA-Z0-9_-])"):
         return
     e2e.defer(f"revoke CardDAV credential {u}", e2e.cleanup_api, u1, "DELETE", f"/carddav-credentials/{r.jdict().get('id')}")
-    t.bug.status(_probe(e2e, u, pw, u1.home_ab), 207, was=401, msg="Basic auth with the username exactly as created")
+    t.status(_probe(e2e, u, pw, u1.home_ab), 207, msg="Basic auth with the username exactly as created")
 
 
 def test_carddav_revoke(t, e2e, u1, st):

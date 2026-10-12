@@ -14,7 +14,7 @@ The domain layer defines:
 
 ### [user/](user/)
 
-- `user.go` — Core user entity (profile data, security status, password hashing). `TokensValidAfter` (`json:"-"`, nil = never revoked) invalidates every access token issued before it; `AcceptsAccessTokenIssuedAt` is the single rule (a token issued at exactly the marker is accepted, so the replacement token change-password mints right after setting it survives).
+- `user.go` — Core user entity (profile data, security status, password hashing). `TokensValidAfter` (`json:"-"`, nil = never revoked) invalidates every access token issued before it; `AcceptsAccessTokenIssuedAt` is the single rule (a token issued at exactly the marker is accepted, so the replacement token change-password mints right after setting it survives). `DeletedIdentityPrefix` (`deleted:`) builds the tombstone a deleted account's e-mail and username are replaced with.
 - `refresh_token.go` — Opaque tokens for session persistence, linked to users and client context (User Agent, IP).
 - `email_verification.go` — Email verification token model.
 - `app_password.go` — Application-specific passwords for DAV client access.
@@ -32,6 +32,7 @@ The domain layer defines:
 - `subscription.go` — `CalendarSubscription` (story 100): the remote iCalendar feed behind a subscribed calendar, plus the status derivation, the allowed refresh-interval set, and the success/failure state machine (`RecordSuccess` / `RecordFailure`, exponential backoff anchored to the subscription's own interval, capped at 24h, auto-disable after N failures). A sidecar to `Calendar` rather than columns on it: every field here is meaningless for an ordinary calendar.
 - `sync_changelog.go` — WebDAV-Sync change tracking.
 - `validation.go` — Calendar/event validation.
+- `errors.go` — `ErrNotFound`: a missing calendar and one the caller may not access are the same error (and the same 404), so no endpoint leaks existence (F12).
 - `repository.go` — Repository interfaces for calendars, events, sync, and calendar subscriptions. `CalendarRepository.ReplaceFeedObjects` is the transactional feed diff the subscription sync uses — and the only writer permitted on a subscribed calendar.
 
 ### [addressbook/](addressbook/)
