@@ -32,7 +32,7 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Implements persistence logic for domain entities using GORM.
 - **Key Components**:
-  - `user_repo.go` — User persistence.
+  - `user_repo.go` — User persistence. `Delete` is a soft delete that first rewrites the e-mail and username to `deleted:<uuid>` and removes the OAuth connections, because the unique indexes cover deleted rows (F19); `Count` is `Unscoped` so deleted accounts still keep first-run setup closed.
   - `refresh_token_repo.go` — Refresh token storage.
   - `password_reset_repo.go` — Password reset token storage.
   - `calendar_repo.go` — Calendar persistence. `ReplaceFeedObjects` makes a subscribed calendar's contents match a feed in one transaction (story 100) — one sync token per changed resource but a single calendar-row update, and an unchanged feed touches neither, so a static `.ics` republished hourly does not wake every DAV client. `Delete` cascades to the calendar's subscription row, because a calendar can be deleted from three places and only one of them knows subscriptions exist.

@@ -110,10 +110,30 @@ func (r *gormUserRepo) Delete(ctx context.Context, userID uint) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&user.EmailVerification{}).Error; err != nil {
 			return err
 		}
+		// The provider identity is unique; left behind it would resolve to the
+		// deleted (invisible) user and block that identity forever.
+		if err := tx.Where("user_id = ?", userID).Delete(&user.OAuthConnection{}).Error; err != nil {
+			return err
+		}
+
+		// Release the e-mail and username: the unique indexes cover the
+		// soft-deleted row, so without the tombstone the address could never
+		// register again (F19).
+		if err := tombstoneIdentity(tx.Model(&user.User{}).Where("id = ?", userID)); err != nil {
+			return err
+		}
 
 		// Soft delete user
 		return tx.Delete(&user.User{}, userID).Error
 	})
+}
+
+// tombstoneIdentity rewrites email and username of the users matched by q to
+// "deleted:<uuid>" (user.DeletedIdentityPrefix), in SQL so one statement
+// serves any number of rows; `||` concatenates on SQLite and PostgreSQL alike.
+func tombstoneIdentity(q *gorm.DB) error {
+	expr := gorm.Expr("? || uuid", user.DeletedIdentityPrefix)
+	return q.UpdateColumns(map[string]interface{}{"email": expr, "username": expr}).Error
 }
 
 func (r *gormUserRepo) CreateVerification(ctx context.Context, v *user.EmailVerification) error {
@@ -138,7 +158,8 @@ func (r *gormUserRepo) DeleteVerification(ctx context.Context, token string) err
 // Count returns how many accounts have EVER existed, soft-deleted ones
 // included. It backs first-run setup and admin_configured: if deleted rows were
 // ignored, the last user deleting their account would silently re-open setup to
-// anyone (and the unique username/email indexes still cover deleted rows).
+// anyone. (Delete tombstones the e-mail and username, so counting a deleted row
+// no longer blocks its address from registering again.)
 func (r *gormUserRepo) Count(ctx context.Context) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Unscoped().Model(&user.User{}).Count(&count).Error; err != nil {

@@ -72,3 +72,28 @@ func TestAccountDeletion(t *testing.T) {
 	assert.Equalf(t, http.StatusUnauthorized, status,
 		"login with a deleted account must 401")
 }
+
+// TestReregisterAfterAccountDeletion (F19): the e-mail of a deleted account can
+// register again. Deletion is a soft delete and the users.email unique index
+// covers the deleted row, so this used to fail with 400 "registration failed".
+// A live duplicate keeps answering 409 (no SMTP on this server, P01).
+func TestReregisterAfterAccountDeletion(t *testing.T) {
+	email := "come-back@example.test"
+	password := "comeBack!123"
+	token := registerAndLogin(t, email, password, "Leaving")
+
+	status, raw := restCall(t, http.MethodDelete, "/users/me", token, map[string]string{
+		"password": password, "confirmation": "DELETE",
+	})
+	require.Equalf(t, http.StatusNoContent, status, "account deletion: %s", errorMessage(raw))
+
+	// registerAndLogin asserts the 200 and that the new account can log in.
+	token = registerAndLogin(t, email, password, "Returning")
+	status, _ = restCall(t, http.MethodGet, "/users/me", token, nil)
+	assert.Equal(t, http.StatusOK, status, "the returning account works")
+
+	status, _ = restCall(t, http.MethodPost, "/auth/register", "", map[string]string{
+		"email": email, "password": password, "display_name": "Twice",
+	})
+	assert.Equal(t, http.StatusConflict, status, "the address is taken again by the live account")
+}

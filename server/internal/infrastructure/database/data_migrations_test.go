@@ -245,3 +245,53 @@ func TestPurgeSoftDeletedShares(t *testing.T) {
 	}
 	require.NoError(t, g.Create(reshare).Error, "re-sharing the purged pair must succeed")
 }
+
+// TestReleaseDeletedUserIdentities covers accounts deleted before F19 was
+// fixed: the soft-deleted row still holds its e-mail and username (and its
+// OAuth connection the provider identity). The migration tombstones them so the
+// address can register again, leaves live accounts alone, and is idempotent.
+func TestReleaseDeletedUserIdentities(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "caldav-user-release-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	cfg := &config.Config{
+		DataDir:  dataDir,
+		Database: config.DatabaseConfig{Driver: "sqlite", AutoMigrate: true},
+	}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	defer db.Close()
+	require.NoError(t, db.Migrate(Models()...))
+	g := db.DB()
+
+	// Deleted the old way: soft delete only, identity kept.
+	gone := &user.User{ID: 1, UUID: "u-gone", Username: "gone", Email: "gone@x", PasswordHash: "x"}
+	require.NoError(t, g.Create(gone).Error)
+	require.NoError(t, g.Create(&user.OAuthConnection{UserID: 1, Provider: "google", ProviderID: "sub-gone"}).Error)
+	require.NoError(t, g.Delete(gone).Error)
+	live := &user.User{ID: 2, UUID: "u-live", Username: "live", Email: "live@x", PasswordHash: "x"}
+	require.NoError(t, g.Create(live).Error)
+	require.NoError(t, g.Create(&user.OAuthConnection{UserID: 2, Provider: "google", ProviderID: "sub-live"}).Error)
+
+	require.NoError(t, RunDataMigrations(g))
+	require.NoError(t, RunDataMigrations(g)) // idempotent
+
+	var got user.User
+	require.NoError(t, g.Unscoped().First(&got, 1).Error)
+	require.True(t, got.DeletedAt.Valid, "the row stays soft-deleted (setup keeps counting it)")
+	require.Equal(t, "deleted:u-gone", got.Email)
+	require.Equal(t, "deleted:u-gone", got.Username)
+	got = user.User{}
+	require.NoError(t, g.First(&got, 2).Error)
+	require.Equal(t, "live@x", got.Email)
+	require.Equal(t, "live", got.Username)
+
+	var conns []user.OAuthConnection
+	require.NoError(t, g.Find(&conns).Error)
+	require.Len(t, conns, 1, "only the deleted account's provider link is removed")
+	require.Equal(t, "sub-live", conns[0].ProviderID)
+
+	// The address and username are free again.
+	require.NoError(t, g.Create(&user.User{UUID: "u-back", Username: "gone", Email: "gone@x", PasswordHash: "x"}).Error)
+}
