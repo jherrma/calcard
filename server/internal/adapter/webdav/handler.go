@@ -293,6 +293,18 @@ func (h *Handler) Handler() fiber.Handler {
 		// and backend routing below can never disagree with the scope decision
 		// made in Authenticate (both go through davCollectionType).
 		collectionType := davCollectionType(reqPath)
+		pathParts := strings.Split(strings.Trim(reqPath, "/"), "/")
+
+		// The only resources one level below a principal are the caller's own
+		// two home sets. emersion treats every /dav/{x}/{y}/ as a home set and,
+		// when it is not the caller's, answers 207 with an empty multistatus —
+		// for another user's home (F11) and for /dav/{me}/{anything}/ alike.
+		// Answer 404 instead, as ResolvePath does for anything below another
+		// user's home: it does not reveal whether that account exists. Shares
+		// are reached under the sharee's own home, so they are unaffected.
+		if c.Method() == "PROPFIND" && len(pathParts) == 3 && (pathParts[1] != u.Username || collectionType == "") {
+			return c.SendStatus(fiber.StatusNotFound)
+		}
 
 		// Serve a Depth: 0 PROPFIND on a collection ourselves: clients discover
 		// sync support (sync-token / getctag / supported-report-set) this way, and
@@ -300,7 +312,6 @@ func (h *Handler) Handler() fiber.Handler {
 		// (home-set and member listing) keep flowing to emersion unchanged. Kept
 		// after the principal-discovery block above, which handles /dav/ and
 		// /dav/{user}/.
-		pathParts := strings.Split(strings.Trim(reqPath, "/"), "/")
 		if c.Method() == "PROPFIND" && collectionType != "" && len(pathParts) == 4 && c.Get("Depth") == "0" {
 			return h.handleCollectionPropfind(c, stdCtx, reqPath, collectionType)
 		}

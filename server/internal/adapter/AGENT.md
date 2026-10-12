@@ -65,7 +65,7 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Implements the CalDAV (RFC 4791) and CardDAV (RFC 6352) protocol backends.
 - **Key Components**:
-  - `handler.go` — WebDAV request dispatcher.
+  - `handler.go` — WebDAV request dispatcher. A PROPFIND one level below a principal (`/dav/{x}/{y}/`) is a 404 unless it is one of the caller's own two home sets: emersion would answer any other such path — another user's home, `/dav/{me}/{anything}/` — with an empty 207 (F11). 404, not 403, like everything below another user's home; shares live under the sharee's own home and are unaffected.
   - `context.go` — WebDAV request context.
   - `caldav_backend.go` — CalDAV protocol operations (calendars, events, iCalendar parsing). `ResolvePath` caps a subscribed calendar (story 100) at read-only via `calendar.EffectivePermission`, which is what makes PUT and DELETE on its objects return 403 without either handler knowing subscriptions exist. Collection-level operations that are the OWNER's prerogative — deleting the collection, PROPPATCHing its displayname — therefore compare `c.UserID` against the authenticated user instead of testing for `PermissionOwner`, or the cap would lock an owner out of their own subscription.
   - `carddav_backend.go` — CardDAV protocol operations (address books, contacts, vCard parsing).

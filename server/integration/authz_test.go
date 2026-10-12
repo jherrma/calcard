@@ -171,25 +171,18 @@ func TestAuthorizationBoundaries(t *testing.T) {
 	// principal path. The DAV backend checks that the URL's username segment
 	// matches the authenticated user's username, so the request must fail.
 
-	t.Run("Bob cannot PROPFIND Alice's CalDAV home with his own credentials", func(t *testing.T) {
+	t.Run("Bob cannot PROPFIND Alice's DAV homes with his own credentials", func(t *testing.T) {
 		_, bobAppPass := createAppPassword(t, bobToken, "authz-bob-dav")
-		status, _, body := davCall(t, "PROPFIND",
-			"/dav/"+aliceUser+"/calendars/",
-			"authz-bob@example.test", bobAppPass,
-			propfindCalendarHomeBody, depthHeader("1"))
-		// The server may answer 207 with an empty multistatus, or return
-		// 404/403 — but the response must not include Alice's calendar data.
-		assert.NotContains(t, string(body), "Alice's Calendar",
-			"Bob's DAV request to Alice's principal must not leak her calendar name")
-		// Any 2xx that did contain content would have tripped the assertion
-		// above. A 403/404 is also fine. What we must not see is 207 with
-		// Alice's content.
-		if status == http.StatusMultiStatus {
-			// Ensure the body is at most a bare multistatus skeleton for Bob
-			// himself — i.e. no `<calendar>` resourcetype from another user's
-			// home set. We simply verify Alice's name didn't leak (checked).
-			return
+		// F11: these used to answer 207 with an empty multistatus. Another
+		// user's home is a 404, like everything below it.
+		for _, home := range []string{"calendars", "addressbooks"} {
+			status, _, body := davCall(t, "PROPFIND",
+				"/dav/"+aliceUser+"/"+home+"/",
+				"authz-bob@example.test", bobAppPass,
+				propfindCalendarHomeBody, depthHeader("1"))
+			assert.Equal(t, http.StatusNotFound, status, "PROPFIND on Alice's %s home", home)
+			assert.NotContains(t, string(body), "Alice's",
+				"Bob's DAV request to Alice's home must not leak her collection names")
 		}
-		assert.GreaterOrEqual(t, status, 400)
 	})
 }
