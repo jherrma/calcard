@@ -2,6 +2,7 @@ package apppassword
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -97,6 +98,10 @@ func (uc *CreateCardDAVCredentialUseCase) Execute(ctx context.Context, userID ui
 	}
 
 	if err := uc.credRepo.Create(ctx, cred); err != nil {
+		// Taken despite the check above (a concurrent create): same answer.
+		if errors.Is(err, user.ErrCredentialUsernameTaken) {
+			return nil, fmt.Errorf("username '%s' is already in use", input.Username)
+		}
 		return nil, fmt.Errorf("failed to create credential: %w", err)
 	}
 

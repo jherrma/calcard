@@ -36,12 +36,12 @@ func (uc *RevokeCalendarShareUseCase) Execute(ctx context.Context, requestingUse
 	// 2. Get share
 	share, err := uc.shareRepo.GetByUUID(ctx, shareUUID)
 	if err != nil || share == nil {
-		return fmt.Errorf("share not found")
+		return ErrCalendarShareNotFound
 	}
 
 	// 3. Verify share belongs to calendar
 	if share.CalendarID != calendarID {
-		return fmt.Errorf("share not found")
+		return ErrCalendarShareNotFound
 	}
 
 	// 4. Revoke (Delete)

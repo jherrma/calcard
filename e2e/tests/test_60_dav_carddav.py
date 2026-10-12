@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from harness import xml
-from harness.checks import known
 from harness.data import PNG_PIXEL, PROPFIND_COLLECTION, PROPFIND_LIST, vcard
 from harness.xml import el, lp
 
@@ -61,20 +60,48 @@ def test_mkcol(t, e2e, u1, st):
     t.xpath(r, lp("resourcetype", "addressbook"))
 
 
-@known("F03")
 def test_mkcol_existing(t, e2e, u1, st):
     """MKCOL on an existing address book is refused (405)"""
     t.need(st, "slug")
-    # F03: answers 201 and inserts another address book at the same path.
     r = u1.dav("MKCOL", f"{u1.home_ab}{st.slug}/", xml=MKCOL_BODY)
-    t.bug.status(r, 405, was=201, msg="MKCOL on an existing address book (RFC 4918 9.3.1)")
+    t.status(r, 405, msg="MKCOL on an existing address book (RFC 4918 9.3.1)")
     _, books = _books_at(u1, st.slug)
-    t.bug.true(len(books) == 1, f"no duplicate address book may be created at '{st.slug}' ({len(books)} there now)",
-               was=len(books) > 1)
+    t.true(len(books) == 1, f"no duplicate address book may be created at '{st.slug}' ({len(books)} there now)")
     if len(books) > 1:
         for b in books:
             e2e.defer(f"delete duplicate address book at {st.slug}", e2e.cleanup_api, u1, "DELETE",
                       f"/addressbooks/{b['UUID']}", json=CONFIRM)
+
+
+def _mkcol_props(props):
+    return ('<?xml version="1.0" encoding="utf-8"?>\n<d:mkcol xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">'
+            "<d:set><d:prop><d:resourcetype><d:collection/><c:addressbook/></d:resourcetype>"
+            f"{props}</d:prop></d:set></d:mkcol>")
+
+
+def test_mkcol_description(t, e2e, u1):
+    """extended MKCOL keeps the addressbook-description (DAVx5 payload)"""
+    slug = e2e.uniq("descbook")
+    r = u1.dav("MKCOL", f"{u1.home_ab}{slug}/", xml=_mkcol_props(
+        "<d:displayname>Described</d:displayname><c:addressbook-description>from DAVx5</c:addressbook-description>"))
+    if not t.status(r, 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    _, books = _books_at(u1, slug)
+    t.eq(books[0].get("Description") if books else None, "from DAVx5", "addressbook-description")
+
+
+def test_mkcol_refused_property(t, e2e, u1):
+    """extended MKCOL with a property the server cannot set creates nothing (403 mkcol-response)"""
+    slug = e2e.uniq("refusedbook")
+    r = u1.dav("MKCOL", f"{u1.home_ab}{slug}/", xml=_mkcol_props(
+        '<d:displayname>never created</d:displayname><x:frobnicate xmlns:x="urn:x-e2e">1</x:frobnicate>'))
+    _, books = _books_at(u1, slug)
+    if books:
+        _cleanup_path(e2e, u1, slug)
+    t.status(r, 403, msg="RFC 5689 3: the whole MKCOL fails when a property cannot be set")
+    t.xpath(r, f"{lp('mkcol-response', 'propstat')}[{el('status')}[contains(., '403')]]/{el('prop')}/{el('frobnicate')}")
+    t.eq(len(books), 0, "the refused MKCOL must not create an address book")
 
 
 def test_put_create(t, e2e, u1, cc, st):

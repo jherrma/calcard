@@ -128,7 +128,14 @@ func (b *CalDAVBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, e
 func (b *CalDAVBackend) GetCalendar(ctx context.Context, p string) (*caldav.Calendar, error) {
 	// Single resolver so owned/shared resolution (and UUID-vs-legacy-path
 	// matching) can never diverge between GetCalendar and ResolvePath.
-	c, u, perm, err := b.ResolvePath(ctx, p)
+	//
+	// Uncapped on purpose: the permission only decides how mapCalendar
+	// addresses the collection (owner path vs. share UUID), which is a matter
+	// of ownership, not of write access. With the subscription cap an owned
+	// subscription would be mapped as a share, and emersion lists a Depth 1
+	// PROPFIND's members under the returned path — a UUID URL that does not
+	// resolve for the owner, so the PROPFIND answered 404 (F21).
+	c, u, perm, err := b.resolvePathUncapped(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +154,15 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
+	// MKCOL/MKCALENDAR may only create a new resource (RFC 4918 §9.3.1, RFC
+	// 4791 §5.3.1 DAV:resource-must-be-null). emersion never checks, and there
+	// is no unique (user_id, path) index, so without this a repeat request
+	// inserted a second calendar at the same path. Resolve the URL the way
+	// every other DAV request does, so a shared calendar's URL counts too.
+	if _, _, _, err := b.resolvePathUncapped(ctx, cal.Path); err == nil {
+		return webdav.NewHTTPError(http.StatusMethodNotAllowed, errors.New("caldav: a collection already exists at this URL"))
+	}
+
 	calPath := parts[3]
 	c := &calendar.Calendar{
 		UUID:                uuid.New().String(),
@@ -157,6 +173,11 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 		Color:               "#3788d8",
 		Timezone:            "UTC",
 		SupportedComponents: "VEVENT,VTODO",
+	}
+	// The MKCALENDAR / extended MKCOL properties go-webdav cannot carry
+	// (validated beforehand by prepareCollectionMkcol, mkcol.go).
+	if props, ok := mkcolCalendarPropsFrom(ctx); ok {
+		props.applyTo(c)
 	}
 	// SyncToken/CTag are minted by Create together with a change-log anchor row.
 	return b.calendarRepo.Create(ctx, c)
@@ -258,9 +279,11 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 
 	// A calendar object resource must hold one UID and one component type
 	// (RFC 4791 §4.1). That is the client's mistake: answer with the
-	// valid-calendar-object-resource precondition, not a 500.
-	_, uid, err := caldav.ValidateCalendarObject(icalCal)
-	if err != nil {
+	// valid-calendar-object-resource precondition, not a 500. The library
+	// check passes an object without any calendar component (an empty
+	// VCALENDAR, only VTIMEZONEs) or without a UID, so reject those here.
+	compType, uid, err := caldav.ValidateCalendarObject(icalCal)
+	if err != nil || compType == "" || uid == "" {
 		return nil, caldav.NewPreconditionError(caldav.PreconditionValidCalendarObjectResource)
 	}
 
@@ -275,10 +298,21 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 	for _, comp := range icalCal.Children {
 		if comp.Name == ical.CompEvent || comp.Name == ical.CompToDo {
 			if comp.Props.Get(ical.PropDateTimeStamp) == nil {
-				comp.Props.SetDateTime(ical.PropDateTimeStamp, time.Now())
+				// UTC, or go-ical writes DTSTAMP;TZID=Local:… (RFC 5545 §3.8.7.2, F04).
+				comp.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
 			}
 		}
 	}
+
+	// The encoder enforces RFC 5545 (exactly one UID, at most one SUMMARY,
+	// not both DTEND and DURATION, …). Writing into a strings.Builder cannot
+	// fail, so an error here means the body is not valid iCalendar:
+	// valid-calendar-data (RFC 4791 §5.3.2.1), checked before any lookup.
+	var icalData strings.Builder
+	if err := ical.NewEncoder(&icalData).Encode(icalCal); err != nil {
+		return nil, caldav.NewPreconditionError(caldav.PreconditionValidCalendarData)
+	}
+	data := icalData.String()
 
 	// A swallowed lookup error would make a transient DB failure look like a
 	// missing object, turning what should be an update into a create (and
@@ -326,11 +360,6 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 		return nil, caldav.NewPreconditionError(caldav.PreconditionNoUIDConflict)
 	}
 
-	var icalData strings.Builder
-	if err := ical.NewEncoder(&icalData).Encode(icalCal); err != nil {
-		return nil, err
-	}
-	data := icalData.String()
 	etag := calendar.NewETag()
 
 	var obj *calendar.CalendarObject
@@ -532,7 +561,7 @@ func (b *CalDAVBackend) mapCalendar(username string, c *calendar.Calendar, permi
 		Path:                  fmt.Sprintf("/dav/%s/calendars/%s/", username, pathSeg),
 		Name:                  c.Name,
 		Description:           desc,
-		SupportedComponentSet: []string{"VEVENT", "VTODO"},
+		SupportedComponentSet: calendarComponentSet(c.SupportedComponents),
 	}
 }
 
