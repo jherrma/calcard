@@ -53,7 +53,8 @@ type Repository interface {
 	// (SearchObjects, filtered on address_books.user_id) was removed in #162: it
 	// could not reach a shared book, so a contact the caller could see and edit
 	// disappeared as soon as they searched for it. An empty slice matches nothing
-	// rather than everything.
+	// rather than everything. query is a case-insensitive substring of the name,
+	// e-mail, phone or organization columns, with LIKE wildcards matched literally.
 	SearchObjectsInBooks(ctx context.Context, addressBookIDs []uint, query string, limit, offset int) ([]AddressObject, error)
 
 	// GetUserPermission resolves a user's effective permission on an address

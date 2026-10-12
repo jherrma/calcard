@@ -1,12 +1,16 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/config"
+	"github.com/mattn/go-sqlite3"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -14,6 +18,45 @@ import (
 
 type sqliteDB struct {
 	db *gorm.DB
+}
+
+// sqliteDriverName is mattn/go-sqlite3 with a Unicode-aware lower() (F26).
+const sqliteDriverName = "sqlite3_calcard"
+
+var registerSQLiteOnce sync.Once
+
+// registerSQLiteDriver registers sqliteDriverName. SQLite's built-in lower()
+// folds ASCII only, so a case-insensitive search for "ärztin" missed
+// "Ärztin" — and the CardDAV text-match path, which lower-cases its query in
+// Go, missed it even for an identically-cased query — while PostgreSQL's
+// lower() folds Unicode. Overloading the built-in on every pooled connection
+// (SQLite lets an application function replace one) makes LOWER() mean the
+// same on both drivers, and the same as the Go-side strings.ToLower the
+// search use case applies to collection names.
+func registerSQLiteDriver() {
+	registerSQLiteOnce.Do(func() {
+		sql.Register(sqliteDriverName, &sqlite3.SQLiteDriver{
+			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+				return conn.RegisterFunc("lower", unicodeLower, true)
+			},
+		})
+	})
+}
+
+// unicodeLower mirrors the built-in's contract apart from the folding: NULL
+// stays NULL and any other value is lower-cased as text.
+func unicodeLower(v any) any {
+	switch x := v.(type) {
+	case string:
+		return strings.ToLower(x)
+	case []byte:
+		if x == nil { // how mattn/go-sqlite3 passes SQL NULL
+			return nil
+		}
+		return strings.ToLower(string(x))
+	default:
+		return fmt.Sprint(x)
+	}
 }
 
 // NewSQLite creates a new SQLite database connection
@@ -33,7 +76,8 @@ func NewSQLite(cfg *config.Config) (Database, error) {
 		LogLevel:                  logger.Warn,
 		IgnoreRecordNotFoundError: true,
 	})
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	registerSQLiteDriver()
+	db, err := gorm.Open(sqlite.New(sqlite.Config{DriverName: sqliteDriverName, DSN: dsn}), &gorm.Config{
 		Logger: dbLogger,
 	})
 	if err != nil {

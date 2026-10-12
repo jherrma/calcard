@@ -12,6 +12,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
+	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/stretchr/testify v1.12.1
 	github.com/teambition/rrule-go v1.8.2
 	golang.org/x/crypto v0.57.0
@@ -36,7 +37,6 @@ require (
 	github.com/kr/text v0.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/mattn/go-sqlite3 v1.14.52 // indirect
 	github.com/molecule-man/go-brrr v1.1.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.8.0 // indirect
