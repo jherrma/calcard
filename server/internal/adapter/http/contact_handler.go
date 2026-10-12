@@ -139,6 +139,17 @@ func (h *ContactHandler) contactPermission(c fiber.Ctx, contactUUID string) addr
 	return h.addressBookPermission(c, obj.AddressBookID)
 }
 
+// contactErrorResponse answers a failed contact write. A contact that does not
+// exist, or does not live in the book named in the path, is a 404 with the body
+// GET and PATCH already send for it (F05: it used to be a 500); anything else
+// is a genuine server error.
+func contactErrorResponse(c fiber.Ctx, err error) error {
+	if errors.Is(err, contactuc.ErrContactNotFound) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Contact not found"})
+	}
+	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+}
+
 // GET /api/v1/addressbooks/:addressbook_id/contacts
 func (h *ContactHandler) List(c fiber.Ctx) error {
 	abID, ok, errResp := h.requireAddressBookRead(c)
@@ -259,8 +270,7 @@ func (h *ContactHandler) Delete(c fiber.Ctx) error {
 	contactID := c.Params("contact_id")
 
 	if err := h.deleteUC.Execute(c.Context(), abID, contactID); err != nil {
-		// Can distinguish not found vs others by error type if needed
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return contactErrorResponse(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -353,7 +363,7 @@ func (h *ContactHandler) Move(c fiber.Ctx) error {
 
 	res, err := h.moveUC.Execute(c.Context(), userID, contactID, targetID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return contactErrorResponse(c, err)
 	}
 
 	return c.JSON(res)
@@ -396,7 +406,7 @@ func (h *ContactHandler) UploadPhoto(c fiber.Ctx) error {
 	}
 
 	if err := h.photoUC.Upload(c.Context(), abID, contactID, data); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return contactErrorResponse(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -411,7 +421,7 @@ func (h *ContactHandler) DeletePhoto(c fiber.Ctx) error {
 	contactID := c.Params("contact_id")
 
 	if err := h.photoUC.Delete(c.Context(), abID, contactID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return contactErrorResponse(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
