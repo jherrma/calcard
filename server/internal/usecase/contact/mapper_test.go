@@ -78,6 +78,24 @@ func TestToVCard(t *testing.T) {
 	assert.Contains(t, vcardStr, "END:VCARD")
 }
 
+// TestToVCardDerivesMissingFN is the regression test for F27 (c): a REST
+// contact saved without formatted_name used to be stored with an empty "FN:",
+// so every client showed it nameless. FN is now derived from the name parts.
+func TestToVCardDerivesMissingFN(t *testing.T) {
+	vcardStr, err := ToVCard(&contact.Contact{UID: "no-fn", GivenName: "Grace", FamilyName: "Hopper"})
+	assert.NoError(t, err)
+	assert.Contains(t, vcardStr, "FN:Grace Hopper\r\n")
+
+	c, err := ToContact(vcardStr)
+	assert.NoError(t, err)
+	assert.Equal(t, "Grace Hopper", c.FormattedName)
+
+	// An explicit formatted name always wins.
+	vcardStr, err = ToVCard(&contact.Contact{UID: "fn", FormattedName: "Amazing Grace", GivenName: "Grace"})
+	assert.NoError(t, err)
+	assert.Contains(t, vcardStr, "FN:Amazing Grace\r\n")
+}
+
 // TestToVCardRevIsUTC: REV is written with a "Z" suffix, so its value must be
 // the UTC clock (F04). The process zone is forced to +05:00 so a local wall
 // clock labelled "Z" shows up as five hours off on any host.

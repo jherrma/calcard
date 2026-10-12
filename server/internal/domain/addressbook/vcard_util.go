@@ -54,6 +54,51 @@ func SplitCommaListFields(card vcard.Card) {
 	}
 }
 
+// EnsureFormattedName gives a card without a usable FN one derived from its
+// other properties and reports whether the card now has a non-empty FN.
+//
+// FN is the one property every vCard must carry (RFC 6350 §6.2.1, RFC 2426
+// §3.1.1) and the one clients display. CalCard does not reject a card for
+// lacking it — lenient legacy clients send such cards — but the paths that
+// build or import cards (REST, .vcf import) fill it in rather than store a
+// contact no client can show by name. The source is, in order: N (prefix,
+// given, additional, family, suffix), ORG (its first component), NICKNAME,
+// EMAIL, TEL. A card with none of them is left as it is.
+func EnsureFormattedName(card vcard.Card) bool {
+	if strings.TrimSpace(card.PreferredValue(vcard.FieldFormattedName)) != "" {
+		return true
+	}
+	name := derivedFormattedName(card)
+	if name == "" {
+		return false
+	}
+	card.SetValue(vcard.FieldFormattedName, name)
+	return true
+}
+
+func derivedFormattedName(card vcard.Card) string {
+	if n := card.Name(); n != nil {
+		var parts []string
+		for _, p := range []string{n.HonorificPrefix, n.GivenName, n.AdditionalName, n.FamilyName, n.HonorificSuffix} {
+			if p = strings.TrimSpace(p); p != "" {
+				parts = append(parts, p)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, " ")
+		}
+	}
+	if org, _, _ := strings.Cut(card.PreferredValue(vcard.FieldOrganization), ";"); strings.TrimSpace(org) != "" {
+		return strings.TrimSpace(org)
+	}
+	for _, field := range []string{vcard.FieldNickname, vcard.FieldEmail, vcard.FieldTelephone} {
+		if v := strings.TrimSpace(card.PreferredValue(field)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // RestoreVCardCommaLists rewrites an encoded vCard so comma-list properties keep
 // their raw comma separators instead of the escaped form go-vcard emits. The
 // encoder writes one unfolded property per line, so a line-oriented pass is

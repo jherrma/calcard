@@ -67,6 +67,8 @@ Contact management:
 - `move.go` — Move contact between address books.
 - `photo.go` — Contact photo handling.
 - `mapper.go` — Contact-to-DTO mapping utilities.
+  `applyContactToCard` fills a missing FN from N / ORG / NICKNAME / EMAIL / TEL (RFC 6350 §6.2.1,
+  `addressbook.EnsureFormattedName`), so a REST contact saved without `formatted_name` is never nameless.
 
 ### [search/](search/)
 
@@ -112,6 +114,10 @@ Data import and export:
 - `calendar_import_timezone.go` — Copies the file's `VTIMEZONE`s into each imported object that references their TZID (RFC 5545 §3.2.19), sorted so the encoding is stable.
 - `contact_import.go` — Import vCard (.vcf) files.
 - `import_path.go` — Helpers shared by both imports (F23): a missing DTSTAMP is added (import time, UTC) instead of failing the event, and the DAV resource name is `<uid>.ics`/`.vcf` only for a short URL-safe UID on a free path, otherwise `<uuid>.ics` — a UID may contain `/` or `..`. Duplicates are matched by UID, never by path; `replace` keeps the replaced object's path when it is still a usable segment.
+  Every card is decoded first and fails (`failed`, with the reason in `errors`) without a VERSION,
+  with a VERSION other than 3.0/4.0 (what the CardDAV collections advertise), or when it does not
+  decode. A missing FN is derived (`addressbook.EnsureFormattedName`); only a card with nothing to
+  derive it from fails. Stored as the go-vcard encoding of the parsed card, like REST and DAV PUT (F27).
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.
 

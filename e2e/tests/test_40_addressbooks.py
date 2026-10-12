@@ -137,6 +137,22 @@ def test_ab_contact_get_patch(t, e2e, u1, st):
     t.json(r, "uid", st.ct_uid, "the UID never changes")
 
 
+def test_ab_contact_derived_fn(t, e2e, u1):
+    """a contact created without formatted_name gets an FN derived from its name"""
+    ab = u1.mk_addressbook(e2e.uniq("derive-fn"))
+    rid = e2e.run_id
+    r = u1.api("POST", f"/addressbooks/{ab['UUID']}/contacts", json={"given_name": "Grace",
+                                                                     "family_name": f"Hopper{rid}"})
+    if not t.status(r, 201):
+        return
+    # RFC 6350 6.2.1: FN is required; it used to be stored as an empty "FN:".
+    t.json(r, "formatted_name", f"Grace Hopper{rid}")
+    r = u1.api("GET", f"/addressbooks/{ab['UUID']}/export")
+    if t.status(r, 200):
+        t.contains(r, f"FN:Grace Hopper{rid}")
+        t.true("FN:\r\n" not in r.text, "no exported card may carry an empty FN", r)
+
+
 def test_ab_contact_paging(t, e2e, u1):
     """contact list pages with limit/offset and sorts by name"""
     pg = u1.mk_addressbook(e2e.uniq("paging"))

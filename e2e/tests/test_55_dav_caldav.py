@@ -355,6 +355,23 @@ def test_vtodo(t, e2e, u1, st):
     st.todo_uid = uid
 
 
+def test_put_unsupported_component(t, e2e, u1, st):
+    """PUT of a VJOURNAL / VFREEBUSY is refused with supported-calendar-component (403)"""
+    bodies = {
+        "VJOURNAL": "BEGIN:VJOURNAL\r\nUID:{uid}\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:notes\r\nEND:VJOURNAL\r\n",
+        "VFREEBUSY": ("BEGIN:VFREEBUSY\r\nUID:{uid}\r\nDTSTAMP:20260101T000000Z\r\nDTSTART:20300101T000000Z\r\n"
+                      "DTEND:20300102T000000Z\r\nEND:VFREEBUSY\r\n"),
+    }
+    for comp, block in bodies.items():
+        uid = e2e.uniq(comp.lower())
+        obj = f"{st.col}{uid}.ics"
+        r = u1.dav("PUT", obj, ics=ics_calendar(block.format(uid=uid)))
+        # The collection's supported-calendar-component-set is VEVENT + VTODO.
+        if t.status(r, 403, msg=f"{comp} in a VEVENT/VTODO collection (RFC 4791 5.3.2.1)"):
+            t.contains(r, "supported-calendar-component", "names the failed precondition")
+        t.status(u1.dav("GET", obj), 404, msg=f"the {comp} must not have been stored")
+
+
 def test_override(t, e2e, u1, st):
     """recurrence overrides (RECURRENCE-ID) round-trip"""
     uid, obj = f"{e2e.uniq('series')}@e2e", f"{st.col}{e2e.uniq('series')}.ics"

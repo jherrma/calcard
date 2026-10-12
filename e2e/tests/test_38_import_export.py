@@ -270,3 +270,40 @@ def test_vcf_export(t, e2e, u1, u2, imp):
     r = u2.api("GET", f"/addressbooks/{ab}/export")
     t.status_class(r, "4xx", msg="U2 exporting U1's address book")
     t.not_contains(r, f"Ada Import{e2e.run_id}")
+
+
+def test_vcf_invalid(t, e2e, u1):
+    """contact import refuses cards without VERSION or with vCard 2.1, with a reason"""
+    ab = u1.mk_addressbook(e2e.uniq("import-invalid"))["UUID"]
+    tag = e2e.run_id
+    vcf = (f"BEGIN:VCARD\r\nUID:{tag}-nover\r\nFN:No Version{tag}\r\nEND:VCARD\r\n"
+           f"BEGIN:VCARD\r\nVERSION:2.1\r\nUID:{tag}-v21\r\nFN:Old Card{tag}\r\nN:Card{tag};Old;;;\r\nEND:VCARD\r\n"
+           f"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:{tag}-ok\r\nFN:Valid Card{tag}\r\nEND:VCARD\r\n")
+    r = u1.api("POST", f"/addressbooks/{ab}/import", data=vcf, ctype="text/vcard")
+    if not t.status(r, 200):
+        return
+    t.json(r, "total", 3)
+    t.json(r, "imported", 1)
+    t.json(r, "failed", 2, "a card without VERSION (RFC 6350 6.7.9) and a 2.1 card must fail")
+    reasons = {e.get("uid"): e.get("error", "") for e in (r.jdict().get("errors") or [])}
+    t.true("VERSION" in reasons.get(f"{tag}-nover", ""), "the missing VERSION is named", r)
+    t.true("2.1" in reasons.get(f"{tag}-v21", ""), "the unsupported version is named", r)
+    r = u1.api("GET", f"/addressbooks/{ab}/contacts?limit=100")
+    if t.status(r, 200):
+        t.jq(r, lambda j: [c["formatted_name"] for c in j["Contacts"]] == [f"Valid Card{tag}"],
+             "only the valid card is stored")
+
+
+def test_vcf_no_fn(t, e2e, u1):
+    """contact import derives a missing FN from N"""
+    ab = u1.mk_addressbook(e2e.uniq("import-no-fn"))["UUID"]
+    tag = e2e.run_id
+    r = u1.api("POST", f"/addressbooks/{ab}/import",
+               data=f"BEGIN:VCARD\r\nVERSION:3.0\r\nUID:{tag}-nofn\r\nN:Lovelace{tag};Ada;;;\r\nEND:VCARD\r\n",
+               ctype="text/vcard")
+    if not t.status(r, 200):
+        return
+    t.json(r, "imported", 1)
+    r = u1.api("GET", f"/addressbooks/{ab}/export")
+    if t.status(r, 200):
+        t.contains(r, f"FN:Ada Lovelace{tag}", "FN is required (RFC 6350 6.2.1); derived from N")
