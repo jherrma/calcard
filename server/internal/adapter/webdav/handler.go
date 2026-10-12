@@ -208,7 +208,10 @@ func (h *Handler) Authenticate() fiber.Handler {
 }
 
 func (h *Handler) Handler() fiber.Handler {
-	return func(c fiber.Ctx) error {
+	// Every error leaving the dispatcher goes through serveDAVError, so a
+	// backend "404 Not Found" from one of our own sub-handlers is a 404 and not
+	// Fiber's 500 (F17).
+	serve := func(c fiber.Ctx) error {
 		u := c.Locals("user").(*user.User)
 		stdCtx := WithUser(c.Context(), u)
 		reqPath := c.Path()
@@ -427,6 +430,9 @@ func (h *Handler) Handler() fiber.Handler {
 			}
 		}
 		return nil
+	}
+	return func(c fiber.Ctx) error {
+		return serveDAVError(c, serve(c))
 	}
 }
 
