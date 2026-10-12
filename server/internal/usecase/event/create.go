@@ -52,6 +52,12 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 			input.End = input.End.In(loc)
 		}
 	}
+	// Without a usable timezone, an offset-bearing time is stored in UTC rather
+	// than with an empty TZID (F22). All-day values keep their wall-clock date.
+	if !input.IsAllDay {
+		input.Start = icalDateTime(input.Start)
+		input.End = icalDateTime(input.End)
+	}
 
 	icalData, err := uc.generateICal(input, eventUID)
 	if err != nil {

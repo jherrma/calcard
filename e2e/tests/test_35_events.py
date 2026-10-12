@@ -150,6 +150,53 @@ def test_allday(t, e2e, u1, cal):
     t.match(r, "DTSTART;VALUE=DATE:20300201", "all-day events are stored as DATE values")
 
 
+def _dt_lines(text, summary):
+    """DTSTART/DTEND lines of the VEVENT with SUMMARY in an iCalendar body, sorted."""
+    for vevent in text.replace("\r", "").split("BEGIN:VEVENT")[1:]:
+        if f"\nSUMMARY:{summary}\n" in vevent:
+            return sorted(ln for ln in vevent.split("\n") if ln.startswith(("DTSTART", "DTEND")))
+    return []
+
+
+def test_offset_times(t, e2e, u1, cal):
+    """times with a UTC offset and no timezone keep their instant (stored as UTC)"""
+    summary = f"Offset {e2e.run_id}"
+    r = u1.api("POST", f"/calendars/{cal.ev['uuid']}/events", json={
+        "summary": summary, "start": "2030-03-01T10:00:00+05:00", "end": "2030-03-01T11:00:00+05:00", "all_day": False})
+    if not t.status(r, 201):
+        return
+    ev_id = r.jdict().get("id")
+    t.json(r, "start", "2030-03-01T05:00:00Z", "10:00+05:00 is 05:00 UTC")
+    t.json(r, "end", "2030-03-01T06:00:00Z")
+    r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/export")
+    # F22: was DTSTART;TZID=:20300301T100000 (empty TZID, read as 10:00 UTC).
+    t.eq(_dt_lines(r.text, summary), ["DTEND:20300301T060000Z", "DTSTART:20300301T050000Z"],
+         "an offset time without a timezone is stored as the same instant in UTC")
+
+    r = u1.api("PATCH", f"/calendars/{cal.ev['uuid']}/events/{ev_id}", json={
+        "start": "2030-03-02T10:00:00-03:30", "end": "2030-03-02T11:00:00-03:30"})
+    if not t.status(r, 200):
+        return
+    t.json(r, "start", "2030-03-02T13:30:00Z", "10:00-03:30 is 13:30 UTC")
+    r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/export")
+    t.eq(_dt_lines(r.text, summary), ["DTEND:20300302T143000Z", "DTSTART:20300302T133000Z"],
+         "a PATCH with offset times is stored in UTC too")
+    if u1.ensure_dav():
+        r = u1.dav("GET", f"{u1.home_cal}{cal.ev['path']}/{ev_id}.ics")
+        if t.status(r, 200):
+            t.eq(_dt_lines(r.text, summary), ["DTEND:20300302T143000Z", "DTSTART:20300302T133000Z"],
+                 "CalDAV serves the same UTC values")
+
+    r = u1.api("POST", f"/calendars/{cal.ev['uuid']}/events", json={
+        "summary": f"{summary} Berlin", "start": "2030-03-01T10:00:00+05:00", "end": "2030-03-01T11:00:00+05:00",
+        "timezone": "Europe/Berlin", "all_day": False})
+    if t.status(r, 201):
+        r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/export")
+        t.eq(_dt_lines(r.text, f"{summary} Berlin"),
+             ["DTEND;TZID=Europe/Berlin:20300301T070000", "DTSTART;TZID=Europe/Berlin:20300301T060000"],
+             "with a timezone the instant is converted into that zone")
+
+
 @known("F09")
 def test_wrong_calendar(t, u1, cal, st):
     """event URL must match its calendar"""
