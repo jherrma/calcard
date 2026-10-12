@@ -65,7 +65,7 @@ The adapter layer is responsible for translating data between the application's 
 
 - **Purpose**: Implements the CalDAV (RFC 4791) and CardDAV (RFC 6352) protocol backends.
 - **Key Components**:
-  - `handler.go` — WebDAV request dispatcher.
+  - `handler.go` — WebDAV request dispatcher. Every error it returns goes through `serveDAVError` (`errors.go`): a go-webdav `HTTPError` from our own hand-rolled sub-handlers (sync REPORT, collection PROPFIND/PROPPATCH) is answered with its status, as emersion does internally; Fiber's default handler would make it a 500 (F17). A missing and another user's collection both answer 404.
   - `context.go` — WebDAV request context.
   - `caldav_backend.go` — CalDAV protocol operations (calendars, events, iCalendar parsing). `ResolvePath` caps a subscribed calendar (story 100) at read-only via `calendar.EffectivePermission`, which is what makes PUT and DELETE on its objects return 403 without either handler knowing subscriptions exist. Collection-level operations that are the OWNER's prerogative — deleting the collection, PROPPATCHing its displayname — therefore compare `c.UserID` against the authenticated user instead of testing for `PermissionOwner`, or the cap would lock an owner out of their own subscription.
   - `carddav_backend.go` — CardDAV protocol operations (address books, contacts, vCard parsing).
