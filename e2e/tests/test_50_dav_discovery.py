@@ -215,3 +215,5 @@ def test_unknown(t, e2e, u1):
     t.status(u1.dav("PROPFIND", f"{u1.home_cal}no-such-calendar-{rid}/", depth=0, xml=PROPFIND_LIST), 404)
     t.status(u1.dav("GET", f"{u1.home_cal}no-such-calendar-{rid}/x.ics"), 404)
     t.status(u1.dav("PROPFIND", f"{u1.home_ab}no-such-book-{rid}/", depth=0, xml=PROPFIND_LIST), 404)
+    t.status(u1.dav("PROPFIND", f"/dav/{u1.username}/no-such-home-{rid}/", depth=1, xml=PROPFIND_LIST), 404,
+             msg="a path under the principal that is no home set")
