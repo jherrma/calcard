@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
@@ -358,4 +359,52 @@ func TestReleaseDeletedUserIdentities(t *testing.T) {
 
 	// The address and username are free again.
 	require.NoError(t, g.Create(&user.User{UUID: "u-back", Username: "gone", Email: "gone@x", PasswordHash: "x"}).Error)
+}
+
+// TestReleaseRevokedCredentialUsernames covers DAV credentials revoked by the
+// old Revoke, which only set revoked_at: the row kept its username in the
+// unique index, so the name could never be used again (F24).
+func TestReleaseRevokedCredentialUsernames(t *testing.T) {
+	dataDir, err := os.MkdirTemp("", "caldav-cred-release-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(dataDir)
+
+	cfg := &config.Config{
+		DataDir:  dataDir,
+		Database: config.DatabaseConfig{Driver: "sqlite", AutoMigrate: true},
+	}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	defer db.Close()
+	require.NoError(t, db.Migrate(Models()...))
+	g := db.DB()
+
+	require.NoError(t, g.Create(&user.User{ID: 1, UUID: "u-1", Username: "u1", Email: "u1@x", PasswordHash: "x"}).Error)
+	revokedAt := time.Now().Add(-time.Hour)
+	require.NoError(t, g.Create(&user.CalDAVCredential{UUID: "cal-revoked", UserID: 1, Name: "old", Username: "calname",
+		PasswordHash: "x", Permission: "read", RevokedAt: &revokedAt}).Error)
+	require.NoError(t, g.Create(&user.CalDAVCredential{UUID: "cal-live", UserID: 1, Name: "live", Username: "calive",
+		PasswordHash: "x", Permission: "read"}).Error)
+	require.NoError(t, g.Create(&user.CardDAVCredential{UUID: "card-revoked", UserID: 1, Name: "old", Username: "cardname",
+		PasswordHash: "x", Permission: "read", RevokedAt: &revokedAt}).Error)
+
+	require.NoError(t, RunDataMigrations(g))
+	require.NoError(t, RunDataMigrations(g)) // idempotent
+
+	var cal user.CalDAVCredential
+	require.NoError(t, g.Where("uuid = ?", "cal-revoked").First(&cal).Error)
+	require.Equal(t, "revoked:cal-revoked", cal.Username)
+	require.NotNil(t, cal.RevokedAt)
+	var live user.CalDAVCredential
+	require.NoError(t, g.Where("uuid = ?", "cal-live").First(&live).Error)
+	require.Equal(t, "calive", live.Username, "a live credential keeps its username")
+	var card user.CardDAVCredential
+	require.NoError(t, g.Where("uuid = ?", "card-revoked").First(&card).Error)
+	require.Equal(t, "revoked:card-revoked", card.Username)
+
+	// The released names can be taken by new credentials.
+	require.NoError(t, g.Create(&user.CalDAVCredential{UUID: "cal-new", UserID: 1, Name: "new", Username: "calname",
+		PasswordHash: "x", Permission: "read"}).Error)
+	require.NoError(t, g.Create(&user.CardDAVCredential{UUID: "card-new", UserID: 1, Name: "new", Username: "cardname",
+		PasswordHash: "x", Permission: "read"}).Error)
 }

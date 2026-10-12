@@ -41,7 +41,7 @@ The adapter layer is responsible for translating data between the application's 
   - `calendar_repo.go` — Calendar persistence. `ReplaceFeedObjects` makes a subscribed calendar's contents match a feed in one transaction (story 100) — one sync token per changed resource but a single calendar-row update, and an unchanged feed touches neither, so a static `.ics` republished hourly does not wake every DAV client. `Delete` cascades to the calendar's subscription row, because a calendar can be deleted from three places and only one of them knows subscriptions exist.
   - `addressbook_repository.go` — AddressBook and contact persistence (with pagination and search).
   - `app_password_repo.go` — App password storage.
-  - `caldav_credential_repo.go`, `carddav_credential_repo.go` — DAV credential storage.
+  - `caldav_credential_repo.go`, `carddav_credential_repo.go` — DAV credential storage. The username's unique index also covers revoked rows, so `Revoke` rewrites the name to `revoked:<uuid>` to free it (F24; `releaseRevokedCredentialUsernames` in `RunDataMigrations` does the same for older rows), and `Create` turns a unique violation into `user.ErrCredentialUsernameTaken` (the handlers' 409), never the raw driver error.
   - `mcp_token_repo.go` — MCP access-token storage, looked up by SHA-256 of the presented secret (#104).
   - `subscription_repo.go` — Calendar-subscription storage, incl. `FindDue` (the worker's only query, story 100).
   - `calendar_share_repo.go`, `addressbook_share_repo.go` — Sharing persistence.

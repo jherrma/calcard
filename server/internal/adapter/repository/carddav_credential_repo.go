@@ -18,8 +18,14 @@ func NewCardDAVCredentialRepository(db *gorm.DB) user.CardDAVCredentialRepositor
 	return &gormCardDAVCredentialRepo{db: db}
 }
 
+// Create stores a new credential. A username the unique index already holds
+// yields user.ErrCredentialUsernameTaken, never the raw driver error.
 func (r *gormCardDAVCredentialRepo) Create(ctx context.Context, cred *user.CardDAVCredential) error {
-	return r.db.WithContext(ctx).Create(cred).Error
+	err := r.db.WithContext(ctx).Create(cred).Error
+	if err != nil && isUniqueViolation(r.db, err) {
+		return user.ErrCredentialUsernameTaken
+	}
+	return err
 }
 
 func (r *gormCardDAVCredentialRepo) GetByUUID(ctx context.Context, uuid string) (*user.CardDAVCredential, error) {
@@ -53,9 +59,14 @@ func (r *gormCardDAVCredentialRepo) Update(ctx context.Context, cred *user.CardD
 	return r.db.WithContext(ctx).Save(cred).Error
 }
 
+// Revoke sets revoked_at and releases the username (rewritten to
+// "revoked:<uuid>") so it can be used again (F24).
 func (r *gormCardDAVCredentialRepo) Revoke(ctx context.Context, id uint) error {
 	now := time.Now()
-	return r.db.WithContext(ctx).Model(&user.CardDAVCredential{}).Where("id = ?", id).Update("revoked_at", now).Error
+	return r.db.WithContext(ctx).Model(&user.CardDAVCredential{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"revoked_at": now,
+		"username":   revokedCredentialUsername,
+	}).Error
 }
 
 func (r *gormCardDAVCredentialRepo) UpdateLastUsed(ctx context.Context, id uint, ip string) error {
