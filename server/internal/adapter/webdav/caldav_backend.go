@@ -256,6 +256,10 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 	}
 	objPath := parts[4]
 
+	if err := checkSupportedComponents(icalCal); err != nil {
+		return nil, err
+	}
+
 	// A calendar object resource must hold one UID and one component type
 	// (RFC 4791 §4.1). That is the client's mistake: answer with the
 	// valid-calendar-object-resource precondition, not a 500.
@@ -532,7 +536,7 @@ func (b *CalDAVBackend) mapCalendar(username string, c *calendar.Calendar, permi
 		Path:                  fmt.Sprintf("/dav/%s/calendars/%s/", username, pathSeg),
 		Name:                  c.Name,
 		Description:           desc,
-		SupportedComponentSet: []string{"VEVENT", "VTODO"},
+		SupportedComponentSet: calendarComponentSet,
 	}
 }
 

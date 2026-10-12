@@ -60,6 +60,8 @@ Contact management:
 - `move.go` — Move contact between address books.
 - `photo.go` — Contact photo handling.
 - `mapper.go` — Contact-to-DTO mapping utilities.
+  `applyContactToCard` fills a missing FN from N / ORG / NICKNAME / EMAIL / TEL (RFC 6350 §6.2.1,
+  `addressbook.EnsureFormattedName`), so a REST contact saved without `formatted_name` is never nameless.
 
 ### [search/](search/)
 
@@ -98,6 +100,10 @@ Data import and export:
 
 - `calendar_import.go` — Import iCalendar (.ics) files.
 - `contact_import.go` — Import vCard (.vcf) files.
+  Every card is decoded first and fails (`failed`, with the reason in `errors`) without a VERSION,
+  with a VERSION other than 3.0/4.0 (what the CardDAV collections advertise), or when it does not
+  decode. A missing FN is derived (`addressbook.EnsureFormattedName`); only a card with nothing to
+  derive it from fails. Stored as the go-vcard encoding of the parsed card, like REST and DAV PUT (F27).
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.
 

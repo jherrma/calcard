@@ -244,6 +244,10 @@ func applyContactToCard(card vcard.Card, c *contact.Contact) {
 		card.Add(vcard.FieldPhoto, &vcard.Field{Value: c.Photo, Params: params})
 	}
 
+	// A contact saved without a formatted name still needs an FN (RFC 6350
+	// §6.2.1): derive it from the name, organization, … written above.
+	addressbook.EnsureFormattedName(card)
+
 	// Revision
 	card.SetValue(vcard.FieldRevision, time.Now().Format("20060102T150405Z"))
 }

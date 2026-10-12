@@ -71,6 +71,7 @@ The adapter layer is responsible for translating data between the application's 
   - `carddav_backend.go` — CardDAV protocol operations (address books, contacts, vCard parsing).
   - `propfind_collection.go` — the hand-rolled Depth:0 collection PROPFIND (sync-token, getctag, supported-report-set, displayname). Also reports `DAV:current-user-privilege-set` — the interoperable way to tell a client a collection is read-only, for subscriptions and read-only shares alike — and `CS:source` for a subscription. The resourcetype deliberately stays `<C:calendar/>` rather than `<CS:subscribed/>`: a client that does not know the subscribed type would stop treating the collection as a calendar and hide its events entirely.
   - `sync.go`, `sync_elements.go`, `sync_addressbook.go` — WebDAV-Sync (RFC 6578) for efficient incremental sync.
+  - `caldav_component.go` — `calendarComponentSet` (VEVENT, VTODO): the one list `mapCalendar` advertises as `supported-calendar-component-set` and `PutCalendarObject` enforces. A PUT holding any other component (VJOURNAL, VFREEBUSY, …; VTIMEZONE is always fine) is a **403** with `CALDAV:supported-calendar-component` (RFC 4791 §5.3.2.1), wrapped as `webdav.NewHTTPError(403, caldav.NewPreconditionError(…))` because the library's precondition helper is always 409 (F27).
 
 ## Design Philosophy
 

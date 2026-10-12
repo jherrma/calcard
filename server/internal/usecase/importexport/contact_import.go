@@ -3,8 +3,10 @@ package importexport
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/emersion/go-vcard"
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 )
@@ -59,16 +61,31 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 		// Ensure CRLF line endings
 		vcardData = normalizeLineEndings(vcardData)
 
+		// A card a CardDAV client cannot read must not be stored: it is
+		// served as-is later, and a missing VERSION even turns its DAV GET
+		// into a 500.
+		card, err := parseImportCard(vcardData)
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportError{
+				Index:   i,
+				UID:     extractVCardUID(vcardData),
+				Summary: extractVCardFN(vcardData),
+				Error:   err.Error(),
+			})
+			continue
+		}
+
 		// Extract UID
-		uid := extractVCardUID(vcardData)
+		uid := card.Value(vcard.FieldUID)
 		if uid == "" {
 			// Generate a UID if missing
 			uid = uuid.New().String()
-			vcardData = injectVCardUID(vcardData, uid)
+			card.SetValue(vcard.FieldUID, uid)
 		}
 
-		// Extract FN for error reporting
-		fn := extractVCardFN(vcardData)
+		// FN for error reporting (parseImportCard made sure there is one)
+		fn := card.PreferredValue(vcard.FieldFormattedName)
 
 		// Check for an existing contact with the same vCard UID in this book.
 		// Look up by vCard UID (GetObjectByUID), not the internal DB UUID —
@@ -96,8 +113,22 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 			case "duplicate":
 				// Generate new UID
 				uid = uuid.New().String()
-				vcardData = replaceVCardUID(vcardData, uid)
+				card.SetValue(vcard.FieldUID, uid)
 			}
+		}
+
+		// Store the card the way the REST and CardDAV write paths do: as the
+		// go-vcard encoding of the parsed card.
+		vcardData, err = encodeImportCard(card)
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, ImportError{
+				Index:   i,
+				UID:     uid,
+				Summary: fn,
+				Error:   fmt.Sprintf("invalid vCard: %v", err),
+			})
+			continue
 		}
 
 		// Create address object. The internal DB UUID must be unique and
@@ -110,13 +141,10 @@ func (uc *ContactImportUseCase) Execute(ctx context.Context, userID uint, addres
 			Path:          fmt.Sprintf("%s.vcf", uid),
 			ETag:          addressbook.NewETag(),
 			VCardData:     vcardData,
-			VCardVersion:  "3.0",
+			VCardVersion:  card.Value(vcard.FieldVersion),
 			ContentLength: len(vcardData),
 		}
-		// Populate denormalized columns from the canonical vCard blob. Parse
-		// errors are non-fatal: the GET endpoint re-parses on read, so the
-		// contact is still usable even if list/search can't find it.
-		_ = obj.PopulateDenormFieldsFromVCard()
+		addressbook.ExtractDenormFieldsFromCard(card, obj)
 
 		if err := uc.addressBookRepo.CreateObject(ctx, obj); err != nil {
 			result.Failed++
@@ -188,34 +216,45 @@ func extractVCardFN(data string) string {
 	return ""
 }
 
-// injectVCardUID adds a UID to vCard data
-func injectVCardUID(data, uid string) string {
-	// Insert UID after VERSION line
-	lines := strings.Split(data, "\r\n")
-	var result []string
-	uidAdded := false
-	for _, line := range lines {
-		result = append(result, line)
-		if !uidAdded && strings.HasPrefix(strings.ToUpper(line), "VERSION:") {
-			result = append(result, "UID:"+uid)
-			uidAdded = true
-		}
+// importVCardVersions are the vCard versions an import accepts: exactly the
+// supported-address-data every CardDAV address book advertises (RFC 6352
+// §6.2.2). A 2.1 card (QUOTED-PRINTABLE, bare TYPE values) would be served to
+// clients that were promised 3.0 or 4.0.
+var importVCardVersions = []string{"3.0", "4.0"}
+
+// parseImportCard decodes one card of an import and checks what a CardDAV
+// client needs to read it back: a VERSION it was promised (RFC 6350 §6.7.9)
+// and an FN (RFC 6350 §6.2.1). A missing FN is derived from N, ORG, … rather
+// than refused; only a card with nothing to derive it from fails. The error
+// text is the reason reported in the import result.
+func parseImportCard(data string) (vcard.Card, error) {
+	card, err := vcard.NewDecoder(strings.NewReader(data)).Decode()
+	if err != nil {
+		return nil, fmt.Errorf("invalid vCard: %v", err)
 	}
-	return strings.Join(result, "\r\n")
+	version := strings.TrimSpace(card.Value(vcard.FieldVersion))
+	if version == "" {
+		return nil, fmt.Errorf("invalid vCard: missing VERSION property")
+	}
+	if !slices.Contains(importVCardVersions, version) {
+		return nil, fmt.Errorf("unsupported vCard version %q (3.0 and 4.0 are supported)", version)
+	}
+	card.SetValue(vcard.FieldVersion, version)
+	if !addressbook.EnsureFormattedName(card) {
+		return nil, fmt.Errorf("invalid vCard: no FN and no N, ORG, NICKNAME, EMAIL or TEL to derive one from")
+	}
+	return card, nil
 }
 
-// replaceVCardUID replaces the UID in vCard data
-func replaceVCardUID(data, newUID string) string {
-	lines := strings.Split(data, "\r\n")
-	var result []string
-	for _, line := range lines {
-		if strings.HasPrefix(strings.ToUpper(line), "UID:") {
-			result = append(result, "UID:"+newUID)
-		} else {
-			result = append(result, line)
-		}
+// encodeImportCard serializes an imported card like the REST write path
+// (contact.encodeCard): go-vcard's encoding with CATEGORIES list separators
+// restored.
+func encodeImportCard(card vcard.Card) (string, error) {
+	var buf strings.Builder
+	if err := vcard.NewEncoder(&buf).Encode(card); err != nil {
+		return "", err
 	}
-	return strings.Join(result, "\r\n")
+	return addressbook.RestoreVCardCommaLists(buf.String()), nil
 }
 
 // Denormalized field derivation lives on AddressObject — see
