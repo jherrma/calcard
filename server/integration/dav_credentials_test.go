@@ -29,10 +29,6 @@ func TestDedicatedCalDAVCredential(t *testing.T) {
 
 	// --- Create a read-only CalDAV credential ---------------------------
 	rawPass := "ReadOnlyPass_v3rY!S1x"
-	// The credential repo lowercases the username on lookup (see
-	// GetByUsername) but Create stores whatever the caller supplied, so
-	// a mixed-case username would silently fail to authenticate. We ensure
-	// the test uses lowercase to match the lookup path.
 	credUser := "readonly-" + time.Now().Format("20060102t150405")
 	var created struct {
 		ID         string `json:"id"` // UUID of the credential row
