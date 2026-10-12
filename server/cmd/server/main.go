@@ -4,6 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	// Fallback IANA zone database (~450 KB) for hosts and images without
+	// zoneinfo: event time zones, calendar time-zone validation and the
+	// VTIMEZONEs generated for stored events all resolve zones by name. The
+	// system's zoneinfo, when present, still takes precedence.
+	_ "time/tzdata"
 
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"

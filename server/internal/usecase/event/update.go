@@ -347,8 +347,8 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	// Convert times to the named IANA timezone so go-ical produces TZID parameters
-	if input.Timezone != nil && *input.Timezone != "" {
-		if loc, err := time.LoadLocation(*input.Timezone); err == nil {
+	if input.Timezone != nil {
+		if loc, ok := calendar.LoadEventLocation(*input.Timezone); ok {
 			effectiveStart = effectiveStart.In(loc)
 			effectiveEnd = effectiveEnd.In(loc)
 		}
@@ -404,6 +404,10 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	// Update DTSTAMP. It must be UTC (RFC 5545 §3.8.7.2); go-ical writes a
 	// time.Local value as DTSTAMP;TZID=Local:… (F04).
 	targetEvent.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
+
+	// Give every TZID now in use its VTIMEZONE and drop the ones no longer used
+	// (a timezone change, a split series), RFC 5545 §3.2.19.
+	calendar.SyncVTimezones(cal)
 
 	// Regenerate ICalData
 	var sb strings.Builder
