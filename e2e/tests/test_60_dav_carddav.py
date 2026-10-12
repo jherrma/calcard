@@ -73,6 +73,37 @@ def test_mkcol_existing(t, e2e, u1, st):
                       f"/addressbooks/{b['UUID']}", json=CONFIRM)
 
 
+def _mkcol_props(props):
+    return ('<?xml version="1.0" encoding="utf-8"?>\n<d:mkcol xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">'
+            "<d:set><d:prop><d:resourcetype><d:collection/><c:addressbook/></d:resourcetype>"
+            f"{props}</d:prop></d:set></d:mkcol>")
+
+
+def test_mkcol_description(t, e2e, u1):
+    """extended MKCOL keeps the addressbook-description (DAVx5 payload)"""
+    slug = e2e.uniq("descbook")
+    r = u1.dav("MKCOL", f"{u1.home_ab}{slug}/", xml=_mkcol_props(
+        "<d:displayname>Described</d:displayname><c:addressbook-description>from DAVx5</c:addressbook-description>"))
+    if not t.status(r, 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    _, books = _books_at(u1, slug)
+    t.eq(books[0].get("Description") if books else None, "from DAVx5", "addressbook-description")
+
+
+def test_mkcol_refused_property(t, e2e, u1):
+    """extended MKCOL with a property the server cannot set creates nothing (403 mkcol-response)"""
+    slug = e2e.uniq("refusedbook")
+    r = u1.dav("MKCOL", f"{u1.home_ab}{slug}/", xml=_mkcol_props(
+        '<d:displayname>never created</d:displayname><x:frobnicate xmlns:x="urn:x-e2e">1</x:frobnicate>'))
+    _, books = _books_at(u1, slug)
+    if books:
+        _cleanup_path(e2e, u1, slug)
+    t.status(r, 403, msg="RFC 5689 3: the whole MKCOL fails when a property cannot be set")
+    t.xpath(r, f"{lp('mkcol-response', 'propstat')}[{el('status')}[contains(., '403')]]/{el('prop')}/{el('frobnicate')}")
+    t.eq(len(books), 0, "the refused MKCOL must not create an address book")
+
+
 def test_put_create(t, e2e, u1, cc, st):
     """PUT with If-None-Match: * creates (201 + ETag)"""
     st.uid = e2e.uniq("card1")
