@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -44,22 +45,33 @@ func (r *CalendarRepository) Create(ctx context.Context, cal *calendar.Calendar)
 	})
 }
 
-// GetByID retrieves a calendar by its ID
+// notFoundAsDomain marks a missing calendar row as calendar.ErrNotFound, so the
+// use cases can tell "no such calendar" (404) from a storage failure (500).
+// gorm.ErrRecordNotFound stays in the chain for callers that test for it.
+func notFoundAsDomain(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("%w: %w", calendar.ErrNotFound, err)
+	}
+	return err
+}
+
+// GetByID retrieves a calendar by its ID. A missing row is calendar.ErrNotFound.
 func (r *CalendarRepository) GetByID(ctx context.Context, id uint) (*calendar.Calendar, error) {
 	var cal calendar.Calendar
 	err := r.db.WithContext(ctx).First(&cal, id).Error
 	if err != nil {
-		return nil, err
+		return nil, notFoundAsDomain(err)
 	}
 	return &cal, nil
 }
 
-// GetByUUID retrieves a calendar by its UUID
+// GetByUUID retrieves a calendar by its UUID. A missing row is
+// calendar.ErrNotFound.
 func (r *CalendarRepository) GetByUUID(ctx context.Context, uuid string) (*calendar.Calendar, error) {
 	var cal calendar.Calendar
 	err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&cal).Error
 	if err != nil {
-		return nil, err
+		return nil, notFoundAsDomain(err)
 	}
 	return &cal, nil
 }

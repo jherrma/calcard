@@ -29,6 +29,7 @@ Authentication and authorization logic. See [auth/AGENT.md](auth/AGENT.md) for d
 Calendar management:
 
 - `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations.
+- `owned.go` — `LoadOwnedCalendar` / `LoadOwnedCalendarByID`: the one owner lookup (missing or not owned → `calendar.ErrNotFound`, a storage error stays an internal error). Reused by the calendar import and the calendar share use cases.
 - `enable_public.go`, `get_public_status.go`, `regenerate_token.go` — Public calendar sharing.
 - `export.go` — iCalendar export.
 

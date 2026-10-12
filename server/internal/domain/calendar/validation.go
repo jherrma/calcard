@@ -1,7 +1,6 @@
 package calendar
 
 import (
-	"fmt"
 	"regexp"
 	"time"
 )
@@ -11,10 +10,10 @@ var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 // ValidateHexColor validates a hex color string
 func ValidateHexColor(color string) error {
 	if color == "" {
-		return fmt.Errorf("color cannot be empty")
+		return Invalidf("color cannot be empty")
 	}
 	if !hexColorRegex.MatchString(color) {
-		return fmt.Errorf("invalid hex color format, expected #RRGGBB")
+		return Invalidf("invalid hex color format, expected #RRGGBB")
 	}
 	return nil
 }
@@ -22,11 +21,11 @@ func ValidateHexColor(color string) error {
 // ValidateTimezone validates an IANA timezone string
 func ValidateTimezone(tz string) error {
 	if tz == "" {
-		return fmt.Errorf("timezone cannot be empty")
+		return Invalidf("timezone cannot be empty")
 	}
 	_, err := time.LoadLocation(tz)
 	if err != nil {
-		return fmt.Errorf("invalid timezone: %w", err)
+		return Invalidf("invalid timezone: %w", err)
 	}
 	return nil
 }
@@ -34,10 +33,10 @@ func ValidateTimezone(tz string) error {
 // ValidateName validates a calendar name
 func ValidateName(name string) error {
 	if name == "" {
-		return fmt.Errorf("name cannot be empty")
+		return Invalidf("name cannot be empty")
 	}
 	if len(name) > 255 {
-		return fmt.Errorf("name cannot exceed 255 characters")
+		return Invalidf("name cannot exceed 255 characters")
 	}
 	return nil
 }
@@ -45,7 +44,7 @@ func ValidateName(name string) error {
 // ValidateDescription validates a calendar description
 func ValidateDescription(description string) error {
 	if len(description) > 1000 {
-		return fmt.Errorf("description cannot exceed 1000 characters")
+		return Invalidf("description cannot exceed 1000 characters")
 	}
 	return nil
 }

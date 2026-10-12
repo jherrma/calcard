@@ -18,15 +18,5 @@ func NewGetCalendarUseCase(repo calendar.CalendarRepository) *GetCalendarUseCase
 
 // Execute retrieves a calendar by UUID and verifies ownership
 func (uc *GetCalendarUseCase) Execute(ctx context.Context, userID uint, calendarUUID string) (*calendar.Calendar, error) {
-	cal, err := uc.repo.GetByUUID(ctx, calendarUUID)
-	if err != nil {
-		return nil, calendar.ErrNotFound
-	}
-
-	// Verify ownership. Not owned is the same error as missing (no existence leak).
-	if cal.UserID != userID {
-		return nil, calendar.ErrNotFound
-	}
-
-	return cal, nil
+	return LoadOwnedCalendar(ctx, uc.repo, userID, calendarUUID)
 }

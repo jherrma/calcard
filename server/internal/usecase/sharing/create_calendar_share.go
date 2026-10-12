@@ -52,30 +52,35 @@ func NewCreateCalendarShareUseCase(
 
 func (uc *CreateCalendarShareUseCase) Execute(ctx context.Context, requestingUserID uint, input CreateCalendarShareInput) (*CreateCalendarShareOutput, error) {
 	// 1. Verify calendar ownership
-	cal, err := uc.calendarRepo.GetByID(ctx, input.CalendarID)
+	cal, err := ownedCalendar(ctx, uc.calendarRepo, requestingUserID, input.CalendarID)
 	if err != nil {
-		return nil, fmt.Errorf("calendar not found")
-	}
-	if cal.UserID != requestingUserID {
-		return nil, fmt.Errorf("permission denied")
+		return nil, err
 	}
 
 	// 2. Find target user
+	// The lookups answer (nil, nil) for an unknown identifier; an error is a
+	// storage failure and must not read as "user not found".
 	targetUser, err := uc.userRepo.GetByEmail(ctx, input.UserIdentifier)
-	if err != nil || targetUser == nil {
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up user: %w", err)
+	}
+	if targetUser == nil {
 		// Try by username
 		targetUser, err = uc.userRepo.GetByUsername(ctx, input.UserIdentifier)
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up user: %w", err)
+		}
 	}
-	if err != nil || targetUser == nil {
-		return nil, fmt.Errorf("user '%s' not found", input.UserIdentifier)
+	if targetUser == nil {
+		return nil, calendar.Invalidf("user '%s' not found", input.UserIdentifier)
 	}
 
 	// 3. Validation
 	if targetUser.ID == requestingUserID {
-		return nil, fmt.Errorf("cannot share calendar with yourself")
+		return nil, calendar.Invalidf("cannot share calendar with yourself")
 	}
 	if input.Permission != "read" && input.Permission != "read-write" {
-		return nil, fmt.Errorf("invalid permission")
+		return nil, calendar.Invalidf("invalid permission")
 	}
 
 	// 4. Check existing share
@@ -83,7 +88,7 @@ func (uc *CreateCalendarShareUseCase) Execute(ctx context.Context, requestingUse
 	if existing != nil {
 		// Update existing share if found? Requirement says "Cannot share same calendar to same user twice"
 		// implying conflict or update. Let's return error for now as per implied AC
-		return nil, fmt.Errorf("calendar is already shared with this user")
+		return nil, calendar.Invalidf("calendar is already shared with this user")
 	}
 
 	// 5. Create share
@@ -95,7 +100,7 @@ func (uc *CreateCalendarShareUseCase) Execute(ctx context.Context, requestingUse
 	}
 
 	if err := uc.shareRepo.Create(ctx, share); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create share: %w", err)
 	}
 
 	// 6. Return output

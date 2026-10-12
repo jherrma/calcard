@@ -27,20 +27,16 @@ func NewDeleteCalendarUseCase(repo calendar.CalendarRepository, shareRepo sharin
 
 // Execute deletes a calendar with confirmation
 func (uc *DeleteCalendarUseCase) Execute(ctx context.Context, userID uint, calendarUUID string, req DeleteCalendarRequest) error {
+	// Resolve the calendar before looking at the request: an unknown or foreign
+	// calendar is the same 404 whatever the body says (F28).
+	cal, err := LoadOwnedCalendar(ctx, uc.repo, userID, calendarUUID)
+	if err != nil {
+		return err
+	}
+
 	// Validate confirmation
 	if req.Confirmation != "DELETE" {
-		return fmt.Errorf("please type DELETE to confirm calendar deletion")
-	}
-
-	// Get calendar
-	cal, err := uc.repo.GetByUUID(ctx, calendarUUID)
-	if err != nil {
-		return calendar.ErrNotFound
-	}
-
-	// Verify ownership. Not owned is the same error as missing (no existence leak).
-	if cal.UserID != userID {
-		return calendar.ErrNotFound
+		return calendar.Invalidf("please type DELETE to confirm calendar deletion")
 	}
 
 	// Check if this is the last calendar
@@ -50,7 +46,7 @@ func (uc *DeleteCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 	}
 
 	if count <= 1 {
-		return fmt.Errorf("cannot delete your last calendar")
+		return calendar.Invalidf("cannot delete your last calendar")
 	}
 
 	// Delete the calendar and its objects.

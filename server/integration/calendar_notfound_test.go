@@ -49,6 +49,18 @@ func TestCalendarNotFoundStatus(t *testing.T) {
 		{"export", func(uuid, token string) (int, []byte) {
 			return restCall(t, http.MethodGet, "/calendars/"+uuid+"/export", token, nil)
 		}},
+		// F28: the calendar is resolved before the body is looked at, so a bad
+		// body does not turn the 404 into a 400.
+		{"DELETE with a wrong confirmation", func(uuid, token string) (int, []byte) {
+			return restCall(t, http.MethodDelete, "/calendars/"+uuid, token, map[string]string{"confirmation": "yes"})
+		}},
+		{"PATCH with malformed JSON", func(uuid, token string) (int, []byte) {
+			return rawCall(t, http.MethodPatch, baseURL+"/api/v1/calendars/"+uuid, token, []byte(`{"name":`),
+				map[string]string{"Content-Type": "application/json"})
+		}},
+		{"import without data", func(uuid, token string) (int, []byte) {
+			return restCall(t, http.MethodPost, "/calendars/"+uuid+"/import", token, map[string]string{})
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

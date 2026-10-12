@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	calendaruc "github.com/jherrma/caldav-server/internal/usecase/calendar"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 )
 
@@ -35,21 +36,41 @@ func NewCalendarShareHandler(
 
 // resolveOwnedCalendarID maps the :id path segment — a calendar UUID (#52) — to
 // its internal numeric id, scoped to the caller: a missing or non-owned calendar
-// yields (0, false), which callers turn into a 404 (never leaking existence).
-func (h *CalendarShareHandler) resolveOwnedCalendarID(c fiber.Ctx, userID uint) (uint, bool) {
-	cal, err := h.calendarRepo.GetByUUID(c.Context(), c.Params("id"))
-	if err != nil || cal == nil || cal.UserID != userID {
-		return 0, false
+// is calendar.ErrNotFound, which calendarSubresourceError turns into a 404
+// (never leaking existence); a storage failure is a 500.
+func resolveOwnedCalendarID(c fiber.Ctx, repo calendar.CalendarRepository, userID uint) (uint, error) {
+	cal, err := calendaruc.LoadOwnedCalendar(c.Context(), repo, userID, c.Params("id"))
+	if err != nil {
+		return 0, err
 	}
-	return cal.ID, true
+	return cal.ID, nil
+}
+
+// calendarSubresourceError maps an error of the calendar share and public-link
+// routes, which answer in the {"error": ...} shape: a calendar that is missing
+// or not the caller's is the 404 these routes always gave, an unknown share id
+// a 404 too, a rejected request (unknown user, self-share, invalid permission,
+// public access not enabled) a 400 with its message, and anything else a
+// server failure (F28): logged, and a 500 that does not describe it.
+func calendarSubresourceError(c fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, calendar.ErrNotFound):
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	case errors.Is(err, sharing.ErrCalendarShareNotFound):
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+	case errors.Is(err, calendar.ErrInvalidInput):
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	logCalendarFailure(c, err)
+	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal_error"})
 }
 
 // POST /api/v1/calendars/:id/shares
 func (h *CalendarShareHandler) Create(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	calendarID, ok := h.resolveOwnedCalendarID(c, u.ID)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	calendarID, err := resolveOwnedCalendarID(c, h.calendarRepo, u.ID)
+	if err != nil {
+		return calendarSubresourceError(c, err)
 	}
 
 	var req sharing.CreateCalendarShareInput
@@ -60,7 +81,7 @@ func (h *CalendarShareHandler) Create(c fiber.Ctx) error {
 
 	output, err := h.createUC.Execute(c.Context(), u.ID, req)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return calendarSubresourceError(c, err)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(output)
@@ -69,14 +90,14 @@ func (h *CalendarShareHandler) Create(c fiber.Ctx) error {
 // GET /api/v1/calendars/:id/shares
 func (h *CalendarShareHandler) List(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	calendarID, ok := h.resolveOwnedCalendarID(c, u.ID)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	calendarID, err := resolveOwnedCalendarID(c, h.calendarRepo, u.ID)
+	if err != nil {
+		return calendarSubresourceError(c, err)
 	}
 
 	output, err := h.listUC.Execute(c.Context(), u.ID, calendarID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return calendarSubresourceError(c, err)
 	}
 
 	return c.JSON(fiber.Map{"shares": output})
@@ -85,9 +106,9 @@ func (h *CalendarShareHandler) List(c fiber.Ctx) error {
 // PATCH /api/v1/calendars/:id/shares/:share_id
 func (h *CalendarShareHandler) Update(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	calendarID, ok := h.resolveOwnedCalendarID(c, u.ID)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	calendarID, err := resolveOwnedCalendarID(c, h.calendarRepo, u.ID)
+	if err != nil {
+		return calendarSubresourceError(c, err)
 	}
 	shareUUID := c.Params("share_id")
 
@@ -98,7 +119,7 @@ func (h *CalendarShareHandler) Update(c fiber.Ctx) error {
 
 	output, err := h.updateUC.Execute(c.Context(), u.ID, calendarID, shareUUID, req)
 	if err != nil {
-		return c.Status(calendarShareErrorStatus(err)).JSON(fiber.Map{"error": err.Error()})
+		return calendarSubresourceError(c, err)
 	}
 
 	return c.JSON(output)
@@ -107,25 +128,15 @@ func (h *CalendarShareHandler) Update(c fiber.Ctx) error {
 // DELETE /api/v1/calendars/:id/shares/:share_id
 func (h *CalendarShareHandler) Revoke(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
-	calendarID, ok := h.resolveOwnedCalendarID(c, u.ID)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found"})
+	calendarID, err := resolveOwnedCalendarID(c, h.calendarRepo, u.ID)
+	if err != nil {
+		return calendarSubresourceError(c, err)
 	}
 	shareUUID := c.Params("share_id")
 
 	if err := h.revokeUC.Execute(c.Context(), u.ID, calendarID, shareUUID); err != nil {
-		return c.Status(calendarShareErrorStatus(err)).JSON(fiber.Map{"error": err.Error()})
+		return calendarSubresourceError(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
-}
-
-// calendarShareErrorStatus picks the status for an update/revoke error: an
-// unknown :share_id (or one of another calendar) is a 404 like any unknown
-// resource in the path; everything else (e.g. an invalid permission) is a 400.
-func calendarShareErrorStatus(err error) int {
-	if errors.Is(err, sharing.ErrCalendarShareNotFound) {
-		return fiber.StatusNotFound
-	}
-	return fiber.StatusBadRequest
 }
