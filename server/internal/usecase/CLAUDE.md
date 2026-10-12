@@ -107,6 +107,7 @@ Data import and export:
   which then goes through the duplicate handling (skip/replace/duplicate) like a re-import would.
 - `calendar_import_timezone.go` — Copies the file's `VTIMEZONE`s into each imported object that references their TZID (RFC 5545 §3.2.19), sorted so the encoding is stable.
 - `contact_import.go` — Import vCard (.vcf) files.
+- `import_path.go` — Helpers shared by both imports (F23): a missing DTSTAMP is added (import time, UTC) instead of failing the event, and the DAV resource name is `<uid>.ics`/`.vcf` only for a short URL-safe UID on a free path, otherwise `<uuid>.ics` — a UID may contain `/` or `..`. Duplicates are matched by UID, never by path; `replace` keeps the replaced object's path when it is still a usable segment.
 - `backup_export.go` — Full user data backup export.
 - `types.go` — Import/export type definitions.
 

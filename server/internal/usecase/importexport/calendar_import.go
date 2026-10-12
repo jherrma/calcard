@@ -66,6 +66,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 	for _, obj := range existingObjects {
 		byUID[obj.UID] = obj
 	}
+	paths := newObjectPaths(existingObjects)
 
 	// VTIMEZONEs are declared once per file; each object below gets a copy of
 	// the ones it references.
@@ -93,6 +94,8 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 
 		// Check for existing event by UID (indexed once, above the loop)
 		existing := byUID[uid]
+		// A replaced object keeps its path, so DAV clients see an update.
+		preferredPath := ""
 
 		if existing != nil {
 			switch opts.DuplicateHandling {
@@ -115,6 +118,8 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 				// event with the same UID (or a create failure below) sees the
 				// same state a fresh re-fetch would.
 				delete(byUID, uid)
+				delete(paths, existing.Path)
+				preferredPath = existing.Path
 			case "duplicate":
 				// Generate new UID
 				uid = uuid.New().String() + "@imported"
@@ -123,6 +128,8 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 				}
 			}
 		}
+
+		ensureDTStamp(child)
 
 		// Convert component back to iCalendar string. The encoder insists on
 		// a PRODID/VERSION pair on the outer VCALENDAR, so set them before
@@ -153,7 +160,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 			UUID:       uuid.New().String(),
 			CalendarID: cal.ID,
 			UID:        uid,
-			Path:       fmt.Sprintf("%s.ics", uid),
+			Path:       paths.assign(uid, preferredPath),
 			ETag:       calendar.NewETag(),
 			ICalData:   buf.String(),
 		}
