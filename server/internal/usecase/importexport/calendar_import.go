@@ -129,7 +129,9 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 			}
 		}
 
-		ensureDTStamp(child)
+		for _, comp := range item.comps {
+			ensureDTStamp(comp)
+		}
 
 		// Convert component back to iCalendar string. The encoder insists on
 		// a PRODID/VERSION pair on the outer VCALENDAR, so set them before
