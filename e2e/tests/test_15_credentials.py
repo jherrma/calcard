@@ -15,8 +15,15 @@ pytestmark = pytest.mark.usefixtures("u1", "u2")
 def _probe(e2e, user, password, path, method="PROPFIND", **kw):
     """PROPFIND (default) with Basic auth."""
     if method == "PROPFIND":
-        return e2e.req("PROPFIND", f"{e2e.base}{path}", basic=(user, password), depth=0, xml=PROPFIND_PRINCIPAL)
+        return e2e.req("PROPFIND", f"{e2e.base}{path}", basic=(user, password), depth=0, xml=PROPFIND_PRINCIPAL, **kw)
     return e2e.req(method, f"{e2e.base}{path}", basic=(user, password), **kw)
+
+
+def _respelled(home):
+    """Other spellings of a home-set path, sent verbatim (path_as_is): the
+    scope must be decided on the path the server serves, not the raw bytes."""
+    user, seg = home.strip("/").split("/")[1:3]
+    return (f"/dav/{user}/%{ord(seg[0]):02x}{seg[1:]}/", f"/dav/{user}//{seg}/")
 
 
 def test_ap_create(t, e2e, u1, st):
@@ -87,6 +94,8 @@ def test_ap_scope_caldav(t, e2e, u1):
     e2e.defer(f"revoke app password {e2e.uniq('ap-caldav')}", e2e.cleanup_api, u1, "DELETE", f"/app-passwords/{aid}")
     t.status(_probe(e2e, u1.email, pw, u1.home_cal), 207, msg="caldav scope on the calendar home")
     t.status(_probe(e2e, u1.email, pw, u1.home_ab), 403, msg="caldav-only app password on the address-book home")
+    for p in _respelled(u1.home_ab):
+        t.status(_probe(e2e, u1.email, pw, p, path_as_is=True), 403, msg=f"caldav-only app password on {p}")
     t.status(_probe(e2e, u1.email, pw, "/dav/"), 207, msg="discovery (/dav/) is open to every scope")
     # Revoke right away: every live app password costs a bcrypt per DAV request.
     u1.api("DELETE", f"/app-passwords/{aid}")
@@ -102,6 +111,10 @@ def test_ap_scope_carddav(t, e2e, u1):
     e2e.defer(f"revoke app password {e2e.uniq('ap-carddav')}", e2e.cleanup_api, u1, "DELETE", f"/app-passwords/{aid}")
     t.status(_probe(e2e, u1.email, pw, u1.home_ab), 207)
     t.status(_probe(e2e, u1.email, pw, u1.home_cal), 403)
+    # A percent-encoded or doubled-slash spelling of "calendars" used to pass
+    # the scope check while the server still served the calendars.
+    for p in _respelled(u1.home_cal):
+        t.status(_probe(e2e, u1.email, pw, p, path_as_is=True), 403, msg=f"carddav-only app password on {p}")
     # Scope is decided by path segment, not substring: "calendars" in an
     # address-book object name must not unlock it for a caldav credential.
     t.status(_probe(e2e, u1.email, pw, f"{u1.home_cal}x/addressbooks.ics", "GET"), 403)
@@ -294,6 +307,8 @@ def test_carddav_scope(t, e2e, u1, st):
     creds = (st.cardcred_user, st.cardcred_pw)
     if not t.status(_probe(e2e, *creds, u1.home_cal), 403):
         return
+    for p in _respelled(u1.home_cal):
+        t.status(_probe(e2e, *creds, p, path_as_is=True), 403, msg=f"CardDAV credential on {p}")
     r = _probe(e2e, *creds, f"/dav/{u1.username}/")
     if not t.status(r, 207):
         return
