@@ -2,7 +2,6 @@ package addressbook
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 )
@@ -28,7 +27,7 @@ func (uc *UpdateUseCase) Execute(ctx context.Context, input UpdateInput) (*addre
 		return nil, err
 	}
 	if ab == nil || ab.UserID != input.UserID {
-		return nil, fmt.Errorf("address book not found")
+		return nil, ErrNotFound
 	}
 
 	if input.Name != nil {

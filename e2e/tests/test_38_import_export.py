@@ -109,7 +109,6 @@ def test_cal_foreign(t, e2e, u1, u2, imp):
          "nothing may land in U1's calendar")
 
 
-@known("F14")
 def test_cal_overrides(t, e2e, u1):
     """import keeps recurrence exceptions (RECURRENCE-ID)"""
     rec = u1.mk_calendar(e2e.uniq("import-rec"))
@@ -123,8 +122,10 @@ def test_cal_overrides(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.json(r, "failed", 0)
-    # F14: the override is handled as a separate object and skipped as a duplicate UID.
-    t.bug.json(r, "skipped", 0, "the RECURRENCE-ID override is part of the series, not a duplicate")
+    # One calendar object per UID (RFC 4791 4.1): the counts are per object, so
+    # the series with its override is one item, not two (F14).
+    t.json(r, "total", 1, "a series with its override counts as one object")
+    t.json(r, "skipped", 0, "the RECURRENCE-ID override is part of the series, not a duplicate")
     r = u1.api("GET", f"/calendars/{rec['uuid']}/events?start=2030-06-30T00:00:00Z&end=2030-07-10T00:00:00Z&expand=true")
     if not t.status(r, 200):
         return
@@ -134,10 +135,9 @@ def test_cal_overrides(t, e2e, u1):
         e = [x for x in j["events"] if x.get("recurrence_id") == "20300702T100000Z"][0]
         return e["summary"] == "Series (moved)" and e["start"] == "2030-07-02T15:00:00Z"
 
-    t.bug.jq(r, moved, "the overridden instance must keep its moved time and summary")
+    t.jq(r, moved, "the overridden instance must keep its moved time and summary")
 
 
-@known("F15")
 def test_cal_vtimezone(t, e2e, u1):
     """imported TZID events keep their VTIMEZONE"""
     tz = u1.mk_calendar(e2e.uniq("import-tz"))
@@ -160,8 +160,7 @@ def test_cal_vtimezone(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.contains(r, "TZID=Europe/Berlin")
-    # F15: import re-wraps each VEVENT alone and drops the VTIMEZONE.
-    t.bug.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin but carries no VTIMEZONE")
+    t.contains(r, "BEGIN:VTIMEZONE", "the stored object references TZID=Europe/Berlin, so it must carry its VTIMEZONE")
 
 
 def test_cal_roundtrip(t, e2e, u1, imp):

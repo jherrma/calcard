@@ -102,14 +102,12 @@ def test_foreign_home_leak(t, u1, az):
     t.not_contains(r, "u2-private-book")
 
 
-@known("F11")
 def test_foreign_home_status(t, u1, az):
     """another user's calendar home is refused (403/404)"""
-    # F11: 207 with an empty <multistatus/> (no data leaks — see test_foreign_home_leak).
     r = u1.dav("PROPFIND", f"/dav/{az.u2}/calendars/", depth=1, xml=PROPFIND_LIST)
-    t.bug.status(r, 403, 404, was=207, msg="PROPFIND on another user's calendar home")
+    t.status(r, 403, 404, msg="PROPFIND on another user's calendar home")
     r = u1.dav("PROPFIND", f"/dav/{az.u2}/addressbooks/", depth=1, xml=PROPFIND_LIST)
-    t.bug.status(r, 403, 404, was=207, msg="PROPFIND on another user's address-book home")
+    t.status(r, 403, 404, msg="PROPFIND on another user's address-book home")
 
 
 def _multiget(href: str) -> str:
