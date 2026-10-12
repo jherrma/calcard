@@ -131,9 +131,17 @@ func (h *ContactHandler) requireAddressBookWrite(c fiber.Ctx) (uint, bool, error
 // contactPermission returns the caller's permission on the address book that
 // contains the given contact (PermissionNone when the contact doesn't exist or
 // its book is neither owned by nor shared with the caller).
+//
+// The contact must also live in the book named by the :addressbook_id path
+// segment — the event handler's F09 rule. Without it the move route accepted
+// any book UUID as the source, even one that does not exist.
 func (h *ContactHandler) contactPermission(c fiber.Ctx, contactUUID string) addressbook.AddressBookPermission {
+	ab, err := h.addressBookRepo.GetByUUID(c.Context(), c.Params("addressbook_id"))
+	if err != nil || ab == nil {
+		return addressbook.PermissionNone
+	}
 	obj, err := h.addressBookRepo.GetObjectByUUID(c.Context(), contactUUID)
-	if err != nil || obj == nil {
+	if err != nil || obj == nil || obj.AddressBookID != ab.ID {
 		return addressbook.PermissionNone
 	}
 	return h.addressBookPermission(c, obj.AddressBookID)

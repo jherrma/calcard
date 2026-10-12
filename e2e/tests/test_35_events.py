@@ -150,15 +150,22 @@ def test_allday(t, e2e, u1, cal):
     t.match(r, "DTSTART;VALUE=DATE:20300201", "all-day events are stored as DATE values")
 
 
-@known("F09")
-def test_wrong_calendar(t, u1, cal, st):
-    """event URL must match its calendar"""
+def test_wrong_calendar(t, e2e, u1, cal, st):
+    """event URL must match its calendar (F09, fixed)"""
     t.need(st, "ev_id")
-    # F09: the handlers look the event up by id alone and serve it (200).
-    r = u1.api("GET", f"/calendars/{cal.ev2['uuid']}/events/{st.ev_id}")
-    t.bug.status(r, 404, was=200, msg="an event addressed through a calendar it does not belong to")
-    r = u1.api("GET", f"/calendars/{ZERO}/events/{st.ev_id}")
-    t.bug.status(r, 404, was=200, msg="an event addressed through a non-existent calendar")
+    unknown = u1.api("GET", f"/calendars/{cal.ev['uuid']}/events/{ZERO}")
+    if not t.status(unknown, 404, msg="reference: an unknown event"):
+        return
+    for wrong, what in ((cal.ev2["uuid"], "a calendar it does not belong to"), (ZERO, "a non-existent calendar")):
+        path = f"/calendars/{wrong}/events/{st.ev_id}"
+        for method, kw in (("GET", {}), ("PATCH", {"json": '{"summary":"wrong calendar"}'}), ("DELETE", {}),
+                           ("POST", {"json": {"target_calendar_id": cal.ev2["uuid"]}})):
+            r = u1.api(method, path + ("/move" if method == "POST" else ""), **kw)
+            t.status(r, 404, msg=f"{method} of an event addressed through {what}")
+            t.eq(r.text, unknown.text, f"{method} through {what} must answer like an unknown event")
+    r = u1.api("GET", f"/calendars/{cal.ev['uuid']}/events/{st.ev_id}")
+    t.json(r, "summary", f"Planning (moved) {e2e.run_id}", "the event is untouched")
+    t.json(r, "calendar_id", cal.ev["id"], "and still in its own calendar")
 
 
 def test_isolation(t, e2e, u1, u2, cal, st):
