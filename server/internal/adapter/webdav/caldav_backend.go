@@ -158,6 +158,11 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 		Timezone:            "UTC",
 		SupportedComponents: "VEVENT,VTODO",
 	}
+	// The MKCALENDAR / extended MKCOL properties go-webdav cannot carry
+	// (validated beforehand by prepareCollectionMkcol, mkcol.go).
+	if props, ok := mkcolCalendarPropsFrom(ctx); ok {
+		props.applyTo(c)
+	}
 	// SyncToken/CTag are minted by Create together with a change-log anchor row.
 	return b.calendarRepo.Create(ctx, c)
 }
@@ -532,7 +537,7 @@ func (b *CalDAVBackend) mapCalendar(username string, c *calendar.Calendar, permi
 		Path:                  fmt.Sprintf("/dav/%s/calendars/%s/", username, pathSeg),
 		Name:                  c.Name,
 		Description:           desc,
-		SupportedComponentSet: []string{"VEVENT", "VTODO"},
+		SupportedComponentSet: calendarComponentSet(c.SupportedComponents),
 	}
 }
 

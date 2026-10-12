@@ -148,6 +148,68 @@ def test_mkcol_outside(t, e2e, u1):
     t.eq([c.get("path") for c in created], [], "the refused MKCALENDARs must not have created any calendar")
 
 
+# The calendar creation body iOS / macOS Calendar sends (shortened VTIMEZONE).
+APPLE_MKCALENDAR = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<B:mkcalendar xmlns:B="urn:ietf:params:xml:ns:caldav"><A:set xmlns:A="DAV:"><A:prop>'
+    "<B:calendar-timezone>BEGIN:VCALENDAR&#13;\nVERSION:2.0&#13;\nPRODID:-//Apple Inc.//iPhone OS 17.0//EN&#13;\n"
+    "BEGIN:VTIMEZONE&#13;\nTZID:Europe/Berlin&#13;\nBEGIN:STANDARD&#13;\nDTSTART:19701025T030000&#13;\n"
+    "TZOFFSETFROM:+0200&#13;\nTZOFFSETTO:+0100&#13;\nEND:STANDARD&#13;\nEND:VTIMEZONE&#13;\nEND:VCALENDAR&#13;\n"
+    "</B:calendar-timezone>"
+    '<D:calendar-order xmlns:D="http://apple.com/ns/ical/">3</D:calendar-order>'
+    '<B:supported-calendar-component-set><B:comp name="VEVENT"/></B:supported-calendar-component-set>'
+    '<D:calendar-color xmlns:D="http://apple.com/ns/ical/" symbolic-color="custom">#1BADF8FF</D:calendar-color>'
+    "<A:displayname>Apple calendar</A:displayname>"
+    "<B:calendar-description>made on an iPhone</B:calendar-description>"
+    "<B:schedule-calendar-transp><B:opaque/></B:schedule-calendar-transp>"
+    "</A:prop></A:set></B:mkcalendar>")
+
+
+def _rest_cal_at(u1, path):
+    """The REST calendar object at PATH ({} when there is none)."""
+    body = u1.api("GET", "/calendars/").jdict()
+    return next((c for c in body.get("calendars") or [] if c.get("path") == path), {})
+
+
+def test_mkcalendar_properties(t, e2e, u1):
+    """MKCALENDAR applies colour, description, timezone and component set (Apple payload)"""
+    slug = e2e.uniq("applecal")
+    r = u1.dav("MKCALENDAR", f"{u1.home_cal}{slug}/", xml=APPLE_MKCALENDAR)
+    if not t.status(r, 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    cal = _rest_cal_at(u1, slug)
+    t.eq(cal.get("name"), "Apple calendar", "displayname")
+    t.eq(cal.get("description"), "made on an iPhone", "calendar-description must not be dropped")
+    t.eq((cal.get("color") or "").upper(), "#1BADF8", "calendar-color (alpha removed) must not be dropped")
+    t.eq(cal.get("timezone"), "Europe/Berlin", "the VTIMEZONE's TZID must not be dropped")
+    r = u1.dav("PROPFIND", f"{u1.home_cal}{slug}/", depth=1, xml=(
+        '<?xml version="1.0" encoding="utf-8"?>\n<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+        "<d:prop><c:supported-calendar-component-set/></d:prop></d:propfind>"))
+    if not t.status(r, 207):
+        return
+    comps = lp("supported-calendar-component-set", "comp")
+    t.xpath(r, f"{comps}[@name='VEVENT']")
+    t.eq(xcount(r, f"{comps}[@name='VTODO']"), 0, "the requested VEVENT-only component set is reported")
+
+
+def test_mkcalendar_refused_property(t, e2e, u1):
+    """MKCALENDAR with a property the server cannot set creates nothing (207, 403 + 424)"""
+    slug = e2e.uniq("refusedcal")
+    r = u1.dav("MKCALENDAR", f"{u1.home_cal}{slug}/", xml=(
+        '<?xml version="1.0" encoding="utf-8"?>\n<c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+        '<d:set><d:prop><d:displayname>never created</d:displayname>'
+        '<c:supported-calendar-component-set><c:comp name="VJOURNAL"/></c:supported-calendar-component-set>'
+        "</d:prop></d:set></c:mkcalendar>"))
+    n, _, _, _ = _find_cal_by_path(u1, slug)
+    if n:
+        _cleanup_path(e2e, u1, slug)
+    t.status(r, 207, msg="RFC 4791 5.3.1.1: a failed DAV:set instruction is a 207 and nothing is created")
+    t.xpath(r, f"{lp('propstat')}[{el('status')}[contains(., '403')]]/{el('prop')}/{el('supported-calendar-component-set')}")
+    t.xpath(r, f"{lp('propstat')}[{el('status')}[contains(., '424')]]/{el('prop')}/{el('displayname')}")
+    t.eq(n, 0, "the refused MKCALENDAR must not create a calendar")
+
+
 def test_put_create(t, e2e, u1, st):
     """PUT with If-None-Match: * creates (201 + ETag)"""
     st.uid = f"{e2e.uniq('ev1')}@e2e"
