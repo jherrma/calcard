@@ -137,7 +137,7 @@ func TestAddressBookHandler_CRUD(t *testing.T) {
 		var photos int64
 		require.NoError(t, db.DB().Model(&addressbook.ContactPhoto{}).Where("address_object_id = ?", contact.ID).Count(&photos).Error)
 		require.EqualValues(t, 1, photos, "seed: the PHOTO is stored in contact_photos")
-		sharee :=&user.User{Email: "ab-sharee@example.com", Username: "absharee", PasswordHash: "hash", IsActive: true, UUID: "ab-sharee-uuid"}
+		sharee := &user.User{Email: "ab-sharee@example.com", Username: "absharee", PasswordHash: "hash", IsActive: true, UUID: "ab-sharee-uuid"}
 		require.NoError(t, userRepo.Create(context.Background(), sharee))
 		require.NoError(t, repository.NewAddressBookShareRepository(db.DB()).Create(context.Background(), &sharing.AddressBookShare{
 			UUID: "doomed-ab-share", AddressBookID: createdABID, SharedWithID: sharee.ID, Permission: "read",

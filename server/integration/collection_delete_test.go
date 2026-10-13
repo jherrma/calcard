@@ -227,4 +227,3 @@ func requireRows(t *testing.T, rows map[string]int64) {
 		require.NotZerof(t, n, "seed: %s must hold rows of the collection", table)
 	}
 }
-
