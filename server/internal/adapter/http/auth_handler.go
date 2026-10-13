@@ -20,6 +20,7 @@ func isSafeValidationError(err error) bool {
 	switch {
 	case errors.Is(err, user.ErrInvalidEmail),
 		errors.Is(err, user.ErrPasswordTooShort),
+		errors.Is(err, user.ErrPasswordTooLong),
 		errors.Is(err, user.ErrPasswordNoUpper),
 		errors.Is(err, user.ErrPasswordNoLower),
 		errors.Is(err, user.ErrPasswordNoDigit),

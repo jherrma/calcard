@@ -63,9 +63,18 @@ func ValidateDAVCredentialUsername(username string) error {
 // leave the newer hash of an account weaker than the original.
 const BcryptCost = 12
 
+// MaxPasswordBytes is the longest password bcrypt can hash. bcrypt reads at
+// most 72 bytes of its input, and golang.org/x/crypto refuses anything longer
+// (bcrypt.ErrPasswordTooLong) instead of truncating it, so every site that
+// hashes a password chosen by a person must refuse it first — as a 400 with
+// ErrPasswordTooLong, not as a failed hash. Bytes, not characters: "ä" is two.
+// Only a NEW password is checked; login compares and never applies it.
+const MaxPasswordBytes = 72
+
 var (
 	ErrInvalidEmail      = errors.New("invalid email format")
 	ErrPasswordTooShort  = errors.New("password must be at least 8 characters")
+	ErrPasswordTooLong   = fmt.Errorf("password must be at most %d bytes", MaxPasswordBytes)
 	ErrPasswordNoUpper   = errors.New("password must contain at least one uppercase letter")
 	ErrPasswordNoLower   = errors.New("password must contain at least one lowercase letter")
 	ErrPasswordNoDigit   = errors.New("password must contain at least one digit")
@@ -81,10 +90,17 @@ func ValidateEmail(email string) error {
 	return nil
 }
 
-// ValidatePassword checks if the password meets complexity requirements
+// ValidatePassword checks a NEW password against the policy: 8 to
+// MaxPasswordBytes bytes, with an upper-case letter, a lower-case letter, a
+// digit and a punctuation or symbol character (Unicode classes, so "Ü" is
+// upper case and a space is not special). The SPA mirrors it in
+// webinterface/utils/passwordPolicy.ts; keep both in step.
 func ValidatePassword(password string) error {
 	if len(password) < 8 {
 		return ErrPasswordTooShort
+	}
+	if len(password) > MaxPasswordBytes {
+		return ErrPasswordTooLong
 	}
 
 	var hasUpper, hasLower, hasDigit, hasSpecial bool

@@ -108,7 +108,7 @@ webinterface/
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
 │   ├── davCredentials.ts    # Generated DAV credential username/password + the username rule
-│   ├── passwordPolicy.ts    # Client copy of the server's password rules (Unicode classes, bytes); used by the reset page
+│   ├── passwordPolicy.ts    # Client copy of the server's password rules (Unicode classes, 8–72 bytes); used by the reset page
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/

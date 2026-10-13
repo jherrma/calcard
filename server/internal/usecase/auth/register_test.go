@@ -341,3 +341,20 @@ func TestRegisterUseCase_Execute_Existing_SpendsBcryptTime(t *testing.T) {
 	assert.GreaterOrEqualf(t, elapsed, reference/2,
 		"taken-address path took %v, a bcrypt hash takes %v: it must hash too (P01 timing)", elapsed, reference)
 }
+
+// bcrypt refuses more than 72 bytes. The policy must refuse it first, as the
+// typed sentinel the handler answers with a 400, and before the duplicate
+// lookup: a taken and a free address then fail identically (P01).
+func TestRegisterUseCase_Execute_RejectsPasswordOverBcryptLimit(t *testing.T) {
+	repo := new(mockUserRepo)
+	emailSvc := new(mockEmailService)
+	cfg := &config.Config{SMTP: config.SMTPConfig{Host: "smtp.example.com"}, BaseURL: "https://cal.example.com"}
+	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), emailSvc, cfg)
+
+	_, _, err := uc.Execute(context.Background(), "long@example.com", "Aa1!"+strings.Repeat("x", 69), "Long")
+
+	assert.ErrorIs(t, err, user.ErrPasswordTooLong)
+	repo.AssertNotCalled(t, "GetByEmail", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	emailSvc.AssertNotCalled(t, "SendActivationEmail", mock.Anything, mock.Anything, mock.Anything)
+}

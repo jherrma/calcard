@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,27 +35,40 @@ func (m *mockPasswordResetRepo) DeleteByUserID(ctx context.Context, userID uint)
 }
 
 func TestResetPasswordUseCase_Execute_RejectsWeakPassword(t *testing.T) {
-	userRepo := new(mockUserRepo)
-	resetRepo := new(mockPasswordResetRepo)
-	refreshRepo := new(mockRefreshTokenRepo)
-	uc := NewResetPasswordUseCase(userRepo, resetRepo, refreshRepo)
+	cases := []struct {
+		name, newPassword string
+		want              error
+	}{
+		{"too short", "a", user.ErrPasswordTooShort},
+		// Over bcrypt's limit: refused by the policy, not by a failed hash
+		// (which the handler would turn into a 500).
+		{"over 72 bytes", "Aa1!" + strings.Repeat("x", 69), user.ErrPasswordTooLong},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			userRepo := new(mockUserRepo)
+			resetRepo := new(mockPasswordResetRepo)
+			refreshRepo := new(mockRefreshTokenRepo)
+			uc := NewResetPasswordUseCase(userRepo, resetRepo, refreshRepo)
 
-	ctx := context.Background()
-	u := &user.User{ID: 1, UUID: "user-uuid", Email: "test@example.com", PasswordHash: "original-hash"}
-	reset := &user.PasswordReset{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+			ctx := context.Background()
+			u := &user.User{ID: 1, UUID: "user-uuid", Email: "test@example.com", PasswordHash: "original-hash"}
+			reset := &user.PasswordReset{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}
 
-	resetRepo.On("GetByHash", ctx, mock.Anything).Return(reset, nil)
-	userRepo.On("GetByID", ctx, uint(1)).Return(u, nil)
+			resetRepo.On("GetByHash", ctx, mock.Anything).Return(reset, nil)
+			userRepo.On("GetByID", ctx, uint(1)).Return(u, nil)
 
-	err := uc.Execute(ctx, ResetPasswordRequest{Token: "raw-token", NewPassword: "a"})
+			err := uc.Execute(ctx, ResetPasswordRequest{Token: "raw-token", NewPassword: tc.newPassword})
 
-	assert.ErrorIs(t, err, user.ErrPasswordTooShort)
-	// The account must not have been touched on the rejected path.
-	assert.Equal(t, "original-hash", u.PasswordHash)
-	userRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
-	userRepo.AssertNotCalled(t, "InvalidateAccessTokens", mock.Anything, mock.Anything, mock.Anything)
-	resetRepo.AssertNotCalled(t, "DeleteByUserID", mock.Anything, mock.Anything)
-	refreshRepo.AssertNotCalled(t, "DeleteByUserID", mock.Anything, mock.Anything)
+			assert.ErrorIs(t, err, tc.want)
+			// The account must not have been touched on the rejected path.
+			assert.Equal(t, "original-hash", u.PasswordHash)
+			userRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+			userRepo.AssertNotCalled(t, "InvalidateAccessTokens", mock.Anything, mock.Anything, mock.Anything)
+			resetRepo.AssertNotCalled(t, "DeleteByUserID", mock.Anything, mock.Anything)
+			refreshRepo.AssertNotCalled(t, "DeleteByUserID", mock.Anything, mock.Anything)
+		})
+	}
 }
 
 func TestResetPasswordUseCase_Execute_CompliantPassword(t *testing.T) {
