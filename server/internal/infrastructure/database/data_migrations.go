@@ -2,6 +2,8 @@ package database
 
 import (
 	"fmt"
+	"log/slog"
+	"sort"
 
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
@@ -33,6 +35,9 @@ func RunDataMigrations(db *gorm.DB) error {
 	if err := purgeDeletedAccounts(db); err != nil {
 		return fmt.Errorf("purge deleted accounts: %w", err)
 	}
+	if err := purgeDeletedCollections(db); err != nil {
+		return fmt.Errorf("purge deleted collections: %w", err)
+	}
 	if err := releaseDeletedUserIdentities(db); err != nil {
 		return fmt.Errorf("release deleted user identities: %w", err)
 	}
@@ -53,6 +58,44 @@ func purgeDeletedAccounts(db *gorm.DB) error {
 		deleted := tx.Unscoped().Model(&user.User{}).Select("id").Where("deleted_at IS NOT NULL")
 		return repository.PurgeAccountData(tx, deleted)
 	})
+}
+
+// purgeDeletedCollections removes the contents of calendars and address books
+// deleted before deleting a collection removed them. Those deletes only
+// soft-deleted the collection row; its events or contacts, photos, change log,
+// shares and subscription stayed in the database, unreachable but retained.
+// Runs the same cascade a collection delete now performs
+// (repository.PurgeDeletedCollections): the soft-deleted collection rows go,
+// and so does every row whose collection is not live (soft-deleted or missing).
+// Live collections and everything in them are never touched.
+//
+// This PERMANENTLY deletes data. Its owners asked for it to be gone, but it
+// cannot be undone — back the database up before upgrading if in doubt.
+// Idempotent: once purged there is nothing left to match, and nothing is
+// logged.
+func purgeDeletedCollections(db *gorm.DB) error {
+	var counts map[string]int64
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		counts, err = repository.PurgeDeletedCollections(tx)
+		return err
+	}); err != nil {
+		return err
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	tables := make([]string, 0, len(counts))
+	for table := range counts {
+		tables = append(tables, table)
+	}
+	sort.Strings(tables)
+	attrs := make([]any, 0, 2*len(tables))
+	for _, table := range tables {
+		attrs = append(attrs, table, counts[table])
+	}
+	slog.Warn("data migration: permanently deleted the remains of calendars and address books deleted earlier (rows per table)", attrs...)
+	return nil
 }
 
 // releaseDeletedUserIdentities applies what UserRepository.Delete now does to
