@@ -63,13 +63,20 @@ func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusNotFound, "User not found")
 	}
 
+	return SuccessResponse(c, h.profileResponse(c, u))
+}
+
+// profileResponse builds the body GET and PATCH /api/v1/users/me share, so the
+// two can never disagree about which fields the profile has.
+func (h *UserHandler) profileResponse(c fiber.Ctx, u *user.User) dto.UserProfileResponse {
 	calCount, _ := h.calendarRepo.CountByUserID(c.Context(), u.ID)
 	contactCount, _ := h.addressBookRepo.CountContactsByUserID(c.Context(), u.ID)
 	appPwdCount, _ := h.appPasswordRepo.CountByUserID(c.Context(), u.ID)
 
-	res := dto.UserProfileResponse{
+	return dto.UserProfileResponse{
 		ID:            u.UUID,
 		Email:         u.Email,
+		Username:      u.Username,
 		DisplayName:   u.DisplayName,
 		IsActive:      u.IsActive,
 		IsAdmin:       u.IsAdmin,
@@ -83,8 +90,6 @@ func (h *UserHandler) GetProfile(c fiber.Ctx) error {
 			AppPasswordCount: int(appPwdCount),
 		},
 	}
-
-	return SuccessResponse(c, res)
 }
 
 // PATCH /api/v1/users/me
@@ -117,28 +122,7 @@ func (h *UserHandler) UpdateProfile(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update profile")
 	}
 
-	calCount, _ := h.calendarRepo.CountByUserID(c.Context(), u.ID)
-	contactCount, _ := h.addressBookRepo.CountContactsByUserID(c.Context(), u.ID)
-	appPwdCount, _ := h.appPasswordRepo.CountByUserID(c.Context(), u.ID)
-
-	res := dto.UserProfileResponse{
-		ID:            u.UUID,
-		Email:         u.Email,
-		DisplayName:   u.DisplayName,
-		IsActive:      u.IsActive,
-		IsAdmin:       u.IsAdmin,
-		EmailVerified: u.EmailVerified,
-		CreatedAt:     u.CreatedAt,
-		UpdatedAt:     u.UpdatedAt,
-		AuthMethods:   []string{"local"},
-		Stats: dto.UserProfileStats{
-			CalendarCount:    int(calCount),
-			ContactCount:     int(contactCount),
-			AppPasswordCount: int(appPwdCount),
-		},
-	}
-
-	return SuccessResponse(c, res)
+	return SuccessResponse(c, h.profileResponse(c, u))
 }
 
 // DELETE /api/v1/users/me
