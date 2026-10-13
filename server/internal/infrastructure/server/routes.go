@@ -87,7 +87,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	logoutUC := authusecase.NewLogoutUseCase(tokenRepo, userRepo, jwtManager)
 	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager, securityLogger)
 	forgotPasswordUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, emailService, cfg.JWT.ResetExpiry)
-	resetPasswordUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo, tokenRepo)
+	resetPasswordUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo)
 
 	// User Use Cases
 	getProfileUC := userusecase.NewGetProfileUseCase(userRepo)

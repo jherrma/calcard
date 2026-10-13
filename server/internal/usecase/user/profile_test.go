@@ -54,6 +54,11 @@ func (m *mockUserRepo) InvalidateAccessTokens(ctx context.Context, userID uint, 
 	return args.Error(0)
 }
 
+func (m *mockUserRepo) CompletePasswordReset(ctx context.Context, u *user.User, at time.Time) error {
+	args := m.Called(ctx, u, at)
+	return args.Error(0)
+}
+
 func (m *mockUserRepo) Delete(ctx context.Context, userID uint) error {
 	args := m.Called(ctx, userID)
 	return args.Error(0)

@@ -13,7 +13,7 @@
       </div>
       <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">Email Verified</h2>
       <p class="text-surface-600 dark:text-surface-400 mb-6">
-        Thank you for verifying your email address. You can now log in to your account.
+        Thank you for verifying your email address.
       </p>
       <Button label="Continue to Login" @click="navigateTo('/auth/login')" class="w-full" />
     </div>

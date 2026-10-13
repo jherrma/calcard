@@ -142,6 +142,10 @@ provider reports that address is not linked to the account, because anyone can
 register someone else's address (signing in with the password and linking the
 provider from the account settings still works). Login and sharing wait for
 nothing: a share addressed to the account by e-mail reaches it either way.
+Completing a password reset also confirms the address, and it signs out every
+session and deletes every app password, CalDAV/CardDAV credential, MCP token
+and OAuth link of the account, so whoever registered the address first keeps no
+way back in.
 
 An address that already has an account answers `409 Email already registered`
 in both modes, so registration reveals whether an address has an account (the

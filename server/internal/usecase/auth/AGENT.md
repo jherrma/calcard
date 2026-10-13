@@ -16,7 +16,7 @@ This directory contains the business logic for user authentication and authoriza
 
 - **Change Password** (`change_password.go`): Authenticated password change (requires current password). Revokes all refresh tokens and all access tokens, THEN mints the replacement access token it returns — that order is what keeps the calling session alive. `UserHandler.ChangePassword` answers a wrong current password (`ErrIncorrectPassword`, checked first) with 401, but a new password equal to the current one (`ErrSamePassword`) or one failing the policy with 400: those are body validation errors, and a 401 would make the SPA refresh its session and replay the request (F10).
 - **Forgot Password** (`forgot_password.go`): Initiates password reset by sending a reset email.
-- **Reset Password** (`reset_password.go`): Completes the reset flow using a token from the reset email. Revokes all refresh and access tokens.
+- **Reset Password** (`reset_password.go`): Completes the reset flow using a token from the reset email. Sets the new password and `EmailVerified=true` (the reset proved control of the mailbox) and, in one transaction (`UserRepository.CompletePasswordReset`), revokes all access tokens and deletes every refresh token, reset link, app password, CalDAV/CardDAV credential, MCP token and OAuth connection of the account — the credential set of `repository.PurgeAccountData`. An account is usable before confirmation, so whoever registered the address may not be its owner; the owner's reset must leave them nothing.
 
 ### OAuth2/OIDC Authentication
 

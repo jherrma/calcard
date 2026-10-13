@@ -13,13 +13,13 @@ type RegisterRequest struct {
 // is filled, SMTP or not; with SMTP email_verified is false until the address
 // is confirmed (the account is usable before that).
 type RegisterResponse struct {
-	ID            string     `json:"id,omitempty"`
-	Email         string     `json:"email"`
-	Username      string     `json:"username,omitempty"`
-	DisplayName   string     `json:"display_name"`
-	IsActive      bool       `json:"is_active"`
-	EmailVerified bool       `json:"email_verified"`
-	CreatedAt     *time.Time `json:"created_at,omitempty"`
+	ID            string    `json:"id"`
+	Email         string    `json:"email"`
+	Username      string    `json:"username"`
+	DisplayName   string    `json:"display_name"`
+	IsActive      bool      `json:"is_active"`
+	EmailVerified bool      `json:"email_verified"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // LoginRequest represents the user login request

@@ -112,7 +112,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		DisplayName:   user.DisplayName,
 		IsActive:      user.IsActive,
 		EmailVerified: user.EmailVerified,
-		CreatedAt:     &user.CreatedAt,
+		CreatedAt:     user.CreatedAt,
 	})
 }
 
