@@ -28,7 +28,7 @@ Authentication and authorization logic. See [auth/AGENT.md](auth/AGENT.md) for d
 
 Calendar management:
 
-- `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations.
+- `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations. `delete.go` (REST and MCP `delete_calendar`): owner check, `DELETE` confirmation, last-calendar guard, then one `CalendarRepository.Delete`, which permanently removes the calendar with its events, change log, shares, subscription and public link in a single transaction — no second clean-up step. Its `shareRepo` constructor parameter is unused and only kept so existing wiring compiles.
 - `owned.go` — `LoadOwnedCalendar` / `LoadOwnedCalendarByID`: the one owner lookup (missing or not owned → `calendar.ErrNotFound`, a storage error stays an internal error). Reused by the calendar import and the calendar share use cases.
 - `enable_public.go`, `get_public_status.go`, `regenerate_token.go` — Public calendar sharing.
 - `export.go` — iCalendar export.
@@ -51,7 +51,7 @@ Event management:
 
 Address book management:
 
-- `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations.
+- `create.go`, `get.go`, `list.go`, `update.go`, `delete.go` — CRUD operations. `delete.go` (REST and MCP `delete_address_book`): owner check and last-book guard, then one `Repository.Delete`, which permanently removes the book with its contacts, photos, change log and shares in a single transaction. Its `shareRepo` constructor parameter is unused and only kept so existing wiring compiles.
 - `create_contact.go` — Create contact within an address book.
 - `export.go` — vCard export.
 
@@ -137,7 +137,7 @@ Remote calendar subscriptions (story 100) — mirroring third-party iCalendar fe
 - `fetch.go` — the SSRF-guarded HTTP client and URL normalization (`webcal://` → `https://`). **Read this before touching anything that fetches a user-supplied URL.** The address check lives in the dialer's `Control` hook, which sees the already-resolved `ip:port` immediately before connect, so DNS rebinding — the standard bypass for a pre-flight lookup — is caught, and every redirect hop and round-robin address is covered for free. `FeedError` marks a failure as the remote feed's fault (a 4xx at the HTTP boundary) rather than ours (a 5xx); its message is written to be shown to the user and never repeats the feed URL, which routinely carries a secret token.
 - `parse.go` — feed → `CalendarObject`s, grouped **by UID** (a recurring event and its `RECURRENCE-ID` overrides share a UID and must live in one resource, RFC 4791 §4.1) with only the `VTIMEZONE`s each object references. Output must be BYTE-STABLE across runs — a missing `sort` or a `time.Now()` DTSTAMP would make every refresh report every event as modified and wake every DAV client.
 - `sync.go` — one refresh: conditional fetch, parse, `ReplaceFeedObjects`, then persist success or failure with backoff. Shared by the worker, the manual-refresh endpoint and the initial sync on creation, so all three record status identically.
-- `create.go`, `manage.go` — the CRUD use cases. Create validates the feed BEFORE writing anything and rolls the calendar back if the subscription cannot be stored.
+- `create.go`, `manage.go` — the CRUD use cases. Create validates the feed BEFORE writing anything and rolls the calendar back if the subscription cannot be stored. Delete is a single `CalendarRepository.Delete` of the mirror calendar: the collection cascade removes the subscription row with it, in one transaction.
 - `worker.go` — the ticker that refreshes due subscriptions. A poller over a `NextSyncAt` column rather than a timer per subscription, so the schedule survives a restart with no recovery step.
 
 ### [about/](about/)

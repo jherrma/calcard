@@ -46,7 +46,12 @@ All configuration options can be set via environment variables. The mapping is d
 | `password`     | `CALDAV_DB_PASSWORD`     | -         | Database password (Postgres only).                  |
 | `name`         | `CALDAV_DB_NAME`         | `caldav`  | Database name (Postgres only).                      |
 | `ssl_mode`     | `CALDAV_DB_SSLMODE`      | `disable` | SSL mode for Postgres (e.g., `require`, `disable`). |
-| `auto_migrate` | `CALDAV_DB_AUTO_MIGRATE` | `true`    | Automatically run database migrations on startup.   |
+| `auto_migrate` | `CALDAV_DB_AUTO_MIGRATE` | `true`    | Automatically run database migrations on startup (schema, then data migrations — see below). |
+
+The data migrations that run with `auto_migrate` (and with `./server migrate`) include two
+that **permanently delete** data nobody can reach any more: what remains of accounts, and
+of calendars and address books, deleted with older versions. **Back up the database before
+upgrading** — see the README, "Upgrading — back up first".
 
 Search (`/api/v1/search`, `/api/v1/contacts/search`, the MCP search tools, CardDAV
 `text-match`) ignores case on both drivers, including non-ASCII letters (`ärztin` finds
