@@ -405,6 +405,20 @@ def test_carddav_any_case(t, e2e, u1):
     t.status(_probe(e2e, u.upper(), pw, u1.home_ab), 207, msg="Basic auth with the username in upper case")
 
 
+def test_caldav_any_case(t, e2e, u1):
+    """CalDAV credential: the username also authenticates in upper case"""
+    # Same rule as CardDAV: the lookup ignores case (F02), so a client may send
+    # the name in another case, and a wrong password still fails.
+    u, pw = e2e.cred_user("calcase"), f"AnyCase_{e2e.run_id}"
+    r = u1.api("POST", "/caldav-credentials/", json={"name": "any case", "username": u, "password": pw, "permission": "read"})
+    if not t.status(r, 201):
+        return
+    e2e.defer(f"revoke CalDAV credential {u}", e2e.cleanup_api, u1, "DELETE", f"/caldav-credentials/{r.jdict().get('id')}")
+    t.status(_probe(e2e, u, pw, u1.home_cal), 207, msg="CalDAV Basic auth with the username exactly as created")
+    t.status(_probe(e2e, u.upper(), pw, u1.home_cal), 207, msg="CalDAV Basic auth with the username in upper case")
+    t.status(_probe(e2e, u.upper(), pw + "x", u1.home_cal), 401, msg="CalDAV upper-case username with a wrong password")
+
+
 def test_dav_cred_username_rule(t, e2e, u1):
     """CalDAV / CardDAV credential: the username must be lowercase letters a-z (400)"""
     pw = f"Username_{e2e.run_id}"
