@@ -36,6 +36,25 @@ type Handler struct {
 	caldavCredRepo  user.CalDAVCredentialRepository
 	carddavCredRepo user.CardDAVCredentialRepository
 	jwtManager      user.TokenProvider
+	basicLimiter    BasicAuthLimiter
+}
+
+// BasicAuthLimiter throttles failed Basic-auth attempts (#193). Admit runs
+// before a Basic credential is checked. It returns a nil settle func once it
+// has answered the request itself (429), with the error of writing that
+// answer. Otherwise the caller calls settle exactly once with the outcome:
+// true for a valid credential (not counted), false for a failed attempt.
+// http.FailedAuthLimiter implements it.
+type BasicAuthLimiter interface {
+	Admit(c fiber.Ctx, identifier string) (settle func(valid bool), err error)
+}
+
+// WithBasicAuthLimiter makes failed Basic-auth attempts count against l.
+// Without it (rate limiting disabled) Basic auth is limited only by the
+// global per-IP limiter.
+func (h *Handler) WithBasicAuthLimiter(l BasicAuthLimiter) *Handler {
+	h.basicLimiter = l
+	return h
 }
 
 func NewHandler(
@@ -115,6 +134,9 @@ func (h *Handler) authenticate() fiber.Handler {
 		}
 
 		var u *user.User
+		// settle reports a Basic attempt's outcome to the failed-attempt
+		// limiter. It is a no-op for Bearer tokens and without a limiter.
+		settle := func(valid bool) {}
 
 		switch strings.ToLower(parts[0]) {
 		case "bearer":
@@ -137,6 +159,14 @@ func (h *Handler) authenticate() fiber.Handler {
 			}
 
 			emailOrUsername, password := pair[0], pair[1]
+			if h.basicLimiter != nil {
+				// Before any lookup or bcrypt: a spent IP or identifier is
+				// answered without costing CPU.
+				var limitErr error
+				if settle, limitErr = h.basicLimiter.Admit(c, emailOrUsername); settle == nil {
+					return limitErr
+				}
+			}
 			u, _ = h.userRepo.GetByEmail(c.Context(), emailOrUsername)
 			if u == nil {
 				// DAV clients are commonly configured with the account username —
@@ -161,7 +191,9 @@ func (h *Handler) authenticate() fiber.Handler {
 					// App password authenticated but lacks the scope required for
 					// this protocol (e.g. a caldav-only password used against an
 					// addressbook path). Reject — the scope restriction shown in
-					// the UI must be enforced.
+					// the UI must be enforced. The credential itself was valid,
+					// so this is no failed attempt.
+					settle(true)
 					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 						"error":   "forbidden",
 						"message": "This app password is not valid for this protocol",
@@ -211,6 +243,10 @@ func (h *Handler) authenticate() fiber.Handler {
 		if u != nil && !u.IsActive {
 			u = nil
 		}
+		// Only a request that is let in gives its attempt back; anything
+		// answered 401 counts as a failed attempt. Settled here, not when the
+		// request ends, so a long REPORT does not hold its slot.
+		settle(u != nil)
 
 		if u == nil {
 			c.Set("WWW-Authenticate", `Basic realm="CalDAV/CardDAV Server"`)

@@ -161,7 +161,10 @@ type RateLimitConfig struct {
 	Window   time.Duration `yaml:"window" env:"CALDAV_RATE_LIMIT_WINDOW"`
 
 	// AuthIPRequests and AuthEmailRequests bound the auth-specific limiters on
-	// login / forgot-password / reset-password (all within Window). The per-IP
+	// login / forgot-password / reset-password (all within Window), and the
+	// FAILED DAV Basic-auth attempts per IP and per user name / e-mail address
+	// (successful ones are not counted, so syncing clients never use them up).
+	// The per-IP
 	// allowance MUST stay above the per-email allowance: with IP <= email the
 	// IP limiter always trips first from a single source address, so the tighter
 	// per-account (per-email) control is never reached — masked in production

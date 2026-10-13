@@ -68,6 +68,8 @@ JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, re
 
 WebDAV protocol endpoints for native calendar/contact client sync (Apple Calendar, Thunderbird, DAVx5, etc.). Uses HTTP Basic Auth with app passwords or DAV credentials. The Basic-auth username — the account's (or its e-mail), a CalDAV or a CardDAV credential's — is accepted in any case. New usernames are stored in lower case (registration generates 16 lowercase letters, setup lower-cases the admin's, a credential's must be lowercase). The CalDAV credential lookup lower-cases the input in Go and matches it exactly; account and CardDAV credential lookups try the exact spelling, then an unambiguous `LOWER()` match in SQL (F02). The `/dav/{username}/` URL segment is compared exactly.
 
+Basic auth accepts the account's primary password, so with `rate_limit.enabled` **failed** Basic attempts are limited per client IP (`auth_ip_requests`) and per identifier — the user name or e-mail sent, trimmed and lower-cased — (`auth_email_requests`) within `rate_limit.window` (#193, `http.FailedAuthLimiter`, wired with `webdav.Handler.WithBasicAuthLimiter`). A valid credential gives its attempt back and a request without credentials never counts, so syncing clients do not use the allowance up; once a key is spent, every Basic attempt for it — a correct one included — is the auth limiters' 429 with `Retry-After` until the window ends, checked before any lookup or bcrypt. Bearer tokens are not limited.
+
 ### MCP (`/mcp`)
 
 Model Context Protocol server (story 104) — JSON-RPC 2.0 over Streamable HTTP, so an AI
