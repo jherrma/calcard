@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CalCard">
+  <rect width="512" height="512" rx="112" fill="#fff"/>
+  <g transform="translate(256 256) scale(1.12) translate(-256 -256)" color="#3b82f6">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <!-- C as clock face, hands at ten to two -->
+      <path d="M221 198A90 90 0 1 0 221 314" stroke-width="26"/>
+      <path d="M114 246L152 268L200 240" stroke-width="16"/>
+      <!-- C holding a person -->
+      <path d="M429 198A90 90 0 1 0 429 314" stroke-width="26"/>
+    </g>
+    <g fill="currentColor">
+      <circle cx="152" cy="268" r="9"/>
+      <circle cx="360" cy="232" r="21"/>
+      <path d="M321 302Q321 264 360 264Q399 264 399 302Z"/>
+    </g>
+  </g>
+</svg>
