@@ -58,6 +58,16 @@ func TestRegisterWebUI_ServesSPAWithApiFallthrough(t *testing.T) {
 		assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
 	})
 
+	// The activation and reset e-mails link these SPA routes on cfg.BaseURL
+	// (usecase/auth activationLink, forgot_password.go).
+	t.Run("e-mailed links land on the SPA", func(t *testing.T) {
+		for _, path := range []string{"/auth/verify?token=0123abcd", "/auth/reset-password?token=0123abcd"} {
+			resp := do(path)
+			assert.Equal(t, fiber.StatusOK, resp.StatusCode, path)
+			assert.Contains(t, resp.Header.Get("Content-Type"), "text/html", path)
+		}
+	})
+
 	t.Run("registered API route still wins", func(t *testing.T) {
 		resp := do("/api/v1/health")
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)

@@ -130,7 +130,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 
 		// Send email if SMTP is configured
 		if uc.cfg.SMTP.Host != "" {
-			link := fmt.Sprintf("%s/api/v1/auth/verify?token=%s", uc.cfg.BaseURL, token)
+			link := activationLink(uc.cfg.BaseURL, token)
 			if err := uc.emailService.SendActivationEmail(ctx, u.Email, link); err != nil {
 				// Log the failure without the token-bearing link; the user is
 				// already created and can request a resend.
@@ -155,6 +155,16 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 	}
 
 	return u, token, nil
+}
+
+// activationLink is the address an activation e-mail points at: the SPA page
+// /auth/verify, which sends the token to GET /api/v1/auth/verify and shows the
+// outcome — like the reset link (/auth/reset-password?token=). Linking the API
+// directly left people on a raw JSON response. The token is hex, so it needs
+// no escaping. The API endpoint is unchanged, so links mailed before still
+// work. baseURL is cfg.BaseURL, never a request's Host (link poisoning).
+func activationLink(baseURL, token string) string {
+	return fmt.Sprintf("%s/auth/verify?token=%s", baseURL, token)
 }
 
 // notifyExistingAccount tells the owner of an already-registered address that
@@ -191,7 +201,7 @@ func (uc *RegisterUseCase) notifyExistingAccount(ctx context.Context, u *user.Us
 			log.Printf("register: failed to store activation token for user %d: %v", u.ID, err)
 			return
 		}
-		link := fmt.Sprintf("%s/api/v1/auth/verify?token=%s", uc.cfg.BaseURL, token)
+		link := activationLink(uc.cfg.BaseURL, token)
 		if err := uc.emailService.SendActivationEmail(ctx, u.Email, link); err != nil {
 			log.Printf("failed to re-send activation email to user %d: %v", u.ID, err)
 		}

@@ -44,7 +44,7 @@ JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, re
 
 | Area | Endpoints |
 |------|-----------|
-| Auth | First-run setup (`POST /auth/setup`, creates the admin, 409 once any account has ever existed; optionally guarded by `CALDAV_SETUP_TOKEN`, which also locks registration until setup is done), login, register, verify, refresh, logout, forgot/reset password. Every endpoint that sets a password (setup, register, reset, `PUT /users/me/password`) applies `user.ValidatePassword` — 8 to 72 **bytes** (bcrypt's limit), upper, lower, digit, special — and answers a violation with a 400 naming the rule; login applies none of it |
+| Auth | First-run setup (`POST /auth/setup`, creates the admin, 409 once any account has ever existed; optionally guarded by `CALDAV_SETUP_TOKEN`, which also locks registration until setup is done), login, register, verify (`GET /auth/verify?token=`; the activation mail links the SPA page `/auth/verify?token=`, which calls it, as the reset mail links `/auth/reset-password`), refresh, logout, forgot/reset password. Every endpoint that sets a password (setup, register, reset, `PUT /users/me/password`) applies `user.ValidatePassword` — 8 to 72 **bytes** (bcrypt's limit), upper, lower, digit, special — and answers a violation with a 400 naming the rule; login applies none of it |
 | OAuth | Initiate, callback, link/unlink providers |
 | System | Settings (admin configured, SMTP enabled, registration enabled, setup token required), auth methods |
 | User | Get/update profile, delete account, get/update preferences. The profile (and the login response's `user`) carries `username`, the account's `/dav/{username}/` segment, exactly as stored |

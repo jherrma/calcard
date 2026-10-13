@@ -28,7 +28,7 @@ webinterface/
 │   │   ├── setup.vue        # First admin setup (shown when no admin exists)
 │   │   ├── forgot-password.vue
 │   │   ├── reset-password.vue
-│   │   ├── verify.vue       # Email verification
+│   │   ├── verify.vue       # Email verification: the activation mail links here; GETs /api/v1/auth/verify?token= (no guest middleware)
 │   │   └── oauth/
 │   │       └── callback.vue # OAuth provider callback handler
 │   ├── calendar/
