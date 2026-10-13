@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
@@ -228,6 +230,63 @@ func TestAuthHandler_ForgotPassword(t *testing.T) {
 		resp, err := app.Test(req)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	})
+}
+
+// failingEmailService stands in for a mail server that cannot be reached.
+type failingEmailService struct{}
+
+func (failingEmailService) SendActivationEmail(context.Context, string, string) error {
+	return errors.New("dial tcp: lookup smtp.example.test: server misbehaving")
+}
+
+func (failingEmailService) SendEmail(context.Context, string, string, string) error {
+	return errors.New("dial tcp: lookup smtp.example.test: server misbehaving")
+}
+
+// A failed send is a 500 with a generic message, but only for an address that
+// has an account: an unknown address stays the same green 200 (no account
+// enumeration), and the driver text never reaches the client.
+func TestAuthHandler_ForgotPasswordSendFailure(t *testing.T) {
+	_, db, cfg := setupTestApp(t)
+	userRepo := repository.NewUserRepository(db.DB())
+	resetRepo := repository.NewGORMPasswordResetRepository(db.DB())
+
+	u := &user.User{
+		Email:        "known@example.com",
+		Username:     "known",
+		IsActive:     true,
+		UUID:         "known-uuid",
+		PasswordHash: "hash",
+	}
+	require.NoError(t, userRepo.Create(context.Background(), u))
+
+	forgotUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, failingEmailService{}, cfg.JWT.ResetExpiry)
+	h := NewAuthHandler(nil, nil, nil, nil, nil, forgotUC, nil, cfg)
+	app := fiber.New()
+	app.Post("/forgot-password", h.ForgotPassword)
+
+	post := func(email string) (int, string) {
+		body, _ := json.Marshal(map[string]string{"email": email})
+		req := httptest.NewRequest(http.MethodPost, "/forgot-password", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw)
+	}
+
+	t.Run("known address, mail server down", func(t *testing.T) {
+		status, body := post("known@example.com")
+		assert.Equal(t, fiber.StatusInternalServerError, status)
+		assert.Contains(t, body, "A server error occurred while sending the reset link")
+		assert.NotContains(t, body, "misbehaving")
+		assert.NotContains(t, body, "smtp.example.test")
+	})
+
+	t.Run("unknown address stays a success", func(t *testing.T) {
+		status, _ := post("nobody@example.com")
+		assert.Equal(t, fiber.StatusOK, status)
 	})
 }
 
