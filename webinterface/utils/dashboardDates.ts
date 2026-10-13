@@ -189,16 +189,40 @@ export function formatTimeOfDay(d: Date): string {
 }
 
 /**
+ * `day` as a `Date.getDay()` weekday (0 = Sunday … 6 = Saturday). Wraps any
+ * integer into range; anything else (NaN, a fraction) is Sunday, so a bad value
+ * can never produce a grid that does not start on a real weekday.
+ */
+function toWeekday(day: number): number {
+  return Number.isInteger(day) ? ((day % 7) + 7) % 7 : 0;
+}
+
+/**
+ * The seven `Date.getDay()` weekdays in display order for a week starting on
+ * `firstDay` — e.g. `[1, 2, 3, 4, 5, 6, 0]` for Monday. Use it for every row of
+ * weekday labels, so a header can never disagree with the grid beneath it.
+ */
+export function orderedWeekdays(firstDay: number): number[] {
+  const start = toWeekday(firstDay);
+  return Array.from({ length: 7 }, (_, i) => (start + i) % 7);
+}
+
+/**
  * A fixed 6-week (42 cell) grid for the given month, so the mini calendar keeps
  * a constant height across months.
  *
- * Weeks start on SUNDAY to match the calendar page, which renders FullCalendar
- * with its default `firstDay: 0`; a Monday-first mini calendar would disagree
- * with the view it links into.
+ * Weeks start on `firstDay` (`Date.getDay()` numbering, 0 = Sunday). Callers
+ * pass the user's `first_day_of_week` preference — the same value the calendar
+ * page hands FullCalendar as `firstDay` — so the mini calendar never disagrees
+ * with the view it links into. It is deliberately not optional: a caller that
+ * forgot it would silently fall back to one fixed weekday.
  */
-export function buildMonthGrid(year: number, month: number): MonthGridDay[] {
+export function buildMonthGrid(year: number, month: number, firstDay: number): MonthGridDay[] {
   const first = new Date(year, month, 1);
-  const gridStart = addDays(first, -first.getDay());
+  // Days of the previous month that lead into the first row; 0 when the month
+  // itself begins on the week's first day.
+  const leadingDays = (first.getDay() - toWeekday(firstDay) + 7) % 7;
+  const gridStart = addDays(first, -leadingDays);
   const cells: MonthGridDay[] = [];
   for (let i = 0; i < 42; i++) {
     const date = addDays(gridStart, i);

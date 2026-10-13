@@ -202,7 +202,8 @@ func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
 // Keys the user has not set are returned with their default value. Keys:
 // `default_event_duration` (minutes, one of 15/30/45/60/90/120/180/240/480),
 // `default_all_day` (true/false), `time_format` (12h/24h), `accent_color`
-// (6-digit lowercase hex, e.g. `#3b82f6`).
+// (6-digit lowercase hex, e.g. `#3b82f6`), `first_day_of_week` (0 Sunday,
+// 1 Monday, 6 Saturday; default 0).
 func (h *UserHandler) GetPreferences(c fiber.Ctx) error {
 	userUUID, ok := c.Locals("user_uuid").(string)
 	if !ok {

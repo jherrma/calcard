@@ -88,6 +88,12 @@ export interface ChangePasswordResponse {
 
 export type TimeFormat = '12h' | '24h';
 
+/**
+ * The weekday a week starts on, numbered like `Date.getDay()` and FullCalendar's
+ * `firstDay`: 0 Sunday, 1 Monday, 6 Saturday. Sent as the string `"0"`/`"1"`/`"6"`.
+ */
+export type FirstDayOfWeek = 0 | 1 | 6;
+
 export interface PreferencesResponse {
   preferences: Record<string, string>;
 }

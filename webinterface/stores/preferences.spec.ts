@@ -5,8 +5,10 @@ import { createTestingPinia } from '@pinia/testing';
 import {
   usePreferencesStore,
   DEFAULT_PREFERENCES,
+  FIRST_DAY_OF_WEEK_OPTIONS,
   PREF_DEFAULT_ALL_DAY,
   PREF_DEFAULT_EVENT_DURATION,
+  PREF_FIRST_DAY_OF_WEEK,
   PREF_TIME_FORMAT,
 } from './preferences';
 
@@ -39,6 +41,71 @@ describe('initial state', () => {
     expect(store.defaultEventDuration).toBe(60);
     expect(store.defaultAllDay).toBe(false);
     expect(store.timeFormat).toBe('24h');
+    // Sunday by default: the week start the calendar had before the setting.
+    expect(DEFAULT_PREFERENCES[PREF_FIRST_DAY_OF_WEEK]).toBe('0');
+    expect(store.firstDayOfWeek).toBe(0);
+  });
+});
+
+describe('first day of the week', () => {
+  it('offers exactly Sunday, Monday and Saturday, the set the server accepts', () => {
+    expect(FIRST_DAY_OF_WEEK_OPTIONS.map(o => o.value)).toEqual([0, 1, 6]);
+  });
+
+  it.each([
+    ['0', 0],
+    ['1', 1],
+    ['6', 6],
+  ])('parses the stored string %j into weekday %i', (stored, expected) => {
+    const store = usePreferencesStore();
+    store.preferences = { ...DEFAULT_PREFERENCES, [PREF_FIRST_DAY_OF_WEEK]: stored };
+
+    expect(store.firstDayOfWeek).toBe(expected);
+  });
+
+  it.each([
+    ['a weekday the UI does not offer', '3'],
+    ['an out-of-range number', '7'],
+    ['a non-canonical spelling', '01'],
+    ['a day name', 'monday'],
+    ['an empty value', ''],
+  ])('falls back to Sunday for %s', (_label, stored) => {
+    const store = usePreferencesStore();
+    store.preferences = { ...DEFAULT_PREFERENCES, [PREF_FIRST_DAY_OF_WEEK]: stored };
+
+    expect(store.firstDayOfWeek).toBe(0);
+  });
+
+  it('falls back to Sunday when the key is missing entirely', () => {
+    const store = usePreferencesStore();
+    store.preferences = {};
+
+    expect(store.firstDayOfWeek).toBe(0);
+  });
+
+  it('adopts a saved week start from the PATCH response', async () => {
+    apiMock.mockResolvedValueOnce(envelope({ ...fullMap, [PREF_FIRST_DAY_OF_WEEK]: '1' }));
+
+    const store = usePreferencesStore();
+    await store.updatePreferences({ [PREF_FIRST_DAY_OF_WEEK]: '1' });
+
+    expect(apiMock).toHaveBeenCalledWith('/api/v1/users/me/preferences', {
+      method: 'PATCH',
+      body: { preferences: { [PREF_FIRST_DAY_OF_WEEK]: '1' } },
+    });
+    expect(store.firstDayOfWeek).toBe(1);
+  });
+
+  it('goes back to Sunday on reset (logout), so the next user does not inherit it', async () => {
+    apiMock.mockResolvedValueOnce(envelope({ ...fullMap, [PREF_FIRST_DAY_OF_WEEK]: '6' }));
+
+    const store = usePreferencesStore();
+    await store.ensureLoaded();
+    expect(store.firstDayOfWeek).toBe(6);
+
+    store.reset();
+
+    expect(store.firstDayOfWeek).toBe(0);
   });
 });
 

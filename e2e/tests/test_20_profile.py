@@ -50,24 +50,31 @@ def test_prefs_defaults(t, u1):
     r = u1.api("GET", "/users/me/preferences")
     if not t.status(r, 200):
         return
-    t.jq(r, lambda j: {"default_event_duration", "default_all_day", "time_format", "accent_color"}
+    t.jq(r, lambda j: {"default_event_duration", "default_all_day", "time_format", "accent_color",
+                       "first_day_of_week"}
          <= j["data"]["preferences"].keys(),
-         "all four known preference keys must be present (defaults filled in)")
+         "all five known preference keys must be present (defaults filled in)")
+    t.json(r, "data.preferences.first_day_of_week", "0", "weeks start on Sunday by default")
 
 
 def test_prefs_update(t, u1):
     """preferences: valid update is stored and normalized"""
     r = u1.api("PATCH", "/users/me/preferences",
-               json='{"preferences":{"time_format":"12h","default_event_duration":"30","accent_color":"#8B5CF6"}}')
+               json='{"preferences":{"time_format":"12h","default_event_duration":"30","accent_color":"#8B5CF6",'
+                    '"first_day_of_week":"1"}}')
     if not t.status(r, 200):
         return
     t.json(r, "data.preferences.time_format", "12h")
     t.json(r, "data.preferences.default_event_duration", "30")
     t.json(r, "data.preferences.accent_color", "#8b5cf6", "accent colour is normalized to lower case")
+    t.json(r, "data.preferences.first_day_of_week", "1")
     t.json(u1.api("GET", "/users/me/preferences"), "data.preferences.time_format", "12h", "the update must persist")
+    t.json(u1.api("GET", "/users/me/preferences"), "data.preferences.first_day_of_week", "1",
+           "the first day of the week must persist")
     # restore defaults
     r = u1.api("PATCH", "/users/me/preferences",
-               json='{"preferences":{"time_format":"24h","default_event_duration":"60","accent_color":"#3b82f6"}}')
+               json='{"preferences":{"time_format":"24h","default_event_duration":"60","accent_color":"#3b82f6",'
+                    '"first_day_of_week":"0"}}')
     t.status(r, 200)
 
 
@@ -79,6 +86,9 @@ def test_prefs_invalid(t, u1):
     t.status(u1.api("PATCH", p, json='{"preferences":{"default_event_duration":"17"}}'), 400,
              msg="durations are a closed set")
     t.status(u1.api("PATCH", p, json='{"preferences":{"accent_color":"blue"}}'), 400)
+    t.status(u1.api("PATCH", p, json='{"preferences":{"first_day_of_week":"3"}}'), 400,
+             msg="only Sunday (0), Monday (1) and Saturday (6) are offered")
+    t.status(u1.api("PATCH", p, json='{"preferences":{"first_day_of_week":"monday"}}'), 400)
     t.status(u1.api("PATCH", p, json='{"preferences":{}}'), 400)
 
 

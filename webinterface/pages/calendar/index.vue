@@ -149,9 +149,10 @@ const currentDateRange = ref<{ start: Date; end: Date } | null>(null);
 
 // Fetch calendars on mount, then refetch events (datesSet may fire before calendars load)
 onMounted(async () => {
-  // Preferences drive the 12h/24h display and the defaults EventForm snapshots at
-  // setup time, so they must be in the store before any create dialog can open
-  // (story 103). ensureLoaded() never rejects, so it can't break this mount.
+  // Preferences drive the 12h/24h display, the first day of the week and the
+  // defaults EventForm snapshots at setup time, so they must be in the store
+  // before any create dialog can open (story 103). ensureLoaded() never rejects,
+  // so it can't break this mount.
   await Promise.all([calendarStore.fetchCalendars(), preferencesStore.ensureLoaded()]);
   if (currentDateRange.value) {
     await calendarStore.fetchEvents(currentDateRange.value.start, currentDateRange.value.end);
@@ -325,6 +326,11 @@ const calendarOptions = computed<CalendarOptions>(() => ({
     minute: '2-digit' as const,
     hour12: is12h.value,
   },
+
+  // Weeks start on the user's first_day_of_week (0 Sunday, 1 Monday, 6 Saturday),
+  // the same value the dashboard mini calendar lays its grid out by. Set
+  // explicitly: FullCalendar's own default depends on its locale.
+  firstDay: preferencesStore.firstDayOfWeek,
 
   // Display options
   nowIndicator: true,

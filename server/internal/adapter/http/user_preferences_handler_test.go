@@ -90,6 +90,8 @@ func TestUserHandler_Preferences(t *testing.T) {
 		// Compared against the domain's own default map rather than a literal, so
 		// adding a preference key does not fail this test for an unrelated reason.
 		assert.Equal(t, user.DefaultPreferences(), prefs)
+		// ...but the week-start default is a product decision, so pin it: Sunday.
+		assert.Equal(t, "0", prefs[user.PrefFirstDayOfWeek])
 	})
 
 	t.Run("GET unauthorized", func(t *testing.T) {
@@ -150,6 +152,22 @@ func TestUserHandler_Preferences(t *testing.T) {
 		assert.Equal(t, "#8b5cf6", reread[user.PrefAccentColor])
 	})
 
+	t.Run("PATCH stores the first day of the week", func(t *testing.T) {
+		resp, prefs, _ := patch(t, token, dto.UpdatePreferencesRequest{Preferences: map[string]string{
+			user.PrefFirstDayOfWeek: "1",
+		}})
+		require.Equal(t, fiber.StatusOK, resp.StatusCode)
+		assert.Equal(t, "1", prefs[user.PrefFirstDayOfWeek])
+
+		stored, err := prefRepo.GetByKey(context.Background(), u.ID, user.PrefFirstDayOfWeek)
+		require.NoError(t, err)
+		require.NotNil(t, stored)
+		assert.Equal(t, "1", stored.Value)
+
+		_, reread := get(t, token)
+		assert.Equal(t, "1", reread[user.PrefFirstDayOfWeek])
+	})
+
 	t.Run("PATCH rejections", func(t *testing.T) {
 		tests := []struct {
 			name    string
@@ -159,6 +177,8 @@ func TestUserHandler_Preferences(t *testing.T) {
 			{"bad duration", map[string]any{"preferences": map[string]string{user.PrefDefaultEventDuration: "37"}}},
 			{"bad all-day", map[string]any{"preferences": map[string]string{user.PrefDefaultAllDay: "yes"}}},
 			{"bad time format", map[string]any{"preferences": map[string]string{user.PrefTimeFormat: "military"}}},
+			{"first day of the week not offered", map[string]any{"preferences": map[string]string{user.PrefFirstDayOfWeek: "2"}}},
+			{"first day of the week as a name", map[string]any{"preferences": map[string]string{user.PrefFirstDayOfWeek: "monday"}}},
 			{"accent colour without a hash", map[string]any{"preferences": map[string]string{user.PrefAccentColor: "3b82f6"}}},
 			{"accent colour as a CSS name", map[string]any{"preferences": map[string]string{user.PrefAccentColor: "rebeccapurple"}}},
 			{"empty map", map[string]any{"preferences": map[string]string{}}},
@@ -178,6 +198,7 @@ func TestUserHandler_Preferences(t *testing.T) {
 		_, prefs := get(t, otherToken)
 		assert.Equal(t, "60", prefs[user.PrefDefaultEventDuration])
 		assert.Equal(t, "24h", prefs[user.PrefTimeFormat])
+		assert.Equal(t, "0", prefs[user.PrefFirstDayOfWeek])
 
 		_, otherPrefs, _ := patch(t, otherToken, dto.UpdatePreferencesRequest{Preferences: map[string]string{
 			user.PrefDefaultAllDay: "true",

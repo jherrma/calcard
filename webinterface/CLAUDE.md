@@ -86,7 +86,7 @@ webinterface/
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
 │   ├── dashboard.ts         # Dashboard event window (loadedMonths), recent contacts, clock
-│   ├── preferences.ts       # User preferences (event duration, all-day, time format, accent colour)
+│   ├── preferences.ts       # User preferences (event duration, all-day, time format, accent colour, first day of week)
 │   ├── search.ts            # Global search fan-out (events/contacts/collections), cache, recents
 │   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
 │                            #   `sharedWithMe` derived from the two list endpoints (story 043)
@@ -95,6 +95,7 @@ webinterface/
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
 │   ├── useTheme.ts          # Light/Dark/System state — SINGLETON, see Theming below
 │   ├── useAccentColor.ts    # Accent colour — SINGLETON, server-backed, see Theming below
+│   ├── useDatePickerFirstDay.ts # Mirrors first_day_of_week into PrimeVue's global locale (DatePickers)
 │   ├── useOpenSourceAttribution.ts  # Loads both attribution manifests + filterOpenSourcePackages()
 │   └── useCopyToClipboard.ts  # Copy + toast, with the plain-http fallback (no navigator.clipboard)
 ├── middleware/
@@ -113,7 +114,7 @@ webinterface/
 ├── utils/                   # Auto-imported pure helpers (no Nuxt context needed)
 │   ├── agendaLayout.ts      # Lane assignment for overlapping blocks on the day timeline
 │   ├── contactAvatar.ts     # Contact initials + deterministic avatar colour
-│   ├── dashboardDates.ts    # Local-date primitives + month-range merging for the dashboard
+│   ├── dashboardDates.ts    # Local-date primitives, month-range merging, week-start-aware month grid
 │   ├── davUrls.ts           # davOrigin() / davHomeUrl(): the URLs DAV clients are configured with
 │   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
@@ -122,6 +123,7 @@ webinterface/
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
+│   ├── first-day-of-week.client.ts # Starts useDatePickerFirstDay() app-wide at boot
 │   ├── primevue-services.ts # Registers ConfirmationService (for useConfirm)
 │   └── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
 ├── assets/css/
@@ -221,6 +223,16 @@ The calendar page (`pages/calendar/index.vue`) integrates FullCalendar:
 - **Event dialogs**: Create, edit, and detail dialogs are separate components. For recurring events, a `RecurrenceScopeDialog` asks the user whether to modify "this event", "this and future", or "all events".
 - **Drag-and-drop**: FullCalendar's `@eventDrop` and `@eventResize` call `calendarStore.updateEventTime()` for direct time changes.
 - **Date formatting**: `toRFC3339()` utility in `stores/calendars.ts` preserves local timezone offset (not UTC) so the backend can attach the correct IANA timezone.
+- **First day of the week**: one server preference, `first_day_of_week` (`"0"` Sunday — the
+  default — `"1"` Monday, `"6"` Saturday; `Date.getDay()` numbering), read through
+  `preferencesStore.firstDayOfWeek`, lays out every week in the app: FullCalendar's `firstDay`
+  here, the dashboard mini calendar (`buildMonthGrid(year, month, firstDay)`, where the parameter
+  is required, plus `orderedWeekdays()` for its header row), the weekly-recurrence day chips in
+  `EventForm`, and PrimeVue's DatePicker popups. The DatePicker has no prop for it — it reads the
+  GLOBAL `config.locale.firstDayOfWeek`, which `useDatePickerFirstDay()` (started by
+  `plugins/first-day-of-week.client.ts`) keeps in step. A new week-shaped view must read the getter
+  too; never offset by a bare `getDay()` or hardcode a weekday array. Display only: no RRULE `WKST`
+  is written.
 
 ### Contacts Page Architecture
 

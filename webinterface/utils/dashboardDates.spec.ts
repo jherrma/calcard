@@ -12,6 +12,7 @@ import {
   minutesIntoDay,
   monthFromKey,
   monthKey,
+  orderedWeekdays,
   overlaps,
   relativeDayLabel,
   startOfDay,
@@ -158,10 +159,27 @@ describe('relativeDayLabel', () => {
   });
 });
 
+describe('orderedWeekdays', () => {
+  it.each([
+    [0, [0, 1, 2, 3, 4, 5, 6]],
+    [1, [1, 2, 3, 4, 5, 6, 0]],
+    [6, [6, 0, 1, 2, 3, 4, 5]],
+  ])('lists the week starting on weekday %i', (firstDay, expected) => {
+    expect(orderedWeekdays(firstDay)).toEqual(expected);
+  });
+
+  it('wraps out-of-range integers and treats anything else as Sunday', () => {
+    expect(orderedWeekdays(7)).toEqual(orderedWeekdays(0));
+    expect(orderedWeekdays(-1)).toEqual(orderedWeekdays(6));
+    expect(orderedWeekdays(Number.NaN)).toEqual(orderedWeekdays(0));
+    expect(orderedWeekdays(1.5)).toEqual(orderedWeekdays(0));
+  });
+});
+
 describe('buildMonthGrid', () => {
   it('returns a fixed 6-week Sunday-first grid around the month', () => {
     // July 2026 starts on a Wednesday, so the grid leads in with Jun 28–30.
-    const grid = buildMonthGrid(2026, 6);
+    const grid = buildMonthGrid(2026, 6, 0);
     expect(grid).toHaveLength(42);
     expect(grid[0]!.key).toBe('2026-06-28');
     expect(grid[0]!.otherMonth).toBe(true);
@@ -177,11 +195,53 @@ describe('buildMonthGrid', () => {
     expect(grid[41]!.key).toBe('2026-08-08');
   });
 
+  it('starts the weeks on Monday when asked (first_day_of_week = 1)', () => {
+    // July 2026 starts on a Wednesday: two June days (Mon 29, Tue 30) lead in.
+    const grid = buildMonthGrid(2026, 6, 1);
+    expect(grid).toHaveLength(42);
+    expect(grid[0]!.key).toBe('2026-06-29');
+    expect(grid[0]!.date.getDay()).toBe(1); // Monday
+    expect(grid[2]!.key).toBe('2026-07-01');
+    expect(grid.filter((c) => !c.otherMonth)).toHaveLength(31);
+    expect(grid[41]!.key).toBe('2026-08-09');
+  });
+
+  it('starts the weeks on Saturday when asked (first_day_of_week = 6)', () => {
+    // Saturday-first: Sat 27 Jun to Tue 30 Jun lead in.
+    const grid = buildMonthGrid(2026, 6, 6);
+    expect(grid[0]!.key).toBe('2026-06-27');
+    expect(grid[0]!.date.getDay()).toBe(6); // Saturday
+    expect(grid[4]!.key).toBe('2026-07-01');
+    expect(grid[41]!.key).toBe('2026-08-07');
+  });
+
+  it.each([0, 1, 6])('starts every row on weekday %i and keeps the whole month in view', (firstDay) => {
+    // Every month of a year, so each leading-day count (0–6) occurs for every start.
+    for (let month = 0; month < 12; month++) {
+      const grid = buildMonthGrid(2026, month, firstDay);
+      for (let row = 0; row < 6; row++) {
+        expect(grid[row * 7]!.date.getDay()).toBe(firstDay);
+      }
+      const inMonth = grid.filter((c) => !c.otherMonth);
+      expect(inMonth[0]!.day).toBe(1);
+      expect(inMonth).toHaveLength(new Date(2026, month + 1, 0).getDate());
+    }
+  });
+
+  it('leads in with no days when the month begins on the first day of the week', () => {
+    // 1 June 2026 is a Monday.
+    expect(buildMonthGrid(2026, 5, 1)[0]!.key).toBe('2026-06-01');
+    // ...and 1 August 2026 a Saturday.
+    expect(buildMonthGrid(2026, 7, 6)[0]!.key).toBe('2026-08-01');
+  });
+
   it('keeps day keys unique and consecutive', () => {
-    const grid = buildMonthGrid(2027, 1); // February 2027
-    expect(new Set(grid.map((c) => c.key)).size).toBe(42);
-    for (let i = 1; i < grid.length; i++) {
-      expect(dayDiff(grid[i - 1]!.date, grid[i]!.date)).toBe(1);
+    for (const firstDay of [0, 1, 6]) {
+      const grid = buildMonthGrid(2027, 1, firstDay); // February 2027
+      expect(new Set(grid.map((c) => c.key)).size).toBe(42);
+      for (let i = 1; i < grid.length; i++) {
+        expect(dayDiff(grid[i - 1]!.date, grid[i]!.date)).toBe(1);
+      }
     }
   });
 });

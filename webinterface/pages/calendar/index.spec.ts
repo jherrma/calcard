@@ -6,7 +6,7 @@ import { createTestingPinia } from '@pinia/testing';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import CalendarPage from './index.vue';
 import { useCalendarStore } from '~/stores/calendars';
-import { usePreferencesStore, PREF_TIME_FORMAT } from '~/stores/preferences';
+import { usePreferencesStore, PREF_FIRST_DAY_OF_WEEK, PREF_TIME_FORMAT } from '~/stores/preferences';
 import type { CalendarEvent } from '~/types/calendar';
 
 // SCOPE: the changeView() guard on the calendar page (#26). The view SelectButton
@@ -305,5 +305,29 @@ describe('calendar time format preference (story 103)', () => {
 
     expect(vm.calendarOptions.slotLabelFormat).toMatchObject({ hour12: true });
     expect(vm.calendarOptions.eventTimeFormat).toMatchObject({ hour12: true });
+  });
+});
+
+// SCOPE: FullCalendar's week start follows first_day_of_week. It is set
+// explicitly even for the Sunday default, because FullCalendar's own default
+// comes from its locale; the dashboard mini calendar lays its grid out from the
+// same preference, so the two views agree.
+describe('calendar first day of the week preference', () => {
+  it('starts weeks on Sunday by default', async () => {
+    const { vm } = await mountPage();
+
+    expect(vm.calendarOptions.firstDay).toBe(0);
+  });
+
+  it.each([
+    ['1', 1],
+    ['6', 6],
+  ])('passes first_day_of_week %j to FullCalendar as firstDay %i', async (stored, expected) => {
+    const { vm, prefs } = await mountPage();
+
+    prefs.preferences = { ...prefs.preferences, [PREF_FIRST_DAY_OF_WEEK]: stored };
+    await nextTick();
+
+    expect(vm.calendarOptions.firstDay).toBe(expected);
   });
 });

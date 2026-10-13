@@ -54,6 +54,25 @@
           <small class="text-surface-500 dark:text-surface-400">Applies to the calendar grid, event details and the time pickers.</small>
         </div>
 
+        <!-- First day of the week -->
+        <div class="flex flex-col gap-2">
+          <label id="pref-first-day-label" class="text-sm font-medium text-surface-700 dark:text-surface-300">
+            First day of the week
+          </label>
+          <SelectButton
+            v-model="form.firstDayOfWeek"
+            :options="firstDayOptions"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            aria-labelledby="pref-first-day-label"
+            aria-describedby="pref-first-day-help"
+          />
+          <small id="pref-first-day-help" class="text-surface-500 dark:text-surface-400">
+            The day weeks start on in the calendar, the dashboard mini calendar and the date pickers.
+          </small>
+        </div>
+
         <div class="flex items-center gap-3 pt-2">
           <Button
             type="submit"
@@ -77,12 +96,14 @@
 </template>
 
 <script setup lang="ts">
-import type { TimeFormat } from '~/types/settings';
+import type { FirstDayOfWeek, TimeFormat } from '~/types/settings';
 import {
   usePreferencesStore,
   EVENT_DURATION_OPTIONS,
+  FIRST_DAY_OF_WEEK_OPTIONS,
   PREF_DEFAULT_ALL_DAY,
   PREF_DEFAULT_EVENT_DURATION,
+  PREF_FIRST_DAY_OF_WEEK,
   PREF_TIME_FORMAT,
 } from '~/stores/preferences';
 
@@ -104,34 +125,39 @@ const timeFormatOptions: { label: string; value: TimeFormat }[] = [
   { label: '12-hour (1:00 PM)', value: '12h' },
   { label: '24-hour (13:00)', value: '24h' },
 ];
+const firstDayOptions = FIRST_DAY_OF_WEEK_OPTIONS;
 
 const form = reactive({
   duration: preferencesStore.defaultEventDuration,
   allDay: preferencesStore.defaultAllDay,
   timeFormat: preferencesStore.timeFormat as TimeFormat,
+  firstDayOfWeek: preferencesStore.firstDayOfWeek as FirstDayOfWeek,
 });
 
 const applyStoreValues = () => {
   form.duration = preferencesStore.defaultEventDuration;
   form.allDay = preferencesStore.defaultAllDay;
   form.timeFormat = preferencesStore.timeFormat;
+  form.firstDayOfWeek = preferencesStore.firstDayOfWeek;
 };
 
 const isDirty = computed(() =>
   form.duration !== preferencesStore.defaultEventDuration
   || form.allDay !== preferencesStore.defaultAllDay
-  || form.timeFormat !== preferencesStore.timeFormat,
+  || form.timeFormat !== preferencesStore.timeFormat
+  || form.firstDayOfWeek !== preferencesStore.firstDayOfWeek,
 );
 
 const handleSave = async () => {
   saving.value = true;
   try {
-    // Send all three keys, not just the changed ones: the endpoint upserts, so a
-    // full payload also repairs a row left behind by an older build.
+    // Send every key on the page, not just the changed ones: the endpoint
+    // upserts, so a full payload also repairs a row left behind by an older build.
     await preferencesStore.updatePreferences({
       [PREF_DEFAULT_EVENT_DURATION]: String(form.duration),
       [PREF_DEFAULT_ALL_DAY]: String(form.allDay),
       [PREF_TIME_FORMAT]: form.timeFormat,
+      [PREF_FIRST_DAY_OF_WEEK]: String(form.firstDayOfWeek),
     });
     // Re-read from the store: the server response is authoritative.
     applyStoreValues();

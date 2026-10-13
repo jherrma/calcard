@@ -40,10 +40,10 @@ func TestPreferenceRegistryIsConsistent(t *testing.T) {
 }
 
 func TestKnownPreferenceKey(t *testing.T) {
-	for _, key := range []string{PrefDefaultEventDuration, PrefDefaultAllDay, PrefTimeFormat, PrefAccentColor} {
+	for _, key := range []string{PrefDefaultEventDuration, PrefDefaultAllDay, PrefTimeFormat, PrefAccentColor, PrefFirstDayOfWeek} {
 		assert.True(t, KnownPreferenceKey(key), "%q should be known", key)
 	}
-	for _, key := range []string{"is_admin", "", "accent_colour", "ACCENT_COLOR"} {
+	for _, key := range []string{"is_admin", "", "accent_colour", "ACCENT_COLOR", "week_start", "first_day"} {
 		assert.False(t, KnownPreferenceKey(key), "%q should not be known", key)
 	}
 }
@@ -75,6 +75,34 @@ func TestAccentColorValidation(t *testing.T) {
 	}
 	for _, v := range invalid {
 		assert.False(t, IsAllowedPreferenceValue(PrefAccentColor, v), "%q should be rejected", v)
+	}
+}
+
+func TestFirstDayOfWeekValidation(t *testing.T) {
+	// The default is Sunday: users who never open the setting keep the
+	// Sunday-first calendar they had before it existed.
+	assert.Equal(t, "0", DefaultPreferences()[PrefFirstDayOfWeek])
+	assert.Equal(t, "one of 0, 1, 6", PreferenceValueHint(PrefFirstDayOfWeek))
+
+	// FullCalendar / Date.getDay() numbering: Sunday, Monday, Saturday.
+	for _, v := range []string{"0", "1", "6"} {
+		assert.True(t, IsAllowedPreferenceValue(PrefFirstDayOfWeek, v), "%q should be accepted", v)
+	}
+
+	invalid := []string{
+		"2", "3", "4", "5", // real weekdays, but not offered as a week start
+		"7",       // out of range — FullCalendar would not wrap it
+		"-1",      // out of range
+		"",        // empty
+		"01",      // the stored value must be one canonical spelling
+		" 1",      // closed-set keys are not trimmed
+		"1.0",     // not an integer string
+		"monday",  // names are not the wire format
+		"Sunday",  // ... in any casing
+		"0; DROP", // anything else at all
+	}
+	for _, v := range invalid {
+		assert.False(t, IsAllowedPreferenceValue(PrefFirstDayOfWeek, v), "%q should be rejected", v)
 	}
 }
 

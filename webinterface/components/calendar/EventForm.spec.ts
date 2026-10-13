@@ -10,6 +10,7 @@ import {
   usePreferencesStore,
   PREF_DEFAULT_ALL_DAY,
   PREF_DEFAULT_EVENT_DURATION,
+  PREF_FIRST_DAY_OF_WEEK,
   PREF_TIME_FORMAT,
 } from '~/stores/preferences';
 import type { CalendarEvent, EventFormData, RecurrenceRule } from '~/types/calendar';
@@ -40,6 +41,7 @@ interface FormVm {
   recurrenceUntilDate: Date | null;
   form: { summary: string; all_day: boolean; start: Date; end: Date; calendar_id: string };
   hourFormat: string;
+  weekDays: { label: string; value: string }[];
   handleSubmit: () => void;
 }
 
@@ -239,5 +241,34 @@ describe('EventForm new-event defaults from preferences (story 103)', () => {
     const { vm } = await mountCreateForm({ [PREF_TIME_FORMAT]: pref });
 
     expect(vm.hourFormat).toBe(expected);
+  });
+});
+
+// SCOPE: the weekly-recurrence day chips follow the first day of the week, like
+// the calendar grid, instead of a hardcoded order. Display only — what gets
+// submitted is still the set of picked BYDAY codes in the order they were picked.
+describe('EventForm weekday chips follow first_day_of_week', () => {
+  it.each([
+    ['0', ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']],
+    ['1', ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']],
+    ['6', ['SA', 'SU', 'MO', 'TU', 'WE', 'TH', 'FR']],
+  ])('lays the chips out from weekday %s', async (pref, expected) => {
+    const { vm } = await mountCreateForm({ [PREF_FIRST_DAY_OF_WEEK]: pref });
+
+    expect(vm.weekDays.map((d) => d.value)).toEqual(expected);
+  });
+
+  it('keeps the picked BYDAY order regardless of the chip order', async () => {
+    const { wrapper, vm } = await mountForm(baseEvent());
+    const preferences = usePreferencesStore();
+    preferences.preferences = { ...preferences.preferences, [PREF_FIRST_DAY_OF_WEEK]: '6' };
+    vm.enableRecurrence = true;
+    vm.recurrence.frequency = 'WEEKLY';
+    vm.recurrence.by_day = ['MO', 'SA'];
+    await nextTick();
+
+    vm.handleSubmit();
+
+    expect(submittedRecurrence(wrapper)?.by_day).toEqual(['MO', 'SA']);
   });
 });

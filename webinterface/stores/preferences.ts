@@ -1,4 +1,4 @@
-import type { PreferencesResponse, TimeFormat } from '~/types/settings';
+import type { FirstDayOfWeek, PreferencesResponse, TimeFormat } from '~/types/settings';
 
 // Keys, defaults and allowed values mirror server/internal/domain/user/preference.go.
 // The backend rejects anything outside those sets with 400, so the two lists must
@@ -7,13 +7,28 @@ export const PREF_DEFAULT_EVENT_DURATION = 'default_event_duration';
 export const PREF_DEFAULT_ALL_DAY = 'default_all_day';
 export const PREF_TIME_FORMAT = 'time_format';
 export const PREF_ACCENT_COLOR = 'accent_color';
+export const PREF_FIRST_DAY_OF_WEEK = 'first_day_of_week';
 
 export const DEFAULT_PREFERENCES: Record<string, string> = {
   [PREF_DEFAULT_EVENT_DURATION]: '60',
   [PREF_DEFAULT_ALL_DAY]: 'false',
   [PREF_TIME_FORMAT]: '24h',
   [PREF_ACCENT_COLOR]: DEFAULT_ACCENT_COLOR,
+  [PREF_FIRST_DAY_OF_WEEK]: '0',
 };
+
+/**
+ * Week starts offered by the settings UI — exactly the set the server accepts
+ * (Sunday, Monday, Saturday; `AllowedFirstDaysOfWeek` in preference.go).
+ */
+export const FIRST_DAY_OF_WEEK_OPTIONS: { label: string; value: FirstDayOfWeek }[] = [
+  { label: 'Sunday', value: 0 },
+  { label: 'Monday', value: 1 },
+  { label: 'Saturday', value: 6 },
+];
+
+/** Sunday: what the calendar showed before the setting existed. */
+const FALLBACK_FIRST_DAY: FirstDayOfWeek = 0;
 
 /** Durations offered by the settings UI, in minutes. */
 export const EVENT_DURATION_OPTIONS: { label: string; value: number }[] = [
@@ -84,6 +99,19 @@ export const usePreferencesStore = defineStore('preferences', {
     accentColor(state: PreferencesState): string {
       const stored = state.preferences[PREF_ACCENT_COLOR];
       return isAccentColor(stored) ? stored : DEFAULT_ACCENT_COLOR;
+    },
+
+    /**
+     * The weekday weeks start on, read by the calendar page (FullCalendar's
+     * `firstDay`), the dashboard mini calendar, the recurrence weekday picker
+     * and PrimeVue's date pickers, so they all agree. Matched against the exact
+     * strings the server stores rather than parsed, so `"01"` or `"3"` fall
+     * back to Sunday instead of becoming a week start nothing else offers.
+     */
+    firstDayOfWeek(state: PreferencesState): FirstDayOfWeek {
+      const stored = state.preferences[PREF_FIRST_DAY_OF_WEEK];
+      const match = FIRST_DAY_OF_WEEK_OPTIONS.find(o => String(o.value) === stored);
+      return match ? match.value : FALLBACK_FIRST_DAY;
     },
   },
 
