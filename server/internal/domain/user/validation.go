@@ -2,6 +2,7 @@ package user
 
 import (
 	"errors"
+	"fmt"
 	"net/mail"
 	"strings"
 	"unicode"
@@ -22,6 +23,38 @@ func NormalizeCredentialName(name string) (string, bool) {
 		return name, false
 	}
 	return name, true
+}
+
+// Bounds of a CalDAV/CardDAV credential username. The SPA generates 16
+// characters; people may still type their own.
+const (
+	MinDAVCredentialUsernameLength = 3
+	MaxDAVCredentialUsernameLength = 50
+)
+
+var (
+	ErrDAVCredentialUsernameLength = fmt.Errorf("username must be between %d and %d characters",
+		MinDAVCredentialUsernameLength, MaxDAVCredentialUsernameLength)
+	ErrDAVCredentialUsernameCharset = errors.New("username may only contain lowercase letters a-z")
+)
+
+// ValidateDAVCredentialUsername is the rule for the username of a NEW CalDAV
+// or CardDAV credential: 3 to 50 lowercase ASCII letters a-z, nothing else.
+// Upper case is refused, not folded: the caller keeps exactly the name it
+// sent, and it cannot be typed into a DAV client in a different case than the
+// one stored (CalDAV credential lookups are exact, CardDAV ones are not, F02).
+// Only creation checks it; credentials stored under the older, wider rule
+// ([a-zA-Z0-9_-]) keep working unchanged.
+func ValidateDAVCredentialUsername(username string) error {
+	if len(username) < MinDAVCredentialUsernameLength || len(username) > MaxDAVCredentialUsernameLength {
+		return ErrDAVCredentialUsernameLength
+	}
+	for i := 0; i < len(username); i++ {
+		if c := username[i]; c < 'a' || c > 'z' {
+			return ErrDAVCredentialUsernameCharset
+		}
+	}
+	return nil
 }
 
 // BcryptCost is the bcrypt work factor used whenever a user password is

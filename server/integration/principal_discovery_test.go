@@ -76,7 +76,7 @@ func TestPrincipalDiscovery(t *testing.T) {
 	// per-protocol suppression is never exercised. A dedicated single-protocol
 	// credential must see ONLY its own home set (dav_protocol drives the filter).
 	t.Run("dedicated CalDAV credential sees only the calendar home set", func(t *testing.T) {
-		const credUser, credPass = "disco-cal-cred", "DiscoCalPass_v3rY!S1x"
+		const credUser, credPass = "discocalcred", "DiscoCalPass_v3rY!S1x"
 		var created struct {
 			ID string `json:"id"`
 		}
@@ -93,7 +93,7 @@ func TestPrincipalDiscovery(t *testing.T) {
 	})
 
 	t.Run("dedicated CardDAV credential sees only the addressbook home set", func(t *testing.T) {
-		const credUser, credPass = "disco-card-cred", "DiscoCardPass_v3rY!S1x"
+		const credUser, credPass = "discocardcred", "DiscoCardPass_v3rY!S1x"
 		var created struct {
 			ID string `json:"id"`
 		}

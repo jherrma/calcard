@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import platform
+import re
 import secrets
 import time
 from typing import Any, Callable
@@ -18,7 +19,7 @@ import lxml.etree
 import pytest
 
 from . import out
-from .config import Config
+from .config import MAX_CRED_LABEL, Config
 from .http import Http, Resp
 
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
@@ -245,6 +246,17 @@ class E2E:
     def uniq(self, label: str) -> str:
         """Run-unique name, e.g. "e2e-202610111015004821-LABEL"."""
         return f"{self.cfg.run_tag}-{label}"
+
+    def cred_user(self, label: str) -> str:
+        """Run-unique CalDAV/CardDAV credential username, e.g.
+        "ececacgbabdbabfaaeicbcalro" for run "e2e-202610131015004821" and label
+        "calro". New credential usernames may only hold lowercase letters a-z,
+        so the run tag is spelled in letters: digits become a-j and '-' is
+        dropped. The label is lowercase letters too."""
+        if not re.fullmatch(r"[a-z]+", label) or len(label) > MAX_CRED_LABEL:
+            raise ValueError(f"credential label must be 1-{MAX_CRED_LABEL} lowercase letters a-z (got {label!r})")
+        tag = "".join(chr(ord("a") + int(c)) if c.isdigit() else c for c in self.cfg.run_tag if c != "-")
+        return f"{tag}{label}"
 
     @property
     def run_id(self) -> str:

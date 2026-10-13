@@ -54,6 +54,38 @@ func TestValidatePassword(t *testing.T) {
 	}
 }
 
+func TestValidateDAVCredentialUsername(t *testing.T) {
+	tests := []struct {
+		username string
+		err      error
+	}{
+		{"abc", nil},
+		{"qzmwtbrhxkfepvan", nil}, // what the SPA generates: 16 letters
+		{strings.Repeat("z", MaxDAVCredentialUsernameLength), nil},
+		{"", ErrDAVCredentialUsernameLength},
+		{"ab", ErrDAVCredentialUsernameLength},
+		{strings.Repeat("a", MaxDAVCredentialUsernameLength+1), ErrDAVCredentialUsernameLength},
+		// Upper case is refused, never folded into lower case.
+		{"Thunderbird", ErrDAVCredentialUsernameCharset},
+		{"ABC", ErrDAVCredentialUsernameCharset},
+		{"phone2", ErrDAVCredentialUsernameCharset},
+		{"my-phone", ErrDAVCredentialUsernameCharset},
+		{"my_phone", ErrDAVCredentialUsernameCharset},
+		{"my phone", ErrDAVCredentialUsernameCharset},
+		{"phone.", ErrDAVCredentialUsernameCharset},
+		{"jürgen", ErrDAVCredentialUsernameCharset},
+		{"ab\x00", ErrDAVCredentialUsernameCharset},
+	}
+	for _, tt := range tests {
+		err := ValidateDAVCredentialUsername(tt.username)
+		if tt.err == nil {
+			assert.NoError(t, err, "username %q", tt.username)
+		} else {
+			assert.ErrorIs(t, err, tt.err, "username %q", tt.username)
+		}
+	}
+}
+
 func TestNormalizeCredentialName(t *testing.T) {
 	tests := []struct {
 		in   string

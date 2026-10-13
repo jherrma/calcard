@@ -33,7 +33,9 @@ func NewCalDAVCredentialHandler(
 // POST /api/v1/caldav-credentials
 //
 // expires_at is optional (RFC 3339) and must lie in the future; the name is
-// trimmed and required. Validation failures are 400s.
+// trimmed and required; the username must be 3-50 lowercase letters a-z
+// (user.ValidateDAVCredentialUsername). Validation failures are 400s, a
+// username already in use is a 409.
 func (h *CalDAVCredentialHandler) Create(c fiber.Ctx) error {
 	u := c.Locals("user").(*user.User)
 

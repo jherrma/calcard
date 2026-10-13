@@ -86,7 +86,7 @@ Unified cross-resource search (#156):
 Application password management (for DAV client access):
 
 - `create.go`, `list.go`, `revoke.go` — App password CRUD.
-- `caldav_credential.go`, `carddav_credential.go` — CalDAV/CardDAV-specific credential management.
+- `caldav_credential.go`, `carddav_credential.go` — CalDAV/CardDAV-specific credential management. Create validates the username with `user.ValidateDAVCredentialUsername` (lowercase letters `a`–`z` only, 3–50); a taken one answers "username '<name>' is already in use", which the handlers turn into a 409.
 
 ### [user/](user/)
 

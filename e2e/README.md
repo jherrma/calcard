@@ -142,7 +142,7 @@ re-authenticates them to delete them.
 |---|---|---|
 | `tests/test_00_system.py` | system | `/health`, `/ready`, system settings, auth methods, about/open-source, security headers, unknown routes, SPA serving |
 | `tests/test_10_auth.py` | auth | registration + validation, login, refresh rotation, logout, password change, forgot/reset/verify edges, OAuth surface, account deletion |
-| `tests/test_15_credentials.py` | credentials | app passwords (scopes, revocation, isolation), CalDAV / CardDAV credentials (read vs read-write, protocol confinement, expiry, duplicates) |
+| `tests/test_15_credentials.py` | credentials | app passwords (scopes, revocation, isolation), CalDAV / CardDAV credentials (read vs read-write, protocol confinement, expiry, duplicates, lowercase-only usernames) |
 | `tests/test_20_profile.py` | profile | profile get/patch, preferences, full backup export (ZIP content) |
 | `tests/test_30_calendars.py` | calendars | calendar CRUD, validation, isolation, export, last-calendar guard |
 | `tests/test_35_events.py` | events | event CRUD, validation, If-Match, all-day, recurrence (expand, BYDAY, scope=this / this_and_future for update and delete), move |
@@ -202,9 +202,12 @@ the `DELETE /users/me` with 200/204.
 
 A suite is a module `tests/test_NN_name.py` with a `DESCRIPTION` string; each
 test is a function whose **docstring is its name in the results**. Fixtures:
-`e2e` (the run: `raw`, `anon`, `req`, `uniq`, `defer`, `create_user`, `feed`),
-`u1` / `u2` (shared users), `t` (checks), `st` (state shared by the suite's
-tests).
+`e2e` (the run: `raw`, `anon`, `req`, `uniq`, `cred_user`, `defer`, `create_user`,
+`feed`), `u1` / `u2` (shared users), `t` (checks), `st` (state shared by the
+suite's tests). `e2e.uniq(label)` is `<prefix>-<run id>-<label>`; a CalDAV/CardDAV
+credential username must be lowercase letters `a`–`z` only, so use
+`e2e.cred_user(label)` for those (the run tag spelled in letters, plus a label
+of at most 12 lowercase letters).
 
 ```python
 from harness.checks import known

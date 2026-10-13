@@ -131,3 +131,59 @@ func TestDAVCredentialHandlers_CreateValidatesInput(t *testing.T) {
 		})
 	}
 }
+
+// A new DAV credential's username is 3-50 lowercase letters a-z. The old rule
+// also allowed upper case, digits, '-' and '_'.
+func TestDAVCredentialHandlers_UsernameIsLowercaseLetters(t *testing.T) {
+	app, token, _ := credentialTestUser(t)
+
+	refused := []struct {
+		name, username, msg string
+	}{
+		{"upper case", "Thunderbird", "only contain lowercase letters a-z"},
+		{"all capitals", "PHONE", "only contain lowercase letters a-z"},
+		{"digit", "phone2", "only contain lowercase letters a-z"},
+		{"hyphen", "my-phone", "only contain lowercase letters a-z"},
+		{"underscore", "my_phone", "only contain lowercase letters a-z"},
+		{"space", "my phone", "only contain lowercase letters a-z"},
+		{"non-ASCII letter", "jürgen", "only contain lowercase letters a-z"},
+		{"too short", "ab", "between 3 and 50 characters"},
+		{"too long", strings.Repeat("a", 51), "between 3 and 50 characters"},
+		{"empty", "", "between 3 and 50 characters"},
+	}
+
+	for _, kind := range []string{"caldav", "carddav"} {
+		path := "/api/v1/" + kind + "-credentials"
+		t.Run(kind, func(t *testing.T) {
+			for _, tc := range refused {
+				body, err := json.Marshal(map[string]string{
+					"name": "x", "username": tc.username, "password": "LongEnough_123",
+				})
+				require.NoError(t, err)
+				code, resp := postJSON(t, app, token, path, string(body))
+				assert.Equal(t, fiber.StatusBadRequest, code, "%s must be refused: %s", tc.name, resp)
+				assert.Contains(t, resp, tc.msg, tc.name)
+			}
+
+			// What the SPA generates, and both bounds, are accepted and stored
+			// exactly as sent. (CalDAV and CardDAV usernames are separate
+			// namespaces, so both kinds may use the same names.)
+			for _, username := range []string{"qzmwtbrhxkfepvan", "abc", strings.Repeat("z", 50)} {
+				code, resp := postJSON(t, app, token, path,
+					`{"name":"ok","username":"`+username+`","password":"LongEnough_123"}`)
+				require.Equal(t, fiber.StatusCreated, code, "%q must be accepted: %s", username, resp)
+				var res struct {
+					Username string `json:"username"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(resp), &res))
+				assert.Equal(t, username, res.Username)
+			}
+
+			// A taken username is still a 409, not a validation error.
+			code, resp := postJSON(t, app, token, path,
+				`{"name":"dup","username":"qzmwtbrhxkfepvan","password":"LongEnough_123"}`)
+			assert.Equal(t, fiber.StatusConflict, code, resp)
+			assert.Contains(t, resp, "username 'qzmwtbrhxkfepvan' is already in use")
+		})
+	}
+}
