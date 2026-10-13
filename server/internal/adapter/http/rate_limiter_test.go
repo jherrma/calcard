@@ -3,6 +3,8 @@ package http
 import (
 	"io"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,36 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// The per-e-mail limiter keys on the address as the account lookups see it,
+// trimmed and lower-cased, so case and whitespace variants of one address
+// share its bucket (#193 item 3).
+func TestEmailRateLimiterNormalisesTheAddress(t *testing.T) {
+	app := fiber.New()
+	app.Post("/login", ExtractEmailMiddleware(), NewEmailRateLimiter(2, time.Minute), func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	login := func(email string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(fiber.MethodPost, "/login", strings.NewReader(`{"email":`+strconv.Quote(email)+`,"password":"x"}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+
+	status, _ := login("Foo@x")
+	assert.Equal(t, fiber.StatusNoContent, status)
+	status, _ = login("foo@x")
+	assert.Equal(t, fiber.StatusNoContent, status)
+	status, body := login(" foo@x ")
+	assert.Equal(t, fiber.StatusTooManyRequests, status, "the third variant of one address is over its budget of 2")
+	assert.Contains(t, body, tooManyAttemptsAccountMessage)
+
+	status, _ = login("bar@x")
+	assert.Equal(t, fiber.StatusNoContent, status, "another address keeps its own bucket")
+}
 
 // FailedAuthLimiter (#193): what the DAV integration test cannot reach —
 // attempts still being checked already count, a valid outcome gives them

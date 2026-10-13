@@ -37,7 +37,11 @@ func NewIPRateLimiter(max int, expiration time.Duration) fiber.Handler {
 	})
 }
 
-// ExtractEmailMiddleware parses the email from the request body and stores it in Locals
+// ExtractEmailMiddleware parses the email from the request body and stores it
+// in Locals("login_email") for NewEmailRateLimiter. The key is normalised the
+// way the account lookups normalise the address (normalizeAuthIdentifier):
+// otherwise "Victim@x", "VICTIM@x" and " victim@x" would each get their own
+// bucket while reaching the same account and inbox (#193).
 func ExtractEmailMiddleware() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var body struct {
@@ -47,7 +51,7 @@ func ExtractEmailMiddleware() fiber.Handler {
 		// Use c.Body() to peek at the request body without consuming the stream
 		// if Fiber's Bind() implementation were to do so.
 		if err := json.Unmarshal(c.Body(), &body); err == nil {
-			c.Locals("login_email", body.Email)
+			c.Locals("login_email", normalizeAuthIdentifier(body.Email))
 		}
 		return c.Next()
 	}

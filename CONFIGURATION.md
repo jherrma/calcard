@@ -118,7 +118,7 @@ uses `net/smtp.SendMail`) and has no further TLS options:
 | `requests`            | `CALDAV_RATE_LIMIT_REQUESTS`            | `5000`  | Requests **per client IP** allowed in the window, across the REST API, DAV, MCP and public feeds (web UI static assets are not counted). A value `<= 0` is reset to the default. |
 | `window`              | `CALDAV_RATE_LIMIT_WINDOW`              | `1m`    | Time window for rate limiting. |
 | `auth_ip_requests`    | `CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS`    | `20`    | Login / forgot-password / reset-password attempts per IP in the window, and **failed** DAV Basic-auth attempts per IP. Must stay above `auth_email_requests`. |
-| `auth_email_requests` | `CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS` | `10`    | Login / forgot-password attempts per e-mail address in the window, and **failed** DAV Basic-auth attempts per user name or e-mail address (trimmed, case-insensitive). |
+| `auth_email_requests` | `CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS` | `10`    | Login / forgot-password (and, with SMTP, register) attempts per e-mail address in the window, and **failed** DAV Basic-auth attempts per user name or e-mail address. Addresses are compared trimmed and case-insensitively, as the account lookup does, so `Foo@x`, `foo@x` and ` foo@x ` share one allowance. |
 
 The global limit is keyed on the client IP as the server sees it, and forwarded
 headers are not trusted, so **everyone behind one NAT or reverse proxy shares a
