@@ -21,6 +21,18 @@ CalCard is a high-performance CalDAV and CardDAV server written in Go. It provid
 > properties sync verbatim but generate no invitations. The server advertises
 > only `calendar-access`, never `calendar-auto-schedule`.
 
+## Screenshots
+
+| Dashboard | Dashboard (dark) |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Dashboard in dark mode](docs/screenshots/dashboard-dark.png) |
+
+| Calendar | Contacts |
+|---|---|
+| ![Calendar month view](docs/screenshots/calendar.png) | ![Contact list](docs/screenshots/contacts.png) |
+
+![Profile settings](docs/screenshots/profile.png)
+
 ## Quick Start
 
 ### Prerequisites
