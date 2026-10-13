@@ -6,6 +6,8 @@
       They are separate from your main password.
     </p>
 
+    <SettingsDavUrlBox variant="app-passwords" />
+
     <!-- Create button -->
     <div class="mb-6">
       <Button

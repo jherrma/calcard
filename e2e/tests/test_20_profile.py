@@ -21,6 +21,9 @@ def test_get(t, u1):
         return
     t.json(r, "data.id", u1.id)
     t.json(r, "data.email", u1.email)
+    # The account username, exactly as registration issued it: it is the
+    # /dav/{username}/ segment the web UI builds the DAV URLs from.
+    t.json(r, "data.username", u1.username)
     t.json(r, "data.is_active", True)
     t.jq(r, lambda j: j["data"]["stats"]["calendar_count"] >= 1, "registration seeds a default calendar")
     t.jq(r, lambda j: "contact_count" in j["data"]["stats"] and "app_password_count" in j["data"]["stats"],
@@ -37,6 +40,7 @@ def test_patch(t, e2e, u1):
     if not t.status(r, 200):
         return
     t.json(r, "data.display_name", name)
+    t.json(r, "data.username", u1.username, "PATCH answers with the same profile shape as GET")
     t.json(u1.api("GET", "/users/me"), "data.display_name", name, "the new name must persist")
     t.status(u1.api("PATCH", "/users/me", json={"display_name": u1.display}), 200)
 

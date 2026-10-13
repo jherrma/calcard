@@ -192,6 +192,9 @@ func TestAuthHandler_Login(t *testing.T) {
 		assert.NotEmpty(t, res.AccessToken)
 		assert.NotEmpty(t, res.RefreshToken)
 		assert.Equal(t, u.Email, res.User.Email)
+		// The SPA keeps this user object until the next page load, and builds
+		// the DAV URLs it shows (/dav/{username}/...) from its username.
+		assert.Equal(t, u.Username, res.User.Username)
 	})
 
 	t.Run("Invalid Password", func(t *testing.T) {
