@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type mockUserRepo struct {
@@ -76,6 +75,11 @@ func (m *mockUserRepo) Update(ctx context.Context, u *user.User) error {
 
 func (m *mockUserRepo) InvalidateAccessTokens(ctx context.Context, userID uint, at time.Time) error {
 	args := m.Called(ctx, userID, at)
+	return args.Error(0)
+}
+
+func (m *mockUserRepo) CompletePasswordReset(ctx context.Context, u *user.User, at time.Time) error {
+	args := m.Called(ctx, u, at)
 	return args.Error(0)
 }
 
@@ -187,7 +191,8 @@ func TestRegisterUseCase_Execute_WithSMTP(t *testing.T) {
 	repo.On("GetByEmail", ctx, email).Return(nil, nil)
 	repo.On("GetByUsername", ctx, mock.Anything).Return(nil, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
-		return u.Email == email && len(u.Username) == 16 && u.IsActive == false && u.EmailVerified == false
+		// Usable at once; only the address waits for the activation link.
+		return u.Email == email && len(u.Username) == 16 && u.IsActive == true && u.EmailVerified == false
 	})).Return(nil)
 	calRepo.On("Create", ctx, mock.Anything).Return(nil)
 	abRepo.On("Create", ctx, mock.Anything).Return(nil)
@@ -245,10 +250,9 @@ func TestRegisterUseCase_Execute_CaseInsensitive(t *testing.T) {
 	repo.AssertExpectations(t)
 }
 
-// P01: registering an address that already has an account must not be
-// observable from the response. With SMTP the use case tells the owner by
-// mail (and the handler answers as for a fresh registration); nothing is
-// created and the stored account is left untouched.
+// Registering an address that already has an account: with SMTP the use case
+// tells the owner by mail (the handler answers 409, as without SMTP); nothing
+// is created and the stored account is left untouched.
 func TestRegisterUseCase_Execute_ExistingVerified_WithSMTP_NotifiesOwner(t *testing.T) {
 	repo := new(mockUserRepo)
 	emailSvc := new(mockEmailService)
@@ -277,9 +281,9 @@ func TestRegisterUseCase_Execute_ExistingVerified_WithSMTP_NotifiesOwner(t *test
 	emailSvc.AssertExpectations(t)
 }
 
-// A pending (never confirmed) account gets a fresh activation link — the
-// usual reason to register twice is a lost activation mail — but its password
-// is NOT replaced: the caller has not proven they own the mailbox.
+// An account whose address was never confirmed gets a fresh activation link —
+// the usual reason to register twice is a lost activation mail — but its
+// password is NOT replaced: the caller has not proven they own the mailbox.
 func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_ResendsActivation(t *testing.T) {
 	repo := new(mockUserRepo)
 	emailSvc := new(mockEmailService)
@@ -334,34 +338,9 @@ func TestRegisterUseCase_Execute_Existing_NoSMTP(t *testing.T) {
 	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
-// The taken-address path must cost a bcrypt hash at the production work
-// factor, like a real registration does; otherwise the response time alone
-// tells a taken address (fast) from a free one (slow). Measured against one
-// reference hash and asserted at half of it, which leaves a wide margin either
-// way: without the dummy hash this path takes microseconds.
-func TestRegisterUseCase_Execute_Existing_SpendsBcryptTime(t *testing.T) {
-	repo := new(mockUserRepo)
-	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), new(mockEmailService), &config.Config{})
-	ctx := context.Background()
-	repo.On("GetByEmail", ctx, "taken@example.com").Return(&user.User{ID: 1, Email: "taken@example.com", EmailVerified: true}, nil)
-
-	start := time.Now()
-	_, err := bcrypt.GenerateFromPassword([]byte("SecurePass123!"), user.BcryptCost)
-	require.NoError(t, err)
-	reference := time.Since(start)
-
-	start = time.Now()
-	_, _, err = uc.Execute(ctx, "taken@example.com", "SecurePass123!", "x")
-	elapsed := time.Since(start)
-
-	require.ErrorIs(t, err, ErrUserAlreadyExists)
-	assert.GreaterOrEqualf(t, elapsed, reference/2,
-		"taken-address path took %v, a bcrypt hash takes %v: it must hash too (P01 timing)", elapsed, reference)
-}
-
 // bcrypt refuses more than 72 bytes. The policy must refuse it first, as the
 // typed sentinel the handler answers with a 400, and before the duplicate
-// lookup: a taken and a free address then fail identically (P01).
+// lookup: a taken and a free address then fail identically.
 func TestRegisterUseCase_Execute_RejectsPasswordOverBcryptLimit(t *testing.T) {
 	repo := new(mockUserRepo)
 	emailSvc := new(mockEmailService)

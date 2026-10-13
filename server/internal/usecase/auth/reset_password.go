@@ -22,20 +22,17 @@ type ResetPasswordRequest struct {
 }
 
 type ResetPasswordUseCase struct {
-	userRepo    user.UserRepository
-	resetRepo   user.PasswordResetRepository
-	refreshRepo user.RefreshTokenRepository
+	userRepo  user.UserRepository
+	resetRepo user.PasswordResetRepository
 }
 
 func NewResetPasswordUseCase(
 	userRepo user.UserRepository,
 	resetRepo user.PasswordResetRepository,
-	refreshRepo user.RefreshTokenRepository,
 ) *ResetPasswordUseCase {
 	return &ResetPasswordUseCase{
-		userRepo:    userRepo,
-		resetRepo:   resetRepo,
-		refreshRepo: refreshRepo,
+		userRepo:  userRepo,
+		resetRepo: resetRepo,
 	}
 }
 
@@ -74,26 +71,19 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, req ResetPasswordRe
 		return fmt.Errorf("failed to hash new password: %w", err)
 	}
 
-	// Update user password
+	// Completing a reset proves control of the mailbox, so it also confirms
+	// the address.
 	u.PasswordHash = string(newHash)
-	if err := uc.userRepo.Update(ctx, u); err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
-	}
+	u.EmailVerified = true
 
-	// Invalidate all reset tokens for this user
-	if err := uc.resetRepo.DeleteByUserID(ctx, u.ID); err != nil {
-		return fmt.Errorf("failed to clear reset tokens: %w", err)
-	}
-
-	// Revoke all refresh tokens
-	if err := uc.refreshRepo.DeleteByUserID(ctx, u.ID); err != nil {
-		return fmt.Errorf("failed to revoke sessions: %w", err)
-	}
-
-	// ...and every access token already issued: a reset is the recovery path
-	// after a compromise, so a stolen JWT must not outlive it.
-	if err := uc.userRepo.InvalidateAccessTokens(ctx, u.ID, time.Now()); err != nil {
-		return fmt.Errorf("failed to revoke access tokens: %w", err)
+	// One transaction: the new password, and the end of every way in that
+	// existed before it — access and refresh tokens, reset links, app
+	// passwords, DAV credentials, MCP tokens and OAuth links. A reset is the
+	// recovery path after a compromise, and an account is usable before its
+	// address is confirmed, so whoever registered it with this address must
+	// not keep a credential past the owner's reset.
+	if err := uc.userRepo.CompletePasswordReset(ctx, u, time.Now()); err != nil {
+		return fmt.Errorf("failed to reset password: %w", err)
 	}
 
 	return nil

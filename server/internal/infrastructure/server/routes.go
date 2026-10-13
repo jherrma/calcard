@@ -87,7 +87,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	logoutUC := authusecase.NewLogoutUseCase(tokenRepo, userRepo, jwtManager)
 	changePasswordUC := authusecase.NewChangePasswordUseCase(userRepo, tokenRepo, jwtManager, securityLogger)
 	forgotPasswordUC := authusecase.NewForgotPasswordUseCase(userRepo, resetRepo, emailService, cfg.JWT.ResetExpiry)
-	resetPasswordUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo, tokenRepo)
+	resetPasswordUC := authusecase.NewResetPasswordUseCase(userRepo, resetRepo)
 
 	// User Use Cases
 	getProfileUC := userusecase.NewGetProfileUseCase(userRepo)
@@ -239,7 +239,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 
 	// Registration rate limiting. With SMTP configured every registration
 	// sends a mail — an activation link to a new address, or a "someone tried
-	// to register with your address" notice to an existing one (P01) — so,
+	// to register with your address" notice to an existing one — so,
 	// like forgot-password, it needs the per-EMAIL limiter or it becomes a
 	// mail-flooding primitive against one inbox. Without SMTP nothing is
 	// sent, and registration keeps only the global limiter.

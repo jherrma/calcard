@@ -238,6 +238,67 @@ func TestOAuthHandler_CallbackDifferentAccountLinked(t *testing.T) {
 	assert.Len(t, conns, 1, "no second provider connection may be created")
 }
 
+// The mock provider reports the verified address "oauth@example.com". A local
+// account with that address that has not confirmed it may belong to whoever
+// registered it, so the callback must not link the provider identity to it:
+// the browser goes back to the SPA's callback page with an actionable error,
+// no tokens, no connection row and no second account. Once the local account
+// confirms its address the same callback signs in, so the refusal is the
+// EmailVerified check.
+func TestOAuthHandler_CallbackRefusesUnconfirmedLocalAccount(t *testing.T) {
+	app, db, cfg := setupTestApp(t)
+	userRepo := repository.NewUserRepository(db.DB())
+	connRepo := repository.NewOAuthConnectionRepository(db.DB())
+
+	u := &user.User{
+		Email:         "oauth@example.com", // matches the mock provider's UserInfo email
+		Username:      "unconfirmedlocal",
+		PasswordHash:  "hash",
+		IsActive:      true,
+		EmailVerified: false,
+		UUID:          "unconfirmed-local-uuid",
+	}
+	require.NoError(t, userRepo.Create(context.Background(), u))
+
+	h := &OAuthHandler{cfg: cfg}
+	callback := func(state string) string {
+		t.Helper()
+		b, _ := json.Marshal(oauthContext{State: state, Action: "login"})
+		payload := base64.URLEncoding.EncodeToString(b)
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/v1/auth/oauth/google/callback?code=auth_code&state="+state, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_context", Value: payload + "." + h.cookieMAC(payload)})
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		require.True(t,
+			resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther,
+			"expected a redirect, got %d", resp.StatusCode)
+		return resp.Header.Get("Location")
+	}
+
+	loc := callback("unconfirmed-state")
+	assert.Contains(t, loc, "/auth/oauth/callback#")
+	assert.Contains(t, loc, "error=")
+	assert.Contains(t, loc, "has+not+confirmed+it+yet")
+	assert.Contains(t, loc, "link+google+from+your+account+settings")
+	assert.NotContains(t, loc, "access_token")
+
+	conns, err := connRepo.ListByUserID(context.Background(), u.ID)
+	require.NoError(t, err)
+	assert.Empty(t, conns, "the provider identity must not be linked to the unconfirmed account")
+	var accounts int64
+	require.NoError(t, db.DB().Model(&user.User{}).Where("email = ?", "oauth@example.com").Count(&accounts).Error)
+	assert.Equal(t, int64(1), accounts, "no second account may be provisioned for the address")
+
+	require.NoError(t, db.DB().Model(&user.User{}).Where("id = ?", u.ID).
+		UpdateColumn("email_verified", true).Error)
+	loc = callback("confirmed-state")
+	assert.Contains(t, loc, "access_token=", "a confirmed account is linked and signed in: %s", loc)
+	conns, err = connRepo.ListByUserID(context.Background(), u.ID)
+	require.NoError(t, err)
+	assert.Len(t, conns, 1)
+}
+
 func TestOAuthHandler_Lifecycle(t *testing.T) {
 	app, db, cfg := setupTestApp(t)
 	userRepo := repository.NewUserRepository(db.DB())

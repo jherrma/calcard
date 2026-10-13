@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -12,18 +13,18 @@ import (
 )
 
 // smtpOn points the server at an SMTP endpoint that refuses connections: the
-// server believes mail is configured (so registrations need confirmation)
+// server believes mail is configured (so new addresses get an activation link)
 // and every send fails fast, which the register path logs and swallows.
 func smtpOn(cfg *config.Config) {
 	cfg.SMTP = config.SMTPConfig{Host: "127.0.0.1", Port: "1", From: "calcard@example.test"}
 }
 
-// TestRegisterDoesNotEnumerateWithSMTP — P01 over the real socket. With SMTP
-// configured, registering a taken address answers byte-for-byte like
-// registering a free one, and the follow-up login (with the password the
-// caller just chose) answers identically for "you created an unconfirmed
-// account" and "that address belonged to someone else".
-func TestRegisterDoesNotEnumerateWithSMTP(t *testing.T) {
+// TestRegisterWithSMTPUsableBeforeConfirmation — over the real socket, with
+// SMTP configured: the register body has the same shape as without SMTP (id,
+// username; is_active true, email_verified false), the account logs in and
+// reaches the authenticated API before its address is confirmed, and a taken
+// address answers 409 as it does without SMTP.
+func TestRegisterWithSMTPUsableBeforeConfirmation(t *testing.T) {
 	base, shutdown := bootServerWithConfig(t, smtpOn)
 	t.Cleanup(shutdown)
 
@@ -34,26 +35,31 @@ func TestRegisterDoesNotEnumerateWithSMTP(t *testing.T) {
 		return status, string(body)
 	}
 
-	const email = "enum-target@example.test"
-	firstStatus, firstBody := register(email, "FirstPass123!")
-	require.Equal(t, http.StatusOK, firstStatus, firstBody)
-	assert.NotContains(t, firstBody, `"id"`, "a pending registration exposes no stored-row fields")
-	assert.NotContains(t, firstBody, `"username"`)
-	assert.Contains(t, firstBody, `"is_active":false`)
+	const email = "smtp-new@example.test"
+	status, body := register(email, "FirstPass123!")
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, `"id":"`)
+	assert.Contains(t, body, `"username":"`)
+	assert.Contains(t, body, `"is_active":true`)
+	assert.Contains(t, body, `"email_verified":false`)
 
-	// The address is now taken. A second registration — different password,
-	// same display name — must be indistinguishable from the first.
-	secondStatus, secondBody := register(email, "SecondPass123!")
-	assert.Equal(t, firstStatus, secondStatus)
-	assert.Equal(t, firstBody, secondBody, "a taken address must answer exactly like a free one")
+	loginStatus, loginBody := postLoginOn(t, base, email, "FirstPass123!")
+	require.Equal(t, http.StatusOK, loginStatus, "an unconfirmed account can log in: %s", loginBody)
+	var login struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(loginBody, &login))
+	meStatus, meBody := rawCall(t, http.MethodGet, base+"/api/v1/users/me", login.Data.AccessToken, nil, nil)
+	require.Equal(t, http.StatusOK, meStatus, string(meBody))
+	assert.Contains(t, string(meBody), `"email_verified":false`)
 
-	// Login with the first password: the account exists but is unconfirmed.
-	// Login with the second: wrong password. Same answer for both.
-	unconfirmedStatus, unconfirmedBody := postLoginOn(t, base, email, "FirstPass123!")
-	wrongStatus, wrongBody := postLoginOn(t, base, email, "SecondPass123!")
-	assert.Equal(t, http.StatusUnauthorized, unconfirmedStatus)
-	assert.Equal(t, unconfirmedStatus, wrongStatus)
-	assert.Equal(t, string(unconfirmedBody), string(wrongBody))
+	dupStatus, dupBody := register(email, "SecondPass123!")
+	assert.Equal(t, http.StatusConflict, dupStatus, dupBody)
+	// The duplicate did not touch the account's password.
+	loginStatus, _ = postLoginOn(t, base, email, "SecondPass123!")
+	assert.Equal(t, http.StatusUnauthorized, loginStatus)
 }
 
 // TestRegisterDuplicateWithoutSMTP — without SMTP an account is active the
@@ -70,8 +76,9 @@ func TestRegisterDuplicateWithoutSMTP(t *testing.T) {
 
 // TestRegisterRateLimitedWithSMTP — with SMTP every registration sends a
 // mail (activation link, or the "someone tried to register" notice to an
-// existing owner), so /register carries the same per-email limiter as
-// forgot-password; otherwise it is a mail-flooding primitive against one inbox.
+// existing owner, which answers 409), so /register carries the same per-email
+// limiter as forgot-password; otherwise it is a mail-flooding primitive
+// against one inbox.
 func TestRegisterRateLimitedWithSMTP(t *testing.T) {
 	base, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
 		smtpOn(cfg)
@@ -87,5 +94,7 @@ func TestRegisterRateLimitedWithSMTP(t *testing.T) {
 			map[string]string{"email": "flood@example.test", "password": "FloodPass123!", "display_name": "x"}, nil)
 		statuses = append(statuses, status)
 	}
-	assert.Equal(t, []int{http.StatusOK, http.StatusOK, http.StatusTooManyRequests}, statuses)
+	// New address, then the same address again (a 409, still a mail to the
+	// owner), then the limiter.
+	assert.Equal(t, []int{http.StatusOK, http.StatusConflict, http.StatusTooManyRequests}, statuses)
 }

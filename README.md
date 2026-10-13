@@ -139,8 +139,8 @@ headers and `/dav` bodies (credentials redacted) — see `CONFIGURATION.md`.
 [`e2e/`](e2e/README.md) is a Python (pytest + httpx) suite that tests a running
 server over HTTP only (REST, CalDAV/CardDAV, MCP): in `e2e/` install
 `requirements.txt` into a venv, `cp .env.example .env`, set `CALCARD_URL`, then
-`./run`. It registers throwaway users (self-registration must be enabled, SMTP
-off) and removes what it created.
+`./run`. It registers throwaway users (self-registration must be enabled) and
+removes what it created.
 
 ### Upgrading — back up first
 

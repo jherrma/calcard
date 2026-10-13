@@ -55,14 +55,30 @@ func PurgeAccountData(tx *gorm.DB, users any) error {
 		return err
 	}
 
-	for _, model := range []any{
-		&user.AppPassword{},
-		&user.CalDAVCredential{},
-		&user.CardDAVCredential{},
-		&user.MCPToken{},
-		&user.OAuthConnection{},
-		&user.UserPreference{},
-	} {
+	if err := purgeAccountCredentials(tx, users); err != nil {
+		return err
+	}
+	return hardDelete(tx, nil, &user.UserPreference{}, "user_id IN (?)", users)
+}
+
+// accountCredentials is every way into an account besides its password and
+// its sessions: app passwords, CalDAV/CardDAV credentials, MCP tokens and OAuth
+// links. Account deletion removes them with the rest of the data; a password
+// reset removes exactly these (gormUserRepo.CompletePasswordReset), so whoever
+// held the account before the reset keeps no way back in. A new kind of
+// credential belongs here.
+var accountCredentials = []any{
+	&user.AppPassword{},
+	&user.CalDAVCredential{},
+	&user.CardDAVCredential{},
+	&user.MCPToken{},
+	&user.OAuthConnection{},
+}
+
+// purgeAccountCredentials hard-deletes accountCredentials of users (an id, a
+// slice of ids or a subquery, as for PurgeAccountData).
+func purgeAccountCredentials(tx *gorm.DB, users any) error {
+	for _, model := range accountCredentials {
 		if err := hardDelete(tx, nil, model, "user_id IN (?)", users); err != nil {
 			return err
 		}

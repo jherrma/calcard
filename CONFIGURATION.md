@@ -76,7 +76,7 @@ tried to register with your address" notice. SMTP counts as configured as soon a
 
 | YAML Key   | Env Var                | Default | Description |
 | :--------- | :--------------------- | :------ | :---------- |
-| `host`     | `CALDAV_SMTP_HOST`     | empty   | Mail server host name. **Empty turns e-mail off**: nothing is sent (the server only logs that a mail was suppressed, never its recipient or link), new accounts are active immediately, and registration behaves as described under Registration below. Setting it requires `base_url`, because the e-mailed links are built from it. |
+| `host`     | `CALDAV_SMTP_HOST`     | empty   | Mail server host name. **Empty turns e-mail off**: nothing is sent (the server only logs that a mail was suppressed, never its recipient or link) and new accounts count as verified at once (see Registration below). Setting it requires `base_url`, because the e-mailed links are built from it. |
 | `port`     | `CALDAV_SMTP_PORT`     | `587`   | Mail server port. The connection starts unencrypted and is upgraded with STARTTLS (see below), so use the submission port; implicit-TLS ports (SMTPS, usually `465`) do not work. |
 | `user`     | `CALDAV_SMTP_USER`     | empty   | User name for SMTP `AUTH PLAIN`. Leave empty for a relay that takes mail without a login; then no AUTH is attempted. Set it together with `password`. |
 | `password` | `CALDAV_SMTP_PASSWORD` | empty   | Password for SMTP `AUTH PLAIN`. |
@@ -133,22 +133,28 @@ throttled request gets `429` with a `Retry-After` header: the seconds until its 
 | `disabled`    | `CALDAV_REGISTRATION_DISABLED` | `false` | Turns off self-service registration (local and OAuth sign-up). First-run setup still works. |
 | `setup_token` | `CALDAV_SETUP_TOKEN`          | empty   | Guards **first-run setup**. When set, `POST /api/v1/auth/setup` (the "Initial Setup" page) must present this token, and until the first account exists self-service registration is refused. This stops whoever reaches a fresh, internet-exposed server first from claiming the admin account, or from registering as a plain user and so closing setup for good. Must be at least 16 characters (the server refuses to start otherwise); surrounding whitespace is trimmed. **Empty keeps the previous behaviour**: no token is asked for and registration is open. Once the first account exists the token is no longer needed. |
 
-**Registration and account enumeration depend on SMTP.** With SMTP configured
-(`smtp.host` / `CALDAV_SMTP_HOST` set), `POST /api/v1/auth/register` answers an
-address that already has an account exactly like a new one — same `200`, same
-body (`email`, `display_name`, `is_active: false`, `email_verified: false`; no
-`id`, `username` or `created_at`) — and the address owner gets a "someone tried
-to register with your address" e-mail instead (or, for an account that was never
-confirmed, a fresh activation link; its password is never changed). Login then
-answers a wrong password and an unconfirmed account with the same 401 message, so
-the follow-up login cannot tell the two apart either. Because each registration
-now sends a mail, `/register` carries the same per-IP and per-email limiters as
-forgot-password (`rate_limit.enabled` must be on). **Without SMTP** every new
-account is active immediately, so a taken address cannot be disguised as success
-(the caller would simply log in and find out): it answers `409 Email already
-registered`, i.e. registration reveals whether an address has an account. If that
-matters on an internet-facing server, configure SMTP or set
-`CALDAV_REGISTRATION_DISABLED=true`.
+**A new account can log in and use the app at once, SMTP or not.** With SMTP
+configured (`smtp.host` / `CALDAV_SMTP_HOST` set) its address is not confirmed
+yet: it is created with `email_verified: false` and an activation link is
+mailed; opening the link sets `email_verified: true`. Without SMTP the account
+is created verified. Until its address is confirmed, an OAuth sign-in whose
+provider reports that address is not linked to the account, because anyone can
+register someone else's address (signing in with the password and linking the
+provider from the account settings still works). Login and sharing wait for
+nothing: a share addressed to the account by e-mail reaches it either way.
+Completing a password reset also confirms the address, and it signs out every
+session and deletes every app password, CalDAV/CardDAV credential, MCP token
+and OAuth link of the account, so whoever registered the address first keeps no
+way back in.
+
+An address that already has an account answers `409 Email already registered`
+in both modes, so registration reveals whether an address has an account (the
+new account would be usable at once, so the outcome could not be hidden). With
+SMTP the owner also gets a "someone tried to register with your address" e-mail
+(or, if the address was never confirmed, a fresh activation link; the password
+is never changed), and `/register` carries the same per-IP and per-email
+limiters as forgot-password (`rate_limit.enabled` must be on). If enumeration
+matters on an internet-facing server, set `CALDAV_REGISTRATION_DISABLED=true`.
 
 Deleting an account (`DELETE /api/v1/users/me`) frees its e-mail address: it can
 register again (or sign in again through OAuth) as a brand-new account. The deleted

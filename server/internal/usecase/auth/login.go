@@ -79,6 +79,9 @@ func (uc *LoginUseCase) Execute(ctx context.Context, email, password string, use
 		return nil, ErrInvalidCredentials
 	}
 
+	// Only a deactivated account is refused here. An address that has not
+	// been confirmed yet (EmailVerified=false) does not block login:
+	// registration creates every account active, SMTP or not.
 	if !u.IsActive {
 		uc.logger.LogLoginAttempt(ctx, email, ip, userAgent, false, "account_inactive")
 		return nil, ErrInactiveAccount

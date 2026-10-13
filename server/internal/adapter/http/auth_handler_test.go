@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -79,77 +78,163 @@ func TestAuthHandler_Register(t *testing.T) {
 	})
 }
 
-// P01: with SMTP configured, POST /auth/register must answer a taken address
-// exactly like a free one, and login must not tell "the account you just
-// registered is unconfirmed" from "wrong password" — together those two
-// responses were an account-existence oracle.
-func TestAuthHandler_Register_NoEnumerationWithSMTP(t *testing.T) {
+// With SMTP configured a new account is usable before its address is
+// confirmed: register answers the same full body as without SMTP (only
+// email_verified is false), the account can log in, call an authenticated
+// endpoint and refresh, and opening the activation link still sets
+// email_verified. A taken address answers 409, as without SMTP.
+func TestAuthHandler_UnverifiedAccountUsableWithSMTP(t *testing.T) {
 	app, db, cfg := setupTestApp(t)
 	// The use case and handler share cfg, so this switches both to "SMTP on".
 	// The email service was built from the empty SMTP config and stays a no-op.
 	cfg.SMTP.Host = "smtp.invalid"
 	userRepo := repository.NewUserRepository(db.DB())
 
-	hash, err := bcrypt.GenerateFromPassword([]byte("Owner123!"), bcrypt.MinCost)
+	call := func(method, path, bearer string, payload any) (int, map[string]any) {
+		t.Helper()
+		var body io.Reader
+		if payload != nil {
+			b, _ := json.Marshal(payload)
+			body = bytes.NewReader(b)
+		}
+		req := httptest.NewRequest(method, path, body)
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := app.Test(req, fiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		var out struct {
+			Data map[string]any `json:"data"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out.Data
+	}
+
+	status, reg := call(http.MethodPost, "/api/v1/auth/register", "",
+		map[string]string{"email": "Fresh@Example.com", "password": "Probe123!", "display_name": "Probe"})
+	require.Equal(t, fiber.StatusOK, status)
+	assert.NotEmpty(t, reg["id"], "the register body carries the id, SMTP or not")
+	assert.NotEmpty(t, reg["username"])
+	assert.NotEmpty(t, reg["created_at"])
+	assert.Equal(t, "fresh@example.com", reg["email"])
+	assert.Equal(t, true, reg["is_active"])
+	assert.Equal(t, false, reg["email_verified"])
+
+	status, login := call(http.MethodPost, "/api/v1/auth/login", "",
+		map[string]string{"email": "fresh@example.com", "password": "Probe123!"})
+	require.Equal(t, fiber.StatusOK, status, "an unconfirmed account can log in")
+	access, _ := login["access_token"].(string)
+	refresh, _ := login["refresh_token"].(string)
+	require.NotEmpty(t, access)
+	require.NotEmpty(t, refresh)
+
+	status, me := call(http.MethodGet, "/api/v1/users/me", access, nil)
+	require.Equal(t, fiber.StatusOK, status, "and use the authenticated API")
+	assert.Equal(t, reg["id"], me["id"])
+	assert.Equal(t, false, me["email_verified"])
+
+	status, _ = call(http.MethodPost, "/api/v1/auth/refresh", "", map[string]string{"refresh_token": refresh})
+	assert.Equal(t, fiber.StatusOK, status, "and refresh its session")
+
+	// A taken address is a 409 here too; the account keeps its password.
+	status, _ = call(http.MethodPost, "/api/v1/auth/register", "",
+		map[string]string{"email": "fresh@example.com", "password": "Other123!", "display_name": "Dup"})
+	assert.Equal(t, fiber.StatusConflict, status)
+
+	// Opening the activation link confirms the address. Only the token's
+	// hash is stored, so plant a known one for this account.
+	u, err := userRepo.GetByEmail(context.Background(), "fresh@example.com")
 	require.NoError(t, err)
-	require.NoError(t, userRepo.Create(context.Background(), &user.User{
-		UUID: "owner-uuid", Email: "owner@example.com", Username: "owneruser",
-		PasswordHash: string(hash), IsActive: true, EmailVerified: true,
+	require.NotNil(t, u)
+	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("Probe123!")))
+	sum := sha256.Sum256([]byte("activation-token"))
+	require.NoError(t, userRepo.CreateVerification(context.Background(), &user.EmailVerification{
+		UserID: u.ID, Token: hex.EncodeToString(sum[:]), ExpiresAt: time.Now().Add(time.Hour),
 	}))
+	status, _ = call(http.MethodGet, "/api/v1/auth/verify?token=activation-token", "", nil)
+	require.Equal(t, fiber.StatusOK, status)
 
-	register := func(email, password string) (int, []byte) {
-		t.Helper()
-		body, _ := json.Marshal(map[string]string{"email": email, "password": password, "display_name": "Probe"})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := app.Test(req, fiber.TestConfig{Timeout: 10 * time.Second})
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		return resp.StatusCode, b
-	}
-	login := func(email, password string) (int, []byte) {
-		t.Helper()
-		body, _ := json.Marshal(map[string]string{"email": email, "password": password})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := app.Test(req, fiber.TestConfig{Timeout: 10 * time.Second})
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		return resp.StatusCode, b
-	}
+	status, me = call(http.MethodGet, "/api/v1/users/me", access, nil)
+	require.Equal(t, fiber.StatusOK, status, "verifying does not end the session")
+	assert.Equal(t, true, me["email_verified"])
+	assert.Equal(t, true, me["is_active"])
+}
 
-	// Same address casing on both sides so the bodies can be compared byte
-	// for byte: the only request-derived fields are email and display_name.
-	freshStatus, freshBody := register("fresh@example.com", "Probe123!")
-	takenStatus, takenBody := register("owner@example.com", "Probe123!")
+// is_active=false means a deactivated account, whether or not its address is
+// confirmed. A verified but deactivated account gets 401 from login, refresh
+// and the authenticated API alike. The same session is used before and after
+// the deactivation, so each 401 can only come from the IsActive check: with it
+// removed, every call below would answer 200.
+func TestAuthHandler_DeactivatedVerifiedAccountIsRefused(t *testing.T) {
+	app, db, _ := setupTestApp(t)
+	userRepo := repository.NewUserRepository(db.DB())
 
-	assert.Equal(t, fiber.StatusOK, freshStatus)
-	assert.Equal(t, freshStatus, takenStatus, "status must not reveal a taken address")
-	assert.Equal(t,
-		strings.Replace(string(freshBody), "fresh@example.com", "X", 1),
-		strings.Replace(string(takenBody), "owner@example.com", "X", 1),
-		"body must not reveal a taken address")
-	for _, leak := range []string{`"id"`, `"username"`, `"created_at"`} {
-		assert.NotContains(t, string(freshBody), leak, "pending registrations carry no stored-row fields")
-	}
-
-	// The taken address kept its account and password.
-	owner, err := userRepo.GetByEmail(context.Background(), "owner@example.com")
+	hash, err := bcrypt.GenerateFromPassword([]byte("Pass123!"), bcrypt.MinCost)
 	require.NoError(t, err)
-	assert.Equal(t, "owneruser", owner.Username)
-	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(owner.PasswordHash), []byte("Owner123!")))
+	u := &user.User{
+		Email:         "deactivated@example.com",
+		Username:      "deactivated",
+		PasswordHash:  string(hash),
+		IsActive:      true,
+		EmailVerified: true,
+		UUID:          "deactivated-uuid",
+	}
+	require.NoError(t, userRepo.Create(context.Background(), u))
 
-	// Second step of the oracle: log in with the password just submitted.
-	// fresh -> account exists but is unconfirmed; owner -> wrong password.
-	pendingStatus, pendingBody := login("fresh@example.com", "Probe123!")
-	wrongStatus, wrongBody := login("owner@example.com", "Probe123!")
-	assert.Equal(t, fiber.StatusUnauthorized, pendingStatus)
-	assert.Equal(t, pendingStatus, wrongStatus)
-	assert.Equal(t, string(pendingBody), string(wrongBody), "login must not tell unconfirmed from wrong password")
+	call := func(method, path, bearer string, payload any) (int, map[string]any) {
+		t.Helper()
+		var body io.Reader
+		if payload != nil {
+			b, _ := json.Marshal(payload)
+			body = bytes.NewReader(b)
+		}
+		req := httptest.NewRequest(method, path, body)
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := app.Test(req, fiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	login := map[string]string{"email": "deactivated@example.com", "password": "Pass123!"}
+
+	// While active: a working session.
+	status, out := call(http.MethodPost, "/api/v1/auth/login", "", login)
+	require.Equal(t, fiber.StatusOK, status)
+	data, _ := out["data"].(map[string]any)
+	access, _ := data["access_token"].(string)
+	refresh, _ := data["refresh_token"].(string)
+	require.NotEmpty(t, access)
+	require.NotEmpty(t, refresh)
+	status, _ = call(http.MethodGet, "/api/v1/users/me", access, nil)
+	require.Equal(t, fiber.StatusOK, status)
+	status, out = call(http.MethodPost, "/api/v1/auth/refresh", "", map[string]string{"refresh_token": refresh})
+	require.Equal(t, fiber.StatusOK, status)
+	data, _ = out["data"].(map[string]any)
+	refresh, _ = data["refresh_token"].(string) // rotated: the successor is live
+	require.NotEmpty(t, refresh)
+
+	// Deactivate it. The address stays confirmed.
+	require.NoError(t, db.DB().Model(&user.User{}).Where("id = ?", u.ID).
+		UpdateColumn("is_active", false).Error)
+
+	status, out = call(http.MethodPost, "/api/v1/auth/login", "", login)
+	assert.Equal(t, fiber.StatusUnauthorized, status, "login")
+	assert.Equal(t, "account is not active", out["message"], "login")
+
+	status, out = call(http.MethodPost, "/api/v1/auth/refresh", "", map[string]string{"refresh_token": refresh})
+	assert.Equal(t, fiber.StatusUnauthorized, status, "refresh")
+	assert.Equal(t, "Invalid or expired refresh token", out["message"], "refresh")
+
+	status, out = call(http.MethodGet, "/api/v1/users/me", access, nil)
+	assert.Equal(t, fiber.StatusUnauthorized, status, "GET /users/me")
+	assert.Equal(t, "account is not active", out["message"], "GET /users/me")
 }
 
 func TestAuthHandler_Login(t *testing.T) {
@@ -294,11 +379,12 @@ func TestAuthHandler_Verify(t *testing.T) {
 	app, db, _ := setupTestApp(t)
 	userRepo := repository.NewUserRepository(db.DB())
 
-	// Create inactive user
+	// An account whose address is not confirmed yet (active, as registration
+	// creates every account).
 	u := &user.User{
 		Email:        "verify@example.com",
 		Username:     "verify",
-		IsActive:     false,
+		IsActive:     true,
 		UUID:         "verify-uuid",
 		PasswordHash: "hash",
 	}
@@ -323,9 +409,10 @@ func TestAuthHandler_Verify(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
-		// Verify active
+		// The address is confirmed; nothing else changed.
 		u, err := userRepo.GetByID(context.Background(), u.ID)
 		require.NoError(t, err)
+		assert.True(t, u.EmailVerified)
 		assert.True(t, u.IsActive)
 	})
 

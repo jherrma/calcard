@@ -152,6 +152,11 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 		case errors.Is(err, authUseCase.ErrEmailNotVerified):
 			return h.redirectOAuthError(c, ctxData.Action,
 				fmt.Sprintf("the %s account's email address is not verified; sign in with your password and link %s from your account settings", provider, provider))
+		case errors.Is(err, authUseCase.ErrLocalEmailNotVerified):
+			// The provider proved the caller owns this address, so naming the
+			// unconfirmed account tells them nothing about someone else's.
+			return h.redirectOAuthError(c, ctxData.Action,
+				fmt.Sprintf("an account with this email address exists but has not confirmed it yet; sign in with its password and link %s from your account settings", provider))
 		default:
 			return h.redirectOAuthError(c, ctxData.Action, "authentication failed")
 		}

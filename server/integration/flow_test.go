@@ -88,7 +88,7 @@ func (s *flowState) registerAdmin(t *testing.T) {
 	code := doJSON(t, http.MethodPost, "/auth/register", "", reqBody, &resp)
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, s.adminEmail, resp.Email)
-	assert.True(t, resp.IsActive, "SMTP disabled → auto-activated")
+	assert.True(t, resp.IsActive, "a new account is active at once")
 	assert.True(t, resp.EmailVerified)
 }
 

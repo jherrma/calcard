@@ -150,7 +150,7 @@ func TestAccountDeletionRemovesSharedData(t *testing.T) {
 // TestReregisterAfterAccountDeletion (F19): the e-mail of a deleted account can
 // register again. Deletion is a soft delete and the users.email unique index
 // covers the deleted row, so this used to fail with 400 "registration failed".
-// A live duplicate keeps answering 409 (no SMTP on this server, P01).
+// A live duplicate keeps answering 409.
 func TestReregisterAfterAccountDeletion(t *testing.T) {
 	email := "come-back@example.test"
 	password := "comeBack!123"

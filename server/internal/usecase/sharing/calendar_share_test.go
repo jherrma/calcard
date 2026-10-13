@@ -157,6 +157,9 @@ func (m *mockUserRepo) Update(ctx context.Context, u *user.User) error          
 func (m *mockUserRepo) InvalidateAccessTokens(ctx context.Context, id uint, at time.Time) error {
 	return nil
 }
+func (m *mockUserRepo) CompletePasswordReset(ctx context.Context, u *user.User, at time.Time) error {
+	return nil
+}
 func (m *mockUserRepo) Delete(ctx context.Context, id uint) error { return nil }
 func (m *mockUserRepo) CreateVerification(ctx context.Context, v *user.EmailVerification) error {
 	return nil

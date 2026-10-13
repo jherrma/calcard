@@ -327,7 +327,7 @@ func TestOAuthCallbackUseCase_Execute_LinkByEmailVerifiedSucceeds(t *testing.T) 
 	provider := new(mockOAuthProvider)
 	token := &oauth2.Token{AccessToken: "access_token"}
 	userInfo := &authadapter.UserInfo{Subject: "sub123", Email: "owner@example.com", EmailVerified: true}
-	existingUser := &user.User{ID: 7, UUID: "owner-uuid", Email: userInfo.Email, IsActive: true}
+	existingUser := &user.User{ID: 7, UUID: "owner-uuid", Email: userInfo.Email, IsActive: true, EmailVerified: true}
 
 	providerManager.On("GetProvider", providerName).Return(provider, nil)
 	provider.On("Exchange", ctx, code).Return(token, nil)
@@ -347,6 +347,46 @@ func TestOAuthCallbackUseCase_Execute_LinkByEmailVerifiedSucceeds(t *testing.T) 
 	assert.NoError(t, err)
 	assert.NotNil(t, result.User)
 	assert.Equal(t, userInfo.Email, result.User.Email)
+}
+
+// The provider proves the caller owns the address, but the local account with
+// that address has not confirmed it: it may have been registered by someone
+// else, so the provider identity must not be attached to it, no tokens are
+// minted, and no second account is provisioned for the address either.
+func TestOAuthCallbackUseCase_Execute_LinkByEmailRefusedForUnconfirmedLocalAccount(t *testing.T) {
+	providerManager := new(mockOAuthProviderManager)
+	userRepo := new(mockUserRepo)
+	oauthRepo := new(mockOAuthRepo)
+	refreshTokenRepo := new(mockRefreshTokenRepo)
+	tokenProvider := new(mockTokenProvider)
+	cfg := &config.Config{JWT: config.JWTConfig{RefreshExpiry: time.Hour}}
+
+	uc := NewOAuthCallbackUseCase(providerManager, userRepo, oauthRepo, refreshTokenRepo, tokenProvider, cfg)
+
+	ctx := context.Background()
+	providerName := "google"
+	code := "auth_code"
+
+	provider := new(mockOAuthProvider)
+	token := &oauth2.Token{AccessToken: "access_token"}
+	userInfo := &authadapter.UserInfo{Subject: "owner-sub", Email: "owner@example.com", EmailVerified: true}
+	squatted := &user.User{ID: 7, UUID: "squatter-uuid", Email: userInfo.Email, IsActive: true, EmailVerified: false}
+
+	providerManager.On("GetProvider", providerName).Return(provider, nil)
+	provider.On("Exchange", ctx, code).Return(token, nil)
+	provider.On("UserInfo", ctx, mock.Anything).Return(userInfo, nil)
+	userRepo.On("GetByOAuth", ctx, providerName, userInfo.Subject).Return(nil, nil)
+	userRepo.On("GetByEmail", ctx, userInfo.Email).Return(squatted, nil)
+
+	result, err := uc.Execute(ctx, providerName, code, "", "ua", "127.0.0.1", nil)
+
+	assert.ErrorIs(t, err, ErrLocalEmailNotVerified)
+	assert.Nil(t, result)
+	oauthRepo.AssertNotCalled(t, "GetByProvider", mock.Anything, mock.Anything, mock.Anything)
+	oauthRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	userRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	tokenProvider.AssertNotCalled(t, "GenerateAccessToken", mock.Anything, mock.Anything)
+	refreshTokenRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
 func TestOAuthCallbackUseCase_Execute_LinkLoggedInUser(t *testing.T) {
@@ -520,7 +560,7 @@ func TestOAuthCallbackUseCase_Execute_LoginSecondAccountRejected(t *testing.T) {
 	// A brand-new provider identity (subject) with a verified email matching an
 	// existing local account, so the flow would try to auto-link by email.
 	userInfo := &authadapter.UserInfo{Subject: "second-sub", Email: "owner@example.com", EmailVerified: true}
-	existingUser := &user.User{ID: 7, UUID: "owner-uuid", Email: userInfo.Email, IsActive: true}
+	existingUser := &user.User{ID: 7, UUID: "owner-uuid", Email: userInfo.Email, IsActive: true, EmailVerified: true}
 	// ...but that user already has a *different* google account linked.
 	existingConn := &user.OAuthConnection{ID: 1, UserID: 7, Provider: providerName, ProviderID: "first-sub"}
 

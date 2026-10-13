@@ -70,7 +70,43 @@ func (r *gormUserRepo) GetByID(ctx context.Context, id uint) (*user.User, error)
 // logout elsewhere moves the marker in the meantime, a full Save would write
 // the stale value back and resurrect the tokens that logout just revoked.
 func (r *gormUserRepo) Update(ctx context.Context, u *user.User) error {
-	return r.db.WithContext(ctx).Omit("TokensValidAfter").Save(u).Error
+	return saveUser(r.db.WithContext(ctx), u)
+}
+
+func saveUser(db *gorm.DB, u *user.User) error {
+	return db.Omit("TokensValidAfter").Save(u).Error
+}
+
+// CompletePasswordReset saves u — the caller has set its new PasswordHash and
+// EmailVerified — and, in the same transaction, closes the account to anyone
+// who held it before: every access token issued before at, every refresh
+// token, every password-reset link, and every app password, CalDAV/CardDAV
+// credential, MCP token and OAuth connection (accountCredentials). An account
+// is usable before its address is confirmed, so whoever registered it may not
+// be the person who now proved control of the mailbox. All or nothing: a
+// failure leaves the old password and every credential in place.
+func (r *gormUserRepo) CompletePasswordReset(ctx context.Context, u *user.User, at time.Time) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := saveUser(tx, u); err != nil {
+			return err
+		}
+		if err := endSessions(tx, u.ID, at); err != nil {
+			return err
+		}
+		return purgeAccountCredentials(tx, u.ID)
+	})
+}
+
+// endSessions revokes the access tokens userID was issued before at and
+// deletes its refresh tokens and password-reset links.
+func endSessions(tx *gorm.DB, userID uint, at time.Time) error {
+	if err := invalidateAccessTokens(tx, userID, at); err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&user.RefreshToken{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("user_id = ?", userID).Delete(&user.PasswordReset{}).Error
 }
 
 // InvalidateAccessTokens sets tokens_valid_after to at, written as UTC so
@@ -90,18 +126,12 @@ func (r *gormUserRepo) Delete(ctx context.Context, userID uint) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Revoke outstanding access tokens too. A soft-deleted user already
 		// fails the auth lookup, but the marker keeps those tokens dead even
-		// if the row is ever restored.
-		if err := invalidateAccessTokens(tx, userID, time.Now()); err != nil {
+		// if the row is ever restored. Refresh tokens and reset links go.
+		if err := endSessions(tx, userID, time.Now()); err != nil {
 			return err
 		}
 
 		// Hard delete related data
-		if err := tx.Where("user_id = ?", userID).Delete(&user.RefreshToken{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&user.PasswordReset{}).Error; err != nil {
-			return err
-		}
 		if err := tx.Where("user_id = ?", userID).Delete(&user.EmailVerification{}).Error; err != nil {
 			return err
 		}

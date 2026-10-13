@@ -9,22 +9,17 @@ type RegisterRequest struct {
 	DisplayName string `json:"display_name"`
 }
 
-// RegisterResponse represents the registration success response.
-//
-// With SMTP configured the new account is inert until its address is
-// confirmed, and the same response must be returned whether or not the address
-// was already taken (P01) — so ID, Username and CreatedAt are left out (they
-// would have to be invented for an address that already has an account) and
-// only the echoed request fields plus is_active/email_verified=false remain.
-// Without SMTP the account is live immediately and every field is filled.
+// RegisterResponse represents the registration success response. Every field
+// is filled, SMTP or not; with SMTP email_verified is false until the address
+// is confirmed (the account is usable before that).
 type RegisterResponse struct {
-	ID            string     `json:"id,omitempty"`
-	Email         string     `json:"email"`
-	Username      string     `json:"username,omitempty"`
-	DisplayName   string     `json:"display_name"`
-	IsActive      bool       `json:"is_active"`
-	EmailVerified bool       `json:"email_verified"`
-	CreatedAt     *time.Time `json:"created_at,omitempty"`
+	ID            string    `json:"id"`
+	Email         string    `json:"email"`
+	Username      string    `json:"username"`
+	DisplayName   string    `json:"display_name"`
+	IsActive      bool      `json:"is_active"`
+	EmailVerified bool      `json:"email_verified"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // LoginRequest represents the user login request

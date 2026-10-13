@@ -49,6 +49,6 @@ func (h *SetupHandler) Setup(c fiber.Ctx) error {
 		DisplayName:   u.DisplayName,
 		IsActive:      u.IsActive,
 		EmailVerified: u.EmailVerified,
-		CreatedAt:     &u.CreatedAt,
+		CreatedAt:     u.CreatedAt,
 	})
 }

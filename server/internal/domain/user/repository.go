@@ -36,6 +36,12 @@ type UserRepository interface {
 	// InvalidateAccessTokens rejects every access token the user was issued
 	// before at, by setting TokensValidAfter to at.
 	InvalidateAccessTokens(ctx context.Context, userID uint, at time.Time) error
+	// CompletePasswordReset saves user (with its new PasswordHash and
+	// EmailVerified) and, in the same transaction, invalidates the access
+	// tokens issued before at and removes every refresh token, password-reset
+	// link, app password, CalDAV/CardDAV credential, MCP token and OAuth
+	// connection of the account.
+	CompletePasswordReset(ctx context.Context, user *User, at time.Time) error
 	// Delete soft-deletes the user and also invalidates their access tokens.
 	Delete(ctx context.Context, userID uint) error
 	GetByOAuth(ctx context.Context, provider, providerID string) (*User, error)

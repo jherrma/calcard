@@ -28,6 +28,15 @@ var ErrProviderAlreadyLinked = errors.New("provider account already linked to an
 // be required but the provider did not assert a verified email.
 var ErrEmailNotVerified = errors.New("provider email not verified")
 
+// ErrLocalEmailNotVerified is returned when the provider's verified e-mail
+// matches a local account that has not confirmed that address itself
+// (EmailVerified=false). An account is usable before its address is confirmed,
+// so anyone may have registered it with someone else's address: until it is
+// confirmed the account is not treated as the owner of that address, and a
+// provider identity is never attached to it by e-mail. Signing in with the
+// account's password and linking the provider from settings still works.
+var ErrLocalEmailNotVerified = errors.New("local account email not verified")
+
 // ErrDifferentAccountLinked is returned when the user already has a different
 // account of this provider linked; they must unlink it before attaching another.
 // Both the explicit link flow and the login-flow auto-link-by-email path guard
@@ -147,6 +156,14 @@ func (uc *OAuthCallbackUseCase) Execute(ctx context.Context, providerName, code,
 			// with their password and link the provider explicitly from settings.
 			if !userInfo.EmailVerified {
 				return nil, ErrEmailNotVerified
+			}
+			// The local account must have confirmed the address too. One that
+			// has not may belong to whoever typed the address into the register
+			// form; linking the real owner's provider identity onto it would
+			// hand that person the owner's sign-in. Refused outright — never
+			// fall through to provisioning a second account for the address.
+			if !u.EmailVerified {
+				return nil, ErrLocalEmailNotVerified
 			}
 			// Mirror the link-flow guard: refuse to auto-link a second, different
 			// account of the same provider. GetByOAuth already failed to match this

@@ -34,8 +34,8 @@ func (s *smtpEmailService) SendActivationEmail(ctx context.Context, to, link str
 		return nil // SMTP not configured, skip sending
 	}
 
-	subject := "Activate your account"
-	body := fmt.Sprintf("Activate your account: %s", link)
+	subject := "Verify your account"
+	body := fmt.Sprintf("Verify your account: %s", link)
 
 	msg := fmt.Sprintf("From: %s\r\n"+
 		"To: %s\r\n"+

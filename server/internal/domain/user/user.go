@@ -23,7 +23,8 @@ type User struct {
 	// Access tokens are stateless, so this per-user marker is the only way to
 	// kill one before it expires: logout, password change/reset and account
 	// deletion move it to "now". Nil means no token has ever been revoked.
-	// Written ONLY through UserRepository.InvalidateAccessTokens — Update
+	// Written ONLY through UserRepository.InvalidateAccessTokens (and the
+	// same targeted UPDATE inside CompletePasswordReset and Delete) — Update
 	// deliberately leaves it alone so a stale User struct cannot roll it back.
 	TokensValidAfter *time.Time `json:"-"`
 	CreatedAt        time.Time
