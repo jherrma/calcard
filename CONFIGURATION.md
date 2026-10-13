@@ -78,7 +78,7 @@ tried to register with your address" notice. SMTP counts as configured as soon a
 | :--------- | :--------------------- | :------ | :---------- |
 | `host`     | `CALDAV_SMTP_HOST`     | empty   | Mail server host name. **Empty turns e-mail off**: nothing is sent (the server only logs that a mail was suppressed, never its recipient or link), new accounts are active immediately, and registration behaves as described under Registration below. Setting it requires `base_url`, because the e-mailed links are built from it. |
 | `port`     | `CALDAV_SMTP_PORT`     | `587`   | Mail server port. The connection always starts unencrypted and is upgraded with STARTTLS (see below), so use the submission port; implicit-TLS ports (SMTPS, usually `465`) do not work. |
-| `user`     | `CALDAV_SMTP_USER`     | empty   | User name for SMTP `AUTH PLAIN`. |
+| `user`     | `CALDAV_SMTP_USER`     | empty   | User name for SMTP `AUTH PLAIN`. Leave empty for a relay that takes mail without a login: no AUTH is attempted then. |
 | `password` | `CALDAV_SMTP_PASSWORD` | empty   | Password for SMTP `AUTH PLAIN`. |
 | `from`     | `CALDAV_SMTP_FROM`     | empty   | Sender address, used both as the envelope sender (`MAIL FROM`) and in the `From:` header. Not validated and has no default, so set it whenever `host` is set. |
 

@@ -48,3 +48,14 @@ func TestSendEmailWithoutSMTPDoesNotLogTokenOrRecipient(t *testing.T) {
 		t.Errorf("expected a warning that the mail was dropped, got: %q", logs.String())
 	}
 }
+
+// A relay that takes mail without a login gets no AUTH at all; with a user
+// configured, AUTH PLAIN is used.
+func TestSMTPAuthOnlyWithUser(t *testing.T) {
+	if got := (&smtpEmailService{cfg: config.SMTPConfig{Host: "relay"}}).auth(); got != nil {
+		t.Errorf("no user configured: want no auth, got %T", got)
+	}
+	if got := (&smtpEmailService{cfg: config.SMTPConfig{Host: "relay", User: "u", Password: "p"}}).auth(); got == nil {
+		t.Errorf("user configured: want PLAIN auth, got nil")
+	}
+}

@@ -33,10 +33,19 @@ func (s *smtpEmailService) SendActivationEmail(ctx context.Context, to, link str
 		"\r\n"+
 		"%s\r\n", s.cfg.From, to, subject, body)
 
-	auth := smtp.PlainAuth("", s.cfg.User, s.cfg.Password, s.cfg.Host)
 	addr := fmt.Sprintf("%s:%s", s.cfg.Host, s.cfg.Port)
 
-	return smtp.SendMail(addr, auth, s.cfg.From, []string{to}, []byte(msg))
+	return smtp.SendMail(addr, s.auth(), s.cfg.From, []string{to}, []byte(msg))
+}
+
+// auth returns the AUTH PLAIN credentials, or nil when no user is configured.
+// A relay that needs no login does not advertise AUTH, and net/smtp then
+// refuses to send with "smtp: server doesn't support AUTH".
+func (s *smtpEmailService) auth() smtp.Auth {
+	if s.cfg.User == "" {
+		return nil
+	}
+	return smtp.PlainAuth("", s.cfg.User, s.cfg.Password, s.cfg.Host)
 }
 
 func (s *smtpEmailService) SendEmail(ctx context.Context, to, subject, body string) error {
@@ -54,8 +63,7 @@ func (s *smtpEmailService) SendEmail(ctx context.Context, to, subject, body stri
 		"\r\n"+
 		"%s\r\n", s.cfg.From, to, subject, body)
 
-	authData := smtp.PlainAuth("", s.cfg.User, s.cfg.Password, s.cfg.Host)
 	addr := fmt.Sprintf("%s:%s", s.cfg.Host, s.cfg.Port)
 
-	return smtp.SendMail(addr, authData, s.cfg.From, []string{to}, []byte(msg))
+	return smtp.SendMail(addr, s.auth(), s.cfg.From, []string{to}, []byte(msg))
 }
