@@ -107,6 +107,7 @@ webinterface/
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
+│   ├── davCredentials.ts    # Generated DAV credential username/password + the username rule
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
@@ -392,6 +393,30 @@ strings come from `utils/davUrls.ts`.
 - **Copying goes through `useCopyToClipboard()`**, which checks for `navigator.clipboard` first: over
   plain http (docker-compose's default) the API does not exist at all, and the user is told to copy
   by hand.
+
+### DAV credentials (CalDAV / CardDAV settings pages)
+
+`pages/settings/caldav-credentials.vue` and `carddav-credentials.vue` are thin wrappers around
+`components/settings/DavCredentialManager.vue` (raw JSON, no `{status,data}` envelope).
+
+- **Username and password are generated in the browser** every time the create dialog opens
+  (`utils/davCredentials.ts`): a username of 16 lowercase letters `a`–`z`, and a 24-character
+  password from an alphabet without look-alikes (no `0 O o 1 l I`) holding an upper-case letter, a
+  lower-case letter, a digit and one of `- _ .` (URL-unreserved). The refresh button draws both
+  again; the password has a show/hide toggle, both fields a copy button (`useCopyToClipboard()`).
+  Randomness is `crypto.getRandomValues` with **rejection sampling** — never `Math.random`, never a
+  plain `byte % n`, which favours the first `256 % n` characters. Specs inject the byte source.
+  `getRandomValues` exists in insecure contexts too (unlike `crypto.subtle`/`randomUUID` and the
+  clipboard), so generation works over plain http.
+- **The username rule mirrors the server** (`ValidateDAVCredentialUsername`): a NEW credential's
+  username is 3–50 lowercase letters `a`–`z`. Upper case is an inline error, never lower-cased
+  silently: the name has to reach the DAV client exactly as it is stored. Credentials created
+  before the rule (capitals, digits, `-`, `_`) keep working and are listed unchanged.
+- **The password is shown once**, in the "Credential Created" panel after the POST: the server
+  keeps a bcrypt hash and no list returns it. Closing the dialog clears it from memory.
+- **409 = username taken** (unique across all accounts, `user.ErrCredentialUsernameTaken`). A
+  generated name is replaced and the user asked to press Create again — no automatic retry, they
+  may already have copied it; the password is kept. A typed name is kept, with an inline message.
 
 ## Nuxt Configuration
 
