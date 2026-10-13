@@ -142,7 +142,7 @@ re-authenticates them to delete them.
 | File | Suite | Covers |
 |---|---|---|
 | `tests/test_00_system.py` | system | `/health`, `/ready`, system settings, auth methods, about/open-source, security headers, unknown routes, SPA serving |
-| `tests/test_10_auth.py` | auth | registration + validation, login, refresh rotation, logout, password change, forgot/reset/verify edges, OAuth surface, account deletion |
+| `tests/test_10_auth.py` | auth | registration + validation, login, refresh rotation, logout, password change, reset/verify edges, OAuth surface, account deletion |
 | `tests/test_15_credentials.py` | credentials | app passwords (scopes, revocation, isolation), CalDAV / CardDAV credentials (read vs read-write, protocol confinement, expiry, duplicates, lowercase-only usernames) |
 | `tests/test_20_profile.py` | profile | profile get/patch, preferences, full backup export (ZIP content) |
 | `tests/test_30_calendars.py` | calendars | calendar CRUD, validation, isolation, export, last-calendar guard, delete leaves nothing behind (a synced client's old token 404s, a calendar re-created at the same path or name is empty) |
