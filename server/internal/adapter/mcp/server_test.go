@@ -102,20 +102,24 @@ func TestToolsListAdvertisesEveryToolWithASchema(t *testing.T) {
 		require.NoError(t, json.Unmarshal(tool.InputSchema, &schema),
 			"%s advertises an unparseable input schema", tool.Name)
 		assert.Equal(t, "object", schema["type"], "%s: MCP input schemas must be objects", tool.Name)
+		assert.Equal(t, false, schema["additionalProperties"],
+			"%s: every schema closes its argument set, so a client can flag a misspelt argument", tool.Name)
 		names[tool.Name] = true
 	}
 
-	// The surface story 104 specifies, asserted by name so a rename or a
-	// dropped registration fails loudly rather than silently shrinking what an
-	// assistant can do.
+	// The surface story 104 specifies, plus the collection tools, asserted by
+	// name so a rename or a dropped registration fails loudly rather than
+	// silently shrinking what an assistant can do.
 	for _, want := range []string{
 		"list_calendars", "get_events", "create_event", "update_event", "delete_event",
 		"search_events", "list_address_books", "get_contacts", "search_contacts",
 		"create_contact", "update_contact", "delete_contact", "find_free_slots",
+		"create_calendar", "update_calendar", "delete_calendar",
+		"create_address_book", "update_address_book", "delete_address_book",
 	} {
 		assert.True(t, names[want], "tool %s is missing", want)
 	}
-	assert.Len(t, tools, 13)
+	assert.Len(t, tools, 19)
 }
 
 func TestToolsListIsSortedForStability(t *testing.T) {

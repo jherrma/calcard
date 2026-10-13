@@ -283,7 +283,7 @@ func TestFullSessionLifecycleOverHTTP(t *testing.T) {
 	listResp := h.post(token, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, sessionHeader)
 	require.Equal(t, http.StatusOK, listResp.StatusCode)
 	tools := decodeBody(t, listResp)["result"].(map[string]interface{})["tools"].([]interface{})
-	assert.Len(t, tools, 13)
+	assert.Len(t, tools, 19)
 
 	// 4. tools/call
 	callBody := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_event","arguments":{` +
@@ -359,7 +359,7 @@ func TestGetReturnsManifest(t *testing.T) {
 	assert.Equal(t, ServerName, body["name"])
 	assert.Equal(t, PreferredProtocolVersion, body["protocolVersion"])
 	assert.Equal(t, "streamable-http", body["transport"])
-	assert.Len(t, body["tools"], 13)
+	assert.Len(t, body["tools"], 19)
 	assert.Contains(t, body["authentication"], mcptoken.TokenPrefix)
 }
 

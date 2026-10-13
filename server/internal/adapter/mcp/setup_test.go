@@ -59,6 +59,9 @@ func newTestEnv(t *testing.T) *testEnv {
 		&calendar.Calendar{},
 		&calendar.CalendarObject{},
 		&calendar.SyncChangeLog{},
+		// CalendarRepository.Delete removes a calendar's subscription row in
+		// the same transaction, so delete_calendar needs the table.
+		&calendar.CalendarSubscription{},
 		&addressbook.AddressBook{},
 		&addressbook.AddressObject{},
 		&addressbook.ContactPhoto{},
@@ -78,21 +81,27 @@ func newTestEnv(t *testing.T) *testEnv {
 	abList := addressbookuc.NewListUseCase(abRepo, abShareRepo)
 
 	deps := Deps{
-		CalendarRepo:    calRepo,
-		AddressBookRepo: abRepo,
-		CalendarList:    calList,
-		EventList:       eventuc.NewListEventsUseCase(calRepo),
-		EventGet:        eventuc.NewGetEventUseCase(calRepo),
-		EventCreate:     eventuc.NewCreateEventUseCase(calRepo),
-		EventUpdate:     eventuc.NewUpdateEventUseCase(calRepo),
-		EventDelete:     eventuc.NewDeleteEventUseCase(calRepo),
-		AddressBookList: abList,
-		ContactList:     contactuc.NewListUseCase(abRepo),
-		ContactGet:      contactuc.NewGetUseCase(abRepo),
-		ContactCreate:   contactuc.NewCreateUseCase(addressbookuc.NewCreateContactUseCase(abRepo)),
-		ContactUpdate:   contactuc.NewUpdateUseCase(abRepo),
-		ContactDelete:   contactuc.NewDeleteUseCase(abRepo),
-		Search:          searchuc.NewUseCase(calRepo, abRepo, calList, abList),
+		CalendarRepo:      calRepo,
+		AddressBookRepo:   abRepo,
+		CalendarList:      calList,
+		CalendarCreate:    calendaruc.NewCreateCalendarUseCase(calRepo),
+		CalendarUpdate:    calendaruc.NewUpdateCalendarUseCase(calRepo),
+		CalendarDelete:    calendaruc.NewDeleteCalendarUseCase(calRepo, shareRepo),
+		EventList:         eventuc.NewListEventsUseCase(calRepo),
+		EventGet:          eventuc.NewGetEventUseCase(calRepo),
+		EventCreate:       eventuc.NewCreateEventUseCase(calRepo),
+		EventUpdate:       eventuc.NewUpdateEventUseCase(calRepo),
+		EventDelete:       eventuc.NewDeleteEventUseCase(calRepo),
+		AddressBookList:   abList,
+		AddressBookCreate: addressbookuc.NewCreateUseCase(abRepo),
+		AddressBookUpdate: addressbookuc.NewUpdateUseCase(abRepo),
+		AddressBookDelete: addressbookuc.NewDeleteUseCase(abRepo, abShareRepo),
+		ContactList:       contactuc.NewListUseCase(abRepo),
+		ContactGet:        contactuc.NewGetUseCase(abRepo),
+		ContactCreate:     contactuc.NewCreateUseCase(addressbookuc.NewCreateContactUseCase(abRepo)),
+		ContactUpdate:     contactuc.NewUpdateUseCase(abRepo),
+		ContactDelete:     contactuc.NewDeleteUseCase(abRepo),
+		Search:            searchuc.NewUseCase(calRepo, abRepo, calList, abList),
 	}
 
 	srv := NewServer(deps)

@@ -81,6 +81,25 @@ func (s *Server) resolveAddressBook(cc *callContext, uuid string) (uint, address
 	return ab.ID, s.addressBookPermission(cc, ab.ID)
 }
 
+// resolveOwnedAddressBook maps an address-book UUID to the book, but only for
+// one the caller OWNS — the address-book collection tools (update/delete) are
+// owner-only, like their REST routes.
+//
+// This mirrors AddressBookHandler.resolveOwnedAddressBookID exactly: the same
+// repository lookup and the same ownership comparison, with an unknown UUID, a
+// lookup failure, another user's book and a book merely shared with the caller
+// all reported as "not found" (F05), so a tool cannot be used to learn that
+// someone else's book exists. Ownership is compared on UserID rather than via
+// GetUserPermission because that is what REST does; the update and delete use
+// cases then check it again themselves.
+func (s *Server) resolveOwnedAddressBook(cc *callContext, uuid string) (*addressbook.AddressBook, bool) {
+	ab, err := s.deps.AddressBookRepo.GetByUUID(cc.ctx, uuid)
+	if err != nil || ab == nil || ab.UserID != cc.userID {
+		return nil, false
+	}
+	return ab, true
+}
+
 // addressBookPermission returns the caller's permission on a book by numeric
 // id, failing closed on repository errors.
 func (s *Server) addressBookPermission(cc *callContext, abID uint) addressbook.AddressBookPermission {
