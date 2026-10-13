@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 import { useVuelidate } from '@vuelidate/core';
-import { required, minLength, sameAs } from '@vuelidate/validators';
+import { required, sameAs, helpers } from '@vuelidate/validators';
 
 definePageMeta({
   layout: "auth",
@@ -84,7 +84,13 @@ const form = reactive({
 });
 
 const rules = {
-  password: { required, minLength: minLength(8) },
+  password: {
+    required,
+    policy: helpers.withMessage(
+      () => passwordPolicyError(form.password) ?? '',
+      (value: string) => !value || passwordPolicyError(value) === null,
+    ),
+  },
   confirmPassword: { 
     required, 
     sameAsPassword: sameAs(computed(() => form.password)) 
@@ -115,7 +121,7 @@ const handleSubmit = async () => {
       method: "POST",
       body: { 
         token,
-        password: form.password 
+        new_password: form.password,
       },
     });
     success.value = true;
