@@ -35,6 +35,10 @@ func isSafeValidationError(err error) bool {
 // unconfirmed account alike (P01).
 const loginFailedUnverifiedMessage = "invalid email or password, or the email address has not been confirmed yet"
 
+// forgotPasswordFailedMessage is the 500 answer when sending the reset link
+// failed. It deliberately names no cause (mail host, driver text).
+const forgotPasswordFailedMessage = "A server error occurred while sending the reset link. Please try again later."
+
 type AuthHandler struct {
 	registerUC *authusecase.RegisterUseCase
 	verifyUC   *authusecase.VerifyUseCase
@@ -263,9 +267,14 @@ func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 		BaseURL: h.config.BaseURL,
 	}
 
+	// An unknown address is a silent success inside the use case, so the green
+	// answer never reveals whether an account exists. A real failure (mail
+	// server unreachable, storage error) is reported: pretending the link was
+	// sent would leave the user waiting for a mail that will never arrive. The
+	// cause stays in the log; the client only gets a generic message.
 	if err := h.forgotUC.Execute(c.Context(), usecaseReq); err != nil {
-		// Log error but return success to prevent enumeration.
 		log.Printf("forgot password failed: %v", err)
+		return ErrorResponse(c, fiber.StatusInternalServerError, forgotPasswordFailedMessage)
 	}
 
 	return SuccessResponse(c, "If an account with that email exists, a password reset link has been sent.")

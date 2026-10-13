@@ -31,6 +31,10 @@
         <small v-if="v$.email.$error" class="p-error">{{ v$.email.$errors[0]?.$message }}</small>
       </div>
 
+      <Message v-if="error" severity="error" :closable="true" @close="error = ''">
+        {{ error }}
+      </Message>
+
       <Button
         type="submit"
         label="Send Reset Link"
@@ -73,11 +77,13 @@ const v$ = useVuelidate(rules, form);
 
 const isLoading = ref(false);
 const submitted = ref(false);
+const error = ref("");
 
 const handleSubmit = async () => {
   const isFormCorrect = await v$.value.$validate();
   if (!isFormCorrect) return;
 
+  error.value = "";
   isLoading.value = true;
 
   try {
@@ -85,12 +91,15 @@ const handleSubmit = async () => {
       method: "POST",
       body: { email: form.email },
     });
-  } catch (e) {
-    // We ignore errors here to prevent email enumeration
-    console.error(e);
+    // An unknown address is answered with the same success as a known one, so
+    // this green notice does not reveal whether an account exists.
+    submitted.value = true;
+  } catch (e: any) {
+    // The server fails only when sending really failed (mail server down), and
+    // then pretending the link was sent would leave the user waiting for it.
+    error.value = e?.data?.message || "A server error occurred. Please try again later.";
   } finally {
     isLoading.value = false;
-    submitted.value = true;
   }
 };
 </script>
