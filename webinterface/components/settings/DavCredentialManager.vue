@@ -2,6 +2,7 @@
   <div>
     <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">{{ title }}</h2>
     <p class="text-sm text-surface-500 dark:text-surface-400 mb-6">{{ description }}</p>
+    <SettingsDavUrlBox :variant="apiEndpoint.includes('carddav') ? 'carddav' : 'caldav'" />
 
     <!-- Create button -->
     <div class="mb-6">

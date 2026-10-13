@@ -41,6 +41,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
     │   ├── calendar/        # CalendarSidebar, CalendarToolbar, EventForm, Event*Dialog, RecurrenceScopeDialog
     │   ├── contacts/        # ContactsSidebar, ContactListItem, AlphabetNavigation
     │   ├── dashboard/       # WidgetCard, TodayAgendaCard, UpcomingEventsCard, MiniCalendarCard, RecentContacts*, QuickStatsCard
+    │   ├── settings/        # DavCredentialManager, DavUrlBox (copyable /dav/<username>/… URLs)
     │   ├── sharing/         # SharePanel, PublicLinkPanel, ShareDialog (calendars + address books)
     │   └── common/          # AppHeader, AppSidebar, GlobalSearch, Search*, HighlightText, ThemeToggle, LoadingSpinner, SkeletonList
     ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard, preferences, search, sharing

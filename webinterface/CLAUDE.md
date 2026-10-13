@@ -64,6 +64,9 @@ webinterface/
 │   │   ├── RecentContactsCard.vue # Most recently updated contacts
 │   │   ├── RecentContactRow.vue   # Single row of the above
 │   │   └── QuickStatsCard.vue     # Calendars / events this month / address books / contacts
+│   ├── settings/
+│   │   ├── DavCredentialManager.vue # → <SettingsDavCredentialManager>  CalDAV / CardDAV credential pages
+│   │   └── DavUrlBox.vue          # → <SettingsDavUrlBox>  copyable DAV URLs + which login to use
 │   ├── sharing/                   # Resource-agnostic sharing UI (story 043)
 │   │   ├── SharePanel.vue         # → <SharingSharePanel>  list/invite/change/revoke, BOTH resource kinds
 │   │   ├── PublicLinkPanel.vue    # → <SharingPublicLinkPanel>  calendar public link (calendars only)
@@ -92,7 +95,8 @@ webinterface/
 │   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
 │   ├── useTheme.ts          # Light/Dark/System state — SINGLETON, see Theming below
 │   ├── useAccentColor.ts    # Accent colour — SINGLETON, server-backed, see Theming below
-│   └── useOpenSourceAttribution.ts  # Loads both attribution manifests + filterOpenSourcePackages()
+│   ├── useOpenSourceAttribution.ts  # Loads both attribution manifests + filterOpenSourcePackages()
+│   └── useCopyToClipboard.ts  # Copy + toast, with the plain-http fallback (no navigator.clipboard)
 ├── middleware/
 │   ├── auth.ts              # Requires authentication (redirects to /auth/login)
 │   └── guest.ts             # Requires unauthenticated (redirects away from auth pages)
@@ -110,6 +114,7 @@ webinterface/
 │   ├── agendaLayout.ts      # Lane assignment for overlapping blocks on the day timeline
 │   ├── contactAvatar.ts     # Contact initials + deterministic avatar colour
 │   ├── dashboardDates.ts    # Local-date primitives + month-range merging for the dashboard
+│   ├── davUrls.ts           # davOrigin() / davHomeUrl(): the URLs DAV clients are configured with
 │   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page
@@ -400,6 +405,29 @@ Neither type carries the **owner's numeric user id** or soft-delete state: `Cale
 Both manifests are COMMITTED — the page works without ever running a generator. Re-run both after a dependency change; their output is deterministic (sorted, no timestamps), so an unchanged dependency set yields an empty diff. `server/Dockerfile` re-runs both but tolerates failure, since the committed files are authoritative.
 
 A license of `"unknown"` means it could not be detected/was not declared — never render it as "unlicensed". The generators' `note` field carries that caveat and the page prints it.
+
+### DAV connection URLs
+
+`components/settings/DavUrlBox.vue` (→ `<SettingsDavUrlBox>`) shows the URLs a CalDAV/CardDAV
+client is configured with, with copy buttons, at the top of the CalDAV and CardDAV credential pages
+(rendered by `DavCredentialManager`, keyed on its `apiEndpoint`) and the app-password page. The URL
+strings come from `utils/davUrls.ts`.
+
+- **The URL carries the ACCOUNT username, never a credential's.** The server's tree is
+  `/dav/{username}/calendars/` and `/dav/{username}/addressbooks/`, and the DAV handler compares that
+  segment to the authenticated account exactly: a DAV credential's own username in the URL is a
+  404, and so is a lower-cased mixed-case account name. The credential's username is only the
+  Basic-auth login name; an app password logs in with the account username (or e-mail).
+- **The username comes from the auth store**, which the login response and `GET /users/me` fill.
+  `/users/me` had no `username` field until this was added, so the profile page showed an empty
+  box and `components/setup/ProtocolSection.vue` built `/dav//…` URLs. With no username the box
+  shows a warning instead of a URL a client would accept and then fail on.
+- **Origin = `apiBaseUrl || window.location.origin`**, the same rule as the MCP page.
+  `/.well-known/caldav` and `/.well-known/carddav` redirect to `/dav/`, so auto-discovering clients
+  (DAVx5, Apple) need only that origin; the box says so in one line.
+- **Copying goes through `useCopyToClipboard()`**, which checks for `navigator.clipboard` first: over
+  plain http (docker-compose's default) the API does not exist at all, and the user is told to copy
+  by hand.
 
 ### MCP Access (story 104)
 
