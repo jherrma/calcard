@@ -279,7 +279,7 @@ def test_caldav_expired(t, e2e, u1):
 
 
 def test_dav_cred_validation(t, e2e, u1):
-    """CalDAV / CardDAV credential: past expiry and blank name are refused (400)"""
+    """CalDAV / CardDAV credential: past expiry, blank name and a password over 72 bytes are refused (400)"""
     a_minute_ago = (datetime.now(timezone.utc) - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     pw = f"Validate_{e2e.run_id}"
@@ -291,6 +291,9 @@ def test_dav_cred_validation(t, e2e, u1):
             ({"name": "past", "username": e2e.cred_user(f"{kind[:4]}ago"), "password": pw,
               "expires_at": a_minute_ago}, "an expiry a minute ago", "future"),
             ({"name": "   ", "username": e2e.cred_user(f"{kind[:4]}blank"), "password": pw}, "a whitespace-only name", "name"),
+            # bcrypt refuses more than 72 bytes; the answer names the rule.
+            ({"name": "long", "username": e2e.cred_user(f"{kind[:4]}long"), "password": "p" * 73},
+             "a password over 72 bytes", "at most 72 bytes"),
         ]
         for body, what, word in cases:
             r = u1.api("POST", path, json=body)

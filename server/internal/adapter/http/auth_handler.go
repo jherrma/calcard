@@ -20,6 +20,7 @@ func isSafeValidationError(err error) bool {
 	switch {
 	case errors.Is(err, user.ErrInvalidEmail),
 		errors.Is(err, user.ErrPasswordTooShort),
+		errors.Is(err, user.ErrPasswordTooLong),
 		errors.Is(err, user.ErrPasswordNoUpper),
 		errors.Is(err, user.ErrPasswordNoLower),
 		errors.Is(err, user.ErrPasswordNoDigit),
@@ -137,7 +138,10 @@ func pendingRegistrationResponse(email, displayName string) dto.RegisterResponse
 	}
 }
 
-// GET /api/v1/auth/verify
+// GET /api/v1/auth/verify?token=
+//
+// The activation e-mail links the SPA page /auth/verify?token=, which calls
+// this and shows the outcome.
 func (h *AuthHandler) Verify(c fiber.Ctx) error {
 	token := c.Query("token")
 	if token == "" {

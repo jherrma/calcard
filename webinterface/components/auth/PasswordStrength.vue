@@ -40,15 +40,21 @@ const strengthTextColors = [
   "text-green-500",
 ];
 
+// One point per group of policy rules, read from the same checks as
+// passwordPolicyError (utils/passwordPolicy.ts): Unicode classes and byte
+// lengths, like the server. So "Strong" means the policy accepts the password —
+// a space-only passphrase or one over 72 bytes is not Strong — and a password
+// such as "Übermut2024!" is not marked down for its non-ASCII capital.
 const strength = computed(() => {
   const password = props.password;
   if (!password) return 0;
 
+  const checks = passwordPolicyChecks(password);
   let score = 0;
-  if (password.length >= 8) score++;
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
-  if (/\d/.test(password)) score++;
-  if (/[^a-zA-Z0-9]/.test(password)) score++;
+  if (checks.minLength && checks.maxLength) score++;
+  if (checks.lower && checks.upper) score++;
+  if (checks.digit) score++;
+  if (checks.special) score++;
 
   return score;
 });

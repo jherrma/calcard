@@ -107,7 +107,7 @@
 
 <script setup lang="ts">
 import { useVuelidate } from '@vuelidate/core';
-import { required, email, minLength, sameAs, helpers } from '@vuelidate/validators';
+import { required, email, sameAs, helpers } from '@vuelidate/validators';
 
 definePageMeta({
   layout: "auth",
@@ -125,8 +125,16 @@ const form = reactive({
 
 const rules = {
   email: { required, email },
-  password: { required, minLength: minLength(8) },
-  confirmPassword: { 
+  // The server's full policy (utils/passwordPolicy.ts), so the user sees the
+  // rule here instead of after a round trip.
+  password: {
+    required,
+    policy: helpers.withMessage(
+      () => passwordPolicyError(form.password) ?? '',
+      (value: string) => !value || passwordPolicyError(value) === null,
+    ),
+  },
+  confirmPassword: {
     required, 
     sameAsPassword: sameAs(computed(() => form.password)) 
   },

@@ -233,6 +233,24 @@ def test_pw_same(t, st):
     t.status(r, 400, msg="new == current is a validation error")
 
 
+def test_password_max_bytes(t, e2e, st):
+    """a new password over 72 bytes (bcrypt's limit) is a 400 naming the rule"""
+    # Before the policy had a maximum, register answered "registration failed"
+    # and a password change a plain 500: bcrypt refuses more than 72 bytes.
+    want = "password must be at most 72 bytes"
+    for pw, what in (("Aa1!" + "x" * 69, "73 bytes"), ("Aa1!" + "ä" * 35, "39 characters but 74 bytes")):
+        r = e2e.anon("POST", "/auth/register",
+                     json={"email": f"{e2e.uniq('long')}@{e2e.domain}", "password": pw, "display_name": "x"})
+        if t.status(r, 400, msg=f"register with a password of {what}"):
+            t.eq(r.jmsg(), want, f"register with a password of {what}")
+    t.need(st, "ua")
+    ua = st.ua
+    r = ua.api("PUT", "/users/me/password", json={"current_password": ua.password, "new_password": "Aa1!" + "x" * 69})
+    t.true(r.jmsg() not in TOKEN_REJECTED, f"the session must be valid (message '{r.jmsg()}')", r)
+    if t.status(r, 400, msg="a new password of 73 bytes"):
+        t.eq(r.jmsg(), want, "a new password of 73 bytes")
+
+
 def test_pw_change(t, e2e, st):
     """password change swaps credentials and revokes sessions"""
     t.need(st, "ua")

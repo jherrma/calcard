@@ -67,6 +67,10 @@ func (uc *CreateCardDAVCredentialUseCase) Execute(ctx context.Context, userID ui
 	if len(input.Password) < 8 {
 		return nil, fmt.Errorf("password must be at least 8 characters")
 	}
+	// bcrypt refuses more than 72 bytes; say so instead of a failed hash.
+	if len(input.Password) > user.MaxPasswordBytes {
+		return nil, user.ErrPasswordTooLong
+	}
 
 	// Check for existing username
 	existing, _ := uc.credRepo.GetByUsername(ctx, input.Username)

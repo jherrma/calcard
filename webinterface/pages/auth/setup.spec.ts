@@ -1,6 +1,7 @@
 // @vitest-environment nuxt
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import { useRouter } from '#imports';
 import SetupPage from './setup.vue';
@@ -9,6 +10,7 @@ import SetupPage from './setup.vue';
 // it must leave once setup is done (the server answers 409 forever after), it
 // must lower-case the username the way the server does, and a failed follow-up
 // sign-in must NOT read as "setup failed" (retrying would only hit a 409).
+// The password field applies the server's full policy before anything is sent.
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
 mockNuxtImport('useApi', () => () => apiMock);
@@ -29,7 +31,7 @@ interface PageVm {
   handleSetup: () => Promise<void>;
 }
 
-async function mountPage(adminConfigured: boolean, tokenRequired = false) {
+async function mountWrapper(adminConfigured: boolean, tokenRequired = false) {
   apiMock.mockResolvedValue({
     admin_configured: adminConfigured,
     smtp_enabled: false,
@@ -38,7 +40,11 @@ async function mountPage(adminConfigured: boolean, tokenRequired = false) {
   });
   const wrapper = mount(SetupPage, { shallow: true, global: { renderStubDefaultSlot: true } });
   await flushPromises();
-  return wrapper.vm as unknown as PageVm;
+  return wrapper;
+}
+
+async function mountPage(adminConfigured: boolean, tokenRequired = false) {
+  return (await mountWrapper(adminConfigured, tokenRequired)).vm as unknown as PageVm;
 }
 
 function fillValidForm(vm: PageVm, username = 'Admin') {
@@ -109,6 +115,25 @@ describe('setup page', () => {
 
     expect(vm.error).toBe('');
     expect(routerSpies.replace).toHaveBeenCalledWith('/auth/login');
+  });
+
+  // Revert caught: with only minLength(8) these reach the server, which
+  // answers 400 (or, over 72 bytes, used to fail at the bcrypt hash).
+  it.each([
+    ['alllowercase1!', 'Password must contain at least one uppercase letter'],
+    ['NoSpecial123', 'Password must contain at least one special character'],
+    ['Aa1!' + 'x'.repeat(69), 'Password must be at most 72 bytes'],
+  ])('refuses the password %s with the rule it breaks', async (password, message) => {
+    const wrapper = await mountWrapper(false);
+    const vm = wrapper.vm as unknown as PageVm;
+    fillValidForm(vm);
+    vm.form.password = password;
+    vm.form.confirmPassword = password;
+    await vm.handleSetup();
+    await nextTick();
+
+    expect(authStoreMock.setupAdmin).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain(message);
   });
 
   it('refuses a username the server would reject', async () => {

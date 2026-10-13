@@ -191,8 +191,12 @@ func TestRegisterUseCase_Execute_WithSMTP(t *testing.T) {
 	})).Return(nil)
 	calRepo.On("Create", ctx, mock.Anything).Return(nil)
 	abRepo.On("Create", ctx, mock.Anything).Return(nil)
-	repo.On("CreateVerification", ctx, mock.Anything).Return(nil)
-	emailSvc.On("SendActivationEmail", ctx, email, mock.Anything).Return(nil)
+	var stored *user.EmailVerification
+	repo.On("CreateVerification", ctx, mock.Anything).
+		Run(func(args mock.Arguments) { stored = args.Get(1).(*user.EmailVerification) }).Return(nil)
+	var link string
+	emailSvc.On("SendActivationEmail", ctx, email, mock.Anything).
+		Run(func(args mock.Arguments) { link = args.String(2) }).Return(nil)
 
 	u, token, err := uc.Execute(ctx, email, password, "Test User")
 
@@ -202,6 +206,12 @@ func TestRegisterUseCase_Execute_WithSMTP(t *testing.T) {
 	assert.NotEmpty(t, token)
 	repo.AssertExpectations(t)
 	emailSvc.AssertExpectations(t)
+
+	// The mail links the SPA page (which calls GET /api/v1/auth/verify), on
+	// cfg.BaseURL, carrying the raw token whose hash was stored.
+	assert.Equal(t, "http://localhost:8080/auth/verify?token="+token, link)
+	require.NotNil(t, stored)
+	assert.Equal(t, hashVerificationToken(token), stored.Token)
 }
 
 func TestRegisterUseCase_Execute_CaseInsensitive(t *testing.T) {
@@ -282,16 +292,23 @@ func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_ResendsActivation(t
 	ctx := context.Background()
 	existing := &user.User{ID: 9, Email: "pending@example.com", PasswordHash: "orig"}
 	repo.On("GetByEmail", ctx, "pending@example.com").Return(existing, nil)
+	var stored *user.EmailVerification
 	repo.On("CreateVerification", ctx, mock.MatchedBy(func(v *user.EmailVerification) bool {
 		return v.UserID == 9 && len(v.Token) == 64
-	})).Return(nil)
-	emailSvc.On("SendActivationEmail", ctx, "pending@example.com", mock.MatchedBy(func(link string) bool {
-		return strings.HasPrefix(link, "https://cal.example.com/api/v1/auth/verify?token=")
-	})).Return(nil)
+	})).Run(func(args mock.Arguments) { stored = args.Get(1).(*user.EmailVerification) }).Return(nil)
+	// The SPA page, like the first activation mail.
+	const prefix = "https://cal.example.com/auth/verify?token="
+	var link string
+	emailSvc.On("SendActivationEmail", ctx, "pending@example.com", mock.MatchedBy(func(l string) bool {
+		return strings.HasPrefix(l, prefix)
+	})).Run(func(args mock.Arguments) { link = args.String(2) }).Return(nil)
 
 	_, _, err := uc.Execute(ctx, "pending@example.com", "OtherPass123!", "Someone")
 
 	assert.ErrorIs(t, err, ErrUserAlreadyExists)
+	require.NotNil(t, stored)
+	assert.Equal(t, stored.Token, hashVerificationToken(strings.TrimPrefix(link, prefix)),
+		"the mailed token is the one whose hash was stored")
 	assert.Equal(t, "orig", existing.PasswordHash)
 	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 	repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
@@ -340,4 +357,21 @@ func TestRegisterUseCase_Execute_Existing_SpendsBcryptTime(t *testing.T) {
 	require.ErrorIs(t, err, ErrUserAlreadyExists)
 	assert.GreaterOrEqualf(t, elapsed, reference/2,
 		"taken-address path took %v, a bcrypt hash takes %v: it must hash too (P01 timing)", elapsed, reference)
+}
+
+// bcrypt refuses more than 72 bytes. The policy must refuse it first, as the
+// typed sentinel the handler answers with a 400, and before the duplicate
+// lookup: a taken and a free address then fail identically (P01).
+func TestRegisterUseCase_Execute_RejectsPasswordOverBcryptLimit(t *testing.T) {
+	repo := new(mockUserRepo)
+	emailSvc := new(mockEmailService)
+	cfg := &config.Config{SMTP: config.SMTPConfig{Host: "smtp.example.com"}, BaseURL: "https://cal.example.com"}
+	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), emailSvc, cfg)
+
+	_, _, err := uc.Execute(context.Background(), "long@example.com", "Aa1!"+strings.Repeat("x", 69), "Long")
+
+	assert.ErrorIs(t, err, user.ErrPasswordTooLong)
+	repo.AssertNotCalled(t, "GetByEmail", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	emailSvc.AssertNotCalled(t, "SendActivationEmail", mock.Anything, mock.Anything, mock.Anything)
 }

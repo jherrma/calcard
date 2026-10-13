@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jherrma/caldav-server/internal/config"
@@ -67,6 +68,8 @@ func TestSetupUseCase_Validation(t *testing.T) {
 		{"bad characters", "ad min", "a@example.com", "SecurePass123!", ErrInvalidUsername},
 		{"bad email", "admin", "not-an-email", "SecurePass123!", user.ErrInvalidEmail},
 		{"weak password", "admin", "a@example.com", "short", user.ErrPasswordTooShort},
+		// bcrypt refuses more than 72 bytes; the policy must say so first.
+		{"password over 72 bytes", "admin", "a@example.com", "Aa1!" + strings.Repeat("x", 69), user.ErrPasswordTooLong},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

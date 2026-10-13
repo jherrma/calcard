@@ -82,6 +82,10 @@ func (uc *CreateCalDAVCredentialUseCase) Execute(ctx context.Context, userID uin
 	if len(input.Password) < 8 {
 		return nil, fmt.Errorf("password must be at least 8 characters")
 	}
+	// bcrypt refuses more than 72 bytes; say so instead of a failed hash.
+	if len(input.Password) > user.MaxPasswordBytes {
+		return nil, user.ErrPasswordTooLong
+	}
 
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)

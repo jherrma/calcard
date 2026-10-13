@@ -36,9 +36,11 @@
 </template>
 
 <script setup lang="ts">
+// No "guest" middleware: the activation e-mail links here, and the token alone
+// authorises the request, so the link must work even when another account is
+// signed in in this browser (guest would redirect to "/" without verifying).
 definePageMeta({
   layout: "auth",
-  middleware: "guest",
 });
 
 const route = useRoute();
@@ -49,8 +51,9 @@ const success = ref(false);
 const errorMessage = ref("");
 
 onMounted(async () => {
-  const token = route.query.token;
-  
+  const raw = route.query.token;
+  const token = Array.isArray(raw) ? raw[0] : raw;
+
   if (!token) {
     loading.value = false;
     errorMessage.value = "Verification token is missing.";
@@ -58,10 +61,9 @@ onMounted(async () => {
   }
 
   try {
-    await api("/api/v1/auth/verify", {
-      method: "POST",
-      body: { token },
-    });
+    // The server only has GET /api/v1/auth/verify?token= (the page used to
+    // POST a JSON body, which no route answers).
+    await api(`/api/v1/auth/verify?token=${encodeURIComponent(token)}`);
     success.value = true;
   } catch (e: any) {
     errorMessage.value = e.data?.message || "Verification failed.";

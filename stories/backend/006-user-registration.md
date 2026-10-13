@@ -37,6 +37,7 @@ As a new user, I want to create an account with email and password so that I can
 - [ ] Username is generated and 16 letters long
 - [ ] Password validation:
   - [ ] Minimum 8 characters
+  - [ ] Maximum 72 bytes (bcrypt hashes no more; counted in UTF-8 bytes, not characters)
   - [ ] At least one uppercase letter
   - [ ] At least one lowercase letter
   - [ ] At least one digit
