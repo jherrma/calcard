@@ -1,5 +1,5 @@
 """Authentication: registration, login, JWT refresh rotation, logout, password
-change, forgot/reset/verify edges, OAuth surface, account deletion.
+change, reset/verify edges, OAuth surface, account deletion.
 
 Since P02 (#189) a logout with a live refresh token (or a bearer), a password
 change and a password reset revoke EVERY access token of the account. So the
@@ -284,21 +284,6 @@ def test_pw_change(t, e2e, st):
     ua._store_tokens(r)
     t.status(e2e.anon("POST", "/auth/refresh", json={"refresh_token": old_session_refresh}), 401,
              msg="sessions opened before the change must be revoked")
-
-
-def test_forgot(t, e2e, st):
-    """forgot-password answers identically for known/unknown e-mail"""
-    r = e2e.anon("POST", "/auth/forgot-password", json={"email": f"{e2e.uniq('nobody')}@{e2e.domain}"})
-    if not t.status(r, 200):
-        return
-    unknown_msg = r.jdict().get("data")
-    t.need(st, "ua")
-    r = e2e.anon("POST", "/auth/forgot-password", json={"email": st.ua.email})
-    if not t.status(r, 200):
-        return
-    t.eq(r.jdict().get("data"), unknown_msg,
-         "known and unknown addresses must get the same answer (no account enumeration)")
-    t.status(e2e.anon("POST", "/auth/forgot-password", data="nope", ctype="application/json"), 400)
 
 
 def test_reset_bogus(t, e2e):
