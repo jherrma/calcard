@@ -186,11 +186,11 @@ func startCountingSMTP(t *testing.T) (addr string, count *int64, stop func()) {
 	return ln.Addr().String(), &c, func() { _ = ln.Close() }
 }
 
-// serveFakeSMTP handles one connection with a tiny SMTP dialogue. It never
-// authenticates (it advertises no AUTH extension), which makes net/smtp abandon
-// the send right after EHLO — fine for our purposes, since the connection has
-// already been counted. It also tolerates a full MAIL/RCPT/DATA flow so the
-// helper stays robust across net/smtp versions.
+// serveFakeSMTP handles one connection with a tiny SMTP dialogue: EHLO, then
+// MAIL/RCPT/DATA, so every send completes. It advertises no AUTH extension,
+// which is what a relay without a login looks like; the sender then attempts no
+// AUTH because no user is configured. Each accepted connection is one delivery
+// attempt, which is what the test counts.
 func serveFakeSMTP(conn net.Conn) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))

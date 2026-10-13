@@ -489,6 +489,11 @@ func (c *Config) Validate() error {
 			errs = append(errs, "CALDAV_JWT_SECRET must be at least 16 characters")
 		}
 	}
+	if c.SMTP.Host != "" && c.SMTP.User == "" && c.SMTP.Password != "" {
+		// A password without a user would be ignored and the mail sent without
+		// a login; a typo in CALDAV_SMTP_USER should not pass unnoticed.
+		errs = append(errs, "CALDAV_SMTP_PASSWORD is set but CALDAV_SMTP_USER is empty: set the user too, or unset the password")
+	}
 	if c.BaseURL == "" {
 		// Links in e-mails and OAuth redirect URIs cannot be derived from the
 		// request: a forged Host header on forgot-password would mail the
