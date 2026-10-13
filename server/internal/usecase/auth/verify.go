@@ -49,9 +49,10 @@ func (uc *VerifyUseCase) Execute(ctx context.Context, token string) error {
 		return ErrInvalidToken
 	}
 
-	// 3. Activate user
+	// 3. Confirm the address. Only email_verified changes: every account is
+	// active from registration on, and is_active=false means a deactivated
+	// account, which confirming an address must not undo.
 	u := &v.User
-	u.IsActive = true
 	u.EmailVerified = true
 
 	if err := uc.repo.Update(ctx, u); err != nil {

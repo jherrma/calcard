@@ -31,11 +31,6 @@ func isSafeValidationError(err error) bool {
 	}
 }
 
-// loginFailedUnverifiedMessage is the single 401 message login answers with
-// while e-mail verification is required, for a wrong password and an
-// unconfirmed account alike (P01).
-const loginFailedUnverifiedMessage = "invalid email or password, or the email address has not been confirmed yet"
-
 // forgotPasswordFailedMessage is the 500 answer when sending the reset link
 // failed. It deliberately names no cause (mail host, driver text).
 const forgotPasswordFailedMessage = "A server error occurred while sending the reset link. Please try again later."
@@ -75,12 +70,13 @@ func NewAuthHandler(
 
 // POST /api/v1/auth/register
 //
-// Answers 200 (not 201) with the RegisterResponse wrapped in {status, data}.
+// Answers 200 (not 201) with the RegisterResponse wrapped in {status, data},
+// the same shape with SMTP on or off. The account is usable at once; with SMTP
+// its email_verified stays false until the activation link is opened.
 //
-// With SMTP configured, registering an address that already has an account
-// returns exactly the same body as a fresh registration — the owner is told
-// by e-mail instead (P01). Without SMTP the new account is active at once, so
-// a duplicate cannot be disguised as success and answers 409.
+// An address that already has an account answers 409 in both modes: the new
+// account would be live at once, so a duplicate cannot be disguised as
+// success. With SMTP the owner is also told by e-mail.
 func (h *AuthHandler) Register(c fiber.Ctx) error {
 	if h.config.Registration.Disabled {
 		return ErrorResponse(c, fiber.StatusForbidden, "registration is disabled")
@@ -90,17 +86,12 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	verificationRequired := h.config.SMTP.Host != ""
-
 	user, _, err := h.registerUC.Execute(c.Context(), req.Email, req.Password, req.DisplayName)
 	if err != nil {
 		if errors.Is(err, authusecase.ErrSetupRequired) {
 			return ErrorResponse(c, fiber.StatusForbidden, "server setup is not complete: finish the initial setup first")
 		}
 		if errors.Is(err, authusecase.ErrUserAlreadyExists) {
-			if verificationRequired {
-				return SuccessResponse(c, pendingRegistrationResponse(req.Email, req.DisplayName))
-			}
 			return ErrorResponse(c, fiber.StatusConflict, "Email already registered")
 		}
 		// Email/password validation sentinels carry safe, actionable messages
@@ -114,10 +105,6 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return ErrorResponse(c, fiber.StatusBadRequest, "registration failed")
 	}
 
-	if verificationRequired {
-		return SuccessResponse(c, pendingRegistrationResponse(req.Email, req.DisplayName))
-	}
-
 	return SuccessResponse(c, dto.RegisterResponse{
 		ID:            user.UUID,
 		Email:         user.Email,
@@ -127,19 +114,6 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		EmailVerified: user.EmailVerified,
 		CreatedAt:     &user.CreatedAt,
 	})
-}
-
-// pendingRegistrationResponse is the one body a registration answers with
-// while e-mail verification is required — for a new address and a taken one
-// alike. It is built from the request alone, never from a stored row, so no
-// field can differ between the two cases.
-func pendingRegistrationResponse(email, displayName string) dto.RegisterResponse {
-	return dto.RegisterResponse{
-		Email:         strings.ToLower(strings.TrimSpace(email)),
-		DisplayName:   displayName,
-		IsActive:      false,
-		EmailVerified: false,
-	}
 }
 
 // GET /api/v1/auth/verify?token=
@@ -173,15 +147,9 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 
 	res, err := h.loginUC.Execute(c.Context(), req.Email, req.Password, c.Get("User-Agent"), c.IP())
 	if err != nil {
+		// An unconfirmed e-mail address never gets here: login does not
+		// wait for it. ErrInactiveAccount is a deactivated account only.
 		if err == authusecase.ErrInvalidCredentials || err == authusecase.ErrInactiveAccount {
-			// With SMTP on, "not active" would tell whoever just registered an
-			// address with a password of their choosing whether that created
-			// an account (inactive) or hit an existing one (wrong password) —
-			// undoing the generic register response (P01). One message
-			// covers both.
-			if h.config.SMTP.Host != "" {
-				return UnauthorizedResponse(c, loginFailedUnverifiedMessage)
-			}
 			return UnauthorizedResponse(c, err.Error())
 		}
 		return ErrorResponse(c, fiber.StatusInternalServerError, "Internal server error")

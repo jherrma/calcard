@@ -31,7 +31,7 @@ func TestJWTSecretPersistsAcrossRestart(t *testing.T) {
 			DataDir:  dataDir,
 			BaseURL:  "http://127.0.0.1",
 			LogLevel: "error",
-			SMTP:     config.SMTPConfig{}, // empty -> users auto-activate
+			SMTP:     config.SMTPConfig{}, // empty -> new accounts are created verified
 			JWT: config.JWTConfig{
 				// Intentionally empty: EnsureSecret must supply it from the DB.
 				AccessExpiry:  time.Hour,

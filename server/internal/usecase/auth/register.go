@@ -18,12 +18,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// ErrUserAlreadyExists reports that the address already has an account. With
-// SMTP configured the HTTP layer answers it exactly like a successful
-// registration (see AuthHandler.Register), so the address owner learns about
-// the attempt by e-mail and the caller learns nothing (P01). Without SMTP the
-// account would be usable immediately, so the outcome cannot be hidden and the
-// caller gets a 409.
+// ErrUserAlreadyExists reports that the address already has an account. The
+// HTTP layer answers it with a 409, SMTP or not: a new account is usable at
+// once, so a caller who registered an address and then logs in with the
+// password they chose would learn the outcome anyway. With SMTP the address
+// owner is also told about the attempt by e-mail (notifyExistingAccount).
 var ErrUserAlreadyExists = errors.New("user already exists")
 
 type RegisterUseCase struct {
@@ -68,9 +67,6 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		return nil, "", err
 	}
 	if existing != nil {
-		// Spend the same bcrypt work a real registration does, so the response
-		// time does not tell a taken address from a free one (P01).
-		_, _ = bcrypt.GenerateFromPassword([]byte(password), user.BcryptCost)
 		uc.notifyExistingAccount(ctx, existing)
 		return nil, "", ErrUserAlreadyExists
 	}
@@ -86,24 +82,23 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		return nil, "", fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// 4. Create user
+	// 4. Create user. The account is active (usable) at once, SMTP or not.
+	// With SMTP its address still has to be confirmed: EmailVerified stays
+	// false until the activation link is opened, and login does not wait for
+	// it. Without SMTP nothing can be confirmed, so it is verified right away.
 	u := &user.User{
-		UUID:         uuid.New().String(),
-		Email:        email,
-		Username:     username,
-		PasswordHash: string(hash),
-		DisplayName:  displayName,
+		UUID:          uuid.New().String(),
+		Email:         email,
+		Username:      username,
+		PasswordHash:  string(hash),
+		DisplayName:   displayName,
+		IsActive:      true,
+		EmailVerified: uc.cfg.SMTP.Host == "",
 	}
 
-	// 5. Conditional activation based on SMTP host
+	// 5. With SMTP, an activation token for the e-mail confirmation
 	var token string
-	if uc.cfg.SMTP.Host == "" {
-		u.IsActive = true
-		u.EmailVerified = true
-	} else {
-		u.IsActive = false
-		u.EmailVerified = false
-
+	if uc.cfg.SMTP.Host != "" {
 		// Generate verification token
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
@@ -133,7 +128,8 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 			link := activationLink(uc.cfg.BaseURL, token)
 			if err := uc.emailService.SendActivationEmail(ctx, u.Email, link); err != nil {
 				// Log the failure without the token-bearing link; the user is
-				// already created and can request a resend.
+				// already created and can use the account. Registering the
+				// address again mails a fresh link (notifyExistingAccount).
 				log.Printf("failed to send activation email to user %d: %v", u.ID, err)
 			}
 		} else {
@@ -168,18 +164,17 @@ func activationLink(baseURL, token string) string {
 }
 
 // notifyExistingAccount tells the owner of an already-registered address that
-// someone tried to register it. It only runs with SMTP configured: that is the
-// mode in which the HTTP response hides the duplicate, so the e-mail is the
-// only place the outcome is reported — to the one person entitled to it.
+// someone tried to register it. It only runs with SMTP configured; the caller
+// gets the 409 either way.
 //
 // An account that never confirmed its address gets a fresh activation link
 // instead (the usual reason to register twice is a lost activation mail). Its
 // password is NOT changed: whoever submitted this form has not proven they own
-// the mailbox, and replacing the password of a pending account would let them
-// take it over the moment the real owner clicks the link.
+// the mailbox, and replacing the password would let them take the account
+// over.
 //
-// Failures are logged, never returned: an error here would surface as a
-// different response and re-open the oracle this path exists to close.
+// Failures are logged, never returned: the caller's answer is the 409 whether
+// or not the mail went out.
 func (uc *RegisterUseCase) notifyExistingAccount(ctx context.Context, u *user.User) {
 	if uc.cfg.SMTP.Host == "" {
 		return

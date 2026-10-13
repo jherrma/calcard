@@ -59,7 +59,7 @@ func runTests(m *testing.M) (int, error) {
 		// the real test port. Any non-empty value works here for Validate().
 		BaseURL:  "http://127.0.0.1",
 		LogLevel: "error",
-		SMTP:     config.SMTPConfig{}, // empty Host → users auto-activated
+		SMTP:     config.SMTPConfig{}, // empty Host → new accounts are created verified
 		JWT: config.JWTConfig{
 			Secret:        "integration-test-secret-change-me",
 			AccessExpiry:  time.Hour,

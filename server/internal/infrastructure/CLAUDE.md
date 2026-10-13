@@ -26,7 +26,7 @@ This directory contains the technical implementations and external library integ
 
 - **Purpose**: Handles external communication services.
 - **Key Components**:
-  - `smtp.go` — SMTP email sender implementation for verification emails, password resets, etc. Satisfies the email service interface used by auth use cases. When SMTP is not configured (`cfg.SMTP.Host == ""`), users are auto-activated on registration.
+  - `smtp.go` — SMTP email sender implementation for verification emails, password resets, etc. Satisfies the email service interface used by auth use cases. When SMTP is not configured (`cfg.SMTP.Host == ""`), new accounts are created verified (they are active either way).
 
 ### [logging/](logging/)
 

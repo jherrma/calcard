@@ -42,12 +42,13 @@ inspection use the standard library only.
   `CALDAV_REGISTRATION_DISABLED` unset/false). The suite cannot create users any
   other way — the API has no admin user management, so no admin credentials are
   needed (or used).
-- **No SMTP / e-mail verification** (`smtp_enabled: false`). With SMTP configured
-  new accounts stay inactive until the mailbox link is clicked, which the suite
-  cannot do. Point it at a staging instance of the same image instead.
+- SMTP may be on or off. New accounts can log in either way; with SMTP their
+  `email_verified` stays false (the suite cannot open the mailed link), and
+  each registration sends an activation mail to the test address
+  (`E2E_EMAIL_DOMAIN`, default `example.test`).
 
-Both are checked up front via `GET /api/v1/system/settings`, *before* any user
-is created, and the run aborts (exit code 2) with instructions if they do not hold.
+Registration is checked up front via `GET /api/v1/system/settings`, *before* any
+user is created, and the run aborts (exit code 2) with instructions if it is off.
 
 - Rate limiting may stay on: on HTTP 429 the suite waits `Retry-After` and
   retries (the summary shows how many times). With a low per-IP limit a full run
@@ -168,7 +169,6 @@ module-scoped `st` fixture; a test whose predecessor failed is SKIPPED with
 
 | Test | Reason |
 |---|---|
-| password-reset and e-mail-verification round trips | need an SMTP server and access to the mailbox (external system). The endpoints' edge cases (anti-enumeration, bogus tokens) *are* tested |
 | OAuth/OIDC login | needs an external identity provider and a browser. The provider listing and unknown-provider handling are tested |
 | web UI at `/` | when the target serves no SPA (e.g. a bare `go run`); the Docker image does |
 | security headers | when `CALDAV_SECURITY_HEADERS_ENABLED=false` (or a proxy strips them) |
@@ -176,6 +176,10 @@ module-scoped `st` fixture; a test whose predecessor failed is SKIPPED with
 | rate-limit headers | when rate limiting is off on the target |
 | login-limiter burst | opt-in (`E2E_RATE_LIMIT_BURST=true`): it sends ~11 failed logins for a throwaway, never-registered address, which also spends part of *this IP's* login allowance (20/min by default) for one window. Runs as the last suite |
 | MCP / subscriptions suites | when the feature is disabled on the target (404 on its routes): every test of the suite is skipped with that reason |
+
+Not covered at all (no test, skipped or otherwise): the password-reset and
+e-mail-verification round trips. They need the mailbox (an external system);
+the endpoints' edge cases (anti-enumeration, bogus tokens) *are* tested.
 
 COPY and MOVE are not implemented by the server (go-webdav answers 501); the
 suite asserts that clean refusal and that the source stays in place.

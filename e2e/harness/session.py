@@ -239,7 +239,6 @@ class E2E:
         self._last_cleanup_status: int | None = None
         self.reauths = 0  # User.api re-logins after a revoked/expired access token
         self.server_registration = None
-        self.server_smtp = None
         self._feed = None
 
     # --- helpers --------------------------------------------------------------
@@ -318,19 +317,12 @@ class E2E:
             abort_run(f"GET {self.base}/api/v1/system/settings answered HTTP {r.status} without the CalCard "
                       f"settings JSON — is CALCARD_URL pointing at a CalCard server?\n{r.dump()}")
         self.server_registration = data.get("registration_enabled")
-        self.server_smtp = data.get("smtp_enabled")
         if self.server_registration is not True:
             abort_run(
                 "Self-registration is disabled on the target (registration_enabled=false).\n"
                 "       The suite registers a fresh, uniquely named test user on every run and needs it enabled:\n"
                 "       set CALDAV_REGISTRATION_DISABLED=false (registration.disabled: false) on the server, "
                 "restart it, and re-run."
-            )
-        if self.server_smtp is True:
-            abort_run(
-                "The target has SMTP configured (smtp_enabled=true), so new accounts stay inactive until their\n"
-                "       e-mail address is verified — the suite cannot read that mailbox. Run it against an instance\n"
-                "       without SMTP (unset CALDAV_SMTP_HOST), e.g. a staging container of the same image."
             )
 
     # --- users ----------------------------------------------------------------
@@ -350,9 +342,6 @@ class E2E:
             raise SetupFailed(f"registering {u.email} answered HTTP {r.status} without the account JSON", r)
         u.id = data.get("id") or ""
         u.username = data.get("username") or ""
-        if data.get("is_active") is not True:
-            abort_run(f"The new account {u.email} is inactive (e-mail verification required). Run the suite "
-                      "against a server without SMTP so registrations auto-activate.")
         # Deleting the account is the very last cleanup for this user.
         self.defer(f"delete test account {u.email}", u.delete_account)
         if not u.login():

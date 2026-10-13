@@ -16,9 +16,10 @@ func TestVerifyUseCase_Execute_Success(t *testing.T) {
 
 	ctx := context.Background()
 	token := "valid-token"
+	// Registration creates every account active; only the address waits.
 	u := &user.User{
 		Email:         "test@example.com",
-		IsActive:      false,
+		IsActive:      true,
 		EmailVerified: false,
 	}
 	v := &user.EmailVerification{
@@ -39,6 +40,32 @@ func TestVerifyUseCase_Execute_Success(t *testing.T) {
 	err := uc.Execute(ctx, token)
 
 	assert.NoError(t, err)
+	repo.AssertExpectations(t)
+}
+
+// Confirming the address sets email_verified only. is_active=false means a
+// deactivated account, and opening an activation link must not reactivate it.
+func TestVerifyUseCase_Execute_DeactivatedStaysDeactivated(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := NewVerifyUseCase(repo)
+
+	ctx := context.Background()
+	token := "deactivated-token"
+	v := &user.EmailVerification{
+		UserID:    1,
+		Token:     token,
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+		User:      user.User{Email: "off@example.com", IsActive: false, EmailVerified: false},
+	}
+
+	tokenHash := hashVerificationToken(token)
+	repo.On("GetVerificationByToken", ctx, tokenHash).Return(v, nil)
+	repo.On("Update", ctx, mock.MatchedBy(func(u *user.User) bool {
+		return u.IsActive == false && u.EmailVerified == true
+	})).Return(nil)
+	repo.On("DeleteVerification", ctx, tokenHash).Return(nil)
+
+	assert.NoError(t, uc.Execute(ctx, token))
 	repo.AssertExpectations(t)
 }
 

@@ -21,8 +21,6 @@ DESCRIPTION = "register, login, refresh, logout, password change, account deleti
 
 pytestmark = pytest.mark.usefixtures("u1")
 
-SMTP_REASON = "needs an SMTP server and access to the mailbox (external system)"
-
 
 @pytest.fixture(scope="module")
 def ulog(e2e):
@@ -46,9 +44,9 @@ def _me(e2e, token):
 
 
 def test_register(t, e2e, st):
-    """register returns the new account (auto-activated)"""
+    """register returns the new account (active at once, SMTP or not)"""
     st.ua = ua = e2e.create_user("UA", "E2E Auth User")
-    # create_user already checked is_active; look at what it stored.
+    # create_user already logged in, so the account is usable; look at what it stored.
     t.true(ua.username, f"username must be a non-empty server-assigned slug (got '{ua.username}')")
     if not re.fullmatch(r"[A-Za-z0-9]+", ua.username):
         t.fail(f"username '{ua.username}' is not alphanumeric")
@@ -60,7 +58,15 @@ def test_register(t, e2e, st):
     t.json(r, "data.email", ua.email)
     t.json(r, "data.display_name", "E2E Auth User")
     t.json(r, "data.is_active", True)
-    t.json(r, "data.email_verified", True, "with SMTP off accounts are verified on registration")
+    # email_verified depends on the server's SMTP setting, never on is_active
+    # (an account is active either way): with SMTP off nothing can be confirmed,
+    # so it is verified on registration; with SMTP on it stays false until the
+    # mailed link is opened, which the suite cannot do.
+    smtp = (e2e.anon("GET", "/system/settings").jdict().get("data") or {}).get("smtp_enabled")
+    if not isinstance(smtp, bool):
+        return t.fail(f"GET /system/settings has no boolean smtp_enabled (got {smtp!r})")
+    t.json(r, "data.email_verified", not smtp,
+           "SMTP on: unverified until the mailed link is opened" if smtp else "SMTP off: verified on registration")
 
 
 def test_register_dup(t, e2e, u1):
@@ -300,16 +306,6 @@ def test_reset_bogus(t, e2e):
     t.status(e2e.anon("POST", "/auth/reset-password", json='{"token":"bogus-token","new_password":"Some!Valid12345"}'), 400)
     t.status(e2e.anon("GET", "/auth/verify?token=bogus-token"), 400)
     t.status(e2e.anon("GET", "/auth/verify"), 400)
-
-
-@pytest.mark.skip(reason=SMTP_REASON)
-def test_reset_roundtrip():
-    """password reset e-mail round trip"""
-
-
-@pytest.mark.skip(reason=SMTP_REASON)
-def test_verify_roundtrip():
-    """e-mail verification round trip"""
 
 
 def test_oauth_surface(t, e2e, u1):
