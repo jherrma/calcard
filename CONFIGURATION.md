@@ -77,25 +77,28 @@ tried to register with your address" notice. SMTP counts as configured as soon a
 | YAML Key   | Env Var                | Default | Description |
 | :--------- | :--------------------- | :------ | :---------- |
 | `host`     | `CALDAV_SMTP_HOST`     | empty   | Mail server host name. **Empty turns e-mail off**: nothing is sent (the server only logs that a mail was suppressed, never its recipient or link), new accounts are active immediately, and registration behaves as described under Registration below. Setting it requires `base_url`, because the e-mailed links are built from it. |
-| `port`     | `CALDAV_SMTP_PORT`     | `587`   | Mail server port. The connection always starts unencrypted and is upgraded with STARTTLS (see below), so use the submission port; implicit-TLS ports (SMTPS, usually `465`) do not work. |
-| `user`     | `CALDAV_SMTP_USER`     | empty   | User name for SMTP `AUTH PLAIN`. |
+| `port`     | `CALDAV_SMTP_PORT`     | `587`   | Mail server port. The connection starts unencrypted and is upgraded with STARTTLS (see below), so use the submission port; implicit-TLS ports (SMTPS, usually `465`) do not work. |
+| `user`     | `CALDAV_SMTP_USER`     | empty   | User name for SMTP `AUTH PLAIN`. Leave empty for a relay that takes mail without a login; then no AUTH is attempted. Set it together with `password`. |
 | `password` | `CALDAV_SMTP_PASSWORD` | empty   | Password for SMTP `AUTH PLAIN`. |
 | `from`     | `CALDAV_SMTP_FROM`     | empty   | Sender address, used both as the envelope sender (`MAIL FROM`) and in the `From:` header. Not validated and has no default, so set it whenever `host` is set. |
 
-**TLS and authentication behaviour.** The server uses Go's `net/smtp.SendMail`
-and has no further TLS options:
+**TLS and authentication behaviour.** The server speaks SMTP itself (it no longer
+uses `net/smtp.SendMail`) and has no further TLS options:
 
 - It connects to `host:port` in plain text and switches to TLS with **STARTTLS
   whenever the server offers it**. The certificate is verified against `host`, so
   `host` must be a name the certificate is valid for; there is no way to skip
   verification.
-- It **always authenticates** with `AUTH PLAIN` using `user` / `password`, even
-  when both are empty. A server that does not advertise `AUTH` fails every mail
-  with `smtp: server doesn't support AUTH`, so an unauthenticated relay cannot be
-  used.
-- Credentials are only sent over TLS: a server that offers no STARTTLS fails with
-  `unencrypted connection`, unless `host` is exactly `localhost`, `127.0.0.1` or
-  `::1`.
+- It **never sends mail in clear text to a remote host.** A server that offers no
+  STARTTLS makes the send fail with `refusing to send e-mail without TLS`, because
+  the mail carries a live reset or activation link. Only `localhost` and loopback
+  addresses (`127.0.0.1`, `::1`) take mail without TLS.
+- It authenticates with `AUTH PLAIN` using `user` / `password` **only when `user`
+  is set.** With `user` set, a server that does not advertise `AUTH` fails the send
+  with `smtp: server doesn't support AUTH`, so credentials are never sent to a
+  server that did not ask for them. With `user` empty, no AUTH is attempted, which
+  suits a relay that takes mail without a login.
+- A `password` without a `user` stops the server at start-up while SMTP is on.
 
 ### Security Section (`security:`)
 
