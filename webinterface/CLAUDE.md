@@ -477,8 +477,12 @@ server's `/mcp` endpoint. It has no Pinia store — three `useApi()` calls are t
   therefore not a nicety — losing it strands the user with an unusable token.
 - `DELETE /api/v1/mcp-tokens/:id` → 204.
 
-Two things that look cosmetic but are not:
+Three things that look cosmetic but are not:
 
+- **The intro says what a token may do, deletions included.** Since the collection tools, an
+  assistant can create, rename and delete the user's own calendars and address books (everything
+  in them goes too). The sentence saying so is the only place the user learns it before minting a
+  token, so `mcp.spec.ts` pins it.
 - **The endpoint shown to the user is `${apiBaseUrl || window.location.origin}/mcp`** — NOT under
   `/api/v1`. MCP addresses one URL that clients are configured with directly. A wrong URL here
   makes every client fail with no diagnosis, which is why `mcp.spec.ts` pins it.

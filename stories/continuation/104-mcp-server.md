@@ -14,6 +14,16 @@ As a user, I want CalCard to expose an MCP server so that AI assistants (Claude,
 tools and 4 resources; `internal/usecase/mcptoken/` holds the credential. Wired in `routes.go`
 behind `cfg.MCP.Enabled` (default true).
 
+**Extended 2026-10-13 with collection tools (now 19).** The story only covered events and
+contacts, so an assistant could not create, rename or delete a calendar or an address book.
+`tools_collection.go` adds `create_calendar`, `update_calendar`, `delete_calendar`,
+`create_address_book`, `update_address_book` and `delete_address_book`, each calling the REST
+handler's use case. They are owner-only like REST (unknown, foreign and shared collections get one
+identical "not owned" answer), a subscribed calendar can still be renamed and deleted by its owner,
+and the deletes take the REST `confirmation: "DELETE"` literal and describe themselves as permanent
+so the model asks the user first. Tests: `internal/adapter/mcp/tools_collection_test.go`,
+`integration/mcp_collection_test.go`, `e2e/tests/test_90_mcp.py`.
+
 Everything in "Acceptance Criteria" and "Definition of Done" below is met, with these deliberate
 departures from the sketch — read them before "fixing" the code to match the prose above:
 
