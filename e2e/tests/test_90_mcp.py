@@ -1,9 +1,11 @@
 """MCP (story 104): access-token CRUD and the JSON-RPC endpoint at /mcp —
-handshake, sessions, tools (cross-checked through REST), resources,
-protocol errors, isolation between users, revocation."""
+handshake, sessions, tools (cross-checked through REST, including the
+calendar / address-book collection tools), resources, protocol errors,
+isolation between users, revocation."""
 
 import json
 import random
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -41,12 +43,12 @@ def mcp_call(e2e, st, body, tok=_DEFAULT, sess=_DEFAULT):
     return e2e.req("POST", f"{e2e.base}/mcp", json=body, bearer=tok or None, headers=headers)
 
 
-def mcp_tool(e2e, st, name, args, rid=None):
+def mcp_tool(e2e, st, name, args, rid=None, tok=_DEFAULT, sess=_DEFAULT):
     """tools/call → (resp, is_error, payload text). is_error is None when the
     response is not JSON-RPC at all."""
     rid = random.randrange(32768) if rid is None else rid
     r = mcp_call(e2e, st, {"jsonrpc": "2.0", "id": rid, "method": "tools/call",
-                           "params": {"name": name, "arguments": args}})
+                           "params": {"name": name, "arguments": args}}, tok, sess)
     j = r.json()
     if j is NOT_JSON:
         return r, None, ""
@@ -146,17 +148,19 @@ def test_ping(t, e2e, st):
 
 TOOLS = ["list_calendars", "get_events", "create_event", "update_event", "delete_event", "search_events",
          "list_address_books", "get_contacts", "search_contacts", "create_contact", "update_contact",
-         "delete_contact", "find_free_slots"]
+         "delete_contact", "find_free_slots", "create_calendar", "update_calendar", "delete_calendar",
+         "create_address_book", "update_address_book", "delete_address_book"]
 
 
 def test_tools_list(t, e2e, st):
-    """tools/list advertises the 13 tools with object schemas"""
+    """tools/list advertises the 19 tools with object schemas"""
     t.need(st, "mc_session")
     r = mcp_call(e2e, st, '{"jsonrpc":"2.0","id":3,"method":"tools/list"}')
     if not t.status(r, 200):
         return
     for name in TOOLS:
         t.jq(r, lambda j, n=name: n in [x["name"] for x in j["result"]["tools"]], f"tool {name} must be advertised")
+    t.jq(r, lambda j: len(j["result"]["tools"]) == len(TOOLS), f"exactly {len(TOOLS)} tools are advertised")
     t.jq(r, lambda j: all(x["inputSchema"]["type"] == "object" and len(x["description"]) > 0
                           for x in j["result"]["tools"]),
          "every tool needs a description and an object input schema")
@@ -259,6 +263,106 @@ def test_contacts(t, e2e, u1, st, mc):
     t.status(r, 404, msg="the contact deleted over MCP is gone")
 
 
+def test_calendar_collection(t, e2e, u1, st):
+    """collection tools: create / update / delete a calendar, cross-checked over REST"""
+    t.need(st, "mc_session")
+    name = e2e.uniq("mcp-coll-cal")
+    _, err, payload = mcp_tool(e2e, st, "create_calendar", {"name": name, "description": "e2e collection tools",
+                                                             "color": "#10b981", "timezone": "Europe/Berlin"})
+    if not t.eq(err, False, f"create_calendar: {payload[:200]}"):
+        return
+    cal = pj(payload, "calendar.id")
+    if not cal:
+        t.fail(f"create_calendar must return the calendar id: {payload[:200]}")
+        return
+    e2e.defer(f"delete calendar '{name}'", e2e.cleanup_api, u1, "DELETE", f"/calendars/{cal}",
+              json={"confirmation": "DELETE"})
+    t.eq(pj(payload, "calendar.permission"), "owner", "the creator owns the new calendar")
+    r = u1.api("GET", f"/calendars/{cal}")
+    if not t.status(r, 200, msg="the calendar created over MCP exists in REST"):
+        return
+    t.json(r, "name", name)
+    t.json(r, "color", "#10b981")
+    t.json(r, "timezone", "Europe/Berlin")
+    _, err, payload = mcp_tool(e2e, st, "list_calendars", {})
+    if cal not in payload:
+        t.fail("list_calendars must include the new calendar")
+
+    _, err, payload = mcp_tool(e2e, st, "update_calendar", {"calendar_id": cal, "name": f"{name} renamed"})
+    if not t.eq(err, False, f"update_calendar: {payload[:200]}"):
+        return
+    r = u1.api("GET", f"/calendars/{cal}")
+    t.json(r, "name", f"{name} renamed", "REST must see the MCP rename")
+    t.json(r, "color", "#10b981", "a partial update keeps the colour")
+    t.json(r, "timezone", "Europe/Berlin", "a partial update keeps the timezone")
+    _, err, payload = mcp_tool(e2e, st, "update_calendar", {"calendar_id": cal, "color": "green"})
+    t.eq(err, True, "an invalid colour must be refused")
+    t.eq(payload, "invalid hex color format, expected #RRGGBB", "the REST 400 text, nothing more")
+
+    _, err, payload = mcp_tool(e2e, st, "create_event", {"calendar_id": cal, "title": "Collection probe",
+                                                          "start": "2030-07-01T18:00:00Z", "end": "2030-07-01T19:00:00Z"})
+    if not t.eq(err, False, f"create_event in the new calendar: {payload[:200]}"):
+        return
+    ev = pj(payload, "event.id")
+
+    _, err, payload = mcp_tool(e2e, st, "delete_calendar", {"calendar_id": cal, "confirmation": "yes"})
+    t.eq(err, True, "a delete without the DELETE confirmation must be refused")
+    t.status(u1.api("GET", f"/calendars/{cal}"), 200, msg="an unconfirmed delete changes nothing")
+    _, err, payload = mcp_tool(e2e, st, "delete_calendar", {"calendar_id": cal, "confirmation": "DELETE"})
+    if not t.eq(err, False, f"delete_calendar: {payload[:200]}"):
+        return
+    t.status(u1.api("GET", f"/calendars/{cal}"), 404, msg="the calendar deleted over MCP is gone")
+    t.status(u1.api("GET", f"/calendars/{cal}/events/{ev}"), 404, msg="its event went with it")
+    _, err, payload = mcp_tool(e2e, st, "list_calendars", {})
+    if cal in payload:
+        t.fail("list_calendars must no longer include the deleted calendar")
+
+
+def test_address_book_collection(t, e2e, u1, st):
+    """collection tools: create / update / delete an address book, cross-checked over REST"""
+    t.need(st, "mc_session")
+    name = e2e.uniq("mcp-coll-book")
+    _, err, payload = mcp_tool(e2e, st, "create_address_book", {"name": name, "description": "e2e collection tools"})
+    if not t.eq(err, False, f"create_address_book: {payload[:200]}"):
+        return
+    ab = pj(payload, "address_book.id")
+    if not ab:
+        t.fail(f"create_address_book must return the book id: {payload[:200]}")
+        return
+    e2e.defer(f"delete address book '{name}'", e2e.cleanup_api, u1, "DELETE", f"/addressbooks/{ab}",
+              json={"confirmation": "DELETE"})
+    r = u1.api("GET", f"/addressbooks/{ab}")
+    if not t.status(r, 200, msg="the address book created over MCP exists in REST"):
+        return
+    t.json(r, "Name", name)
+    t.json(r, "Description", "e2e collection tools")
+    _, err, payload = mcp_tool(e2e, st, "list_address_books", {})
+    if ab not in payload:
+        t.fail("list_address_books must include the new book")
+
+    _, err, payload = mcp_tool(e2e, st, "update_address_book", {"address_book_id": ab, "description": "renamed desc"})
+    if not t.eq(err, False, f"update_address_book: {payload[:200]}"):
+        return
+    r = u1.api("GET", f"/addressbooks/{ab}")
+    t.json(r, "Name", name, "a partial update keeps the name")
+    t.json(r, "Description", "renamed desc", "REST must see the MCP update")
+
+    _, err, payload = mcp_tool(e2e, st, "create_contact", {"address_book_id": ab, "first_name": "Collection",
+                                                            "last_name": "Probe"})
+    if not t.eq(err, False, f"create_contact in the new book: {payload[:200]}"):
+        return
+    cid = pj(payload, "contact.id")
+
+    _, err, payload = mcp_tool(e2e, st, "delete_address_book", {"address_book_id": ab})
+    t.eq(err, True, "a delete without the DELETE confirmation must be refused")
+    t.status(u1.api("GET", f"/addressbooks/{ab}"), 200, msg="an unconfirmed delete changes nothing")
+    _, err, payload = mcp_tool(e2e, st, "delete_address_book", {"address_book_id": ab, "confirmation": "DELETE"})
+    if not t.eq(err, False, f"delete_address_book: {payload[:200]}"):
+        return
+    t.status(u1.api("GET", f"/addressbooks/{ab}"), 404, msg="the book deleted over MCP is gone")
+    t.status(u1.api("GET", f"/addressbooks/{ab}/contacts/{cid}"), 404, msg="its contact went with it")
+
+
 def test_resources(t, e2e, st, mc):
     """resources/list and resources/read"""
     t.need(st, "mc_session")
@@ -344,6 +448,59 @@ def test_isolation(t, e2e, u1, u2, st, mc):
     t.jq(r, lambda j: len([e for e in j["events"] or [] if e["summary"] == "planted"]) == 0, "nothing may have been planted")
 
 
+def test_collection_isolation(t, e2e, u1, u2, st, mc):
+    """collection tools: U2 can neither change nor delete U1's collections, shared with U2 or not"""
+    t.need(st, "mc_u2_token")
+    tok = st.mc_u2_token
+    shared_cal = u1.mk_calendar(e2e.uniq("mcp-coll-shared"))["uuid"]
+    if not t.status(u1.api("POST", f"/calendars/{shared_cal}/shares",
+                           json={"user_identifier": u2.email, "permission": "read-write"}), 201):
+        return
+    shared_ab = u1.mk_addressbook(e2e.uniq("mcp-coll-shared-book"))["UUID"]
+    if not t.status(u1.api("POST", f"/addressbooks/{shared_ab}/shares",
+                           json={"user_identifier": u2.email, "permission": "read-write"}), 201):
+        return
+    # Control: U2 really does see both shares.
+    _, _, payload = mcp_tool(e2e, st, "list_calendars", {}, tok=tok, sess="")
+    if not t.true(shared_cal in payload, "control: U2 lists the calendar shared with it"):
+        return
+    _, _, payload = mcp_tool(e2e, st, "list_address_books", {}, tok=tok, sess="")
+    if not t.true(shared_ab in payload, "control: U2 lists the address book shared with it"):
+        return
+
+    unknown = str(uuid.uuid4())
+    cases = [
+        ("calendar", "update_calendar", {"calendar_id": mc.cal, "name": "hijacked"}, mc.cal),
+        ("calendar", "delete_calendar", {"calendar_id": mc.cal, "confirmation": "DELETE"}, mc.cal),
+        ("calendar", "update_calendar", {"calendar_id": shared_cal, "name": "hijacked"}, shared_cal),
+        ("calendar", "delete_calendar", {"calendar_id": shared_cal, "confirmation": "DELETE"}, shared_cal),
+        ("calendar", "update_calendar", {"calendar_id": unknown, "name": "hijacked"}, unknown),
+        ("book", "update_address_book", {"address_book_id": mc.ab, "name": "hijacked"}, mc.ab),
+        ("book", "delete_address_book", {"address_book_id": mc.ab, "confirmation": "DELETE"}, mc.ab),
+        ("book", "delete_address_book", {"address_book_id": mc.ab, "confirmation": "nope"}, mc.ab),
+        ("book", "update_address_book", {"address_book_id": shared_ab, "name": "hijacked"}, shared_ab),
+        ("book", "delete_address_book", {"address_book_id": shared_ab, "confirmation": "DELETE"}, shared_ab),
+        ("book", "delete_address_book", {"address_book_id": unknown, "confirmation": "DELETE"}, unknown),
+    ]
+    answers = {"calendar": set(), "book": set()}
+    for kind, tool, args, cid in cases:
+        _, err, payload = mcp_tool(e2e, st, tool, args, tok=tok, sess="")
+        if t.eq(err, True, f"U2 {tool} on {cid} must be refused: {payload[:200]}"):
+            t.true("is owned by you" in payload, f"{tool}: the not-owned answer, got '{payload[:160]}'")
+        answers[kind].add(payload.replace(cid, "<id>"))
+    t.eq(len(answers["calendar"]), 1, f"calendar refusals must not reveal which ids exist: {answers['calendar']}")
+    t.eq(len(answers["book"]), 1, f"address book refusals must not reveal which ids exist: {answers['book']}")
+
+    for path in (f"/calendars/{mc.cal}", f"/calendars/{shared_cal}"):
+        r = u1.api("GET", path)
+        if t.status(r, 200, msg=f"{path} must survive U2's attempts"):
+            t.jq(r, lambda j: j["name"] != "hijacked", f"{path} must not be renamed")
+    for path in (f"/addressbooks/{mc.ab}", f"/addressbooks/{shared_ab}"):
+        r = u1.api("GET", path)
+        if t.status(r, 200, msg=f"{path} must survive U2's attempts"):
+            t.jq(r, lambda j: j["Name"] != "hijacked", f"{path} must not be renamed")
+
+
 def test_session_binding(t, e2e, st):
     """a session id is bound to its user"""
     t.need(st, "mc_session", "mc_u2_token")
@@ -359,7 +516,7 @@ def test_manifest(t, e2e, st):
         return
     t.json(r, "name", "calcard")
     t.json(r, "transport", "streamable-http")
-    t.jq(r, lambda j: len(j["tools"]) == 13)
+    t.jq(r, lambda j: len(j["tools"]) == len(TOOLS))
 
 
 def test_session_end(t, e2e, st):

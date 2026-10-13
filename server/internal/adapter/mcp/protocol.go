@@ -150,7 +150,14 @@ expressed with all_day: true and date-only semantics.
 
 Calendars and address books shared with the user are included in every listing
 and are marked with their permission; a read-only collection will refuse writes.
-Prefer search_events / search_contacts over listing everything and filtering.`
+Prefer search_events / search_contacts over listing everything and filtering.
+
+The collections themselves are managed with create_calendar, update_calendar,
+delete_calendar, create_address_book, update_address_book and
+delete_address_book. Only a collection's owner (permission "owner") can change
+or delete it. Deleting a calendar or address book is permanent and removes every
+event or contact in it: name it to the user and get their explicit agreement
+before calling a delete tool.`
 
 // Tool is one AI-callable function, as advertised by tools/list.
 type Tool struct {

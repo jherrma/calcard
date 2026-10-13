@@ -27,6 +27,12 @@ type Deps struct {
 	AddressBookRepo addressbook.Repository
 
 	CalendarList *calendaruc.ListCalendarsUseCase
+	// The collection tools (create/update/delete_calendar) call these, exactly
+	// as CalendarHandler does. Ownership is the use cases' own check
+	// (LoadOwnedCalendar), so no MCP code decides who may manage a calendar.
+	CalendarCreate *calendaruc.CreateCalendarUseCase
+	CalendarUpdate *calendaruc.UpdateCalendarUseCase
+	CalendarDelete *calendaruc.DeleteCalendarUseCase
 
 	EventList   *eventuc.ListEventsUseCase
 	EventGet    *eventuc.GetEventUseCase
@@ -34,7 +40,10 @@ type Deps struct {
 	EventUpdate *eventuc.UpdateEventUseCase
 	EventDelete *eventuc.DeleteEventUseCase
 
-	AddressBookList *addressbookuc.ListUseCase
+	AddressBookList   *addressbookuc.ListUseCase
+	AddressBookCreate *addressbookuc.CreateUseCase
+	AddressBookUpdate *addressbookuc.UpdateUseCase
+	AddressBookDelete *addressbookuc.DeleteUseCase
 
 	ContactList   *contactuc.ListUseCase
 	ContactGet    *contactuc.GetUseCase
@@ -77,6 +86,7 @@ func NewServer(deps Deps) *Server {
 	}
 	s.registerCalendarTools()
 	s.registerContactTools()
+	s.registerCollectionTools()
 	s.registerSchedulingTools()
 	s.buildToolList()
 	return s

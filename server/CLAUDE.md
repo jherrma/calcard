@@ -76,13 +76,20 @@ JSON-RPC messages, `GET /mcp` returns a manifest (or opens the SSE notification 
 `Accept: text/event-stream`), `DELETE /mcp` terminates a session.
 
 Authentication is a bearer **MCP access token** (`calcard_mcp_…`, minted per user at
-`/api/v1/mcp-tokens`); a JWT access token is also accepted but expires in minutes. 13 tools
-(calendar + contact CRUD, unified search, `find_free_slots`) and four resources are advertised.
+`/api/v1/mcp-tokens`); a JWT access token is also accepted but expires in minutes. 19 tools
+(event and contact CRUD, creating/renaming/deleting calendars and address books, unified search,
+`find_free_slots`) and four resources are advertised.
 
 **It is a facade, not a second API.** Every tool delegates to the same use case the REST
 handler calls and resolves permissions through the same `GetUserPermission` methods, so MCP can
 never reach data REST would refuse. Preserve that when adding tools: no MCP-specific query, no
-MCP-specific permission logic. Disable the whole surface with `CALDAV_MCP_ENABLED=false`.
+MCP-specific permission logic. Managing a collection itself (`create_`/`update_`/`delete_calendar`,
+`…_address_book`) is owner-only exactly as over REST — an unknown, foreign or merely shared
+collection gets one identical "not owned" answer. The calendar use cases check ownership
+themselves; the address-book tools go through `resolveOwnedAddressBook`, the mirror of the REST
+handler's check. Never derive ownership from the capped calendar permission: it would lock an owner
+out of renaming or deleting their own subscription. Disable the whole surface with
+`CALDAV_MCP_ENABLED=false`.
 
 ## Context Files
 

@@ -25,8 +25,8 @@ The adapter layer is responsible for translating data between the application's 
   - `server.go` — `Deps` (the use cases the tools delegate to), the tool registry, and the method dispatcher.
   - `handler.go` — Fiber transport: bearer authentication (MCP token or JWT; a JWT gets the same revocation check as the REST middleware), `POST` (JSON-RPC, single or batch), `GET` (manifest or SSE stream), `DELETE` (terminate session).
   - `session.go` — In-memory `Mcp-Session-Id` store. Sessions are bound to a user, so a leaked id cannot be used by another account.
-  - `access.go` — `callContext` plus the permission helpers, mirroring the HTTP handlers exactly.
-  - `tools_calendar.go`, `tools_contact.go`, `tools_scheduling.go` — the 13 advertised tools.
+  - `access.go` — `callContext` plus the permission helpers, mirroring the HTTP handlers exactly. `resolveOwnedAddressBook` is the mirror of `AddressBookHandler.resolveOwnedAddressBookID` (owner-only, compared on `UserID`); the `resolveCalendar`/`calendarPermission` pair applies the subscription cap and is for object access only.
+  - `tools_calendar.go`, `tools_contact.go`, `tools_scheduling.go`, `tools_collection.go` — the 19 advertised tools. `tools_collection.go` holds `create_`/`update_`/`delete_calendar` and `…_address_book`: owner-only like REST (unknown, foreign and shared collections get one identical "not owned by you" answer), the deletes take the REST `confirmation: "DELETE"` literal and say in their descriptions that they are permanent, invalid input answers with the use case's bare message, and any other failure is a generic internal error with the cause only in the log (F28). Several older tools still append `err.Error()` to their failure text.
   - `resources.go` — `calendars://list`, `contacts://list`, `calendars://{id}/events`, `contacts://{id}`.
 - **Invariant**: this package owns **no** persistence, queries or permission logic. Every tool calls the same use case the REST handler does and resolves access through the same repository methods, so MCP can never reach data REST would refuse. A tool that reaches past a use case is a bug, not an optimization.
 

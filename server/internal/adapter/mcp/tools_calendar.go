@@ -25,7 +25,10 @@ type calendarView struct {
 	Description string `json:"description,omitempty"`
 	Color       string `json:"color,omitempty"`
 	Timezone    string `json:"timezone,omitempty"`
-	EventCount  int64  `json:"event_count"`
+	// EventCount is always present in a listing (where 0 means empty). It is a
+	// pointer so the collection tools can leave it out: update_calendar's use
+	// case does not count events, and reporting 0 there would be false.
+	EventCount *int64 `json:"event_count,omitempty"`
 	// Permission is "owner", "read" or "read-write". The model needs it to
 	// know a write will be refused before attempting it.
 	Permission string `json:"permission"`
@@ -182,13 +185,14 @@ func (s *Server) toolListCalendars(cc *callContext, _ json.RawMessage) (*toolCal
 
 	views := make([]calendarView, 0, len(cals))
 	for _, c := range cals {
+		count := c.EventCount
 		v := calendarView{
 			ID:          c.UUID,
 			Name:        c.Name,
 			Description: c.Description,
 			Color:       c.Color,
 			Timezone:    c.Timezone,
-			EventCount:  c.EventCount,
+			EventCount:  &count,
 			Permission:  c.Permission,
 			Shared:      c.Shared,
 		}

@@ -116,6 +116,16 @@ describe('listing', () => {
   });
 });
 
+describe('scope', () => {
+  it('says that a token can delete whole calendars and address books', async () => {
+    const { wrapper } = await mountPage();
+    // REVERT PROOF: the MCP server's collection tools let an assistant delete
+    // an entire calendar or address book. Dropping this sentence would let the
+    // page undersell what a token is allowed to do at the moment one is minted.
+    expect(wrapper.text()).toContain('create, rename and delete your own calendars and address books');
+  });
+});
+
 describe('endpoint', () => {
   it('points at /mcp on the API origin, not under /api/v1', async () => {
     const { vm } = await mountPage();
