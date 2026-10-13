@@ -90,7 +90,8 @@ const resourceEventWindow = 30 * 24 * time.Hour
 func (s *Server) handleResourceRead(cc *callContext, req *Request) *Response {
 	var params resourceReadParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return errorResponse(req.ID, rpcErrorf(CodeInvalidParams, "invalid resources/read params: %v", err))
+		// Not the decoder's text, which names Go types.
+		return errorResponse(req.ID, rpcError(CodeInvalidParams, `invalid resources/read params: expected {"uri": string}`))
 	}
 	if params.URI == "" {
 		return errorResponse(req.ID, rpcError(CodeInvalidParams, "uri is required"))

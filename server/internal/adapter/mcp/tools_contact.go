@@ -184,7 +184,10 @@ func (s *Server) registerContactTools() {
 	}, s.toolDeleteContact)
 }
 
-func (s *Server) toolListAddressBooks(cc *callContext, _ json.RawMessage) (*toolCallResult, *RPCError) {
+func (s *Server) toolListAddressBooks(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
+	if bad := decodeArgs(args, &struct{}{}); bad != nil {
+		return bad, nil
+	}
 	listing, err := s.addressBookListing(cc)
 	if err != nil {
 		return toolInternalError("list_address_books", err), nil
@@ -223,8 +226,8 @@ func (s *Server) toolGetContacts(cc *callContext, args json.RawMessage) (*toolCa
 		Limit         int    `json:"limit"`
 		Offset        int    `json:"offset"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	abID, perm := s.resolveAddressBook(cc, in.AddressBookID)
@@ -272,8 +275,8 @@ func (s *Server) toolSearchContacts(cc *callContext, args json.RawMessage) (*too
 		Query string `json:"query"`
 		Limit int    `json:"limit"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if len(in.Query) < searchuc.MinQueryLength {
 		return errorResult("query must be at least 2 characters."), nil
@@ -318,8 +321,8 @@ func (s *Server) toolCreateContact(cc *callContext, args json.RawMessage) (*tool
 		Birthday      string `json:"birthday"`
 		Notes         string `json:"notes"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	abID, perm := s.resolveAddressBook(cc, in.AddressBookID)
@@ -378,8 +381,8 @@ func (s *Server) toolUpdateContact(cc *callContext, args json.RawMessage) (*tool
 		Birthday     *string `json:"birthday"`
 		Notes        *string `json:"notes"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	abID, perm := s.contactPermission(cc, in.ContactID)
@@ -453,8 +456,8 @@ func (s *Server) toolDeleteContact(cc *callContext, args json.RawMessage) (*tool
 	var in struct {
 		ContactID string `json:"contact_id"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	abID, perm := s.contactPermission(cc, in.ContactID)

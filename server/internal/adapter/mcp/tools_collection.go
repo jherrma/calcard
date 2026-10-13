@@ -200,8 +200,8 @@ func (s *Server) toolCreateCalendar(cc *callContext, args json.RawMessage) (*too
 		Color       string `json:"color"`
 		Timezone    string `json:"timezone"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	// Validation (name, length limits, colour, IANA zone) and the defaults are
@@ -233,8 +233,8 @@ func (s *Server) toolUpdateCalendar(cc *callContext, args json.RawMessage) (*too
 		Color       *string `json:"color"`
 		Timezone    *string `json:"timezone"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.CalendarID == "" {
 		return errorResult("calendar_id is required."), nil
@@ -263,8 +263,8 @@ func (s *Server) toolDeleteCalendar(cc *callContext, args json.RawMessage) (*too
 		CalendarID   string `json:"calendar_id"`
 		Confirmation string `json:"confirmation"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.CalendarID == "" {
 		return errorResult("calendar_id is required."), nil
@@ -291,8 +291,8 @@ func (s *Server) toolCreateAddressBook(cc *callContext, args json.RawMessage) (*
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	ab, err := s.deps.AddressBookCreate.Execute(cc.ctx, addressbookuc.CreateInput{
@@ -319,8 +319,8 @@ func (s *Server) toolUpdateAddressBook(cc *callContext, args json.RawMessage) (*
 		Name          *string `json:"name"`
 		Description   *string `json:"description"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.AddressBookID == "" {
 		return errorResult("address_book_id is required."), nil
@@ -355,8 +355,8 @@ func (s *Server) toolDeleteAddressBook(cc *callContext, args json.RawMessage) (*
 		AddressBookID string `json:"address_book_id"`
 		Confirmation  string `json:"confirmation"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.AddressBookID == "" {
 		return errorResult("address_book_id is required."), nil

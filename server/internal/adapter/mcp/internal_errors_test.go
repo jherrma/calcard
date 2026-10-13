@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -233,5 +234,29 @@ func TestResourcesDoNotLeakStorageErrors(t *testing.T) {
 			assert.Contains(t, logged, `"uri":"`+uri+`"`)
 			assert.Contains(t, logged, cause)
 		})
+	}
+}
+
+// TestJSONRPCErrorsDoNotNameGoTypes covers the two params decoders on the tool
+// and resource paths: their message describes the expected shape, not the Go
+// struct the decoder tripped over.
+func TestJSONRPCErrorsDoNotNameGoTypes(t *testing.T) {
+	e := newTestEnv(t)
+	alice := e.newUser("alice@example.com")
+
+	for _, tc := range []struct {
+		method string
+		params string
+	}{
+		{MethodToolsCall, `{"name": 5}`},
+		{MethodToolsCall, `[]`},
+		{MethodResourcesRead, `{"uri": 5}`},
+	} {
+		resp := e.rpc(alice.ID, tc.method, json.RawMessage(tc.params))
+		require.NotNil(t, resp.Error, "%s %s", tc.method, tc.params)
+		assert.Equal(t, CodeInvalidParams, resp.Error.Code)
+		for _, leak := range []string{"Go ", "struct", "toolCallParams", "resourceReadParams", "of type"} {
+			assert.NotContains(t, resp.Error.Message, leak)
+		}
 	}
 }

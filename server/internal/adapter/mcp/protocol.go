@@ -187,8 +187,9 @@ type Content struct {
 // IsError is how MCP reports a *tool* failure, as opposed to a protocol
 // failure: the call itself succeeded, so it is a JSON-RPC result rather than a
 // JSON-RPC error, and the model gets to read the message and try something
-// else. Protocol-level problems (unknown tool, unparseable arguments) stay
-// JSON-RPC errors.
+// else — including arguments the tool's schema does not allow (decodeArgs).
+// Protocol-level problems (unknown tool, a request whose params or `arguments`
+// are not even the right JSON shape) stay JSON-RPC errors.
 type toolCallResult struct {
 	Content []Content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`

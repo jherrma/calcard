@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -263,6 +264,26 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	return &buf
+}
+
+// dbSnapshot renders every row of every table, so a test can prove that a
+// refused call wrote nothing at all.
+func (e *testEnv) dbSnapshot() string {
+	e.t.Helper()
+	// SQLite's own bookkeeping (sqlite_sequence) has untyped columns that scan
+	// as fresh pointers every time; the application tables are what matter.
+	var tables []string
+	require.NoError(e.t, e.db.Raw("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").
+		Scan(&tables).Error)
+
+	var b strings.Builder
+	for _, table := range tables {
+		var rows []map[string]interface{}
+		require.NoError(e.t, e.db.Raw("SELECT * FROM "+table+" ORDER BY rowid").Scan(&rows).Error)
+		fmt.Fprintf(&b, "%s: %v\n", table, rows)
+	}
+	require.Contains(e.t, b.String(), "calendars: ", "the snapshot must cover the application tables")
+	return b.String()
 }
 
 // callTool calls a tool through the dispatcher — the path a client's

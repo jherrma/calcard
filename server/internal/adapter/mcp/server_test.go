@@ -190,7 +190,11 @@ func TestToolErrorsAreResultsNotProtocolErrors(t *testing.T) {
 	assert.True(t, result.IsError)
 }
 
-func TestMalformedToolArgumentsAreProtocolErrors(t *testing.T) {
+// TestArgumentOfTheWrongTypeIsAToolError: a wrongly typed argument is input
+// validation, which the model can fix, so it comes back as a tool result it
+// reads (MCP 2025-11-25) — naming the argument and its JSON type, not the Go
+// decoder's "cannot unmarshal string into Go struct field … of type int".
+func TestArgumentOfTheWrongTypeIsAToolError(t *testing.T) {
 	e := newTestEnv(t)
 	alice := e.newUser("alice@example.com")
 
@@ -198,10 +202,51 @@ func TestMalformedToolArgumentsAreProtocolErrors(t *testing.T) {
 		JSONRPC: jsonRPCVersion,
 		ID:      json.RawMessage(`1`),
 		Method:  MethodToolsCall,
-		// limit is declared as an integer; a string violates the client's own
-		// advertised schema, which the model cannot act on.
-		Params: json.RawMessage(`{"name":"get_contacts","arguments":{"address_book_id":"x","limit":"lots"}}`),
+		Params:  json.RawMessage(`{"name":"get_contacts","arguments":{"address_book_id":"x","limit":"lots"}}`),
 	})
-	require.NotNil(t, resp.Error)
-	assert.Equal(t, CodeInvalidParams, resp.Error.Code)
+	require.Nil(t, resp.Error, "a bad argument is not a protocol error")
+	result := resp.Result.(*toolCallResult)
+	assert.True(t, result.IsError)
+	assert.Equal(t, `Argument "limit" must be an integer, got a string; the tool did not run.`, result.Content[0].Text)
+}
+
+// TestArgumentsThatAreNotAnObjectAreProtocolErrors: `arguments` is an object in
+// the CallToolRequest schema, so anything else is a malformed request.
+func TestArgumentsThatAreNotAnObjectAreProtocolErrors(t *testing.T) {
+	e := newTestEnv(t)
+	alice := e.newUser("alice@example.com")
+
+	for _, arguments := range []string{`[]`, `"calendar_id"`, `42`, `true`} {
+		resp, _ := e.server.Handle(e.ctx(), alice.ID, &Request{
+			JSONRPC: jsonRPCVersion,
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  json.RawMessage(`{"name":"list_calendars","arguments":` + arguments + `}`),
+		})
+		require.NotNil(t, resp.Error, "arguments %s", arguments)
+		assert.Equal(t, CodeInvalidParams, resp.Error.Code)
+		assert.Equal(t, "invalid tools/call params: arguments must be a JSON object", resp.Error.Message)
+	}
+}
+
+// TestToolCallAcceptsMetaNextToArguments: strictness is for the tool's own
+// arguments only. MCP puts request metadata (`_meta`: a progress token, tracing
+// data) in params NEXT TO `arguments`, and newer protocol versions add params
+// fields, so the params object itself must stay lenient.
+func TestToolCallAcceptsMetaNextToArguments(t *testing.T) {
+	e := newTestEnv(t)
+	alice := e.newUser("alice@example.com")
+	e.newCalendar(alice.ID, "Work")
+
+	resp, _ := e.server.Handle(e.ctx(), alice.ID, &Request{
+		JSONRPC: jsonRPCVersion,
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params: json.RawMessage(`{"name":"list_calendars","arguments":{},` +
+			`"_meta":{"progressToken":"p-1"},"task":{"ttl":1000}}`),
+	})
+	require.Nil(t, resp.Error)
+	result := resp.Result.(*toolCallResult)
+	assert.False(t, result.IsError, "%s", result.Content[0].Text)
+	assert.Contains(t, result.Content[0].Text, "Work")
 }

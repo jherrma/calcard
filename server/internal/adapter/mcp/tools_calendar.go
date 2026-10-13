@@ -177,7 +177,10 @@ func permissionLabel(p calendar.CalendarPermission) string {
 	}
 }
 
-func (s *Server) toolListCalendars(cc *callContext, _ json.RawMessage) (*toolCallResult, *RPCError) {
+func (s *Server) toolListCalendars(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
+	if bad := decodeArgs(args, &struct{}{}); bad != nil {
+		return bad, nil
+	}
 	listing, err := s.calendarListing(cc)
 	if err != nil {
 		return toolInternalError("list_calendars", err), nil
@@ -220,8 +223,8 @@ func (s *Server) toolGetEvents(cc *callContext, args json.RawMessage) (*toolCall
 		Start      string `json:"start"`
 		End        string `json:"end"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	calID, perm := s.resolveCalendar(cc, in.CalendarID)
@@ -332,8 +335,8 @@ func (s *Server) toolCreateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		AllDay      bool   `json:"all_day"`
 		Timezone    string `json:"timezone"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.Title == "" {
 		return errorResult("title is required."), nil
@@ -392,8 +395,8 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		RecurrenceID string  `json:"recurrence_id"`
 		Scope        string  `json:"scope"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	obj, perm := s.eventPermission(cc, in.EventID)
@@ -452,8 +455,8 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 		RecurrenceID string `json:"recurrence_id"`
 		Scope        string `json:"scope"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	_, perm := s.eventPermission(cc, in.EventID)
@@ -490,8 +493,8 @@ func (s *Server) toolSearchEvents(cc *callContext, args json.RawMessage) (*toolC
 		End   string `json:"end"`
 		Limit int    `json:"limit"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if len(in.Query) < searchuc.MinQueryLength {
 		return errorResult("query must be at least 2 characters."), nil

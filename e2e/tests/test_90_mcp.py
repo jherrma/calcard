@@ -400,6 +400,44 @@ def test_errors(t, e2e, st, mc):
          "invalid tool arguments must be reported as an error")
 
 
+def test_unknown_arguments(t, e2e, u1, st, mc):
+    """a misspelt tool argument is a tool error naming it, and changes nothing"""
+    t.need(st, "mc_session")
+    probe = f"MCP argument probe {e2e.run_id}"
+    ev = u1.mk_event(mc.cal, probe, "2030-06-09T09:00:00Z", "2030-06-09T10:00:00Z")["id"]
+    path = f"/calendars/{mc.cal}/events/{ev}"
+
+    _, err, payload = mcp_tool(e2e, st, "update_event", {"event_id": ev, "titel": "changed by a typo"})
+    if t.eq(err, True, f"update_event with 'titel' must be refused: {payload[:200]}"):
+        t.true(payload.startswith('Unknown argument "titel"; the tool did not run.'),
+               f"the answer names the misspelt argument: '{payload[:200]}'")
+        t.true("title" in payload.partition("Accepted arguments:")[2],
+               f"the answer lists the argument that was meant: '{payload[:300]}'")
+    t.json(u1.api("GET", path), "summary", probe, "a refused update changes nothing")
+
+    _, err, payload = mcp_tool(e2e, st, "delete_event", {"event_id": ev, "scoep": "all"})
+    t.eq(err, True, f"delete_event with 'scoep' must be refused: {payload[:200]}")
+    t.status(u1.api("GET", path), 200, msg="a refused delete deletes nothing")
+
+    _, err, payload = mcp_tool(e2e, st, "get_events", {"calendar_id": mc.cal, "strat": "2030-06-01T00:00:00Z",
+                                                        "end": "2030-07-01T00:00:00Z"})
+    t.eq(err, True, "a misspelt window must be refused, not answered with the whole calendar")
+    t.true(probe not in payload, "a refused read returns no events")
+    _, err, payload = mcp_tool(e2e, st, "get_events", {"CALENDAR_ID": mc.cal})
+    t.eq(err, True, f"argument names are case-sensitive: {payload[:200]}")
+
+    # Request metadata travels in params next to `arguments`; it is not an argument.
+    r = mcp_call(e2e, st, {"jsonrpc": "2.0", "id": 23, "method": "tools/call", "params": {
+        "name": "list_calendars", "arguments": {}, "_meta": {"progressToken": "e2e"}}})
+    t.jq(r, lambda j: jpath(j, "result.isError") is not True and mc.cal in (jpath(j, "result.content[0].text") or ""),
+         "_meta next to the arguments is accepted")
+
+    # Control: spelt correctly, the same call goes through.
+    _, err, payload = mcp_tool(e2e, st, "update_event", {"event_id": ev, "title": f"{probe} (renamed)"})
+    if t.eq(err, False, f"control: update_event spelt correctly: {payload[:200]}"):
+        t.json(u1.api("GET", path), "summary", f"{probe} (renamed)")
+
+
 def test_batch(t, e2e, st):
     """JSON-RPC batch requests are answered as a batch"""
     t.need(st, "mc_session")

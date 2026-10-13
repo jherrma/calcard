@@ -69,8 +69,8 @@ func (s *Server) toolFindFreeSlots(cc *callContext, args json.RawMessage) (*tool
 		CalendarIDs     []string `json:"calendar_ids"`
 		IncludeAllDay   bool     `json:"include_all_day"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	start, err := parseTime("start", in.Start)
