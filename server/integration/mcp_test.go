@@ -152,9 +152,12 @@ func TestMCPServer(t *testing.T) {
 			"list_calendars", "get_events", "create_event", "update_event", "delete_event",
 			"search_events", "list_address_books", "get_contacts", "search_contacts",
 			"create_contact", "update_contact", "delete_contact", "find_free_slots",
+			"create_calendar", "update_calendar", "delete_calendar",
+			"create_address_book", "update_address_book", "delete_address_book",
 		} {
 			assert.True(t, names[want], "tool %s must be advertised", want)
 		}
+		assert.Len(t, tools, 19)
 	})
 
 	var eventID string
@@ -301,7 +304,7 @@ func TestMCPServer(t *testing.T) {
 		// otherwise answer 200 with index.html if route ordering regressed.
 		assert.Equal(t, "calcard", manifest["name"])
 		assert.Equal(t, "streamable-http", manifest["transport"])
-		assert.Len(t, manifest["tools"], 13)
+		assert.Len(t, manifest["tools"], 19)
 	})
 
 	t.Run("DeleteTerminatesTheSession", func(t *testing.T) {
