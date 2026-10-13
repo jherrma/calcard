@@ -6,7 +6,7 @@
 
 CalCard is a high-performance CalDAV and CardDAV server written in Go. It provides synchronization for calendars (RFC 4791) and contacts (RFC 6352) across various clients like iOS, Android (via DAVx5), Thunderbird, and more.
 
-> **Disclaimer:** Use at your own risk.
+> **Status and disclaimer:** CalCard is provided as is, used at your own risk, with no warranty. It stores personal data, so keep regular backups, and back up before every upgrade, since some migrations can't be undone. Don't expose it to the internet without HTTPS.
 
 ## Features
 
