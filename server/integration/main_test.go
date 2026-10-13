@@ -15,6 +15,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/infrastructure/database"
 	infraserver "github.com/jherrma/caldav-server/internal/infrastructure/server"
+	"gorm.io/gorm"
 )
 
 // baseURL is the http:// root of the test server, set by TestMain.
@@ -24,6 +25,12 @@ var baseURL string
 // httpClient is a shared client with a short timeout; tests may create their
 // own clients when they need different behavior (e.g. no redirect follow).
 var httpClient = &http.Client{Timeout: 10 * time.Second}
+
+// testDB is the shared server's database (SQLite or PostgreSQL), set by
+// TestMain. Use it only to ASSERT what a request left in storage — e.g. that a
+// delete really removed rows the API can no longer reach — never to set up
+// state the API could create, or the test stops exercising the server.
+var testDB *gorm.DB
 
 func TestMain(m *testing.M) {
 	code, err := runTests(m)
@@ -117,6 +124,7 @@ func runTests(m *testing.M) (int, error) {
 	if err := db.Migrate(database.Models()...); err != nil {
 		return 1, fmt.Errorf("migrate: %w", err)
 	}
+	testDB = db.DB()
 
 	srv := infraserver.New(cfg, db)
 	addr, err := srv.Start("127.0.0.1:0")
