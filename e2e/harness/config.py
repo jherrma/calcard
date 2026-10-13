@@ -26,11 +26,14 @@ class ConfigError(Exception):
 TRUE_WORDS = {"1", "true", "yes", "on", "y"}
 FALSE_WORDS = {"0", "false", "no", "off", "n"}
 
-# The longest name the suite derives from the run tag is a CardDAV credential
-# username "Mixed-<tag>-card" (tests/test_15_credentials.py), and the server
-# caps credential usernames at 50 characters (usecase/apppassword). Everything
-# else the tag ends up in (e-mails, calendar names, UIDs) allows more.
-MAX_RUN_TAG = 50 - len("Mixed-") - len("-card")
+# The longest name the suite derives from the run tag is a DAV credential
+# username: the tag spelled in letters without its '-' (at most
+# MAX_RUN_TAG - 1 characters) plus a label of at most MAX_CRED_LABEL letters
+# (E2E.cred_user). The server caps credential usernames at 50 characters
+# (domain/user.ValidateDAVCredentialUsername). Everything else the tag ends up
+# in (e-mails, calendar names, UIDs) allows more.
+MAX_CRED_LABEL = 12
+MAX_RUN_TAG = 50 - MAX_CRED_LABEL + 1
 
 
 def is_true(value: str | None) -> bool:

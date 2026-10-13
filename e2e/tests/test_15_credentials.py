@@ -187,10 +187,11 @@ def test_ap_revoke(t, e2e, u1):
     t.status(u1.api("DELETE", f"/app-passwords/{aid}"), 404, msg="revoking twice is a 404")
 
 
-# Dedicated credential usernames are global, so they carry the run id.
+# Dedicated credential usernames are global, so they carry the run id. New ones
+# may only hold lowercase letters a-z: e2e.cred_user spells the run tag in letters.
 def test_caldav_crud(t, e2e, u1, st):
     """CalDAV credential: create / list / validation"""
-    st.calcred_user, st.calcred_pw = e2e.uniq("calro"), f"ReadOnly_{e2e.run_id}"
+    st.calcred_user, st.calcred_pw = e2e.cred_user("calro"), f"ReadOnly_{e2e.run_id}"
     r = u1.api("POST", "/caldav-credentials/", json={"name": "e2e read-only", "username": st.calcred_user,
                                                      "password": st.calcred_pw, "permission": "read"})
     if not t.status(r, 201):
@@ -210,14 +211,14 @@ def test_caldav_crud(t, e2e, u1, st):
     # Validation
     r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": "ab", "password": "LongEnough_123"})
     t.status(r, 400, msg="username shorter than 3 chars")
-    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": f"{e2e.uniq('bad')}!", "password": "LongEnough_123"})
+    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": f"{e2e.cred_user('bad')}!", "password": "LongEnough_123"})
     t.status(r, 400, msg="username with forbidden characters")
-    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": e2e.uniq("short"), "password": "short"})
+    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": e2e.cred_user("short"), "password": "short"})
     t.status(r, 400, msg="password shorter than 8 chars")
-    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": e2e.uniq("perm"), "password": "LongEnough_123",
+    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": e2e.cred_user("perm"), "password": "LongEnough_123",
                                                      "permission": "admin"})
     t.status(r, 400, msg="unknown permission")
-    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": e2e.uniq("exp"), "password": "LongEnough_123",
+    r = u1.api("POST", "/caldav-credentials/", json={"name": "x", "username": e2e.cred_user("exp"), "password": "LongEnough_123",
                                                      "expires_at": "tomorrow"})
     t.status(r, 400, msg="expires_at must be RFC 3339")
 
@@ -266,7 +267,7 @@ def test_caldav_dup(t, u1, u2, st):
 
 def test_caldav_expired(t, e2e, u1):
     """CalDAV credential: expired credential is rejected"""
-    u, pw = e2e.uniq("calexp"), f"Expired_{e2e.run_id}"
+    u, pw = e2e.cred_user("calexp"), f"Expired_{e2e.run_id}"
     r = u1.api("POST", "/caldav-credentials/", json={"name": "expired", "username": u, "password": pw,
                                                      "permission": "read", "expires_at": "2020-01-01T00:00:00Z"})
     if r.status == 400:
@@ -285,11 +286,11 @@ def test_dav_cred_validation(t, e2e, u1):
     for kind in ("caldav", "carddav"):
         path = f"/{kind}-credentials/"
         cases = [
-            ({"name": "past", "username": e2e.uniq(f"{kind[:4]}past"), "password": pw,
+            ({"name": "past", "username": e2e.cred_user(f"{kind[:4]}past"), "password": pw,
               "expires_at": "2020-01-01T00:00:00Z"}, "an expiry in the past", "future"),
-            ({"name": "past", "username": e2e.uniq(f"{kind[:4]}ago"), "password": pw,
+            ({"name": "past", "username": e2e.cred_user(f"{kind[:4]}ago"), "password": pw,
               "expires_at": a_minute_ago}, "an expiry a minute ago", "future"),
-            ({"name": "   ", "username": e2e.uniq(f"{kind[:4]}blank"), "password": pw}, "a whitespace-only name", "name"),
+            ({"name": "   ", "username": e2e.cred_user(f"{kind[:4]}blank"), "password": pw}, "a whitespace-only name", "name"),
         ]
         for body, what, word in cases:
             r = u1.api("POST", path, json=body)
@@ -299,7 +300,7 @@ def test_dav_cred_validation(t, e2e, u1):
             if t.status(r, 400, msg=f"{kind}: {what} must be refused"):
                 t.true(word in r.jmsg(), f"{kind}: the 400 for {what} must mention '{word}', got {r.jmsg()!r}", r)
         # A future expiry and a padded name are fine; the name comes back trimmed.
-        u = e2e.uniq(f"{kind[:4]}fut")
+        u = e2e.cred_user(f"{kind[:4]}fut")
         r = u1.api("POST", path, json={"name": "  Phone  ", "username": u, "password": pw, "expires_at": tomorrow})
         if not t.status(r, 201, msg=f"{kind}: an expiry tomorrow is accepted"):
             continue
@@ -325,9 +326,7 @@ def test_caldav_revoke(t, e2e, u1, u2, st):
 
 def _reuse_after_revoke(t, e2e, u1, u2, kind):
     """Create a credential as U1, revoke it, re-create its username as U2."""
-    # A label of at most 10 characters keeps the name within the server's
-    # 50-character limit for any accepted E2E_USER_PREFIX (config.MAX_RUN_TAG).
-    endpoint, name = f"/{kind}-credentials/", e2e.uniq(f"reuse-{kind[:-3]}")
+    endpoint, name = f"/{kind}-credentials/", e2e.cred_user(f"reuse{kind[:-3]}")
     body = {"name": "e2e reuse", "username": name, "permission": "read"}
     r = u1.api("POST", endpoint, json={**body, "password": f"First_{e2e.run_id}"})
     if not t.status(r, 201):
@@ -356,7 +355,7 @@ def test_caldav_reuse_after_revoke(t, e2e, u1, u2):
 
 def test_carddav_rw(t, e2e, u1, st):
     """CardDAV credential: read-write may write contacts"""
-    st.cardcred_user, st.cardcred_pw = e2e.uniq("cardrw"), f"ReadWrite_{e2e.run_id}"
+    st.cardcred_user, st.cardcred_pw = e2e.cred_user("cardrw"), f"ReadWrite_{e2e.run_id}"
     r = u1.api("POST", "/carddav-credentials/", json={"name": "e2e card rw", "username": st.cardcred_user,
                                                       "password": st.cardcred_pw, "permission": "read-write"})
     if not t.status(r, 201):
@@ -390,19 +389,54 @@ def test_carddav_scope(t, e2e, u1, st):
     t.contains(r, u1.home_ab)
 
 
-def test_carddav_mixedcase(t, e2e, u1):
-    """CardDAV credential: mixed-case username authenticates"""
-    # The create endpoint accepts upper-case usernames ([a-zA-Z0-9_-]); a
-    # credential the server accepts must also be usable.
-    # The name fits the 50-character limit for any E2E_USER_PREFIX the
-    # configuration accepts (harness/config.py MAX_RUN_TAG).
-    u, pw = f"Mixed-{e2e.uniq('card')}", f"MixedCase_{e2e.run_id}"
-    r = u1.api("POST", "/carddav-credentials/", json={"name": "mixed", "username": u, "password": pw, "permission": "read"})
-    # If the server starts rejecting upper-case usernames on purpose, update this test.
-    if not t.status(r, 201, msg="the create endpoint accepts upper-case usernames ([a-zA-Z0-9_-])"):
+def test_carddav_any_case(t, e2e, u1):
+    """CardDAV credential: the username also authenticates in upper case"""
+    # New usernames are lowercase letters only, but a client may send one in
+    # another case: CardDAV credential lookups are case-insensitive (F02).
+    u, pw = e2e.cred_user("cardcase"), f"AnyCase_{e2e.run_id}"
+    r = u1.api("POST", "/carddav-credentials/", json={"name": "any case", "username": u, "password": pw, "permission": "read"})
+    if not t.status(r, 201):
         return
     e2e.defer(f"revoke CardDAV credential {u}", e2e.cleanup_api, u1, "DELETE", f"/carddav-credentials/{r.jdict().get('id')}")
     t.status(_probe(e2e, u, pw, u1.home_ab), 207, msg="Basic auth with the username exactly as created")
+    t.status(_probe(e2e, u.upper(), pw, u1.home_ab), 207, msg="Basic auth with the username in upper case")
+
+
+def test_dav_cred_username_rule(t, e2e, u1):
+    """CalDAV / CardDAV credential: the username must be lowercase letters a-z (400)"""
+    pw = f"Username_{e2e.run_id}"
+    for kind in ("caldav", "carddav"):
+        path = f"/{kind}-credentials/"
+        base = e2e.cred_user(f"{kind[:4]}rule")
+        # Upper case is refused, not folded to lower case: the stored name is
+        # always exactly the one the client is configured with.
+        cases = [
+            (base.capitalize(), "a capital letter"),
+            (base.upper(), "capitals only"),
+            (f"{base}7", "a digit"),
+            (f"{base[:3]}-{base[3:]}", "a hyphen"),
+            (f"{base[:3]}_{base[3:]}", "an underscore"),
+            (f"{base[:3]} {base[3:]}", "a space"),
+            (f"{base}é", "a non-ASCII letter"),
+        ]
+        for username, what in cases:
+            r = u1.api("POST", path, json={"name": "rule", "username": username, "password": pw})
+            if r.status == 201:  # accepted after all: do not leave it behind
+                e2e.defer(f"revoke {kind} credential {username!r}", e2e.cleanup_api, u1, "DELETE",
+                          f"{path}{r.jdict().get('id')}")
+            if t.status(r, 400, msg=f"{kind}: a username with {what} must be refused"):
+                t.true("lowercase letters a-z" in r.jmsg(),
+                       f"{kind}: the 400 for {what} must say 'lowercase letters a-z', got {r.jmsg()!r}", r)
+        # The same name in lowercase letters only is accepted and stored as sent.
+        r = u1.api("POST", path, json={"name": "rule", "username": base, "password": pw})
+        if not t.status(r, 201, msg=f"{kind}: lowercase letters a-z are accepted"):
+            continue
+        cid = r.jdict().get("id")
+        e2e.defer(f"revoke {kind} credential {base}", e2e.cleanup_api, u1, "DELETE", f"{path}{cid}")
+        t.json(r, "username", base, f"{kind}: the username is stored exactly as sent")
+        home = u1.home_cal if kind == "caldav" else u1.home_ab
+        t.status(_probe(e2e, base, pw, home), 207, msg=f"{kind}: the new credential authenticates")
+        u1.api("DELETE", f"{path}{cid}")
 
 
 def test_carddav_revoke(t, e2e, u1, st):
