@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +16,9 @@ import (
 // accepts them as a share's user_identifier — but the lookups lower-cased the
 // input before an exact match, so the issued username was never found: Basic
 // auth answered 401 and sharing 400 "user not found". A mixed-case CardDAV
-// credential was created (201) and then never authenticated.
+// credential was created (201) and then never authenticated; new credential
+// usernames are lowercase now, so the case-insensitive match is checked by
+// sending one in upper case.
 func TestUsernameLookupIsCaseInsensitive(t *testing.T) {
 	ownerToken, ownerUsername := registerAndLoginFull(t, "f02-owner@example.test", "f02Secret!123", "F02 Owner")
 	shareeToken, shareeUsername := registerAndLoginFull(t, "f02-sharee@example.test", "f02Secret!123", "F02 Sharee")
@@ -51,14 +52,19 @@ func TestUsernameLookupIsCaseInsensitive(t *testing.T) {
 	}, nil)
 	require.Equal(t, http.StatusCreated, code, "share an address book with the username in another case")
 
-	// --- Mixed-case CardDAV credential -----------------------------------
-	credUser := "F02-Card-" + time.Now().Format("150405")
+	// --- CardDAV credential in another case -------------------------------
+	// A new credential's username is lowercase letters only, but a client may
+	// send it in another case. Rows stored in mixed case before that rule keep
+	// authenticating: webdav TestBasicAuthAcceptsMixedCaseUsernames.
+	credUser := credUsername("ftwocard")
 	credPass := "MixedCase_Pass_v3rY!"
 	code = doJSONRaw(t, http.MethodPost, "/carddav-credentials/", ownerToken, map[string]any{
-		"name": "f02 mixed", "username": credUser, "password": credPass, "permission": "read",
+		"name": "f02 card", "username": credUser, "password": credPass, "permission": "read",
 	}, nil)
-	require.Equal(t, http.StatusCreated, code, "create a mixed-case CardDAV credential")
-	status, _, body := davCall(t, "PROPFIND", "/dav/"+ownerUsername+"/addressbooks/", credUser, credPass,
-		propfindAddressBookBody, depthHeader("1"))
-	assert.Equalf(t, http.StatusMultiStatus, status, "CardDAV credential as created: %s", string(body))
+	require.Equal(t, http.StatusCreated, code, "create a CardDAV credential")
+	for _, name := range []string{credUser, strings.ToUpper(credUser)} {
+		status, _, body := davCall(t, "PROPFIND", "/dav/"+ownerUsername+"/addressbooks/", name, credPass,
+			propfindAddressBookBody, depthHeader("1"))
+		assert.Equalf(t, http.StatusMultiStatus, status, "CardDAV credential as %q: %s", name, string(body))
+	}
 }

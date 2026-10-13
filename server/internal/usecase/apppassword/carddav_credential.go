@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,12 +58,9 @@ func (uc *CreateCardDAVCredentialUseCase) Execute(ctx context.Context, userID ui
 		return nil, fmt.Errorf("expires_at must be in the future")
 	}
 
-	// Validate username
-	if len(input.Username) < 3 || len(input.Username) > 50 {
-		return nil, fmt.Errorf("username must be between 3 and 50 characters")
-	}
-	if !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(input.Username) {
-		return nil, fmt.Errorf("username can only contain alphanumeric characters, hyphens, and underscores")
+	// Validate username: lowercase letters a-z only, for new credentials.
+	if err := user.ValidateDAVCredentialUsername(input.Username); err != nil {
+		return nil, err
 	}
 
 	// Validate password

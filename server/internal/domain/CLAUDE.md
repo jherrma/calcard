@@ -21,7 +21,7 @@ The domain layer defines:
 - `caldav_credential.go` — CalDAV-specific access credentials.
 - `carddav_credential.go` — CardDAV-specific access credentials.
 - `mcp_token.go` — Long-lived bearer credential for the `/mcp` endpoint (story 104). Unlike the DAV credentials it stores a **unique-indexed SHA-256** of a 256-bit random secret rather than a bcrypt hash: an MCP client presents only the opaque token, so it must be findable from that string alone, which a per-row salted hash cannot do. `TokenPrefix` is the only cleartext fragment, kept so a shown-once token stays recognizable in the settings list.
-- `validation.go` — User input validation logic, incl. `NormalizeCredentialName` (trimmed, 1–100 characters) shared by app passwords, DAV credentials and MCP tokens.
+- `validation.go` — User input validation logic, incl. `NormalizeCredentialName` (trimmed, 1–100 characters) shared by app passwords, DAV credentials and MCP tokens, and `ValidateDAVCredentialUsername` (3–50 lowercase letters `a`–`z`, nothing else; checked when a CalDAV/CardDAV credential is created, so older rows with capitals, digits, `-` or `_` keep working).
 - `repository.go` — Repository interfaces for user, refresh token, email verification, app password, OAuth connection, MCP token, and credential persistence.
 
 ### [calendar/](calendar/)

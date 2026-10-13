@@ -4,13 +4,27 @@ package integration_test
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// credUsername returns a fresh DAV credential username: the label plus eight
+// random letters. New credential usernames may only hold lowercase letters
+// a-z (user.ValidateDAVCredentialUsername), so no timestamp or counter.
+func credUsername(label string) string {
+	var b strings.Builder
+	b.WriteString(label)
+	for range 8 {
+		b.WriteByte(byte('a' + rand.IntN(26)))
+	}
+	return b.String()
+}
 
 // TestDedicatedCalDAVCredential covers the standalone DAV credential flow
 // — separate from user email + app password — which is the way to hand out
@@ -30,7 +44,7 @@ func TestDedicatedCalDAVCredential(t *testing.T) {
 
 	// --- Create a read-only CalDAV credential ---------------------------
 	rawPass := "ReadOnlyPass_v3rY!S1x"
-	credUser := "readonly-" + time.Now().Format("20060102t150405")
+	credUser := credUsername("readonly")
 	var created struct {
 		ID         string `json:"id"` // UUID of the credential row
 		Username   string `json:"username"`
@@ -130,7 +144,7 @@ func TestDedicatedCardDAVCredential(t *testing.T) {
 	require.NotEmpty(t, abPath)
 
 	rawPass := "ReadWritePass_v3rY!S1x"
-	credUser := "rw-" + time.Now().Format("20060102t150405")
+	credUser := credUsername("rw")
 	var created struct {
 		ID         string `json:"id"` // UUID of the credential row
 		Username   string `json:"username"`
@@ -186,7 +200,7 @@ func TestDedicatedCardDAVCredential(t *testing.T) {
 
 	// --- A read-only CardDAV credential must refuse writes --------------
 	roPass := "ReadOnlyCardPass_v3rY!S1x"
-	roUser := "ro-card-" + time.Now().Format("20060102t150405")
+	roUser := credUsername("rocard")
 	var roCreated struct {
 		ID string `json:"id"`
 	}
@@ -231,7 +245,7 @@ func TestDAVCredentialUsernameReusableAfterRevoke(t *testing.T) {
 	for _, kind := range []string{"caldav", "carddav"} {
 		t.Run(kind, func(t *testing.T) {
 			endpoint := "/" + kind + "-credentials/"
-			credUser := "reuse-" + kind + "-" + time.Now().Format("20060102t150405")
+			credUser := credUsername("reuse" + kind)
 			create := func(tok, pass string) (int, string, []byte) {
 				var out struct {
 					ID string `json:"id"`
