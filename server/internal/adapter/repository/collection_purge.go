@@ -108,9 +108,13 @@ func purgeCalendars(tx *gorm.DB, counts purgeCounts, ids any) error {
 // row locks up front. On PostgreSQL an object write that has already bumped the
 // collection's sync token therefore commits before the cascade reads the
 // contents, instead of slipping its object in behind the cascade as an orphan
-// (calendar_objects has no foreign key to stop it). On SQLite the UPDATE makes
-// the transaction the writer at once. It is also where a storage failure
-// surfaces first: the MCP tests inject one with a BEFORE UPDATE trigger.
+// (calendar_objects has no foreign key to stop it). A write that inserts its
+// object before the lock but bumps the token only after it can still leave an
+// orphan there (the M20 family of races, see recordChange); the boot data
+// migration sweeps such rows up. On SQLite writers are serialized and the
+// UPDATE makes the transaction the writer at once. It is also where a storage
+// failure surfaces first: the MCP tests inject one with a BEFORE UPDATE
+// trigger.
 func lockCollections(tx *gorm.DB, model any, ids any) error {
 	return tx.Where("id IN (?)", ids).Delete(model).Error
 }
