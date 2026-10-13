@@ -420,15 +420,10 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 		if c.UserID != u.ID {
 			return webdav.NewHTTPError(http.StatusForbidden, nil)
 		}
-		if err := b.calendarRepo.Delete(ctx, c.ID); err != nil {
-			return err
-		}
-		// Revoke every share of this calendar so it doesn't linger as a ghost
-		// entry in the sharees' calendar lists (mirrors the REST delete path).
-		if err := b.shareRepo.DeleteByCalendarID(ctx, c.ID); err != nil {
-			return err
-		}
-		return nil
+		// The same cascade as the REST delete: events, change log, shares,
+		// subscription and public link go with the calendar, in one
+		// transaction.
+		return b.calendarRepo.Delete(ctx, c.ID)
 	}
 
 	// Check Write Permission for the object delete.

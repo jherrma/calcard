@@ -13,6 +13,7 @@ import (
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -126,6 +127,22 @@ func TestAddressBookHandler_CRUD(t *testing.T) {
 		}
 		require.NoError(t, abRepo.Create(context.Background(), dummyAB))
 
+		// Put a contact with a photo and a share in the book to be deleted: the
+		// delete must take them along, not leave them behind in the database.
+		contact := &addressbook.AddressObject{
+			UUID: "doomed-contact", AddressBookID: createdABID, Path: "c.vcf", UID: "c@doomed",
+			VCardData: "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:c@doomed\r\nFN:Pic\r\nPHOTO;ENCODING=b;TYPE=JPEG:AAAA\r\nEND:VCARD\r\n",
+		}
+		require.NoError(t, abRepo.CreateObject(context.Background(), contact))
+		var photos int64
+		require.NoError(t, db.DB().Model(&addressbook.ContactPhoto{}).Where("address_object_id = ?", contact.ID).Count(&photos).Error)
+		require.EqualValues(t, 1, photos, "seed: the PHOTO is stored in contact_photos")
+		sharee :=&user.User{Email: "ab-sharee@example.com", Username: "absharee", PasswordHash: "hash", IsActive: true, UUID: "ab-sharee-uuid"}
+		require.NoError(t, userRepo.Create(context.Background(), sharee))
+		require.NoError(t, repository.NewAddressBookShareRepository(db.DB()).Create(context.Background(), &sharing.AddressBookShare{
+			UUID: "doomed-ab-share", AddressBookID: createdABID, SharedWithID: sharee.ID, Permission: "read",
+		}))
+
 		payload := map[string]string{
 			"confirmation": "DELETE",
 		}
@@ -139,12 +156,21 @@ func TestAddressBookHandler_CRUD(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 
-		// Verify deleted
 		ab, err := abRepo.GetByID(context.Background(), createdABID)
-		if err != nil {
-			// Expect error or nil
-		} else {
-			assert.Nil(t, ab)
+		require.NoError(t, err)
+		assert.Nil(t, ab)
+
+		// Gone from the database, not just hidden: soft-deleted rows count too.
+		for model, where := range map[any][2]any{
+			&addressbook.AddressBook{}:   {"id = ?", createdABID},
+			&addressbook.AddressObject{}: {"address_book_id = ?", createdABID},
+			&addressbook.ContactPhoto{}:  {"address_object_id = ?", contact.ID},
+			&addressbook.SyncChangeLog{}: {"address_book_id = ?", createdABID},
+			&sharing.AddressBookShare{}:  {"address_book_id = ?", createdABID},
+		} {
+			var n int64
+			require.NoError(t, db.DB().Unscoped().Model(model).Where(where[0], where[1]).Count(&n).Error)
+			assert.Zerof(t, n, "%T rows of the deleted address book must be hard-deleted", model)
 		}
 	})
 }

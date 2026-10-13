@@ -223,17 +223,13 @@ func NewDeleteUseCase(subRepo calendar.CalendarSubscriptionRepository, calRepo c
 // by re-subscribing — so the protections that exist for authored content would
 // only be friction here.
 //
-// The subscription row goes first: if the process dies between the two
-// deletes, what remains is an ordinary orphaned calendar the user can delete
-// themselves, rather than a subscription pointing at a calendar that no longer
-// exists, which every refresh would then fail on.
+// CalendarRepository.Delete removes the subscription row together with the
+// calendar, its events, change log and shares in one transaction, so there is
+// no half-deleted state to order the steps around.
 func (uc *DeleteUseCase) Execute(ctx context.Context, userID uint, subUUID string) error {
 	sub, err := ownedSubscription(ctx, uc.subRepo, userID, subUUID)
 	if err != nil {
 		return err
-	}
-	if err := uc.subRepo.Delete(ctx, sub.ID); err != nil {
-		return fmt.Errorf("failed to delete subscription: %w", err)
 	}
 	if err := uc.calRepo.Delete(ctx, sub.CalendarID); err != nil {
 		return fmt.Errorf("failed to delete subscribed calendar: %w", err)

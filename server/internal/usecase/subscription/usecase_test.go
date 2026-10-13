@@ -128,6 +128,9 @@ type fakeCalRepo struct {
 	nextID   uint
 	replaces int
 	failNext error
+	// subs, when set, is cascaded into by Delete, as the real repository
+	// removes a calendar's subscription row with it.
+	subs *fakeSubRepo
 }
 
 func newFakeCalRepo() *fakeCalRepo {
@@ -160,6 +163,15 @@ func (f *fakeCalRepo) Delete(_ context.Context, id uint) error {
 	defer f.mu.Unlock()
 	delete(f.cals, id)
 	delete(f.objects, id)
+	if f.subs != nil {
+		f.subs.mu.Lock()
+		defer f.subs.mu.Unlock()
+		for k, row := range f.subs.rows {
+			if row.CalendarID == id {
+				delete(f.subs.rows, k)
+			}
+		}
+	}
 	return nil
 }
 
@@ -264,6 +276,7 @@ func newHarness(t *testing.T, maxFailures int) *harness {
 		fetcher: localFetcher(t),
 		now:     time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC),
 	}
+	h.cals.subs = h.subs
 	clock := func() time.Time { return h.now }
 	h.sync = NewSyncUseCase(h.subs, h.cals, h.fetcher, maxFailures, clock)
 	h.create = NewCreateUseCase(h.subs, h.cals, h.fetcher, 20, true, clock)
