@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -23,6 +24,8 @@ func newFeedDB(t *testing.T) *gorm.DB {
 		&calendar.CalendarObject{},
 		&calendar.SyncChangeLog{},
 		&calendar.CalendarSubscription{},
+		// Deleting a calendar cascades to its shares as well.
+		&sharing.CalendarShare{},
 	))
 	return db
 }

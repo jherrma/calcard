@@ -9,10 +9,10 @@ import (
 )
 
 // PurgeAccountData hard-deletes everything an account owns or was granted:
-// its calendars (objects, change logs, subscription, public link), its address
-// books (contacts, photos, change logs), every share of those collections AND
-// every share granted TO the account, and its app passwords, DAV credentials,
-// MCP tokens, OAuth links and preferences (F18).
+// its calendars and address books with everything in them (the collection
+// cascade of collection_purge.go: objects, photos, change logs, shares,
+// subscription, public link), every share granted TO the account, and its app
+// passwords, DAV credentials, MCP tokens, OAuth links and preferences (F18).
 //
 // users is a single user id, a slice of ids, or a subquery selecting ids. Run
 // it inside the transaction that removes the user row, and before it: the rows
@@ -30,32 +30,40 @@ import (
 func PurgeAccountData(tx *gorm.DB, users any) error {
 	calendars := tx.Unscoped().Model(&calendar.Calendar{}).Select("id").Where("user_id IN (?)", users)
 	books := tx.Unscoped().Model(&addressbook.AddressBook{}).Select("id").Where("user_id IN (?)", users)
-	contacts := tx.Unscoped().Model(&addressbook.AddressObject{}).Select("id").Where("address_book_id IN (?)", books)
 
-	steps := []struct {
+	// What the account holds in OTHER accounts' collections: the shares granted
+	// to it. A subscription always lives in the subscriber's own calendar, so
+	// the calendar cascade removes it anyway; matching it by user_id as well
+	// costs nothing.
+	for _, s := range []struct {
 		model any
 		query string
-		args  []any
 	}{
-		{&sharing.CalendarShare{}, "calendar_id IN (?) OR shared_with_id IN (?)", []any{calendars, users}},
-		{&sharing.AddressBookShare{}, "address_book_id IN (?) OR shared_with_id IN (?)", []any{books, users}},
-		{&calendar.CalendarSubscription{}, "user_id IN (?) OR calendar_id IN (?)", []any{users, calendars}},
-		{&calendar.CalendarObject{}, "calendar_id IN (?)", []any{calendars}},
-		{&calendar.SyncChangeLog{}, "calendar_id IN (?)", []any{calendars}},
-		{&calendar.Calendar{}, "user_id IN (?)", []any{users}},
-		{&addressbook.ContactPhoto{}, "address_object_id IN (?)", []any{contacts}},
-		{&addressbook.AddressObject{}, "address_book_id IN (?)", []any{books}},
-		{&addressbook.SyncChangeLog{}, "address_book_id IN (?)", []any{books}},
-		{&addressbook.AddressBook{}, "user_id IN (?)", []any{users}},
-		{&user.AppPassword{}, "user_id IN (?)", []any{users}},
-		{&user.CalDAVCredential{}, "user_id IN (?)", []any{users}},
-		{&user.CardDAVCredential{}, "user_id IN (?)", []any{users}},
-		{&user.MCPToken{}, "user_id IN (?)", []any{users}},
-		{&user.OAuthConnection{}, "user_id IN (?)", []any{users}},
-		{&user.UserPreference{}, "user_id IN (?)", []any{users}},
+		{&sharing.CalendarShare{}, "shared_with_id IN (?)"},
+		{&sharing.AddressBookShare{}, "shared_with_id IN (?)"},
+		{&calendar.CalendarSubscription{}, "user_id IN (?)"},
+	} {
+		if err := hardDelete(tx, nil, s.model, s.query, users); err != nil {
+			return err
+		}
 	}
-	for _, s := range steps {
-		if err := tx.Unscoped().Where(s.query, s.args...).Delete(s.model).Error; err != nil {
+
+	if err := purgeCalendars(tx, nil, calendars); err != nil {
+		return err
+	}
+	if err := purgeAddressBooks(tx, nil, books); err != nil {
+		return err
+	}
+
+	for _, model := range []any{
+		&user.AppPassword{},
+		&user.CalDAVCredential{},
+		&user.CardDAVCredential{},
+		&user.MCPToken{},
+		&user.OAuthConnection{},
+		&user.UserPreference{},
+	} {
+		if err := hardDelete(tx, nil, model, "user_id IN (?)", users); err != nil {
 			return err
 		}
 	}

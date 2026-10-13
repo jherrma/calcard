@@ -29,6 +29,9 @@ type Repository interface {
 	// transaction. It updates only the named columns (never sync_token/c_tag from
 	// the possibly-stale passed struct) and mints a fresh token in the same tx.
 	UpdateMetadata(ctx context.Context, addressBook *AddressBook) error
+	// Delete permanently removes an address book by ID together with everything
+	// in it — contacts, their photos, change log, shares — in one transaction.
+	// Callers need not (and should not) clean up after it.
 	Delete(ctx context.Context, id uint) error
 	CreateObject(ctx context.Context, object *AddressObject) error
 	GetObjectByID(ctx context.Context, id uint) (*AddressObject, error)

@@ -15,8 +15,11 @@ import (
 
 // TestSoftDeletedAddressBookHidesContacts is the regression test for M7: a
 // soft-deleted address book's contacts must not leak through global search or
-// the per-user contact count. Soft delete does not cascade to the objects, so
-// the join must filter on address_books.deleted_at.
+// the per-user contact count. Repository.Delete now removes the contacts with
+// the book, and the boot-time data migration purges what older deletes left
+// behind — but a soft-deleted book row whose contacts are still there is
+// exactly that legacy state, so the join keeps filtering on
+// address_books.deleted_at as defence in depth.
 func TestSoftDeletedAddressBookHidesContacts(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
@@ -61,8 +64,9 @@ func TestSoftDeletedAddressBookHidesContacts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 
-	// Soft-delete one address book. Its AddressObject rows remain (no cascade).
-	assert.NoError(t, repo.Delete(ctx, doomed.ID))
+	// Soft-delete one address book the way older code did: only the book row.
+	// Its AddressObject rows remain.
+	assert.NoError(t, db.Delete(doomed).Error)
 
 	// Search must now exclude the deleted book's contact — even though the caller
 	// still passes its id, because the book itself is gone.
