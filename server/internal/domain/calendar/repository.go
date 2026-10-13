@@ -55,7 +55,9 @@ type CalendarRepository interface {
 	// it updates only the named columns and mints a fresh token in the same tx.
 	UpdateMetadata(ctx context.Context, calendar *Calendar) error
 
-	// Delete deletes a calendar by ID
+	// Delete permanently removes a calendar by ID together with everything in
+	// it — events, change log, shares, subscription, public link — in one
+	// transaction. Callers need not (and should not) clean up after it.
 	Delete(ctx context.Context, id uint) error
 
 	// CountByUserID counts calendars for a user

@@ -142,6 +142,28 @@ server over HTTP only (REST, CalDAV/CardDAV, MCP): in `e2e/` install
 `./run`. It registers throwaway users (self-registration must be enabled, SMTP
 off) and removes what it created.
 
+### Upgrading — back up first
+
+**Back up the database before you upgrade.** On start the server migrates the
+schema and then runs data migrations (`database.auto_migrate`, on by default;
+`./server migrate` runs them by hand). Most only repair data, but two
+**permanently delete** rows nobody can reach any more:
+
+- the data of accounts deleted with older versions (their calendars, address
+  books, shares and credentials), and
+- the remains of calendars and address books deleted with older versions.
+  Deleting a collection used to hide only the collection itself; its events,
+  contacts, photos, sync history and shares stayed in the database. Deleting
+  a calendar or address book now removes everything in it, and the first
+  start of the new version purges what earlier deletes left behind.
+
+Their owners asked for this data to be gone, but once the migration has run it
+cannot be restored. With SQLite, stop the server and copy `caldav.db` (plus
+any `caldav.db-wal` / `caldav.db-shm`) out of the data directory; with
+PostgreSQL, `pg_dump` the database. The server logs what the purge removed as
+a `WARN data migration: permanently deleted …` line with a row count per
+table; a start with nothing to purge logs nothing.
+
 ### Running from Source
 
 1. Clone the repository

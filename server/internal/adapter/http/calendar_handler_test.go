@@ -12,6 +12,7 @@ import (
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/domain/sharing"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -131,6 +132,20 @@ func TestCalendarHandler_CRUD(t *testing.T) {
 		}
 		require.NoError(t, calRepo.Create(context.Background(), dummyCal))
 
+		// Put an event and a share in the calendar to be deleted: the delete
+		// must take them along, not leave them behind in the database.
+		target, err := calRepo.GetByUUID(context.Background(), createdCalID)
+		require.NoError(t, err)
+		require.NoError(t, calRepo.CreateCalendarObject(context.Background(), &calendar.CalendarObject{
+			UUID: "doomed-obj", CalendarID: target.ID, Path: "e.ics", UID: "e@doomed", ETag: "1",
+			ComponentType: "VEVENT", ICalData: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+		}))
+		sharee := &user.User{Email: "sharee@example.com", Username: "sharee", PasswordHash: "hash", IsActive: true, UUID: "sharee-uuid"}
+		require.NoError(t, userRepo.Create(context.Background(), sharee))
+		require.NoError(t, repository.NewCalendarShareRepository(db.DB()).Create(context.Background(), &sharing.CalendarShare{
+			UUID: "doomed-share", CalendarID: target.ID, SharedWithID: sharee.ID, Permission: "read",
+		}))
+
 		payload := map[string]string{
 			"confirmation": "DELETE",
 		}
@@ -144,24 +159,19 @@ func TestCalendarHandler_CRUD(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 
-		// Verify deleted
-		cal, err := calRepo.GetByUUID(context.Background(), createdCalID)
-		if err != nil {
-			switch err.Error() {
-			case "record not found":
-				// This is expected if GetByUUID returns error for not found
-			default:
-				// If it returns nil, that's also fine
-				if cal != nil {
-					assert.Fail(t, "expected calendar to be deleted, but found it")
-				}
-			}
-		} else {
-			// If no error, cal might be nil or returned.
-			// GORM GetByUUID might return error "record not found" OR return nil.
-			// Given previous error output showed it found the record, and failure was 400.
-			// Ideally we want it NOT found.
-			assert.Nil(t, cal)
+		_, err = calRepo.GetByUUID(context.Background(), createdCalID)
+		assert.ErrorIs(t, err, calendar.ErrNotFound)
+
+		// Gone from the database, not just hidden: soft-deleted rows count too.
+		for model, where := range map[any]string{
+			&calendar.Calendar{}:       "id = ?",
+			&calendar.CalendarObject{}: "calendar_id = ?",
+			&calendar.SyncChangeLog{}:  "calendar_id = ?",
+			&sharing.CalendarShare{}:   "calendar_id = ?",
+		} {
+			var n int64
+			require.NoError(t, db.DB().Unscoped().Model(model).Where(where, target.ID).Count(&n).Error)
+			assert.Zerof(t, n, "%T rows of the deleted calendar must be hard-deleted", model)
 		}
 	})
 }

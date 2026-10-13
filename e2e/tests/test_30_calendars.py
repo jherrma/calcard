@@ -5,8 +5,9 @@ import re
 
 import pytest
 
-from harness.data import ics_event
+from harness.data import PROPFIND_LIST, ics_event, sync_body
 from harness.session import ZERO_UUID
+from harness.xml import lp, xcount, xml_text, xstr
 
 DESCRIPTION = "calendar CRUD, validation, isolation, export, last-calendar guard"
 
@@ -178,6 +179,62 @@ def test_delete(t, e2e, u1):
         return
     t.status(u1.api("GET", f"/calendars/{uuid}"), 404)
     t.not_contains(u1.api("GET", "/calendars/"), uuid)
+
+
+def test_delete_leaves_nothing(t, e2e, u1, u2):
+    """a REST-deleted calendar is gone for good: old sync token 404s, re-created at its path or name it is empty"""
+    if not u1.ensure_dav():
+        return t.skip("no DAV app password for U1")
+    name = e2e.uniq("Purge me")
+    cal = u1.mk_calendar(name)
+    uuid, col = cal["uuid"], f"{u1.home_cal}{cal['path']}/"
+    for i in (1, 2):
+        u1.mk_event(uuid, f"Purged {i} {e2e.run_id}", f"2030-07-0{i}T09:00:00Z", f"2030-07-0{i}T10:00:00Z")
+    t.status(u1.api("POST", f"/calendars/{uuid}/shares", json={"user_identifier": u2.email, "permission": "read"}), 201)
+
+    # A DAV client syncs the calendar and keeps the token and the hrefs.
+    r = u1.dav("REPORT", col, depth=1, xml=sync_body())
+    if not t.status(r, 207):
+        return
+    old_token = xml_text(r, "sync-token")
+    hrefs = [xstr(r, f"({lp('response', 'href')})[{i}]") for i in (1, 2)]
+    if not t.true(old_token and all(hrefs), "the initial sync lists both events and hands out a token"):
+        return
+
+    if not t.status(u1.api("DELETE", f"/calendars/{uuid}", json={"confirmation": "DELETE"}), 204):
+        return
+    t.status(u1.dav("REPORT", col, depth=1, xml=sync_body(old_token)), 404,
+             msg="the client syncing the deleted calendar gets a 404")
+    t.status(u1.dav("PROPFIND", col, depth=0, xml=PROPFIND_LIST), 404)
+    t.status(u2.api("GET", f"/calendars/{uuid}"), 404, msg="the share went with the calendar")
+    t.not_contains(u2.api("GET", "/calendars/"), uuid)
+
+    # A new calendar at the very same DAV path starts empty.
+    if not t.status(u1.dav("MKCALENDAR", col), 201):
+        return
+    _cleanup_calendars_at(e2e, u1, cal["path"])
+    r = u1.dav("PROPFIND", col, depth=1, xml=PROPFIND_LIST)
+    if t.status(r, 207):
+        t.eq(xcount(r, lp("response")), 1, "the re-created collection lists itself and no member")
+    for href in hrefs:
+        t.status(u1.dav("GET", href), 404, msg="an event of the deleted calendar must not reappear at its old URL")
+    r = u1.dav("REPORT", col, depth=1, xml=sync_body(old_token))
+    if t.status(r, 403, msg="the old token means nothing to the new collection"):
+        t.xpath(r, lp("error", "valid-sync-token"))
+
+    # And so does a new calendar with the same name.
+    again = u1.mk_calendar(name)
+    r = u1.api("GET", f"/calendars/{again['uuid']}/events?start=2030-01-01T00:00:00Z&end=2031-01-01T00:00:00Z")
+    if t.status(r, 200):
+        t.jq(r, lambda j: not j["events"], "a calendar re-created with the same name holds no events")
+
+
+def _cleanup_calendars_at(e2e, user, path):
+    """Delete, at the end of the run, every REST calendar of USER at PATH."""
+    for c in user.api("GET", "/calendars/").jdict().get("calendars") or []:
+        if c.get("path") == path:
+            e2e.defer(f"delete calendar at {path}", e2e.cleanup_api, user, "DELETE", f"/calendars/{c['uuid']}",
+                      json={"confirmation": "DELETE"})
 
 
 def test_last_guard(t, e2e):

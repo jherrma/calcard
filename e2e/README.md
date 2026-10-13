@@ -144,14 +144,14 @@ re-authenticates them to delete them.
 | `tests/test_10_auth.py` | auth | registration + validation, login, refresh rotation, logout, password change, forgot/reset/verify edges, OAuth surface, account deletion |
 | `tests/test_15_credentials.py` | credentials | app passwords (scopes, revocation, isolation), CalDAV / CardDAV credentials (read vs read-write, protocol confinement, expiry, duplicates, lowercase-only usernames) |
 | `tests/test_20_profile.py` | profile | profile get/patch, preferences, full backup export (ZIP content) |
-| `tests/test_30_calendars.py` | calendars | calendar CRUD, validation, isolation, export, last-calendar guard |
+| `tests/test_30_calendars.py` | calendars | calendar CRUD, validation, isolation, export, last-calendar guard, delete leaves nothing behind (a synced client's old token 404s, a calendar re-created at the same path or name is empty) |
 | `tests/test_35_events.py` | events | event CRUD, validation, If-Match, all-day, recurrence (expand, BYDAY, scope=this / this_and_future for update and delete), move |
 | `tests/test_38_import_export.py` | import_export | .ics / .vcf import (raw body, JSON, multipart, duplicate handling), export round trip |
 | `tests/test_40_addressbooks.py` | addressbooks | address book + contact CRUD, paging, photos, move, contact search, last-book guard |
 | `tests/test_45_search.py` | search | unified search: all groups, no date window, recurring series, types, bounds, limits, isolation |
 | `tests/test_50_dav_discovery.py` | dav_discovery | `/.well-known/caldav|carddav` (GET and PROPFIND), OPTIONS/DAV header, principal, home sets, collection properties at Depth 0/1 |
-| `tests/test_55_dav_caldav.py` | dav_caldav | MKCALENDAR / MKCOL, PUT/GET/HEAD/DELETE with ETag, If-Match, If-None-Match, UID conflicts, VTODO, recurrence overrides, calendar-query, calendar-multiget, PROPPATCH, COPY/MOVE, REST↔DAV consistency |
-| `tests/test_60_dav_carddav.py` | dav_carddav | the same for CardDAV: MKCOL, vCard 3/4, comma lists, addressbook-query / -multiget, photos over DAV |
+| `tests/test_55_dav_caldav.py` | dav_caldav | MKCALENDAR / MKCOL, PUT/GET/HEAD/DELETE with ETag, If-Match, If-None-Match, UID conflicts, VTODO, recurrence overrides, calendar-query, calendar-multiget, PROPPATCH, COPY/MOVE, REST↔DAV consistency, collection DELETE (old sync token 404s, re-created collection empty) |
+| `tests/test_60_dav_carddav.py` | dav_carddav | the same for CardDAV: MKCOL, vCard 3/4, comma lists, addressbook-query / -multiget, photos over DAV, collection DELETE |
 | `tests/test_70_dav_sync.py` | dav_sync | WebDAV-Sync: initial / empty / create / modify / delete deltas, REST changes in DAV deltas, invalid tokens, `<limit>` truncation (507), ctag |
 | `tests/test_75_dav_authz.py` | dav_authz | 401 shapes, malformed Authorization, accepted credential kinds, and cross-user isolation on every DAV verb (PROPFIND, REPORT, GET, PUT, DELETE, PROPPATCH, MKCALENDAR, traversal) |
 | `tests/test_80_sharing.py` | sharing | calendar + address-book shares over REST and DAV (read vs read-write, revocation, cascades), public calendar links, deleted owners |

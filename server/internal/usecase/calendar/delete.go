@@ -13,19 +13,23 @@ type DeleteCalendarRequest struct {
 	Confirmation string `json:"confirmation"`
 }
 
-// DeleteCalendarUseCase handles calendar deletion
+// DeleteCalendarUseCase handles calendar deletion. REST and MCP's
+// delete_calendar both run it.
 type DeleteCalendarUseCase struct {
-	repo      calendar.CalendarRepository
-	shareRepo sharing.CalendarShareRepository
+	repo calendar.CalendarRepository
 }
 
-// NewDeleteCalendarUseCase creates a new use case. shareRepo may be nil in
-// unit tests that don't exercise sharing.
-func NewDeleteCalendarUseCase(repo calendar.CalendarRepository, shareRepo sharing.CalendarShareRepository) *DeleteCalendarUseCase {
-	return &DeleteCalendarUseCase{repo: repo, shareRepo: shareRepo}
+// NewDeleteCalendarUseCase creates a new use case.
+//
+// The share repository is no longer used: CalendarRepository.Delete removes
+// the calendar's shares in the same transaction as everything else in it. The
+// parameter stays only so existing wiring keeps compiling; drop it together
+// with its callers.
+func NewDeleteCalendarUseCase(repo calendar.CalendarRepository, _ sharing.CalendarShareRepository) *DeleteCalendarUseCase {
+	return &DeleteCalendarUseCase{repo: repo}
 }
 
-// Execute deletes a calendar with confirmation
+// Execute permanently deletes a calendar with confirmation.
 func (uc *DeleteCalendarUseCase) Execute(ctx context.Context, userID uint, calendarUUID string, req DeleteCalendarRequest) error {
 	// Resolve the calendar before looking at the request: an unknown or foreign
 	// calendar is the same 404 whatever the body says (F28).
@@ -49,19 +53,11 @@ func (uc *DeleteCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		return calendar.Invalidf("cannot delete your last calendar")
 	}
 
-	// Delete the calendar and its objects.
+	// One transaction removes the calendar and everything in it: events,
+	// change log, shares (so the calendar can't linger as a ghost entry in the
+	// sharees' lists), subscription and public link.
 	if err := uc.repo.Delete(ctx, cal.ID); err != nil {
 		return fmt.Errorf("failed to delete calendar: %w", err)
 	}
-
-	// Revoke every share of this calendar so it doesn't linger as a ghost
-	// entry in the sharees' calendar lists (and so a future calendar can't
-	// inherit a stale share).
-	if uc.shareRepo != nil {
-		if err := uc.shareRepo.DeleteByCalendarID(ctx, cal.ID); err != nil {
-			return fmt.Errorf("failed to revoke calendar shares: %w", err)
-		}
-	}
-
 	return nil
 }

@@ -2,21 +2,25 @@ package addressbook
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/sharing"
 )
 
+// DeleteUseCase permanently deletes an address book. REST and MCP's
+// delete_address_book both run it.
 type DeleteUseCase struct {
-	repo      addressbook.Repository
-	shareRepo sharing.AddressBookShareRepository
+	repo addressbook.Repository
 }
 
-// NewDeleteUseCase wires the delete usecase. shareRepo may be nil in unit
-// tests that don't exercise sharing.
-func NewDeleteUseCase(repo addressbook.Repository, shareRepo sharing.AddressBookShareRepository) *DeleteUseCase {
-	return &DeleteUseCase{repo: repo, shareRepo: shareRepo}
+// NewDeleteUseCase wires the delete usecase.
+//
+// The share repository is no longer used: Repository.Delete removes the
+// book's shares in the same transaction as everything else in it. The
+// parameter stays only so existing wiring keeps compiling; drop it together
+// with its callers.
+func NewDeleteUseCase(repo addressbook.Repository, _ sharing.AddressBookShareRepository) *DeleteUseCase {
+	return &DeleteUseCase{repo: repo}
 }
 
 func (uc *DeleteUseCase) Execute(ctx context.Context, id uint, userID uint) error {
@@ -37,18 +41,8 @@ func (uc *DeleteUseCase) Execute(ctx context.Context, id uint, userID uint) erro
 		return ErrLastAddressBook
 	}
 
-	if err := uc.repo.Delete(ctx, id); err != nil {
-		return err
-	}
-
-	// Revoke every share of this address book so it doesn't linger as a ghost
-	// entry in the sharees' lists (and so a future book can't inherit a stale
-	// share).
-	if uc.shareRepo != nil {
-		if err := uc.shareRepo.DeleteByAddressBookID(ctx, id); err != nil {
-			return fmt.Errorf("failed to revoke address book shares: %w", err)
-		}
-	}
-
-	return nil
+	// One transaction removes the book and everything in it: contacts, their
+	// photos, change log and shares (so the book can't linger as a ghost entry
+	// in the sharees' lists).
+	return uc.repo.Delete(ctx, id)
 }

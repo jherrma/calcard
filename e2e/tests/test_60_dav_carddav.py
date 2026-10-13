@@ -2,13 +2,14 @@
 ETag preconditions, UID uniqueness, comma lists, addressbook-query /
 addressbook-multiget, PROPPATCH, REST <-> DAV consistency incl. photos."""
 
+import base64
 import re
 from types import SimpleNamespace
 
 import pytest
 
 from harness import xml
-from harness.data import PNG_PIXEL, PROPFIND_COLLECTION, PROPFIND_LIST, vcard
+from harness.data import PNG_PIXEL, PROPFIND_COLLECTION, PROPFIND_LIST, sync_body, vcard
 from harness.xml import el, lp
 
 DESCRIPTION = "MKCOL address book, vCard PUT/GET/DELETE + ETags, REPORTs, PROPPATCH"
@@ -330,3 +331,37 @@ def test_delete_collection(t, e2e, u1):
     _, books = _books_at(u1, slug)
     t.eq(len(books), 0, "the address book must be gone from REST")
     t.status(u1.dav("PROPFIND", f"{u1.home_ab}{slug}/", depth=0, xml=PROPFIND_LIST), 404)
+
+
+def test_delete_collection_leaves_nothing(t, e2e, u1):
+    """a DAV-deleted address book is gone for good: old sync token 404s, re-created at its URL it is empty"""
+    slug = e2e.uniq("purged-book")
+    col = f"{u1.home_ab}{slug}/"
+    if not t.status(u1.dav("MKCOL", col, xml=MKCOL_BODY), 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    href = f"{col}card.vcf"
+    photo = "PHOTO;ENCODING=b;TYPE=PNG:" + base64.b64encode(PNG_PIXEL).decode()
+    if not t.status(u1.dav("PUT", href, vcf=vcard(e2e.uniq("purged-card"), "Purged Card", photo)), 201):
+        return
+    r = u1.dav("REPORT", col, depth=1, xml=sync_body())
+    if not t.status(r, 207):
+        return
+    old_token = xml.xml_text(r, "sync-token")
+    if not t.true(old_token, "the initial sync hands out a token"):
+        return
+
+    if not t.status(u1.dav("DELETE", col), 204, 200):
+        return
+    t.status(u1.dav("REPORT", col, depth=1, xml=sync_body(old_token)), 404,
+             msg="the client syncing the deleted address book gets a 404")
+
+    if not t.status(u1.dav("MKCOL", col, xml=MKCOL_BODY), 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    r = u1.dav("PROPFIND", col, depth=1, xml=PROPFIND_LIST)
+    if t.status(r, 207):
+        t.eq(xml.xcount(r, lp("response")), 1, "the re-created collection lists itself and no member")
+    t.status(u1.dav("GET", href), 404, msg="the contact of the deleted address book must not reappear at its old URL")
+    t.status(u1.dav("REPORT", col, depth=1, xml=sync_body(old_token)), 403,
+             msg="the old token means nothing to the new collection")

@@ -109,22 +109,19 @@ func (r *CalendarRepository) UpdateMetadata(ctx context.Context, cal *calendar.C
 	})
 }
 
-// Delete deletes a calendar by ID
-// Delete removes a calendar, together with the subscription row that mirrors a
-// feed into it (story 100).
+// Delete permanently removes a calendar and everything in it, in one
+// transaction: its events, change log, shares, the subscription row that
+// mirrors a feed into it (story 100) and its public link (purgeCalendars).
 //
-// The cascade lives here rather than in the subscription delete use case
-// because a calendar can be deleted from three places — the REST calendar
-// endpoint, a DAV client's DELETE on the collection, and the subscription
-// endpoint — and only the last one knows subscriptions exist. An orphaned
-// subscription is not inert: the worker would keep fetching the third party's
-// feed on a schedule, forever, for a calendar the user believes they deleted.
+// The cascade lives here rather than in the use cases because a calendar is
+// deleted from several places — the REST/MCP calendar use case, a DAV client's
+// DELETE on the collection, the subscription endpoints — and none of them
+// should have to know what hangs off a calendar. An orphaned subscription is
+// not inert, for one: the worker would keep fetching the third party's feed on
+// a schedule, forever, for a calendar the user believes they deleted.
 func (r *CalendarRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("calendar_id = ?", id).Delete(&calendar.CalendarSubscription{}).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&calendar.Calendar{}, id).Error
+		return purgeCalendars(tx, nil, id)
 	})
 }
 

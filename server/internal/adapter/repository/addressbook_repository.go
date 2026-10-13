@@ -130,8 +130,14 @@ func (r *AddressBookRepository) UpdateMetadata(ctx context.Context, ab *addressb
 	})
 }
 
+// Delete permanently removes an address book and everything in it, in one
+// transaction: its contacts with their photos, its change log and its shares
+// (purgeAddressBooks). Every delete path — REST, MCP, a DAV client's DELETE on
+// the collection — ends here.
 func (r *AddressBookRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&addressbook.AddressBook{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return purgeAddressBooks(tx, nil, id)
+	})
 }
 
 func (r *AddressBookRepository) GetByUserAndPath(ctx context.Context, userID uint, path string) (*addressbook.AddressBook, error) {

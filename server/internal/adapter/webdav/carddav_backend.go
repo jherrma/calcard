@@ -149,18 +149,9 @@ func (b *CardDAVBackend) DeleteAddressBook(ctx context.Context, p string) error 
 		return webdav.NewHTTPError(http.StatusForbidden, nil)
 	}
 
-	if err := b.addressBookRepo.Delete(ctx, ab.ID); err != nil {
-		return err
-	}
-	// Revoke every share of this address book so it doesn't linger as a ghost
-	// entry in the sharees' address book lists (mirrors the REST delete and the
-	// CalDAV collection-delete path, which calls DeleteByCalendarID).
-	if b.shareRepo != nil {
-		if err := b.shareRepo.DeleteByAddressBookID(ctx, ab.ID); err != nil {
-			return err
-		}
-	}
-	return nil
+	// The same cascade as the REST delete: contacts, photos, change log and
+	// shares go with the book, in one transaction.
+	return b.addressBookRepo.Delete(ctx, ab.ID)
 }
 
 // GetAddressObject returns an address object (contact) by path.

@@ -45,6 +45,10 @@ type seededAccount struct {
 	user *user.User
 	cal  *calendar.Calendar
 	book *addressbook.AddressBook
+	// contact is the id of the book's contact. Its photo is counted by it:
+	// a subquery over address_objects would miss a photo left behind once
+	// the contact itself is gone.
+	contact uint
 }
 
 // seedAccount gives a user one of everything an account can own: a calendar
@@ -89,7 +93,7 @@ func seedAccount(t *testing.T, db *gorm.DB, name string) seededAccount {
 	require.NoError(t, db.Create(&user.MCPToken{UUID: "mcp-" + name, UserID: u.ID, Name: "mcp", TokenHash: "h-" + name, TokenPrefix: "p"}).Error)
 	require.NoError(t, db.Create(&user.OAuthConnection{UserID: u.ID, Provider: "google", ProviderID: "g-" + name}).Error)
 	require.NoError(t, db.Create(&user.UserPreference{UserID: u.ID, Key: "theme", Value: "dark"}).Error)
-	return seededAccount{user: u, cal: cal, book: book}
+	return seededAccount{user: u, cal: cal, book: book, contact: contact.ID}
 }
 
 // accountRows counts, per table, the rows that belong to (or were granted to)
@@ -110,7 +114,7 @@ func accountRows(t *testing.T, db *gorm.DB, a seededAccount) map[string]int64 {
 		"calendar_shares":        count(&sharing.CalendarShare{}, "calendar_id = ? OR shared_with_id = ?", cid, uid),
 		"address_books":          count(&addressbook.AddressBook{}, "user_id = ?", uid),
 		"address_objects":        count(&addressbook.AddressObject{}, "address_book_id = ?", bid),
-		"contact_photos":         count(&addressbook.ContactPhoto{}, "address_object_id IN (SELECT id FROM address_objects WHERE address_book_id = ?)", bid),
+		"contact_photos":         count(&addressbook.ContactPhoto{}, "address_object_id = ?", a.contact),
 		"addressbook_changelogs": count(&addressbook.SyncChangeLog{}, "address_book_id = ?", bid),
 		"addressbook_shares":     count(&sharing.AddressBookShare{}, "address_book_id = ? OR shared_with_id = ?", bid, uid),
 		"app_passwords":          count(&user.AppPassword{}, "user_id = ?", uid),
