@@ -241,15 +241,22 @@ const frequencyOptions = [
   { label: 'Yearly', value: 'YEARLY' },
 ];
 
-const weekDays = [
+// Indexed by Date.getDay() (0 = Sunday) so the chips can be laid out from the
+// user's first day of the week, like the calendar grid. Display order only: the
+// RRULE's BYDAY keeps the order the days were picked in, and no WKST is written.
+const WEEKDAY_CHIPS = [
+  { label: 'Su', value: 'SU' },
   { label: 'Mo', value: 'MO' },
   { label: 'Tu', value: 'TU' },
   { label: 'We', value: 'WE' },
   { label: 'Th', value: 'TH' },
   { label: 'Fr', value: 'FR' },
   { label: 'Sa', value: 'SA' },
-  { label: 'Su', value: 'SU' },
 ];
+
+const weekDays = computed(() =>
+  orderedWeekdays(preferencesStore.firstDayOfWeek).map((weekday) => WEEKDAY_CHIPS[weekday]!)
+);
 
 const intervalLabel = computed(() => {
   const labels: Record<string, string> = {
