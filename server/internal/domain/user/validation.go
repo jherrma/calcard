@@ -41,8 +41,9 @@ var (
 // ValidateDAVCredentialUsername is the rule for the username of a NEW CalDAV
 // or CardDAV credential: 3 to 50 lowercase ASCII letters a-z, nothing else.
 // Upper case is refused, not folded: the caller keeps exactly the name it
-// sent, and it cannot be typed into a DAV client in a different case than the
-// one stored (CalDAV credential lookups are exact, CardDAV ones are not, F02).
+// sent. Every new name is therefore stored in lower case, which is what lets
+// the CalDAV credential lookup fold the input to lower case and accept the
+// name in any case (CardDAV's lookup ignores case as well, F02).
 // Only creation checks it; credentials stored under the older, wider rule
 // ([a-zA-Z0-9_-]) keep working unchanged.
 func ValidateDAVCredentialUsername(username string) error {

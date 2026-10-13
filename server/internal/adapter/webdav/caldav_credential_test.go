@@ -156,3 +156,55 @@ END:VCALENDAR`
 		assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 	})
 }
+
+// A CalDAV credential's username authenticates in any case, as a CardDAV
+// credential's already did (F02). New usernames are lowercase letters only,
+// so the lookup folds the input to lower case; a credential stored in mixed
+// case before that rule still authenticates with its stored spelling.
+func TestCalDAVCredentialUsernameAnyCase(t *testing.T) {
+	app, db, _ := setupTestApp(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	u := &user.User{UUID: "case-uuid", Email: "case@example.com", Username: "caseowner", PasswordHash: "x", IsActive: true}
+	require.NoError(t, repository.NewUserRepository(db.DB()).Create(ctx, u))
+
+	credRepo := repository.NewCalDAVCredentialRepository(db.DB())
+	addCred := func(uuid, username, password string) {
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+		require.NoError(t, err)
+		require.NoError(t, credRepo.Create(ctx, &user.CalDAVCredential{
+			UUID: uuid, UserID: u.ID, Name: username, Username: username,
+			PasswordHash: string(hash), Permission: "read-write", CreatedAt: time.Now(),
+		}))
+	}
+	addCred("lower-uuid", "calsync", "cal-sync-pass")
+	addCred("legacy-uuid", "Legacy-Cal", "legacy-pass")
+
+	propfind := func(identifier, password string) int {
+		body := `<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>`
+		req, _ := http.NewRequest("PROPFIND", "/dav/caseowner/calendars/", bytes.NewReader([]byte(body)))
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(identifier+":"+password)))
+		req.Header.Set("Content-Type", "application/xml")
+		req.Header.Set("Depth", "1")
+		resp, err := app.Test(req, davTestTimeout)
+		require.NoError(t, err)
+		return resp.StatusCode
+	}
+
+	for _, name := range []string{"calsync", "CALSYNC", "CalSync"} {
+		t.Run("username "+name+" authenticates", func(t *testing.T) {
+			assert.Equal(t, fiber.StatusMultiStatus, propfind(name, "cal-sync-pass"))
+		})
+	}
+	t.Run("username in another case with a wrong password is rejected", func(t *testing.T) {
+		assert.Equal(t, fiber.StatusUnauthorized, propfind("CALSYNC", "wrong-pass"))
+	})
+	t.Run("username in another case with another credential's password is rejected", func(t *testing.T) {
+		assert.Equal(t, fiber.StatusUnauthorized, propfind("CALSYNC", "legacy-pass"))
+	})
+	t.Run("legacy mixed-case credential as stored", func(t *testing.T) {
+		assert.Equal(t, fiber.StatusMultiStatus, propfind("Legacy-Cal", "legacy-pass"))
+	})
+}

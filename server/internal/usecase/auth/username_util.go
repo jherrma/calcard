@@ -11,8 +11,13 @@ import (
 // GenerateUniqueUsername generates a random 16-character username and ensures it's unique
 // by checking against the provided user repository. It will retry up to maxRetries times
 // if a collision occurs.
+//
+// The username is lowercase letters only, like the set-up admin's and every new
+// DAV credential's, so it is stored exactly as a client that lower-cases it
+// would send it. Accounts registered before this kept their mixed-case names
+// (they are the /dav/{username}/ URL segment and are never rewritten).
 func GenerateUniqueUsername(ctx context.Context, userRepo user.UserRepository) (string, error) {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const chars = "abcdefghijklmnopqrstuvwxyz"
 	const length = 16
 	const maxRetries = 10
 
