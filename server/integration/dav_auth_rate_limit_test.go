@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/jherrma/caldav-server/internal/config"
@@ -104,4 +105,82 @@ func TestDAVBasicAuthFailedAttemptLimiter(t *testing.T) {
 	}
 	status, _, body = propfind(as(syncer, syncerPass))
 	assert.Equal(t, http.StatusMultiStatus, status, "a valid client behind the spraying IP must keep working: %s", body)
+}
+
+// TestDAVBasicAuthConcurrentCorrectLogins (#193) — only settled failures count
+// against the per-identifier allowance, so correct Basic logins in flight at
+// the same time never spend it: a client opening more parallel connections
+// than auth_email_requests (each a bcrypt check of ~250 ms at cost 12) is let
+// in on every one. Checks in flight are capped separately at 2×
+// auth_email_requests per identifier; the burst here is exactly that cap.
+// Afterwards the identifier still has its whole failure budget.
+func TestDAVBasicAuthConcurrentCorrectLogins(t *testing.T) {
+	const identifierMax = 4
+	const concurrent = 2 * identifierMax
+	base, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
+		cfg.RateLimit.Enabled = true
+		cfg.RateLimit.AuthIPRequests = 20
+		cfg.RateLimit.AuthEmailRequests = identifierMax
+	})
+	t.Cleanup(shutdown)
+
+	const (
+		email     = "dav-parallel@example.test"
+		password  = "ParallelPass123!"
+		wrongPass = "WrongPass123!"
+	)
+	registerOn(t, base, email, password, "Parallel")
+
+	// propfind is safe to call from several goroutines: it reports errors
+	// instead of failing the test.
+	propfind := func(pass string) (int, string, error) {
+		req, err := http.NewRequest("PROPFIND", base+"/dav/", nil)
+		if err != nil {
+			return 0, "", err
+		}
+		req.Header.Set("Depth", "0")
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(email+":"+pass)))
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return 0, "", err
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body), nil
+	}
+
+	type result struct {
+		status int
+		body   string
+		err    error
+	}
+	results := make([]result, concurrent)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range results {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			status, body, err := propfind(password)
+			results[i] = result{status, body, err}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	for i, r := range results {
+		require.NoError(t, r.err)
+		assert.Equalf(t, http.StatusMultiStatus, r.status, "concurrent correct login %d of %d must be let in: %s", i+1, concurrent, r.body)
+	}
+
+	// The burst counted nothing: identifierMax wrong passwords are still 401s,
+	// and only the next attempt is the 429.
+	for i := 0; i < identifierMax; i++ {
+		status, body, err := propfind(wrongPass)
+		require.NoError(t, err)
+		require.Equalf(t, http.StatusUnauthorized, status, "failed attempt %d is within the budget: %s", i+1, body)
+	}
+	status, body, err := propfind(password)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusTooManyRequests, status, "a spent identifier refuses the correct password too: %s", body)
 }

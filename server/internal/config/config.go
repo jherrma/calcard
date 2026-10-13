@@ -163,8 +163,11 @@ type RateLimitConfig struct {
 	// AuthIPRequests and AuthEmailRequests bound the auth-specific limiters on
 	// login / forgot-password / reset-password (all within Window).
 	// AuthEmailRequests also bounds the FAILED DAV Basic-auth attempts per user
-	// name / e-mail address (successful ones are not counted); DAV Basic auth
-	// has no per-IP allowance. The per-IP allowance MUST stay above the
+	// name / e-mail address: a check counts once it has failed, never while it
+	// is in flight and never when it succeeds, so concurrent correct logins
+	// cannot use the allowance up. Checks in flight are capped separately at
+	// 2×AuthEmailRequests per user name / e-mail address. DAV Basic auth has
+	// no per-IP allowance. The per-IP allowance MUST stay above the
 	// per-email allowance: with IP <= email the IP limiter always trips first
 	// from a single source address, so the tighter per-account (per-email)
 	// control is never reached — masked in production behind a NAT/reverse

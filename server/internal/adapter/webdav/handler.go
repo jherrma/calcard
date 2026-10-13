@@ -42,9 +42,10 @@ type Handler struct {
 // BasicAuthLimiter throttles failed Basic-auth attempts (#193). Admit runs
 // before a Basic credential is checked. It returns a nil settle func once it
 // has answered the request itself (429), with the error of writing that
-// answer. Otherwise the caller calls settle exactly once with the outcome:
-// true for a valid credential (not counted), false for a failed attempt.
-// http.FailedAuthLimiter implements it.
+// answer. Otherwise the check is pending until the caller calls settle with
+// the outcome: true for a valid credential (not counted), false for a failed
+// attempt (counted). Only the first call counts. http.FailedAuthLimiter
+// implements it.
 type BasicAuthLimiter interface {
 	Admit(c fiber.Ctx, identifier string) (settle func(valid bool), err error)
 }
@@ -166,6 +167,10 @@ func (h *Handler) authenticate() fiber.Handler {
 				if settle, limitErr = h.basicLimiter.Admit(c, emailOrUsername); settle == nil {
 					return limitErr
 				}
+				// Normally settled below with the outcome (later calls are
+				// no-ops). This one only matters on a panic, which would
+				// otherwise leave the check pending for good.
+				defer settle(false)
 			}
 			u, _ = h.userRepo.GetByEmail(c.Context(), emailOrUsername)
 			if u == nil {
@@ -243,9 +248,9 @@ func (h *Handler) authenticate() fiber.Handler {
 		if u != nil && !u.IsActive {
 			u = nil
 		}
-		// Only a request that is let in gives its attempt back; anything
-		// answered 401 counts as a failed attempt. Settled here, not when the
-		// request ends, so a long REPORT does not hold its slot.
+		// Only a request answered 401 counts as a failed attempt; one that is
+		// let in counts nothing. Settled here, not when the request ends, so a
+		// long REPORT does not stay pending.
 		settle(u != nil)
 
 		if u == nil {

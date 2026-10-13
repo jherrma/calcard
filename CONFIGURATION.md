@@ -128,13 +128,24 @@ throttled request gets `429` with a `Retry-After` header: the seconds until its 
 
 DAV Basic auth (`/dav`) accepts the account password, so it is covered by the
 per-account auth limit too (`auth_email_requests`, per user name or e-mail
-address), but only **failed** attempts count: a DAV client authenticates on
-every request, and a correctly configured one never uses the allowance up. A
-request without credentials (the 401 challenge clients start with) does not
-count either. Once a user name or e-mail address has used up its failed
-attempts, every Basic-auth request for it gets `429` (with `Retry-After`) until
-the window ends, a correct password included, because answering a correct
-password differently would confirm the guess. So whoever knows an account's
+address), but only **failed** attempts count, and only once they have failed: a
+check that is still running counts nothing, and a correct password never
+counts. A DAV client authenticates on every request, often over several
+connections at once, and a correctly configured one never uses the allowance
+up. A request without credentials (the 401 challenge clients start with) does
+not count either. The window starts with the first failure. Once a user name or
+e-mail address has used up its failed attempts, every Basic-auth request for it
+gets `429` (with `Retry-After`) until the window ends, a correct password
+included, because answering a correct password differently would confirm the
+guess.
+
+Separately, at most twice `auth_email_requests` password checks (20 by default)
+may be running for one user name or e-mail address at a time; a request beyond
+that gets `429` with `Retry-After: 1`, whatever its password. This bounds the
+bcrypt work a flood can start. Because failures are counted when they finish, a
+burst of parallel wrong passwords can overshoot the allowance by what was still
+running: at most `3 × auth_email_requests − 1` (29 by default) wrong passwords
+per window. So whoever knows an account's
 user name or e-mail address can hold up the DAV clients that sign in with it
 for the rest of the window; a CalDAV/CardDAV credential has a user name of its
 own and is not affected.
