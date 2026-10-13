@@ -9,9 +9,9 @@ import pytest
 
 from harness import out
 from harness.checks import known
-from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_calendar, ics_event, ics_todo, ics_vevent
+from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_calendar, ics_event, ics_todo, ics_vevent, sync_body
 from harness.session import SetupFailed
-from harness.xml import el, lp, xcount, xstr
+from harness.xml import el, lp, xcount, xml_text, xstr
 
 DESCRIPTION = "MKCALENDAR, PUT/GET/DELETE + ETags, REPORTs, PROPPATCH, COPY/MOVE"
 
@@ -594,3 +594,47 @@ def test_delete_collection(t, e2e, u1):
     n, _, _, _ = _find_cal_by_path(u1, slug)
     t.eq(n, 0, "the calendar must be gone from REST")
     t.status(u1.dav("PROPFIND", f"{u1.home_cal}{slug}/", depth=0, xml=PROPFIND_LIST), 404)
+
+
+def test_delete_collection_leaves_nothing(t, e2e, u1):
+    """a DAV-deleted calendar is gone for good: old sync token 404s, re-created at its URL it is empty"""
+    slug = e2e.uniq("purged")
+    col = f"{u1.home_cal}{slug}/"
+    if not t.status(u1.dav("MKCALENDAR", col, xml=mkcal_body("Purged")), 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    hrefs = []
+    for i in (1, 2):
+        href = f"{col}ev{i}.ics"
+        uid = e2e.uniq(f"purged-ev{i}")
+        if not t.status(u1.dav("PUT", href, ics=ics_event(uid, f"Purged {i}", f"2030010{i}T100000Z", f"2030010{i}T110000Z")), 201):
+            return
+        hrefs.append(href)
+    r = u1.dav("REPORT", col, depth=1, xml=sync_body())
+    if not t.status(r, 207):
+        return
+    old_token = xml_text(r, "sync-token")
+    if not t.true(old_token, "the initial sync hands out a token"):
+        return
+
+    if not t.status(u1.dav("DELETE", col), 204, 200):
+        return
+    t.status(u1.dav("REPORT", col, depth=1, xml=sync_body(old_token)), 404,
+             msg="the client syncing the deleted calendar gets a 404")
+
+    if not t.status(u1.dav("MKCALENDAR", col, xml=mkcal_body("Purged again")), 201):
+        return
+    _cleanup_path(e2e, u1, slug)
+    r = u1.dav("PROPFIND", col, depth=1, xml=PROPFIND_LIST)
+    if t.status(r, 207):
+        t.eq(xcount(r, lp("response")), 1, "the re-created collection lists itself and no member")
+    for href in hrefs:
+        t.status(u1.dav("GET", href), 404, msg="an event of the deleted calendar must not reappear at its old URL")
+    r = u1.dav("REPORT", col, depth=1, xml=sync_body(old_token))
+    if t.status(r, 403, msg="the old token means nothing to the new collection"):
+        t.xpath(r, lp("error", "valid-sync-token"))
+    n, uuid, _, _ = _find_cal_by_path(u1, slug)
+    if t.eq(n, 1, "exactly one calendar at the path"):
+        r = u1.api("GET", f"/calendars/{uuid}/events?start=2030-01-01T00:00:00Z&end=2031-01-01T00:00:00Z")
+        if t.status(r, 200):
+            t.jq(r, lambda j: not j["events"], "the re-created calendar holds no events over REST either")
