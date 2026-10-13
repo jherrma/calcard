@@ -18,7 +18,19 @@ describe('passwordPolicyError', () => {
     expect(passwordPolicyError(password)).toContain(rule);
   });
 
-  it('counts a # as the special character', () => {
-    expect(passwordPolicyError('Abcdefg1#')).toBeNull();
+  // Where the server's Unicode rules differ from a naive ASCII check.
+  it.each([
+    ['Übermut2024!', 'a non-ASCII capital counts as upper case'],
+    ['Abcdé1!', 'the length is counted in bytes, so 7 characters can be 8 bytes'],
+    ['Abcdefg٣!', 'a non-ASCII digit counts as a digit'],
+  ])('accepts %s (%s)', (password) => {
+    expect(passwordPolicyError(password)).toBeNull();
+  });
+
+  it.each([
+    ['Correct horse battery 9', 'a space is not a special character'],
+    ['Abcdefg1é', 'a letter with an accent is not a special character'],
+  ])('rejects %s (%s)', (password) => {
+    expect(passwordPolicyError(password)).toContain('special');
   });
 });
