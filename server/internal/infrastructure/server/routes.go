@@ -439,11 +439,14 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	carddavBackend := webdav.NewCardDAVBackend(addressBookRepo, userRepo, abShareRepo)
 	davHandler := webdav.NewHandler(caldavBackend, carddavBackend, userRepo, appPwdRepo, caldavCredRepo, carddavCredRepo, jwtManager)
 	// DAV Basic auth accepts the account's primary password on every request,
-	// so it gets the login allowances (#193) — but only FAILED attempts count:
-	// a syncing client authenticates on every request and must never use them
-	// up. Same flag as the other auth limiters.
+	// so it gets the per-account login allowance (#193) — but only FAILED
+	// attempts count: a syncing client authenticates on every request and
+	// must never use it up. Deliberately no per-IP allowance: behind a reverse
+	// proxy every client has the proxy's IP, so one outsider's failures would
+	// throttle every DAV client of the server. Same flag as the other auth
+	// limiters.
 	if cfg.RateLimit.Enabled {
-		davHandler.WithBasicAuthLimiter(http.NewFailedAuthLimiter(authIPMax, authEmailMax, authWindow))
+		davHandler.WithBasicAuthLimiter(http.NewFailedAuthLimiter(authEmailMax, authWindow))
 	}
 
 	// RFC 6764 §5: redirect the well-known context path regardless of method.

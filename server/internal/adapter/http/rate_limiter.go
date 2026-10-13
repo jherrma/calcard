@@ -12,7 +12,8 @@ import (
 )
 
 // The 429 messages of the auth limiters. Tests and clients tell the per-IP and
-// the per-account limiter apart by them.
+// the per-account limiter apart by them. FailedAuthLimiter answers with the
+// per-account one.
 const (
 	tooManyAttemptsIPMessage      = "Too many attempts. Please try again later."
 	tooManyAttemptsAccountMessage = "Too many login attempts for this account. Please try again later."
@@ -75,28 +76,29 @@ func NewEmailRateLimiter(max int, expiration time.Duration) fiber.Handler {
 	})
 }
 
-// FailedAuthLimiter limits FAILED credential checks per client IP and per
-// identifier (the user name or e-mail address the attempt named), each in a
-// fixed window. It guards DAV Basic auth (#193), which accepts the account's
-// primary password on every request and had only the global limiter.
+// FailedAuthLimiter limits FAILED credential checks per identifier (the user
+// name or e-mail address the attempt named, trimmed and lower-cased) in a fixed
+// window. It guards DAV Basic auth (#193), which accepts the account's primary
+// password on every request and had only the global limiter. There is no
+// per-IP bucket: behind a reverse proxy every client has the proxy's IP, so one
+// would let anyone throttle every DAV client of the server.
 //
 // It is not a Fiber limiter middleware because those decide "failed" by the
 // final response status, and on /dav that is the DAV handler's: an
 // authenticated client's 404 or 412 would count as a failed login, so a
 // syncing client could lock itself out.
 //
-// Admit runs before the credential is checked and counts the attempt against
-// both keys; the settle func it returns gives the attempt back when the
-// credential turned out valid. Counting before the check is what keeps a burst
-// of parallel guesses from all passing an empty counter at once. Once either
-// key is spent, every attempt for it is a 429 until its window ends, a correct
-// password included: answering a correct password differently would tell the
-// guesser it was right.
+// Admit runs before the credential is checked and counts the attempt; the
+// settle func it returns gives the attempt back when the credential turned out
+// valid. Counting before the check is what keeps a burst of parallel guesses
+// from all passing an empty counter at once. Once an identifier is spent,
+// every attempt for it is a 429 until its window ends, a correct password
+// included: answering a correct password differently would tell the guesser
+// it was right.
 type FailedAuthLimiter struct {
-	ipMax         int
-	identifierMax int
-	window        time.Duration
-	now           func() time.Time
+	max    int
+	window time.Duration
+	now    func() time.Time
 
 	mu        sync.Mutex
 	entries   map[string]*failedAuthWindow
@@ -108,62 +110,49 @@ type failedAuthWindow struct {
 	resetAt  time.Time
 }
 
-// NewFailedAuthLimiter allows ipMax failed attempts per client IP and
-// identifierMax per identifier within window.
-func NewFailedAuthLimiter(ipMax, identifierMax int, window time.Duration) *FailedAuthLimiter {
+// NewFailedAuthLimiter allows max failed attempts per identifier within
+// window.
+func NewFailedAuthLimiter(max int, window time.Duration) *FailedAuthLimiter {
 	if window <= 0 {
 		window = time.Minute
 	}
 	return &FailedAuthLimiter{
-		ipMax:         ipMax,
-		identifierMax: identifierMax,
-		window:        window,
-		now:           time.Now,
-		entries:       map[string]*failedAuthWindow{},
+		max:     max,
+		window:  window,
+		now:     time.Now,
+		entries: map[string]*failedAuthWindow{},
 	}
 }
 
-// Admit is called before a credential is checked. When the client IP or the
-// identifier has no failed attempts left it answers the request with the auth
-// limiters' 429 (with Retry-After) and returns a nil settle func and the error
-// of writing that response. Otherwise the attempt is counted and the caller
-// must call settle exactly once: settle(true) when the credential was valid,
-// which gives the attempt back, settle(false) when it was not.
+// Admit is called before a credential is checked. When the identifier has no
+// failed attempts left it answers the request with the auth limiters' 429
+// (with Retry-After) and returns a nil settle func and the error of writing
+// that response. Otherwise the attempt is counted and the caller must call
+// settle exactly once: settle(true) when the credential was valid, which gives
+// the attempt back, settle(false) when it was not. An empty identifier is a
+// bucket of its own, so blank user names cannot run unlimited checks either.
 func (l *FailedAuthLimiter) Admit(c fiber.Ctx, identifier string) (settle func(valid bool), err error) {
-	keys := []string{"ip:" + c.IP()}
-	maxima := []int{l.ipMax}
-	if id := normalizeAuthIdentifier(identifier); id != "" {
-		keys = append(keys, "id:"+id)
-		maxima = append(maxima, l.identifierMax)
-	}
+	// Cloned: the key outlives the request, and a string Fiber hands out
+	// (c.Get, c.Params, …) may share the request buffer that the next request
+	// overwrites. ToLower and TrimSpace return their input when nothing changes.
+	key := strings.Clone(normalizeAuthIdentifier(identifier))
 
 	l.mu.Lock()
 	now := l.now()
 	l.sweep(now)
-	for i, key := range keys {
-		w := l.entries[key]
-		if w == nil || !now.Before(w.resetAt) || w.failures < maxima[i] {
-			continue
-		}
+	w := l.entries[key]
+	if w != nil && now.Before(w.resetAt) && w.failures >= l.max {
 		l.mu.Unlock()
-		message := tooManyAttemptsIPMessage
-		if i > 0 {
-			message = tooManyAttemptsAccountMessage
-		}
 		retryAfter := int((w.resetAt.Sub(now) + time.Second - 1) / time.Second)
 		c.Set(fiber.HeaderRetryAfter, strconv.Itoa(retryAfter))
-		return nil, ErrorResponse(c, fiber.StatusTooManyRequests, message)
+		return nil, ErrorResponse(c, fiber.StatusTooManyRequests, tooManyAttemptsAccountMessage)
 	}
-	counted := make([]*failedAuthWindow, len(keys))
-	for i, key := range keys {
-		w := l.entries[key]
-		if w == nil || !now.Before(w.resetAt) {
-			w = &failedAuthWindow{resetAt: now.Add(l.window)}
-			l.entries[key] = w
-		}
-		w.failures++
-		counted[i] = w
+	if w == nil || !now.Before(w.resetAt) {
+		w = &failedAuthWindow{resetAt: now.Add(l.window)}
+		l.entries[key] = w
 	}
+	w.failures++
+	counted := w
 	l.mu.Unlock()
 
 	var once sync.Once
@@ -174,13 +163,11 @@ func (l *FailedAuthLimiter) Admit(c fiber.Ctx, identifier string) (settle func(v
 			}
 			l.mu.Lock()
 			defer l.mu.Unlock()
-			for i, key := range keys {
-				// Only give the attempt back to the window it was counted in.
-				if w := l.entries[key]; w == counted[i] && w.failures > 0 {
-					w.failures--
-					if w.failures == 0 {
-						delete(l.entries, key)
-					}
+			// Only give the attempt back to the window it was counted in.
+			if w := l.entries[key]; w == counted && w.failures > 0 {
+				w.failures--
+				if w.failures == 0 {
+					delete(l.entries, key)
 				}
 			}
 		})

@@ -48,7 +48,7 @@ func TestEmailRateLimiterNormalisesTheAddress(t *testing.T) {
 // back, and a spent key opens again when its window ends.
 func TestFailedAuthLimiter(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
-	l := NewFailedAuthLimiter(4, 2, time.Minute)
+	l := NewFailedAuthLimiter(2, time.Minute)
 	l.now = func() time.Time { return now }
 
 	var inFlight []func(bool)
@@ -104,15 +104,5 @@ func TestFailedAuthLimiter(t *testing.T) {
 		now = now.Add(40 * time.Second)
 		status, _, _ = attempt("b@x", "valid")
 		assert.Equal(t, fiber.StatusNoContent, status)
-	})
-
-	t.Run("the IP allowance covers every identifier", func(t *testing.T) {
-		for _, id := range []string{"c1@x", "c2@x", "c3@x", "c4@x"} {
-			status, _, _ := attempt(id, "invalid")
-			require.Equal(t, fiber.StatusNoContent, status)
-		}
-		status, _, body := attempt("c5@x", "valid")
-		assert.Equal(t, fiber.StatusTooManyRequests, status)
-		assert.Contains(t, body, tooManyAttemptsIPMessage)
 	})
 }

@@ -161,16 +161,16 @@ type RateLimitConfig struct {
 	Window   time.Duration `yaml:"window" env:"CALDAV_RATE_LIMIT_WINDOW"`
 
 	// AuthIPRequests and AuthEmailRequests bound the auth-specific limiters on
-	// login / forgot-password / reset-password (all within Window), and the
-	// FAILED DAV Basic-auth attempts per IP and per user name / e-mail address
-	// (successful ones are not counted, so syncing clients never use them up).
-	// The per-IP
-	// allowance MUST stay above the per-email allowance: with IP <= email the
-	// IP limiter always trips first from a single source address, so the tighter
-	// per-account (per-email) control is never reached — masked in production
-	// behind a NAT/reverse proxy where every client shares one c.IP(), and
-	// impossible to exercise from a single-connection test. reset-password has
-	// no email to key on, so it uses only the per-IP allowance.
+	// login / forgot-password / reset-password (all within Window).
+	// AuthEmailRequests also bounds the FAILED DAV Basic-auth attempts per user
+	// name / e-mail address (successful ones are not counted); DAV Basic auth
+	// has no per-IP allowance. The per-IP allowance MUST stay above the
+	// per-email allowance: with IP <= email the IP limiter always trips first
+	// from a single source address, so the tighter per-account (per-email)
+	// control is never reached — masked in production behind a NAT/reverse
+	// proxy where every client shares one c.IP(), and impossible to exercise
+	// from a single-connection test. reset-password has no email to key on, so
+	// it uses only the per-IP allowance.
 	AuthIPRequests    int `yaml:"auth_ip_requests" env:"CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS"`
 	AuthEmailRequests int `yaml:"auth_email_requests" env:"CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS"`
 }

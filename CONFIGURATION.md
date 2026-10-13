@@ -117,7 +117,7 @@ uses `net/smtp.SendMail`) and has no further TLS options:
 | `enabled`             | `CALDAV_RATE_LIMIT_ENABLED`             | `true`  | Enable rate limiting (the global limiter and the auth limiters below). |
 | `requests`            | `CALDAV_RATE_LIMIT_REQUESTS`            | `5000`  | Requests **per client IP** allowed in the window, across the REST API, DAV, MCP and public feeds (web UI static assets are not counted). A value `<= 0` is reset to the default. |
 | `window`              | `CALDAV_RATE_LIMIT_WINDOW`              | `1m`    | Time window for rate limiting. |
-| `auth_ip_requests`    | `CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS`    | `20`    | Login / forgot-password / reset-password attempts per IP in the window, and **failed** DAV Basic-auth attempts per IP. Must stay above `auth_email_requests`. |
+| `auth_ip_requests`    | `CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS`    | `20`    | Login / forgot-password / reset-password attempts per IP in the window. Not used for DAV Basic auth (see below). Must stay above `auth_email_requests`. |
 | `auth_email_requests` | `CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS` | `10`    | Login / forgot-password (and, with SMTP, register) attempts per e-mail address in the window, and **failed** DAV Basic-auth attempts per user name or e-mail address. Addresses are compared trimmed and case-insensitively, as the account lookup does, so `Foo@x`, `foo@x` and ` foo@x ` share one allowance. |
 
 The global limit is keyed on the client IP as the server sees it, and forwarded
@@ -127,15 +127,23 @@ flood, not against password guessing — the much tighter auth limits do that. A
 throttled request gets `429` with a `Retry-After` header: the seconds until its window resets (also in the JSON body as `retry_after`).
 
 DAV Basic auth (`/dav`) accepts the account password, so it is covered by the
-auth limits too, but only **failed** attempts count: a DAV client authenticates
-on every request, and a correctly configured one never uses the allowance up. A
+per-account auth limit too (`auth_email_requests`, per user name or e-mail
+address), but only **failed** attempts count: a DAV client authenticates on
+every request, and a correctly configured one never uses the allowance up. A
 request without credentials (the 401 challenge clients start with) does not
-count either. Once the IP or the user name has used up its failed attempts,
-every Basic-auth request for it gets `429` (with `Retry-After`) until the window
-ends, a correct password included, because answering a correct password
-differently would confirm the guess. Behind a NAT or reverse proxy that shares
-one IP, a misconfigured client can therefore hold up the other clients behind
-it for the rest of the window.
+count either. Once a user name or e-mail address has used up its failed
+attempts, every Basic-auth request for it gets `429` (with `Retry-After`) until
+the window ends, a correct password included, because answering a correct
+password differently would confirm the guess. So whoever knows an account's
+user name or e-mail address can hold up the DAV clients that sign in with it
+for the rest of the window; a CalDAV/CardDAV credential has a user name of its
+own and is not affected.
+
+There is **no per-IP limit on `/dav`**: behind a reverse proxy every client has
+the proxy's address, so a per-IP limit would let one outsider's wrong passwords
+throttle every DAV client of the server. Guessing across many accounts from one
+address is therefore bounded only by each account's allowance and the global
+`requests` limit.
 
 ### Registration Section (`registration:`)
 

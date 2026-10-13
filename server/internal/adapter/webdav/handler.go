@@ -160,7 +160,7 @@ func (h *Handler) authenticate() fiber.Handler {
 
 			emailOrUsername, password := pair[0], pair[1]
 			if h.basicLimiter != nil {
-				// Before any lookup or bcrypt: a spent IP or identifier is
+				// Before any lookup or bcrypt: a spent identifier is
 				// answered without costing CPU.
 				var limitErr error
 				if settle, limitErr = h.basicLimiter.Admit(c, emailOrUsername); settle == nil {

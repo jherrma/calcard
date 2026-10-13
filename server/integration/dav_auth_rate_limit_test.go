@@ -15,14 +15,15 @@ import (
 )
 
 // TestDAVBasicAuthFailedAttemptLimiter (#193) — DAV Basic auth accepts the
-// account password on every request, so FAILED attempts are limited per client
-// IP and per identifier (the user name or e-mail address, trimmed and
-// lower-cased) with the login allowances. Successful attempts and the
-// credential-less 401 challenge are not counted, so a syncing client on the
-// same IP keeps working while a guesser is throttled. Every request here comes
-// from 127.0.0.1.
+// account password on every request, so FAILED attempts are limited per
+// identifier (the user name or e-mail address, trimmed and lower-cased) with
+// the per-account login allowance. Successful attempts and the credential-less
+// 401 challenge are not counted, and there is no per-IP allowance, so a
+// syncing client on the same IP keeps working while a guesser is throttled.
+// Every request here comes from 127.0.0.1.
 func TestDAVBasicAuthFailedAttemptLimiter(t *testing.T) {
-	const ipMax, identifierMax = 6, 3
+	// The per-IP auth allowance is set low: the DAV limiter must not use it.
+	const ipMax, identifierMax = 4, 3
 	base, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
 		cfg.RateLimit.Enabled = true
 		cfg.RateLimit.AuthIPRequests = ipMax
@@ -37,7 +38,6 @@ func TestDAVBasicAuthFailedAttemptLimiter(t *testing.T) {
 		syncerPass   = "SyncerPass123!"
 		wrongPass    = "WrongPass123!"
 		accountLimit = "Too many login attempts for this account"
-		ipLimit      = "Too many attempts. Please try again later."
 	)
 	registerOn(t, base, victim, victimPass, "Victim")
 	registerOn(t, base, syncer, syncerPass, "Syncer")
@@ -91,24 +91,17 @@ func TestDAVBasicAuthFailedAttemptLimiter(t *testing.T) {
 	status, _, _ = propfind(as("  DAV-Victim@Example.TEST ", wrongPass))
 	assert.Equal(t, http.StatusTooManyRequests, status, "a case/whitespace variant shares the identifier's bucket")
 
-	// A correctly authenticated client on the same IP is not throttled: the IP
-	// has identifierMax failures, below its allowance of ipMax.
+	// A correctly authenticated client on the same IP is not throttled.
 	status, _, body = propfind(as(syncer, syncerPass))
 	require.Equal(t, http.StatusMultiStatus, status, "a valid client on the same IP must keep working: %s", body)
 
-	// Spraying other identifiers from this IP spends the per-IP allowance.
-	for i := 0; i < ipMax-identifierMax; i++ {
+	// No per-IP allowance on DAV: spraying more fresh identifiers from this IP
+	// than auth_ip_requests allows is answered 401 every time, and the valid
+	// client behind the same IP still gets in.
+	for i := 0; i < ipMax+1; i++ {
 		status, _, body := propfind(as(fmt.Sprintf("spray-%d@example.test", i), wrongPass))
-		require.Equalf(t, http.StatusUnauthorized, status, "spray attempt %d: %s", i+1, body)
+		require.Equalf(t, http.StatusUnauthorized, status, "spray attempt %d must not hit a per-IP limit: %s", i+1, body)
 	}
-	status, header, body = propfind(as("spray-last@example.test", wrongPass))
-	require.Equal(t, http.StatusTooManyRequests, status, body)
-	assert.Contains(t, body, ipLimit)
-	assert.NotContains(t, body, accountLimit, "a fresh identifier is stopped by the per-IP limiter")
-	assert.NotEmpty(t, header.Get("Retry-After"))
-
-	// From now until the window ends, every Basic attempt from this IP is a
-	// 429, a valid one included — otherwise the 429 would not stop the guesser.
-	status, _, _ = propfind(as(syncer, syncerPass))
-	assert.Equal(t, http.StatusTooManyRequests, status)
+	status, _, body = propfind(as(syncer, syncerPass))
+	assert.Equal(t, http.StatusMultiStatus, status, "a valid client behind the spraying IP must keep working: %s", body)
 }
