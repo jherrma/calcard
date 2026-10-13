@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -67,8 +69,8 @@ func (s *Server) toolFindFreeSlots(cc *callContext, args json.RawMessage) (*tool
 		CalendarIDs     []string `json:"calendar_ids"`
 		IncludeAllDay   bool     `json:"include_all_day"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	start, err := parseTime("start", in.Start)
@@ -98,7 +100,7 @@ func (s *Server) toolFindFreeSlots(cc *callContext, args json.RawMessage) (*tool
 	// shared — rather than a second, divergent notion of the user's calendars.
 	cals, err := s.deps.CalendarList.Execute(cc.ctx, cc.userID)
 	if err != nil {
-		return errorResult("Failed to list calendars: " + err.Error()), nil
+		return toolInternalError("find_free_slots", err), nil
 	}
 
 	wanted := map[string]bool{}
@@ -121,7 +123,12 @@ func (s *Server) toolFindFreeSlots(cc *callContext, args json.RawMessage) (*tool
 			Expand:     true,
 		})
 		if err != nil {
-			return errorResult("Failed to read events from calendar " + c.Name + ": " + err.Error()), nil
+			// The calendar's name stays in the answer — the caller just listed
+			// it, and knowing which calendar failed lets the model retry with
+			// calendar_ids that leave it out. The error's text does not.
+			logInternalError("mcp tool failed", err,
+				slog.String("tool", "find_free_slots"), slog.String("calendar_id", c.UUID))
+			return errorResult(internalErrorText(fmt.Sprintf("find_free_slots while it read the calendar %q", c.Name))), nil
 		}
 		for _, inst := range instances {
 			if inst.IsAllDay && !in.IncludeAllDay {

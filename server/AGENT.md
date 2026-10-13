@@ -90,6 +90,12 @@ handler's check. Never derive ownership from the capped calendar permission: it 
 out of renaming or deleting their own subscription. Disable the whole surface with
 `CALDAV_MCP_ENABLED=false`.
 
+Like REST, a tool never hands the model a storage error: anything the caller cannot fix is one
+generic sentence with the cause in the server log (`toolInternalError`), and only validation,
+permission and not-found answers carry their own text. Tool arguments are strict — an argument the
+schema does not declare (a typo like `calender_id`, or a case variant) is refused as a tool error
+that lists the accepted ones, instead of being dropped while the tool runs with its default.
+
 ## Context Files
 
 Each `internal/` subdirectory has its own AGENT.md with detailed file listings:

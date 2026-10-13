@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -58,10 +59,14 @@ type Deps struct {
 //
 // The two return values separate the two kinds of failure MCP distinguishes: a
 // *toolCallResult with IsError set is a tool that ran and failed in a way the
-// model should read and react to ("that calendar is read-only"), while an
-// *RPCError is a protocol fault the model cannot act on (bad JSON, unknown
-// tool). Conflating them either hides real errors from the model or turns
-// ordinary refusals into transport errors.
+// model should read and react to ("that calendar is read-only", a misspelt
+// argument), while an *RPCError is a protocol fault the model cannot act on
+// (a malformed request, unknown tool). Conflating them either hides real
+// errors from the model or turns ordinary refusals into transport errors.
+//
+// Every tool starts with decodeArgs (args.go), which refuses arguments its
+// schema does not declare, and answers a failure it cannot attribute to the
+// request with toolInternalError (errors.go), never with the error's text.
 type toolFunc func(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError)
 
 // Server dispatches MCP JSON-RPC messages. It is stateless apart from the
@@ -196,10 +201,18 @@ func (s *Server) handleInitialize(req *Request, userID uint) (*Response, string)
 }
 
 // handleToolCall routes tools/call to the registered implementation.
+//
+// The params object itself is decoded leniently on purpose: MCP lets a client
+// put `_meta` (a progress token, tracing data) next to `name` and `arguments`,
+// and later protocol versions add fields there. Only `arguments` — the tool's
+// own input — is strict, in decodeArgs.
 func (s *Server) handleToolCall(cc *callContext, req *Request) *Response {
 	var params toolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return errorResponse(req.ID, rpcErrorf(CodeInvalidParams, "invalid tools/call params: %v", err))
+		// Not the decoder's text: it names Go types ("Go struct field
+		// toolCallParams.name of type string").
+		return errorResponse(req.ID, rpcError(CodeInvalidParams,
+			`invalid tools/call params: expected {"name": string, "arguments": object}`))
 	}
 	fn, ok := s.tools[params.Name]
 	if !ok {
@@ -207,11 +220,15 @@ func (s *Server) handleToolCall(cc *callContext, req *Request) *Response {
 	}
 
 	args := params.Arguments
-	if len(args) == 0 {
+	if trimmed := bytes.TrimSpace(args); len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		// A tool with no required arguments may be called with `arguments`
 		// omitted entirely; give the decoder an empty object rather than
 		// failing on empty input.
 		args = json.RawMessage(`{}`)
+	} else if trimmed[0] != '{' {
+		// `arguments` is an object in the CallToolRequest schema, so anything
+		// else is a malformed request rather than bad input to the tool.
+		return errorResponse(req.ID, rpcError(CodeInvalidParams, "invalid tools/call params: arguments must be a JSON object"))
 	}
 
 	result, rpcErr := fn(cc, args)
@@ -231,19 +248,10 @@ func (s *Server) handleToolCall(cc *callContext, req *Request) *Response {
 func jsonText(v interface{}) (*toolCallResult, *RPCError) {
 	buf, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return nil, rpcErrorf(CodeInternalError, "failed to encode result: %v", err)
+		logInternalError("mcp tool result could not be encoded", err)
+		return nil, rpcError(CodeInternalError, internalErrorText(MethodToolsCall))
 	}
 	return textResult(string(buf)), nil
-}
-
-// decodeArgs unmarshals tool arguments, reporting a schema mismatch as an
-// invalid-params protocol error (the client sent something its own schema
-// forbade) rather than a tool error.
-func decodeArgs(args json.RawMessage, dst interface{}) *RPCError {
-	if err := json.Unmarshal(args, dst); err != nil {
-		return rpcErrorf(CodeInvalidParams, "invalid arguments: %v", err)
-	}
-	return nil
 }
 
 // parseTime accepts an RFC 3339 timestamp, and also a bare date for the

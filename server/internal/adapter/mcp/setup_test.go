@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -217,6 +220,82 @@ func (e *testEnv) callRaw(userID uint, tool string, args map[string]interface{})
 	result, rpcErr := fn(cc, encoded)
 	require.Nil(e.t, rpcErr, "tool %s failed at the protocol level: %v", tool, rpcErr)
 	require.NotNil(e.t, result)
+	require.NotEmpty(e.t, result.Content)
+	return result
+}
+
+// injectedFailure is the text of every storage failure the tests inject. A
+// tool answer that contains it has leaked a driver message to the model.
+const injectedFailure = "injected storage failure"
+
+// failWrites makes every INSERT, UPDATE and DELETE on table abort with
+// injectedFailure until the test ends (the F28 technique: break the schema
+// under the real use cases rather than mocking them). Reads keep working, so
+// the tools' permission checks still pass and the failure hits the use case.
+func (e *testEnv) failWrites(t *testing.T, table string) {
+	t.Helper()
+	for _, op := range []string{"INSERT", "UPDATE", "DELETE"} {
+		trigger := "mcp_fail_" + strings.ToLower(op) + "_" + table
+		require.NoError(t, e.db.Exec("CREATE TRIGGER "+trigger+" BEFORE "+op+" ON "+table+
+			" BEGIN SELECT RAISE(ABORT, '"+injectedFailure+"'); END").Error)
+		t.Cleanup(func() { require.NoError(t, e.db.Exec("DROP TRIGGER "+trigger).Error) })
+	}
+}
+
+// hideTable renames table away, so every statement touching it fails with
+// SQLite's "no such table: <table>" until the test ends. SQLite has no SELECT
+// triggers; this is how a read is made to fail.
+func (e *testEnv) hideTable(t *testing.T, table string) {
+	t.Helper()
+	require.NoError(t, e.db.Exec("ALTER TABLE "+table+" RENAME TO "+table+"_hidden").Error)
+	t.Cleanup(func() {
+		require.NoError(t, e.db.Exec("ALTER TABLE "+table+"_hidden RENAME TO "+table).Error)
+	})
+}
+
+// captureLogs routes the default slog logger into a buffer until the test
+// ends, so a test can assert that a cause the caller is not shown WAS logged.
+// Tests in this package do not run in parallel, so swapping the default is
+// safe.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
+}
+
+// dbSnapshot renders every row of every table, so a test can prove that a
+// refused call wrote nothing at all.
+func (e *testEnv) dbSnapshot() string {
+	e.t.Helper()
+	// SQLite's own bookkeeping (sqlite_sequence) has untyped columns that scan
+	// as fresh pointers every time; the application tables are what matter.
+	var tables []string
+	require.NoError(e.t, e.db.Raw("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").
+		Scan(&tables).Error)
+
+	var b strings.Builder
+	for _, table := range tables {
+		var rows []map[string]interface{}
+		require.NoError(e.t, e.db.Raw("SELECT * FROM "+table+" ORDER BY rowid").Scan(&rows).Error)
+		fmt.Fprintf(&b, "%s: %v\n", table, rows)
+	}
+	require.Contains(e.t, b.String(), "calendars: ", "the snapshot must cover the application tables")
+	return b.String()
+}
+
+// callTool calls a tool through the dispatcher — the path a client's
+// tools/call takes, handleToolCall included — and returns its result. A
+// JSON-RPC error fails the test.
+func (e *testEnv) callTool(userID uint, tool string, args interface{}) *toolCallResult {
+	e.t.Helper()
+	resp := e.rpc(userID, MethodToolsCall, map[string]interface{}{"name": tool, "arguments": args})
+	require.NotNil(e.t, resp)
+	require.Nil(e.t, resp.Error, "tools/call %s failed at the protocol level: %v", tool, resp.Error)
+	result, ok := resp.Result.(*toolCallResult)
+	require.True(e.t, ok, "tools/call %s returned %T", tool, resp.Result)
 	require.NotEmpty(e.t, result.Content)
 	return result
 }

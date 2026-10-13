@@ -3,7 +3,6 @@ package mcp
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
@@ -153,21 +152,11 @@ func addressBookNotOwned(id string) *toolCallResult {
 	return errorResult("No address book with id " + id + " is owned by you. Only an address book's owner can change or delete it.")
 }
 
-// toolInternalError answers a tool whose use case failed for a reason the
-// caller cannot fix — storage, typically. Same rule as REST's calendarError
-// (F28): the model gets a generic sentence and the cause goes to the server log
-// only, because a driver message ("no such table: …", constraint names, SQL)
-// describes the server's internals, not anything about the request.
-func toolInternalError(tool string, err error) *toolCallResult {
-	slog.Error("mcp tool failed", slog.String("tool", tool), slog.Any("error", err))
-	return errorResult("An internal server error stopped " + tool + ". The details were logged on the server; try again later.")
-}
-
 // calendarToolError maps a calendar use-case error the way REST's
 // calendarError does: not found (missing or not owned) → the "not owned"
 // answer, ErrInvalidInput → its bare message (validation, the DELETE
 // confirmation, the last-calendar guard), anything else → a generic internal
-// error.
+// error (toolInternalError, errors.go).
 func calendarToolError(tool, calendarID string, err error) *toolCallResult {
 	switch {
 	case errors.Is(err, calendar.ErrNotFound):
@@ -211,8 +200,8 @@ func (s *Server) toolCreateCalendar(cc *callContext, args json.RawMessage) (*too
 		Color       string `json:"color"`
 		Timezone    string `json:"timezone"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	// Validation (name, length limits, colour, IANA zone) and the defaults are
@@ -244,8 +233,8 @@ func (s *Server) toolUpdateCalendar(cc *callContext, args json.RawMessage) (*too
 		Color       *string `json:"color"`
 		Timezone    *string `json:"timezone"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.CalendarID == "" {
 		return errorResult("calendar_id is required."), nil
@@ -274,8 +263,8 @@ func (s *Server) toolDeleteCalendar(cc *callContext, args json.RawMessage) (*too
 		CalendarID   string `json:"calendar_id"`
 		Confirmation string `json:"confirmation"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.CalendarID == "" {
 		return errorResult("calendar_id is required."), nil
@@ -302,8 +291,8 @@ func (s *Server) toolCreateAddressBook(cc *callContext, args json.RawMessage) (*
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	ab, err := s.deps.AddressBookCreate.Execute(cc.ctx, addressbookuc.CreateInput{
@@ -330,8 +319,8 @@ func (s *Server) toolUpdateAddressBook(cc *callContext, args json.RawMessage) (*
 		Name          *string `json:"name"`
 		Description   *string `json:"description"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.AddressBookID == "" {
 		return errorResult("address_book_id is required."), nil
@@ -366,8 +355,8 @@ func (s *Server) toolDeleteAddressBook(cc *callContext, args json.RawMessage) (*
 		AddressBookID string `json:"address_book_id"`
 		Confirmation  string `json:"confirmation"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.AddressBookID == "" {
 		return errorResult("address_book_id is required."), nil

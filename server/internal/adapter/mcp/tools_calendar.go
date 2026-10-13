@@ -177,10 +177,23 @@ func permissionLabel(p calendar.CalendarPermission) string {
 	}
 }
 
-func (s *Server) toolListCalendars(cc *callContext, _ json.RawMessage) (*toolCallResult, *RPCError) {
+func (s *Server) toolListCalendars(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
+	if bad := decodeArgs(args, &struct{}{}); bad != nil {
+		return bad, nil
+	}
+	listing, err := s.calendarListing(cc)
+	if err != nil {
+		return toolInternalError("list_calendars", err), nil
+	}
+	return jsonText(listing)
+}
+
+// calendarListing is the payload of list_calendars and of the calendars://list
+// resource alike, so the two can never drift apart.
+func (s *Server) calendarListing(cc *callContext) (map[string]interface{}, error) {
 	cals, err := s.deps.CalendarList.Execute(cc.ctx, cc.userID)
 	if err != nil {
-		return errorResult("Failed to list calendars: " + err.Error()), nil
+		return nil, err
 	}
 
 	views := make([]calendarView, 0, len(cals))
@@ -201,7 +214,7 @@ func (s *Server) toolListCalendars(cc *callContext, _ json.RawMessage) (*toolCal
 		}
 		views = append(views, v)
 	}
-	return jsonText(map[string]interface{}{"calendars": views, "count": len(views)})
+	return map[string]interface{}{"calendars": views, "count": len(views)}, nil
 }
 
 func (s *Server) toolGetEvents(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
@@ -210,8 +223,8 @@ func (s *Server) toolGetEvents(cc *callContext, args json.RawMessage) (*toolCall
 		Start      string `json:"start"`
 		End        string `json:"end"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	calID, perm := s.resolveCalendar(cc, in.CalendarID)
@@ -245,7 +258,7 @@ func (s *Server) toolGetEvents(cc *callContext, args json.RawMessage) (*toolCall
 		Expand:     true,
 	})
 	if err != nil {
-		return errorResult("Failed to list events: " + err.Error()), nil
+		return toolInternalError("get_events", err), nil
 	}
 
 	truncated := false
@@ -322,8 +335,8 @@ func (s *Server) toolCreateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		AllDay      bool   `json:"all_day"`
 		Timezone    string `json:"timezone"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if in.Title == "" {
 		return errorResult("title is required."), nil
@@ -360,7 +373,7 @@ func (s *Server) toolCreateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
 		}
-		return errorResult("Failed to create the event: " + err.Error()), nil
+		return toolInternalError("create_event", err), nil
 	}
 
 	return jsonText(map[string]interface{}{
@@ -382,8 +395,8 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		RecurrenceID string  `json:"recurrence_id"`
 		Scope        string  `json:"scope"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	obj, perm := s.eventPermission(cc, in.EventID)
@@ -426,7 +439,7 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
 		}
-		return errorResult("Failed to update the event: " + err.Error()), nil
+		return toolInternalError("update_event", err), nil
 	}
 
 	calUUID := s.calendarUUID(cc, obj.CalendarID)
@@ -442,8 +455,8 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 		RecurrenceID string `json:"recurrence_id"`
 		Scope        string `json:"scope"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 
 	_, perm := s.eventPermission(cc, in.EventID)
@@ -463,7 +476,7 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
 		}
-		return errorResult("Failed to delete the event: " + err.Error()), nil
+		return toolInternalError("delete_event", err), nil
 	}
 
 	return jsonText(map[string]interface{}{
@@ -480,8 +493,8 @@ func (s *Server) toolSearchEvents(cc *callContext, args json.RawMessage) (*toolC
 		End   string `json:"end"`
 		Limit int    `json:"limit"`
 	}
-	if rpcErr := decodeArgs(args, &in); rpcErr != nil {
-		return nil, rpcErr
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
 	}
 	if len(in.Query) < searchuc.MinQueryLength {
 		return errorResult("query must be at least 2 characters."), nil
@@ -511,7 +524,7 @@ func (s *Server) toolSearchEvents(cc *callContext, args json.RawMessage) (*toolC
 
 	out, err := s.deps.Search.Execute(cc.ctx, input)
 	if err != nil {
-		return errorResult("Search failed: " + err.Error()), nil
+		return toolInternalError("search_events", err), nil
 	}
 
 	views := make([]map[string]interface{}, 0, len(out.Events.Items))
