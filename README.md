@@ -2,7 +2,7 @@
   <img src="webinterface/public/icon.svg" alt="CalCard logo" width="128" height="128">
 </p>
 
-<h1 align="center">CalCard Server</h1>
+<h1 align="center">CalCard</h1>
 
 CalCard is a high-performance CalDAV and CardDAV server written in Go. It provides synchronization for calendars (RFC 4791) and contacts (RFC 6352) across various clients like iOS, Android (via DAVx5), Thunderbird, and more.
 
