@@ -78,6 +78,28 @@ func TestLoginRateLimiter(t *testing.T) {
 			"the IP limiter (allowance 20) must not have fired at request <=5 (got body: %q)", firstLimitedBody)
 	})
 
+	t.Run("case and whitespace variants share the per-email bucket", func(t *testing.T) {
+		// #193: the key used to be the raw body e-mail, so every spelling of
+		// one address got a fresh allowance while reaching the same account.
+		rlURL, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
+			cfg.RateLimit.Enabled = true
+			cfg.RateLimit.AuthIPRequests = 20
+			cfg.RateLimit.AuthEmailRequests = 3
+		})
+		t.Cleanup(shutdown)
+		registerOn(t, rlURL, "variant@example.test", "variantSecret!123", "Variant User")
+
+		var statuses []int
+		var lastBody string
+		for _, email := range []string{"Variant@example.test", "VARIANT@EXAMPLE.TEST", " variant@example.test ", "variant@example.test"} {
+			status, body := postLoginOn(t, rlURL, email, "WRONG-PASSWORD")
+			statuses = append(statuses, status)
+			lastBody = string(body)
+		}
+		assert.Equal(t, []int{http.StatusUnauthorized, http.StatusUnauthorized, http.StatusUnauthorized, http.StatusTooManyRequests}, statuses)
+		assert.Contains(t, lastBody, emailLimitMsg, "the per-EMAIL limiter fired across the variants")
+	})
+
 	t.Run("IP limiter still trips on a spray across distinct emails", func(t *testing.T) {
 		// Distinct emails never accumulate on any single per-email key, so the
 		// per-IP limiter is the only thing that can stop an account-spraying

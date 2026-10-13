@@ -117,14 +117,44 @@ uses `net/smtp.SendMail`) and has no further TLS options:
 | `enabled`             | `CALDAV_RATE_LIMIT_ENABLED`             | `true`  | Enable rate limiting (the global limiter and the auth limiters below). |
 | `requests`            | `CALDAV_RATE_LIMIT_REQUESTS`            | `5000`  | Requests **per client IP** allowed in the window, across the REST API, DAV, MCP and public feeds (web UI static assets are not counted). A value `<= 0` is reset to the default. |
 | `window`              | `CALDAV_RATE_LIMIT_WINDOW`              | `1m`    | Time window for rate limiting. |
-| `auth_ip_requests`    | `CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS`    | `20`    | Login / forgot-password / reset-password attempts per IP in the window. Must stay above `auth_email_requests`. |
-| `auth_email_requests` | `CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS` | `10`    | Login / forgot-password attempts per e-mail address in the window. |
+| `auth_ip_requests`    | `CALDAV_RATE_LIMIT_AUTH_IP_REQUESTS`    | `20`    | Login / forgot-password / reset-password attempts per IP in the window. Not used for DAV Basic auth (see below). Must stay above `auth_email_requests`. |
+| `auth_email_requests` | `CALDAV_RATE_LIMIT_AUTH_EMAIL_REQUESTS` | `10`    | Login / forgot-password (and, with SMTP, register) attempts per e-mail address in the window, and **failed** DAV Basic-auth attempts per user name or e-mail address. Addresses are compared trimmed and case-insensitively, as the account lookup does, so `Foo@x`, `foo@x` and ` foo@x ` share one allowance. |
 
 The global limit is keyed on the client IP as the server sees it, and forwarded
 headers are not trusted, so **everyone behind one NAT or reverse proxy shares a
 single allowance**. That is why the default is generous: it guards against a
 flood, not against password guessing — the much tighter auth limits do that. A
 throttled request gets `429` with a `Retry-After` header: the seconds until its window resets (also in the JSON body as `retry_after`).
+
+DAV Basic auth (`/dav`) accepts the account password, so it is covered by the
+per-account auth limit too (`auth_email_requests`, per user name or e-mail
+address), but only **failed** attempts count, and only once they have failed: a
+check that is still running counts nothing, and a correct password never
+counts. A DAV client authenticates on every request, often over several
+connections at once, and a correctly configured one never uses the allowance
+up. A request without credentials (the 401 challenge clients start with) does
+not count either. The window starts with the first failure. Once a user name or
+e-mail address has used up its failed attempts, every Basic-auth request for it
+gets `429` (with `Retry-After`) until the window ends, a correct password
+included, because answering a correct password differently would confirm the
+guess.
+
+Separately, at most twice `auth_email_requests` password checks (20 by default)
+may be running for one user name or e-mail address at a time; a request beyond
+that gets `429` with `Retry-After: 1`, whatever its password. This bounds the
+bcrypt work a flood can start. Because failures are counted when they finish, a
+burst of parallel wrong passwords can overshoot the allowance by what was still
+running: at most `3 × auth_email_requests − 1` (29 by default) wrong passwords
+per window. So whoever knows an account's
+user name or e-mail address can hold up the DAV clients that sign in with it
+for the rest of the window; a CalDAV/CardDAV credential has a user name of its
+own and is not affected.
+
+There is **no per-IP limit on `/dav`**: behind a reverse proxy every client has
+the proxy's address, so a per-IP limit would let one outsider's wrong passwords
+throttle every DAV client of the server. Guessing across many accounts from one
+address is therefore bounded only by each account's allowance and the global
+`requests` limit.
 
 ### Registration Section (`registration:`)
 
@@ -144,17 +174,27 @@ provider from the account settings still works). Login and sharing wait for
 nothing: a share addressed to the account by e-mail reaches it either way.
 Completing a password reset also confirms the address, and it signs out every
 session and deletes every app password, CalDAV/CardDAV credential, MCP token
-and OAuth link of the account, so whoever registered the address first keeps no
-way back in.
+and OAuth link of the account, so whoever registered the address first can no
+longer sign in to it. A reset does **not** remove the account's outgoing shares,
+public calendar links or calendar subscriptions: a calendar or address book the
+account shared with another account stays shared, and a public link keeps
+working. After resetting the password of an account you did not set up
+yourself, open the **Share** dialog of each of its calendars and address books
+and revoke the shares and public links you do not recognise (and remove unknown
+feeds under **Settings → Subscriptions**).
 
 An address that already has an account answers `409 Email already registered`
 in both modes, so registration reveals whether an address has an account (the
 new account would be usable at once, so the outcome could not be hidden). With
 SMTP the owner also gets a "someone tried to register with your address" e-mail
-(or, if the address was never confirmed, a fresh activation link; the password
-is never changed), and `/register` carries the same per-IP and per-email
-limiters as forgot-password (`rate_limit.enabled` must be on). If enumeration
-matters on an internet-facing server, set `CALDAV_REGISTRATION_DISABLED=true`.
+(the password is never changed). It never carries an activation link, not even
+for an address that was never confirmed: that account has the password of
+whoever registered first, so the e-mail sends the owner to the password reset,
+which confirms the address and ends every session and credential of whoever
+registered first (the account's shares and public links stay, see above).
+`/register` carries the same per-IP and per-email limiters as forgot-password
+(`rate_limit.enabled` must be on). If enumeration matters on an
+internet-facing server, set `CALDAV_REGISTRATION_DISABLED=true`.
 
 Deleting an account (`DELETE /api/v1/users/me`) frees its e-mail address: it can
 register again (or sign in again through OAuth) as a brand-new account. The deleted
