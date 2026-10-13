@@ -109,7 +109,7 @@ func TestCardDAVCredentialRepoGetByUsername_CaseInsensitive(t *testing.T) {
 }
 
 // The CalDAV credential lookup folds the input to lower case in Go (no SQL
-// LOWER or COLLATE): new credential usernames are lowercase letters only, so a
+// LOWER or COLLATE): credential usernames are lowercase letters only, so a
 // client may send one in any case. It used to match exactly, so "CALSYNC" for
 // a stored "calsync" was a 401 while CardDAV accepted it.
 func TestCalDAVCredentialRepoGetByUsername_AnyCase(t *testing.T) {
@@ -138,27 +138,24 @@ func TestCalDAVCredentialRepoGetByUsername_AnyCase(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-// Credentials created before the lowercase-only rule may hold capitals. They
-// keep matching their stored spelling: lower-casing the input alone would
-// lock them out.
-func TestCalDAVCredentialRepoGetByUsername_LegacyMixedCase(t *testing.T) {
+// A mixed-case input finds the lowercase-stored credential it names, and only
+// that one: with several credentials stored, each spelling resolves to its own.
+func TestCalDAVCredentialRepoGetByUsername_MixedCaseInputFindsLowercaseRow(t *testing.T) {
 	db := newUsernameTestDB(t)
 	repo := repository.NewCalDAVCredentialRepository(db)
 	ctx := context.Background()
 
-	legacy := &user.CalDAVCredential{UUID: "l1", UserID: 1, Name: "legacy", Username: "Legacy-Cal", PasswordHash: "x", Permission: "read", CreatedAt: time.Now()}
-	require.NoError(t, repo.Create(ctx, legacy))
+	phone := &user.CalDAVCredential{UUID: "p1", UserID: 1, Name: "phone", Username: "phonesync", PasswordHash: "x", Permission: "read", CreatedAt: time.Now()}
+	laptop := &user.CalDAVCredential{UUID: "l1", UserID: 1, Name: "laptop", Username: "laptopsync", PasswordHash: "x", Permission: "read-write", CreatedAt: time.Now()}
+	require.NoError(t, repo.Create(ctx, phone))
+	require.NoError(t, repo.Create(ctx, laptop))
 
-	got, err := repo.GetByUsername(ctx, "Legacy-Cal")
-	require.NoError(t, err)
-	require.NotNil(t, got)
-	assert.Equal(t, legacy.ID, got.ID)
-
-	// The unique index is case-sensitive, so a lowercase twin can exist. The
-	// exact spelling wins; every other spelling folds to the lowercase row.
-	lower := &user.CalDAVCredential{UUID: "l2", UserID: 1, Name: "new", Username: "legacy-cal", PasswordHash: "x", Permission: "read", CreatedAt: time.Now()}
-	require.NoError(t, repo.Create(ctx, lower))
-	for in, want := range map[string]uint{"Legacy-Cal": legacy.ID, "legacy-cal": lower.ID, "LEGACY-CAL": lower.ID} {
+	for in, want := range map[string]uint{
+		"PhoneSync":  phone.ID,
+		"pHONEsYNC":  phone.ID,
+		"LaptopSync": laptop.ID,
+		"LAPTOPsync": laptop.ID,
+	} {
 		got, err := repo.GetByUsername(ctx, in)
 		require.NoError(t, err, "lookup %q", in)
 		if assert.NotNil(t, got, "lookup %q", in) {

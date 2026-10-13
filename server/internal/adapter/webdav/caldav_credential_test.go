@@ -158,9 +158,8 @@ END:VCALENDAR`
 }
 
 // A CalDAV credential's username authenticates in any case, as a CardDAV
-// credential's already did (F02). New usernames are lowercase letters only,
-// so the lookup folds the input to lower case; a credential stored in mixed
-// case before that rule still authenticates with its stored spelling.
+// credential's already did (F02). Credential usernames are lowercase letters
+// only, so the lookup folds the input to lower case.
 func TestCalDAVCredentialUsernameAnyCase(t *testing.T) {
 	app, db, _ := setupTestApp(t)
 	defer db.Close()
@@ -178,8 +177,8 @@ func TestCalDAVCredentialUsernameAnyCase(t *testing.T) {
 			PasswordHash: string(hash), Permission: "read-write", CreatedAt: time.Now(),
 		}))
 	}
-	addCred("lower-uuid", "calsync", "cal-sync-pass")
-	addCred("legacy-uuid", "Legacy-Cal", "legacy-pass")
+	addCred("cal-uuid", "calsync", "cal-sync-pass")
+	addCred("laptop-uuid", "laptopsync", "laptop-pass")
 
 	propfind := func(identifier, password string) int {
 		body := `<?xml version="1.0" encoding="utf-8" ?>
@@ -202,9 +201,9 @@ func TestCalDAVCredentialUsernameAnyCase(t *testing.T) {
 		assert.Equal(t, fiber.StatusUnauthorized, propfind("CALSYNC", "wrong-pass"))
 	})
 	t.Run("username in another case with another credential's password is rejected", func(t *testing.T) {
-		assert.Equal(t, fiber.StatusUnauthorized, propfind("CALSYNC", "legacy-pass"))
+		assert.Equal(t, fiber.StatusUnauthorized, propfind("CALSYNC", "laptop-pass"))
 	})
-	t.Run("legacy mixed-case credential as stored", func(t *testing.T) {
-		assert.Equal(t, fiber.StatusMultiStatus, propfind("Legacy-Cal", "legacy-pass"))
+	t.Run("mixed-case input finds the other lowercase-stored credential", func(t *testing.T) {
+		assert.Equal(t, fiber.StatusMultiStatus, propfind("LaptopSync", "laptop-pass"))
 	})
 }

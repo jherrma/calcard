@@ -54,9 +54,9 @@ func TestUsernameLookupIsCaseInsensitive(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code, "share an address book with the username in another case")
 
 	// --- CardDAV credential in another case -------------------------------
-	// A new credential's username is lowercase letters only, but a client may
-	// send it in another case. Rows stored in mixed case before that rule keep
-	// authenticating: webdav TestBasicAuthAcceptsMixedCaseUsernames.
+	// A credential's username is lowercase letters only, but a client may send
+	// it in another case. (The CardDAV lookup also matches a mixed-case stored
+	// name: webdav TestBasicAuthAcceptsMixedCaseUsernames.)
 	credUser := credUsername("ftwocard")
 	credPass := "MixedCase_Pass_v3rY!"
 	code = doJSONRaw(t, http.MethodPost, "/carddav-credentials/", ownerToken, map[string]any{
