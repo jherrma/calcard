@@ -85,6 +85,9 @@ const props = defineProps<{
   calendarCount: number;
   /** Events overlapping the displayed month. */
   eventCount: number;
+  /** Weekday the grid's rows start on (`Date.getDay()` numbering) — the user's
+      `first_day_of_week` preference, which the calendar page uses too. */
+  firstDay: number;
   loading?: boolean;
 }>();
 
@@ -98,14 +101,16 @@ const monthLabel = computed(() =>
 );
 const shortMonthLabel = computed(() => props.month.toLocaleDateString(undefined, { month: 'short' }));
 const todayKey = computed(() => dayKey(new Date(props.now)));
-const grid = computed(() => buildMonthGrid(props.month.getFullYear(), props.month.getMonth()));
+const grid = computed(() =>
+  buildMonthGrid(props.month.getFullYear(), props.month.getMonth(), props.firstDay)
+);
 
-// Localized weekday initials, Sunday first — buildMonthGrid lays the grid out
-// Sunday-first to match FullCalendar's default on the calendar page. 2024-09-01
-// is a Sunday, so it anchors the sequence without hardcoding English letters.
+// Localized weekday initials in the grid's column order — orderedWeekdays and
+// buildMonthGrid derive it from the same firstDay. 2024-09-01 is a Sunday, so
+// day N of that week is weekday N, without hardcoding English letters.
 const weekdayNames = computed(() =>
-  Array.from({ length: 7 }, (_, i) =>
-    new Date(2024, 8, 1 + i).toLocaleDateString(undefined, { weekday: 'narrow' })
+  orderedWeekdays(props.firstDay).map((weekday) =>
+    new Date(2024, 8, 1 + weekday).toLocaleDateString(undefined, { weekday: 'narrow' })
   )
 );
 

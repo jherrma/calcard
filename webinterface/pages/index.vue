@@ -84,6 +84,7 @@
         :now="dashboardStore.now"
         :calendar-count="calendarStore.calendars.length"
         :event-count="dashboardStore.eventCountInMonth(dashboardStore.miniMonth)"
+        :first-day="preferencesStore.firstDayOfWeek"
         :loading="dashboardStore.isLoadingEvents"
         @update:month="dashboardStore.setMiniMonth($event)"
         @select-date="openDay"
@@ -126,6 +127,7 @@ import { useAuthStore } from '~/stores/auth';
 import { useCalendarStore } from '~/stores/calendars';
 import { useContactsStore } from '~/stores/contacts';
 import { useDashboardStore } from '~/stores/dashboard';
+import { usePreferencesStore } from '~/stores/preferences';
 import type { CalendarEvent } from '~/types/calendar';
 import type { Contact } from '~/types/contacts';
 
@@ -149,6 +151,7 @@ const authStore = useAuthStore();
 const calendarStore = useCalendarStore();
 const contactsStore = useContactsStore();
 const dashboardStore = useDashboardStore();
+const preferencesStore = usePreferencesStore();
 
 const showCreateEventDialog = ref(false);
 
@@ -178,6 +181,10 @@ onMounted(async () => {
   clockTimer = setInterval(() => dashboardStore.tick(), CLOCK_INTERVAL_MS);
   refreshTimer = setInterval(() => dashboardStore.refresh(), REFRESH_INTERVAL_MS);
   dashboardStore.tick();
+  // The mini calendar starts its weeks on the user's first_day_of_week. Usually
+  // already loaded at login (useAccentColor asks for preferences); this is a
+  // no-op then, and never rejects, so it is not awaited ahead of the events.
+  void preferencesStore.ensureLoaded();
   // Mount and the background timer share one path on purpose: the store survives
   // client-side navigation, so re-entering the dashboard must RE-READ the events
   // rather than keep the first visit's snapshot (an event created on the calendar
