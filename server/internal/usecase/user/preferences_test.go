@@ -144,6 +144,22 @@ func TestGetPreferencesUseCase_Execute(t *testing.T) {
 			},
 			want: nil,
 		},
+		{
+			name: "a stored first day of the week round-trips",
+			stored: []user.UserPreference{
+				{UserID: 7, Key: user.PrefFirstDayOfWeek, Value: "1"},
+			},
+			want: map[string]string{
+				user.PrefFirstDayOfWeek: "1",
+			},
+		},
+		{
+			name: "a first day of the week outside the allowed set falls back to Sunday",
+			stored: []user.UserPreference{
+				{UserID: 7, Key: user.PrefFirstDayOfWeek, Value: "3"},
+			},
+			want: nil,
+		},
 	}
 
 	for _, tc := range tests {
@@ -233,6 +249,24 @@ func TestUpdatePreferencesUseCase_Rejections(t *testing.T) {
 			wantErr: ErrInvalidPreferenceValue,
 		},
 		{
+			name:    "first day of the week that is not Sunday, Monday or Saturday",
+			updates: map[string]string{user.PrefFirstDayOfWeek: "3"},
+			wantErr: ErrInvalidPreferenceValue,
+		},
+		{
+			name:    "first day of the week as a day name",
+			updates: map[string]string{user.PrefFirstDayOfWeek: "monday"},
+			wantErr: ErrInvalidPreferenceValue,
+		},
+		{
+			name: "a bad first day of the week rejects the whole batch",
+			updates: map[string]string{
+				user.PrefTimeFormat:     "12h",
+				user.PrefFirstDayOfWeek: "7",
+			},
+			wantErr: ErrInvalidPreferenceValue,
+		},
+		{
 			name:    "accent colour with no hash",
 			updates: map[string]string{user.PrefAccentColor: "3b82f6"},
 			wantErr: ErrInvalidPreferenceValue,
@@ -316,6 +350,23 @@ func TestUpdatePreferencesUseCase_Execute(t *testing.T) {
 		assert.Equal(t, "#8b5cf6", prefs[user.PrefAccentColor])
 		require.Len(t, prefRepo.rows, 1)
 		assert.Equal(t, "#8b5cf6", prefRepo.rows[0].Value, "the stored row must be canonical too")
+	})
+
+	t.Run("stores the first day of the week verbatim", func(t *testing.T) {
+		repo := new(mockUserRepo)
+		repo.On("GetByUUID", ctx, prefUserUUID).Return(prefTestUser(), nil)
+		prefRepo := &fakePrefRepo{}
+		uc := NewUpdatePreferencesUseCase(repo, prefRepo)
+
+		prefs, err := uc.Execute(ctx, prefUserUUID, map[string]string{
+			user.PrefFirstDayOfWeek: "6",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "6", prefs[user.PrefFirstDayOfWeek])
+		require.Len(t, prefRepo.rows, 1)
+		assert.Equal(t, user.PrefFirstDayOfWeek, prefRepo.rows[0].Key)
+		assert.Equal(t, "6", prefRepo.rows[0].Value)
 	})
 
 	t.Run("a second update overwrites instead of duplicating the row", func(t *testing.T) {

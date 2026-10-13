@@ -43,12 +43,24 @@ const (
 	// ("#3b82f6"). Unlike the keys above it is validated by PATTERN, not by a
 	// closed set — see patternPreferences (story 046).
 	PrefAccentColor = "accent_color"
+	// PrefFirstDayOfWeek is the weekday a week starts on in the web UI's
+	// calendar views. The value is a weekday number as JavaScript's
+	// Date.getDay() and FullCalendar's `firstDay` count them: "0" Sunday,
+	// "1" Monday, "6" Saturday. See AllowedFirstDaysOfWeek.
+	PrefFirstDayOfWeek = "first_day_of_week"
 )
 
 // AllowedEventDurations lists the accepted values for PrefDefaultEventDuration
 // (minutes). It is a closed set rather than a numeric range so the value always
 // matches one of the options the settings UI offers.
 var AllowedEventDurations = []string{"15", "30", "45", "60", "90", "120", "180", "240", "480"}
+
+// AllowedFirstDaysOfWeek lists the accepted values for PrefFirstDayOfWeek:
+// Sunday, Monday and Saturday, the week starts in actual use (CLDR's
+// per-territory data adds only Friday, for the Maldives). A closed set rather
+// than the range 0–6 for the same reason as AllowedEventDurations: the stored
+// value always matches one of the options the settings UI offers.
+var AllowedFirstDaysOfWeek = []string{"0", "1", "6"}
 
 // allowedPreferenceValues maps every CLOSED-SET key to its accepted values.
 // Keys whose value space is too large to enumerate live in patternPreferences
@@ -57,6 +69,7 @@ var allowedPreferenceValues = map[string][]string{
 	PrefDefaultEventDuration: AllowedEventDurations,
 	PrefDefaultAllDay:        {"true", "false"},
 	PrefTimeFormat:           {"12h", "24h"},
+	PrefFirstDayOfWeek:       AllowedFirstDaysOfWeek,
 }
 
 // Lowercase-only on purpose: normalize lowercases before this ever runs, so a
@@ -91,6 +104,9 @@ var preferenceDefaults = map[string]string{
 	PrefTimeFormat:           "24h",
 	// Tailwind blue-500, matching the built-in preset in nuxt.config.ts.
 	PrefAccentColor: "#3b82f6",
+	// Sunday, which is what the calendar showed before the setting existed
+	// (FullCalendar's default for its built-in English locale).
+	PrefFirstDayOfWeek: "0",
 }
 
 // DefaultPreferences returns a fresh copy of the default preference map. It is
