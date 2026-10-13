@@ -24,6 +24,18 @@ and the deletes take the REST `confirmation: "DELETE"` literal and describe them
 so the model asks the user first. Tests: `internal/adapter/mcp/tools_collection_test.go`,
 `integration/mcp_collection_test.go`, `e2e/tests/test_90_mcp.py`.
 
+**Hardened 2026-10-13: error text and arguments.** The 13 original tools answered any failure
+with `"Failed to …: " + err.Error()`, so a storage error put driver text and table names into the
+model's context; every tool and resource now answers such a failure with one generic sentence and
+logs the cause (`errors.go`, the F28 rule REST follows). And although every schema says
+`additionalProperties: false`, a misspelt argument used to be dropped silently — the tool ran with
+the default (an update that changed nothing reported success, a typo'd delete option deleted
+anyway); `decodeArgs` (`args.go`) now refuses it as a tool error naming the accepted arguments.
+A wrongly typed argument is a tool error too (it was a `-32602` carrying Go type names), following
+MCP 2025-11-25, which files input validation under tool execution errors. Tests:
+`internal/adapter/mcp/internal_errors_test.go`, `args_test.go`, `messages_test.go`,
+`integration/mcp_arguments_test.go`, `e2e/tests/test_90_mcp.py`.
+
 Everything in "Acceptance Criteria" and "Definition of Done" below is met, with these deliberate
 departures from the sketch — read them before "fixing" the code to match the prose above:
 

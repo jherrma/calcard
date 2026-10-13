@@ -155,7 +155,7 @@ re-authenticates them to delete them.
 | `tests/test_70_dav_sync.py` | dav_sync | WebDAV-Sync: initial / empty / create / modify / delete deltas, REST changes in DAV deltas, invalid tokens, `<limit>` truncation (507), ctag |
 | `tests/test_75_dav_authz.py` | dav_authz | 401 shapes, malformed Authorization, accepted credential kinds, and cross-user isolation on every DAV verb (PROPFIND, REPORT, GET, PUT, DELETE, PROPPATCH, MKCALENDAR, traversal) |
 | `tests/test_80_sharing.py` | sharing | calendar + address-book shares over REST and DAV (read vs read-write, revocation, cascades), public calendar links, deleted owners |
-| `tests/test_90_mcp.py` | mcp | MCP tokens, `POST /mcp` handshake/sessions, all tools cross-checked over REST (incl. creating, renaming and deleting calendars and address books), resources, JSON-RPC errors, batches, isolation (incl. owner-only collection management), revocation |
+| `tests/test_90_mcp.py` | mcp | MCP tokens, `POST /mcp` handshake/sessions, all tools cross-checked over REST (incl. creating, renaming and deleting calendars and address books), resources, JSON-RPC errors, misspelt tool arguments refused without side effects, batches, isolation (incl. owner-only collection management), revocation |
 | `tests/test_95_subscriptions.py` | subscriptions | URL validation, feed mirroring, read-only enforcement (REST + DAV), refresh deltas, failing feeds, isolation |
 | `tests/test_99_ratelimit.py` | ratelimit | limiter headers; opt-in login-limiter burst |
 
