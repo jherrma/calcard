@@ -67,7 +67,7 @@
 
 <script setup lang="ts">
 import { useVuelidate } from '@vuelidate/core';
-import { required, minLength, sameAs } from '@vuelidate/validators';
+import { required, sameAs, helpers } from '@vuelidate/validators';
 import type { ChangePasswordResponse } from '~/types/settings';
 
 definePageMeta({
@@ -89,8 +89,17 @@ const form = reactive({
 });
 
 const rules = {
+  // The current password is whatever the account has: no policy check.
   current_password: { required },
-  new_password: { required, minLength: minLength(8) },
+  // The server's full policy (utils/passwordPolicy.ts), so the user sees the
+  // rule here instead of after a round trip.
+  new_password: {
+    required,
+    policy: helpers.withMessage(
+      () => passwordPolicyError(form.new_password) ?? '',
+      (value: string) => !value || passwordPolicyError(value) === null,
+    ),
+  },
   confirm_password: { required, sameAs: sameAs(computed(() => form.new_password)) },
 };
 
