@@ -74,6 +74,49 @@ func TestRegisterDuplicateWithoutSMTP(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, status, string(body))
 }
 
+// TestAttackerFirstRegistrationCannotTakeOverAddress (#193 item 2) — someone
+// registers an address that is not theirs, then its owner registers it: the
+// owner gets a 409 and the account keeps the first registrant's password, so
+// the owner's own password is an ordinary wrong-credential 401 (and nothing
+// they did changed the account). With SMTP the owner is mailed the notice that
+// points at the password reset, never an activation link — that is pinned by
+// the register use-case test, as mail is not observable here.
+func TestAttackerFirstRegistrationCannotTakeOverAddress(t *testing.T) {
+	run := func(t *testing.T, base, email string) {
+		const attackerPass, ownerPass = "AttackerPass123!", "OwnerPass123!"
+		register := func(password string) (int, []byte) {
+			t.Helper()
+			return rawCall(t, http.MethodPost, base+"/api/v1/auth/register", "",
+				map[string]string{"email": email, "password": password, "display_name": "x"}, nil)
+		}
+
+		status, body := register(attackerPass)
+		require.Equal(t, http.StatusOK, status, string(body))
+
+		status, body = register(ownerPass)
+		assert.Equal(t, http.StatusConflict, status, string(body))
+		assert.Equal(t, "Email already registered", errorMessage(body))
+
+		wrongStatus, wrongBody := postLoginOn(t, base, email, "Not-The-Password1!")
+		require.Equal(t, http.StatusUnauthorized, wrongStatus)
+		status, body = postLoginOn(t, base, email, ownerPass)
+		assert.Equal(t, http.StatusUnauthorized, status, "the second registration must not set the owner's password")
+		assert.Equal(t, errorMessage(wrongBody), errorMessage(body), "the same answer as any wrong password")
+
+		status, body = postLoginOn(t, base, email, attackerPass)
+		assert.Equal(t, http.StatusOK, status, "the account is unchanged: %s", body)
+	}
+
+	t.Run("without SMTP", func(t *testing.T) {
+		run(t, baseURL, "attacker-first@example.test")
+	})
+	t.Run("with SMTP", func(t *testing.T) {
+		base, shutdown := bootServerWithConfig(t, smtpOn)
+		t.Cleanup(shutdown)
+		run(t, base, "attacker-first-smtp@example.test")
+	})
+}
+
 // TestRegisterRateLimitedWithSMTP — with SMTP every registration sends a
 // mail (activation link, or the "someone tried to register" notice to an
 // existing owner, which answers 409), so /register carries the same per-email

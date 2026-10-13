@@ -162,8 +162,11 @@ An address that already has an account answers `409 Email already registered`
 in both modes, so registration reveals whether an address has an account (the
 new account would be usable at once, so the outcome could not be hidden). With
 SMTP the owner also gets a "someone tried to register with your address" e-mail
-(or, if the address was never confirmed, a fresh activation link; the password
-is never changed), and `/register` carries the same per-IP and per-email
+(the password is never changed). It never carries an activation link, not even
+for an address that was never confirmed: that account has the password of
+whoever registered first, so the e-mail sends the owner to the password reset,
+which confirms the address and removes everyone else's access. `/register`
+carries the same per-IP and per-email
 limiters as forgot-password (`rate_limit.enabled` must be on). If enumeration
 matters on an internet-facing server, set `CALDAV_REGISTRATION_DISABLED=true`.
 

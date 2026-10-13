@@ -281,10 +281,13 @@ func TestRegisterUseCase_Execute_ExistingVerified_WithSMTP_NotifiesOwner(t *test
 	emailSvc.AssertExpectations(t)
 }
 
-// An account whose address was never confirmed gets a fresh activation link —
-// the usual reason to register twice is a lost activation mail — but its
-// password is NOT replaced: the caller has not proven they own the mailbox.
-func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_ResendsActivation(t *testing.T) {
+// Attacker first (#193): the account of a never-confirmed address carries the
+// first registrant's password. When the real owner registers the address, the
+// use case must neither touch that password nor mail an activation link —
+// following it would confirm the address of an account someone else holds the
+// password of. The owner gets the notice, which points at the password reset,
+// and it does not repeat the display name the first registrant chose.
+func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_NoActivationLink(t *testing.T) {
 	repo := new(mockUserRepo)
 	emailSvc := new(mockEmailService)
 	cfg := &config.Config{
@@ -294,29 +297,23 @@ func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_ResendsActivation(t
 	uc := NewRegisterUseCase(repo, new(mockCalendarRepo), new(mockAddressBookRepo), emailSvc, cfg)
 
 	ctx := context.Background()
-	existing := &user.User{ID: 9, Email: "pending@example.com", PasswordHash: "orig"}
+	existing := &user.User{ID: 9, Email: "pending@example.com", DisplayName: "Visit evil.example", IsActive: true, PasswordHash: "attacker"}
 	repo.On("GetByEmail", ctx, "pending@example.com").Return(existing, nil)
-	var stored *user.EmailVerification
-	repo.On("CreateVerification", ctx, mock.MatchedBy(func(v *user.EmailVerification) bool {
-		return v.UserID == 9 && len(v.Token) == 64
-	})).Run(func(args mock.Arguments) { stored = args.Get(1).(*user.EmailVerification) }).Return(nil)
-	// The SPA page, like the first activation mail.
-	const prefix = "https://cal.example.com/auth/verify?token="
-	var link string
-	emailSvc.On("SendActivationEmail", ctx, "pending@example.com", mock.MatchedBy(func(l string) bool {
-		return strings.HasPrefix(l, prefix)
-	})).Run(func(args mock.Arguments) { link = args.String(2) }).Return(nil)
+	emailSvc.On("SendEmail", ctx, "pending@example.com", mock.Anything, mock.MatchedBy(func(body string) bool {
+		return strings.Contains(body, "https://cal.example.com/auth/forgot-password") &&
+			!strings.Contains(body, "/auth/verify") &&
+			!strings.Contains(body, existing.DisplayName)
+	})).Return(nil)
 
-	_, _, err := uc.Execute(ctx, "pending@example.com", "OtherPass123!", "Someone")
+	_, _, err := uc.Execute(ctx, "pending@example.com", "OwnerPass123!", "Owner")
 
 	assert.ErrorIs(t, err, ErrUserAlreadyExists)
-	require.NotNil(t, stored)
-	assert.Equal(t, stored.Token, hashVerificationToken(strings.TrimPrefix(link, prefix)),
-		"the mailed token is the one whose hash was stored")
-	assert.Equal(t, "orig", existing.PasswordHash)
+	assert.Equal(t, "attacker", existing.PasswordHash, "the stored password must never change")
+	assert.False(t, existing.EmailVerified)
+	repo.AssertNotCalled(t, "CreateVerification", mock.Anything, mock.Anything)
 	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 	repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
-	repo.AssertExpectations(t)
+	emailSvc.AssertNotCalled(t, "SendActivationEmail", mock.Anything, mock.Anything, mock.Anything)
 	emailSvc.AssertExpectations(t)
 }
 

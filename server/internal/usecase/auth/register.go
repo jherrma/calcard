@@ -128,8 +128,9 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 			link := activationLink(uc.cfg.BaseURL, token)
 			if err := uc.emailService.SendActivationEmail(ctx, u.Email, link); err != nil {
 				// Log the failure without the token-bearing link; the user is
-				// already created and can use the account. Registering the
-				// address again mails a fresh link (notifyExistingAccount).
+				// already created and can use the account. A password reset
+				// confirms the address too; registering again mails no new
+				// link (notifyExistingAccount).
 				log.Printf("failed to send activation email to user %d: %v", u.ID, err)
 			}
 		} else {
@@ -165,13 +166,17 @@ func activationLink(baseURL, token string) string {
 
 // notifyExistingAccount tells the owner of an already-registered address that
 // someone tried to register it. It only runs with SMTP configured; the caller
-// gets the 409 either way.
+// gets the 409 either way. The account is never changed.
 //
-// An account that never confirmed its address gets a fresh activation link
-// instead (the usual reason to register twice is a lost activation mail). Its
-// password is NOT changed: whoever submitted this form has not proven they own
-// the mailbox, and replacing the password would let them take the account
-// over.
+// It never mails an activation link, not even for an account whose address was
+// never confirmed (#193). Such an account carries the password of whoever
+// registered first, who need not own the mailbox: a fresh link handed to the
+// real owner, who has just tried to register and expects one, would have them
+// confirm the address of an account someone else holds the password of — and a
+// confirmed address lets the owner's OAuth sign-in be linked into it. The
+// notice sends them to the password reset instead, which proves the mailbox,
+// sets their password, confirms the address and removes every session and
+// credential of the first registrant.
 //
 // Failures are logged, never returned: the caller's answer is the 409 whether
 // or not the mail went out.
@@ -180,30 +185,33 @@ func (uc *RegisterUseCase) notifyExistingAccount(ctx context.Context, u *user.Us
 		return
 	}
 
+	subject := "Someone tried to register with your e-mail address"
 	if !u.EmailVerified {
-		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			log.Printf("register: failed to generate activation token for user %d: %v", u.ID, err)
-			return
-		}
-		token := hex.EncodeToString(b)
-		v := &user.EmailVerification{
-			UserID:    u.ID,
-			Token:     hashVerificationToken(token),
-			ExpiresAt: time.Now().Add(24 * time.Hour),
-		}
-		if err := uc.repo.CreateVerification(ctx, v); err != nil {
-			log.Printf("register: failed to store activation token for user %d: %v", u.ID, err)
-			return
-		}
-		link := activationLink(uc.cfg.BaseURL, token)
-		if err := uc.emailService.SendActivationEmail(ctx, u.Email, link); err != nil {
-			log.Printf("failed to re-send activation email to user %d: %v", u.ID, err)
+		// No display name: on an unconfirmed account it is text the first
+		// registrant chose.
+		body := fmt.Sprintf(`Hello,
+
+Someone just tried to create a new CalDAV Server account with this e-mail
+address. An account with this address already exists, but the address was
+never confirmed. Nothing was changed.
+
+If you created that account, sign in here:
+
+%s/auth/login
+
+If you did not create it, or forgot its password, reset the password here.
+That confirms the address as yours and signs out everyone else who used the
+account, including whoever created it:
+
+%s/auth/forgot-password
+
+- CalDAV Server`, uc.cfg.BaseURL, uc.cfg.BaseURL)
+		if err := uc.emailService.SendEmail(ctx, u.Email, subject, body); err != nil {
+			log.Printf("failed to send duplicate-registration notice to user %d: %v", u.ID, err)
 		}
 		return
 	}
 
-	subject := "Someone tried to register with your e-mail address"
 	body := fmt.Sprintf(`Hi %s,
 
 Someone just tried to create a new CalDAV Server account with this e-mail
