@@ -115,15 +115,26 @@ func (s *Server) handleResourceRead(cc *callContext, req *Request) *Response {
 // Every branch re-checks access through the same helpers the tools use: a
 // resource URI is guessable (calendars://<uuid>/events), so it would otherwise
 // be the one door into the data that skips the permission check.
+//
+// The list resources render through the same functions as list_calendars and
+// list_address_books, so the two surfaces can never drift apart. A failure the
+// caller cannot fix is resourceInternalError: a generic JSON-RPC error and the
+// cause in the log, as for the tools.
 func (s *Server) readResource(cc *callContext, uri string) (string, *RPCError) {
 	switch {
 	case uri == uriCalendarList:
-		result, rpcErr := s.toolListCalendars(cc, nil)
-		return resourceBody(result, rpcErr)
+		listing, err := s.calendarListing(cc)
+		if err != nil {
+			return "", resourceInternalError(uri, err)
+		}
+		return marshalResource(uri, listing)
 
 	case uri == uriContactList:
-		result, rpcErr := s.toolListAddressBooks(cc, nil)
-		return resourceBody(result, rpcErr)
+		listing, err := s.addressBookListing(cc)
+		if err != nil {
+			return "", resourceInternalError(uri, err)
+		}
+		return marshalResource(uri, listing)
 
 	case strings.HasPrefix(uri, calendarURIStem) && strings.HasSuffix(uri, eventsURISuffix):
 		calUUID := strings.TrimSuffix(strings.TrimPrefix(uri, calendarURIStem), eventsURISuffix)
@@ -151,7 +162,7 @@ func (s *Server) readCalendarEvents(cc *callContext, uri, calUUID string) (strin
 		Expand:     true,
 	})
 	if err != nil {
-		return "", rpcErrorf(CodeInternalError, "failed to read events: %v", err)
+		return "", resourceInternalError(uri, err)
 	}
 	if len(instances) > maxEventResults {
 		instances = instances[:maxEventResults]
@@ -161,7 +172,7 @@ func (s *Server) readCalendarEvents(cc *callContext, uri, calUUID string) (strin
 	for _, inst := range instances {
 		views = append(views, eventViewFromInstance(inst, calUUID))
 	}
-	return marshalResource(map[string]interface{}{
+	return marshalResource(uri, map[string]interface{}{
 		"calendar_id":  calUUID,
 		"window_start": cc.now.Format(time.RFC3339),
 		"window_end":   cc.now.Add(resourceEventWindow).Format(time.RFC3339),
@@ -176,32 +187,21 @@ func (s *Server) readContact(cc *callContext, uri, contactUUID string) (string, 
 		return "", rpcErrorf(CodeResourceNotFound, "no readable contact behind %q", uri)
 	}
 	c, err := s.deps.ContactGet.Execute(cc.ctx, abID, contactUUID)
-	if err != nil || c == nil {
+	if err != nil {
+		// The contact exists and is readable (checked above), so this is a
+		// failure to load or parse it — the server's, not a missing contact.
+		return "", resourceInternalError(uri, err)
+	}
+	if c == nil {
 		return "", rpcErrorf(CodeResourceNotFound, "no readable contact behind %q", uri)
 	}
-	return marshalResource(contactViewOf(c, s.addressBookUUID(cc, abID)))
+	return marshalResource(uri, contactViewOf(c, s.addressBookUUID(cc, abID)))
 }
 
-// resourceBody unwraps a tool result reused as a resource body. Tools already
-// answer with the JSON text a resource needs, so the list resources delegate
-// rather than duplicating the rendering — the two can never drift apart.
-func resourceBody(result *toolCallResult, rpcErr *RPCError) (string, *RPCError) {
-	if rpcErr != nil {
-		return "", rpcErr
-	}
-	if result == nil || len(result.Content) == 0 {
-		return "", rpcError(CodeInternalError, "empty resource body")
-	}
-	if result.IsError {
-		return "", rpcError(CodeInternalError, result.Content[0].Text)
-	}
-	return result.Content[0].Text, nil
-}
-
-func marshalResource(v interface{}) (string, *RPCError) {
+func marshalResource(uri string, v interface{}) (string, *RPCError) {
 	buf, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return "", rpcErrorf(CodeInternalError, "failed to encode resource: %v", err)
+		return "", resourceInternalError(uri, err)
 	}
 	return string(buf), nil
 }

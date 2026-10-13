@@ -560,45 +560,8 @@ func TestDeleteLastAddressBookIsRefused(t *testing.T) {
 	assert.NotNil(t, stored)
 }
 
-// --- shared -----------------------------------------------------------------
-
-// TestCollectionToolsDoNotLeakStorageErrors breaks the schema under the use
-// cases (the F28 technique) and checks the model gets a generic sentence, not
-// the driver's text.
-func TestCollectionToolsDoNotLeakStorageErrors(t *testing.T) {
-	e := newTestEnv(t)
-	alice := e.newUser("alice@example.com")
-	e.newCalendar(alice.ID, "Keep")
-	cal := e.newCalendar(alice.ID, "Work")
-	e.newAddressBook(alice.ID, "Keep")
-	ab := e.newAddressBook(alice.ID, "Friends")
-
-	for _, tc := range []struct {
-		tool    string
-		trigger string
-		args    map[string]interface{}
-	}{
-		{"create_calendar", "BEFORE INSERT ON calendars", map[string]interface{}{"name": "New"}},
-		{"update_calendar", "BEFORE UPDATE ON calendars", map[string]interface{}{"calendar_id": cal.UUID, "name": "New"}},
-		{"delete_calendar", "BEFORE UPDATE ON calendars", map[string]interface{}{"calendar_id": cal.UUID, "confirmation": "DELETE"}},
-		{"create_address_book", "BEFORE INSERT ON address_books", map[string]interface{}{"name": "New"}},
-		{"update_address_book", "BEFORE UPDATE ON address_books", map[string]interface{}{"address_book_id": ab.UUID, "name": "New"}},
-		{"delete_address_book", "BEFORE UPDATE ON address_books", map[string]interface{}{"address_book_id": ab.UUID, "confirmation": "DELETE"}},
-	} {
-		t.Run(tc.tool, func(t *testing.T) {
-			require.NoError(t, e.db.Exec("CREATE TRIGGER mcp_injected_failure "+tc.trigger+
-				" BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END").Error)
-			defer func() { require.NoError(t, e.db.Exec("DROP TRIGGER mcp_injected_failure").Error) }()
-
-			result := e.callRaw(alice.ID, tc.tool, tc.args)
-			require.True(t, result.IsError)
-			text := result.Content[0].Text
-			assert.NotContains(t, text, "injected", "a storage error must not reach the model")
-			assert.Contains(t, text, "internal server error")
-			assert.NotContains(t, text, "is owned by you", "a storage failure is not a missing collection")
-		})
-	}
-}
+// Storage failures of these tools are covered with every other tool's in
+// internal_errors_test.go.
 
 func calendarIDs(listed map[string]interface{}) []string {
 	var ids []string

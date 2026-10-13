@@ -62,6 +62,9 @@ type Deps struct {
 // *RPCError is a protocol fault the model cannot act on (bad JSON, unknown
 // tool). Conflating them either hides real errors from the model or turns
 // ordinary refusals into transport errors.
+//
+// A failure the tool cannot attribute to the request is answered with
+// toolInternalError (errors.go), never with the error's text.
 type toolFunc func(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError)
 
 // Server dispatches MCP JSON-RPC messages. It is stateless apart from the
@@ -231,7 +234,8 @@ func (s *Server) handleToolCall(cc *callContext, req *Request) *Response {
 func jsonText(v interface{}) (*toolCallResult, *RPCError) {
 	buf, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return nil, rpcErrorf(CodeInternalError, "failed to encode result: %v", err)
+		logInternalError("mcp tool result could not be encoded", err)
+		return nil, rpcError(CodeInternalError, internalErrorText(MethodToolsCall))
 	}
 	return textResult(string(buf)), nil
 }

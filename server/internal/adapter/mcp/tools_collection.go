@@ -3,7 +3,6 @@ package mcp
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
@@ -153,21 +152,11 @@ func addressBookNotOwned(id string) *toolCallResult {
 	return errorResult("No address book with id " + id + " is owned by you. Only an address book's owner can change or delete it.")
 }
 
-// toolInternalError answers a tool whose use case failed for a reason the
-// caller cannot fix — storage, typically. Same rule as REST's calendarError
-// (F28): the model gets a generic sentence and the cause goes to the server log
-// only, because a driver message ("no such table: …", constraint names, SQL)
-// describes the server's internals, not anything about the request.
-func toolInternalError(tool string, err error) *toolCallResult {
-	slog.Error("mcp tool failed", slog.String("tool", tool), slog.Any("error", err))
-	return errorResult("An internal server error stopped " + tool + ". The details were logged on the server; try again later.")
-}
-
 // calendarToolError maps a calendar use-case error the way REST's
 // calendarError does: not found (missing or not owned) → the "not owned"
 // answer, ErrInvalidInput → its bare message (validation, the DELETE
 // confirmation, the last-calendar guard), anything else → a generic internal
-// error.
+// error (toolInternalError, errors.go).
 func calendarToolError(tool, calendarID string, err error) *toolCallResult {
 	switch {
 	case errors.Is(err, calendar.ErrNotFound):

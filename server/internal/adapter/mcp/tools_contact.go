@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 
 	domaincontact "github.com/jherrma/caldav-server/internal/domain/contact"
@@ -184,9 +185,19 @@ func (s *Server) registerContactTools() {
 }
 
 func (s *Server) toolListAddressBooks(cc *callContext, _ json.RawMessage) (*toolCallResult, *RPCError) {
+	listing, err := s.addressBookListing(cc)
+	if err != nil {
+		return toolInternalError("list_address_books", err), nil
+	}
+	return jsonText(listing)
+}
+
+// addressBookListing is the payload of list_address_books and of the
+// contacts://list resource alike, so the two can never drift apart.
+func (s *Server) addressBookListing(cc *callContext) (map[string]interface{}, error) {
 	books, err := s.deps.AddressBookList.Execute(cc.ctx, cc.userID)
 	if err != nil {
-		return errorResult("Failed to list address books: " + err.Error()), nil
+		return nil, err
 	}
 
 	views := make([]addressBookView, 0, len(books))
@@ -203,7 +214,7 @@ func (s *Server) toolListAddressBooks(cc *callContext, _ json.RawMessage) (*tool
 		}
 		views = append(views, v)
 	}
-	return jsonText(map[string]interface{}{"address_books": views, "count": len(views)})
+	return map[string]interface{}{"address_books": views, "count": len(views)}, nil
 }
 
 func (s *Server) toolGetContacts(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
@@ -239,7 +250,7 @@ func (s *Server) toolGetContacts(cc *callContext, args json.RawMessage) (*toolCa
 		Offset:        offset,
 	})
 	if err != nil {
-		return errorResult("Failed to list contacts: " + err.Error()), nil
+		return toolInternalError("get_contacts", err), nil
 	}
 
 	views := make([]contactView, 0, len(out.Contacts))
@@ -276,7 +287,7 @@ func (s *Server) toolSearchContacts(cc *callContext, args json.RawMessage) (*too
 		Now:    cc.now,
 	})
 	if err != nil {
-		return errorResult("Search failed: " + err.Error()), nil
+		return toolInternalError("search_contacts", err), nil
 	}
 
 	views := make([]map[string]interface{}, 0, len(out.Contacts.Items))
@@ -341,9 +352,12 @@ func (s *Server) toolCreateContact(cc *callContext, args json.RawMessage) (*tool
 		c.Phones = []domaincontact.Phone{{Type: "cell", Value: in.Phone, Primary: true}}
 	}
 
+	// Every check the caller could fail (book readable and writable, a name)
+	// ran above, and the vCard is built here, so whatever the use case still
+	// refuses is the server's fault.
 	created, err := s.deps.ContactCreate.Execute(cc.ctx, cc.userID, abID, c)
 	if err != nil {
-		return errorResult("Failed to create the contact: " + err.Error()), nil
+		return toolInternalError("create_contact", err), nil
 	}
 
 	return jsonText(map[string]interface{}{
@@ -421,7 +435,12 @@ func (s *Server) toolUpdateContact(cc *callContext, args json.RawMessage) (*tool
 
 	updated, err := s.deps.ContactUpdate.Execute(cc.ctx, abID, in.ContactID, input)
 	if err != nil {
-		return errorResult("Failed to update the contact: " + err.Error()), nil
+		return toolInternalError("update_contact", err), nil
+	}
+	if updated == nil {
+		// The use case's "not found" is (nil, nil): the contact went away
+		// between the permission check above and the write.
+		return errorResult("No contact with id " + in.ContactID + " is readable by you."), nil
 	}
 
 	return jsonText(map[string]interface{}{
@@ -447,7 +466,10 @@ func (s *Server) toolDeleteContact(cc *callContext, args json.RawMessage) (*tool
 	}
 
 	if err := s.deps.ContactDelete.Execute(cc.ctx, abID, in.ContactID); err != nil {
-		return errorResult("Failed to delete the contact: " + err.Error()), nil
+		if errors.Is(err, contactuc.ErrContactNotFound) {
+			return errorResult("No contact with id " + in.ContactID + " is readable by you."), nil
+		}
+		return toolInternalError("delete_contact", err), nil
 	}
 
 	return jsonText(map[string]interface{}{"deleted": true, "contact_id": in.ContactID})
