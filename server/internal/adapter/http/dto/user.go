@@ -4,8 +4,11 @@ import "time"
 
 // UserProfileResponse represents the user profile information
 type UserProfileResponse struct {
-	ID            string           `json:"id"`
-	Email         string           `json:"email"`
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	// Username is the account username: the {username} segment of every DAV
+	// URL (/dav/{username}/calendars/) and a valid Basic-auth login name.
+	Username      string           `json:"username"`
 	DisplayName   string           `json:"display_name"`
 	IsActive      bool             `json:"is_active"`
 	IsAdmin       bool             `json:"is_admin"`

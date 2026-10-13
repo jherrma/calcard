@@ -187,6 +187,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 		User: dto.UserResponse{
 			ID:          res.User.UUID,
 			Email:       res.User.Email,
+			Username:    res.User.Username,
 			DisplayName: res.User.DisplayName,
 			IsAdmin:     res.User.IsAdmin,
 		},

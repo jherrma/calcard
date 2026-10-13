@@ -94,6 +94,7 @@ def test_login_shape(t, e2e, ulog):
     now = int(time.time())
     t.jq(r, lambda j: j["data"]["expires_at"] > now, "expires_at must be a future Unix timestamp")
     t.json(r, "data.user.email", ulog.email)
+    t.json(r, "data.user.username", ulog.username, "the SPA builds its DAV URLs from the login user's username")
     # A JWT has three base64url segments.
     data = r.jdict().get("data") or {}
     if not re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", data.get("access_token") or ""):

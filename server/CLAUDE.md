@@ -48,7 +48,7 @@ JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, re
 | Auth | First-run setup (`POST /auth/setup`, creates the admin, 409 once any user exists; optionally guarded by `CALDAV_SETUP_TOKEN`, which also locks registration until setup is done), login, register, verify, refresh, logout, forgot/reset password |
 | OAuth | Initiate, callback, link/unlink providers |
 | System | Settings (admin configured, SMTP enabled, registration enabled, setup token required), auth methods |
-| User | Get/update profile, delete account, get/update preferences |
+| User | Get/update profile, delete account, get/update preferences. The profile (and the login response's `user`) carries `username`, the account's `/dav/{username}/` segment, exactly as stored |
 | Calendars | CRUD, public sharing, export |
 | Events | CRUD, move between calendars. An event is reachable only under the calendar that holds it: a mismatched or unknown `:calendar_id` is the same 404 as an unknown event (F09) |
 | Address Books | CRUD, export |

@@ -23,10 +23,12 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	userRepo := repository.NewUserRepository(db.DB())
 	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
 
-	// Create user
+	// Create user. Mixed case like a server-generated username: the profile
+	// must echo it exactly as stored, because it is the /dav/{username}/
+	// segment, which the DAV handler compares case-sensitively.
 	u := &user.User{
 		Email:         "profile@example.com",
-		Username:      "profile",
+		Username:      "ProfileUserXyZ",
 		PasswordHash:  "hash",
 		IsActive:      true,
 		EmailVerified: true,
@@ -55,6 +57,25 @@ func TestUserHandler_GetProfile(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, u.Email, respData.Data.Email)
 		assert.Equal(t, u.DisplayName, respData.Data.DisplayName)
+		assert.Equal(t, "ProfileUserXyZ", respData.Data.Username)
+	})
+
+	t.Run("UsernameIsInTheJSON", func(t *testing.T) {
+		// Decode into a map, not the DTO: a struct field without its json tag
+		// (or with omitempty on an empty value) would still pass the typed
+		// check above while the SPA reads data.username and gets nothing.
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		require.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+		var raw struct {
+			Data map[string]any `json:"data"`
+		}
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&raw))
+		assert.Equal(t, "ProfileUserXyZ", raw.Data["username"])
 	})
 
 	t.Run("Unauthorized", func(t *testing.T) {
@@ -98,6 +119,14 @@ func TestUserHandler_UpdateProfile(t *testing.T) {
 		resp, err := app.Test(req)
 		require.NoError(t, err)
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+		// PATCH answers with the same profile shape as GET, username included.
+		var respData struct {
+			Data dto.UserProfileResponse `json:"data"`
+		}
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respData))
+		assert.Equal(t, "New Name", respData.Data.DisplayName)
+		assert.Equal(t, u.Username, respData.Data.Username)
 
 		// Verify DB
 		updatedUser, err := userRepo.GetByID(context.Background(), u.ID)
