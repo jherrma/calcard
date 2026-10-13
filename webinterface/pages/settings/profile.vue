@@ -45,12 +45,25 @@
           </div>
 
           <div class="flex flex-col gap-2">
-            <label class="text-sm font-medium text-surface-700 dark:text-surface-300">Username</label>
-            <InputText
-              :model-value="authStore.user?.username"
-              disabled
-              class="w-full"
-            />
+            <label for="profile-username" class="text-sm font-medium text-surface-700 dark:text-surface-300">Username</label>
+            <div class="flex gap-2">
+              <InputText
+                id="profile-username"
+                :model-value="username"
+                readonly
+                class="w-full font-mono"
+              />
+              <Button
+                icon="pi pi-copy"
+                severity="secondary"
+                aria-label="Copy username"
+                :disabled="!username"
+                @click="copy(username, 'Username copied')"
+              />
+            </div>
+            <small class="text-surface-500 dark:text-surface-400">
+              Part of your CalDAV/CardDAV URLs, and the login name for app passwords. It cannot be changed.
+            </small>
           </div>
 
           <div class="flex items-center gap-3">
@@ -88,6 +101,7 @@ definePageMeta({
 const authStore = useAuthStore();
 const api = useApi();
 const toast = useAppToast();
+const copy = useCopyToClipboard();
 
 const loading = ref(true);
 const saving = ref(false);
@@ -95,6 +109,8 @@ const profile = ref<UserProfile | null>(null);
 const form = reactive({
   display_name: '',
 });
+
+const username = computed(() => profile.value?.username ?? '');
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString(undefined, {

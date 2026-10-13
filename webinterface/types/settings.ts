@@ -7,6 +7,8 @@ export interface UserProfileStats {
 export interface UserProfile {
   id: string;
   email: string;
+  // The account username: the {username} segment of the DAV URLs.
+  username: string;
   display_name: string;
   is_active: boolean;
   email_verified: boolean;
