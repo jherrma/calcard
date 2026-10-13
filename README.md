@@ -122,11 +122,11 @@ The release image is multi-arch (`linux/amd64` + `linux/arm64`) and published as
 ```bash
 docker login                                    # once, for the push
 server/scripts/docker-release.sh                # version = git tag on HEAD, "v" stripped
-server/scripts/docker-release.sh 1.0.0-rc1      # or give the version explicitly
-server/scripts/docker-release.sh 1.0.0-rc1 --no-push   # build both platforms, don't push
+server/scripts/docker-release.sh 1.0.0          # or give the version explicitly
+server/scripts/docker-release.sh 1.0.0 --no-push   # build both platforms, don't push
 ```
 
-Stable versions are also tagged `latest`; pre-releases (`1.0.0-rc1`) never are.
+Stable versions are also tagged `latest`; pre-releases (a version with a `-` suffix) never are.
 The arm64 image is built under QEMU, so expect it to be slow. A single-platform
 local build is just `docker build -f server/Dockerfile -t calcard .` from the
 repo root.
