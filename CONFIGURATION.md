@@ -174,8 +174,14 @@ provider from the account settings still works). Login and sharing wait for
 nothing: a share addressed to the account by e-mail reaches it either way.
 Completing a password reset also confirms the address, and it signs out every
 session and deletes every app password, CalDAV/CardDAV credential, MCP token
-and OAuth link of the account, so whoever registered the address first keeps no
-way back in.
+and OAuth link of the account, so whoever registered the address first can no
+longer sign in to it. A reset does **not** remove the account's outgoing shares,
+public calendar links or calendar subscriptions: a calendar or address book the
+account shared with another account stays shared, and a public link keeps
+working. After resetting the password of an account you did not set up
+yourself, open the **Share** dialog of each of its calendars and address books
+and revoke the shares and public links you do not recognise (and remove unknown
+feeds under **Settings → Subscriptions**).
 
 An address that already has an account answers `409 Email already registered`
 in both modes, so registration reveals whether an address has an account (the
@@ -184,10 +190,11 @@ SMTP the owner also gets a "someone tried to register with your address" e-mail
 (the password is never changed). It never carries an activation link, not even
 for an address that was never confirmed: that account has the password of
 whoever registered first, so the e-mail sends the owner to the password reset,
-which confirms the address and removes everyone else's access. `/register`
-carries the same per-IP and per-email
-limiters as forgot-password (`rate_limit.enabled` must be on). If enumeration
-matters on an internet-facing server, set `CALDAV_REGISTRATION_DISABLED=true`.
+which confirms the address and ends every session and credential of whoever
+registered first (the account's shares and public links stay, see above).
+`/register` carries the same per-IP and per-email limiters as forgot-password
+(`rate_limit.enabled` must be on). If enumeration matters on an
+internet-facing server, set `CALDAV_REGISTRATION_DISABLED=true`.
 
 Deleting an account (`DELETE /api/v1/users/me`) frees its e-mail address: it can
 register again (or sign in again through OAuth) as a brand-new account. The deleted

@@ -83,8 +83,9 @@ func saveUser(db *gorm.DB, u *user.User) error {
 // token, every password-reset link, and every app password, CalDAV/CardDAV
 // credential, MCP token and OAuth connection (accountCredentials). An account
 // is usable before its address is confirmed, so whoever registered it may not
-// be the person who now proved control of the mailbox. All or nothing: a
-// failure leaves the old password and every credential in place.
+// be the person who now proved control of the mailbox. The account's outgoing
+// shares, public calendar links and subscriptions are left alone. All or
+// nothing: a failure leaves the old password and every credential in place.
 func (r *gormUserRepo) CompletePasswordReset(ctx context.Context, u *user.User, at time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := saveUser(tx, u); err != nil {

@@ -205,6 +205,10 @@ account, including whoever created it:
 
 %s/auth/forgot-password
 
+Unless you created the account yourself, do not open an activation link you
+may have received for it earlier: it would confirm an account whose password
+someone else chose.
+
 - CalDAV Server`, uc.cfg.BaseURL, uc.cfg.BaseURL)
 		if err := uc.emailService.SendEmail(ctx, u.Email, subject, body); err != nil {
 			log.Printf("failed to send duplicate-registration notice to user %d: %v", u.ID, err)

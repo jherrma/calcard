@@ -40,7 +40,7 @@ type UserRepository interface {
 	// EmailVerified) and, in the same transaction, invalidates the access
 	// tokens issued before at and removes every refresh token, password-reset
 	// link, app password, CalDAV/CardDAV credential, MCP token and OAuth
-	// connection of the account.
+	// connection of the account. Shares and public links are not touched.
 	CompletePasswordReset(ctx context.Context, user *User, at time.Time) error
 	// Delete soft-deletes the user and also invalidates their access tokens.
 	Delete(ctx context.Context, userID uint) error

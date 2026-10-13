@@ -65,8 +65,9 @@ func PurgeAccountData(tx *gorm.DB, users any) error {
 // its sessions: app passwords, CalDAV/CardDAV credentials, MCP tokens and OAuth
 // links. Account deletion removes them with the rest of the data; a password
 // reset removes exactly these (gormUserRepo.CompletePasswordReset), so whoever
-// held the account before the reset keeps no way back in. A new kind of
-// credential belongs here.
+// held the account before the reset can no longer sign in to it. Shares,
+// public links and subscriptions are not credentials: a reset leaves them. A
+// new kind of credential belongs here.
 var accountCredentials = []any{
 	&user.AppPassword{},
 	&user.CalDAVCredential{},

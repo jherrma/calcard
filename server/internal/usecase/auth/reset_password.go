@@ -81,7 +81,8 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, req ResetPasswordRe
 	// passwords, DAV credentials, MCP tokens and OAuth links. A reset is the
 	// recovery path after a compromise, and an account is usable before its
 	// address is confirmed, so whoever registered it with this address must
-	// not keep a credential past the owner's reset.
+	// not keep a credential past the owner's reset. Outgoing shares and public
+	// links are not credentials and stay.
 	if err := uc.userRepo.CompletePasswordReset(ctx, u, time.Now()); err != nil {
 		return fmt.Errorf("failed to reset password: %w", err)
 	}

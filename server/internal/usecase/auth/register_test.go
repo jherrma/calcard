@@ -286,7 +286,8 @@ func TestRegisterUseCase_Execute_ExistingVerified_WithSMTP_NotifiesOwner(t *test
 // use case must neither touch that password nor mail an activation link —
 // following it would confirm the address of an account someone else holds the
 // password of. The owner gets the notice, which points at the password reset,
-// and it does not repeat the display name the first registrant chose.
+// warns against an activation link received earlier, and does not repeat the
+// display name the first registrant chose.
 func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_NoActivationLink(t *testing.T) {
 	repo := new(mockUserRepo)
 	emailSvc := new(mockEmailService)
@@ -301,6 +302,7 @@ func TestRegisterUseCase_Execute_ExistingUnverified_WithSMTP_NoActivationLink(t 
 	repo.On("GetByEmail", ctx, "pending@example.com").Return(existing, nil)
 	emailSvc.On("SendEmail", ctx, "pending@example.com", mock.Anything, mock.MatchedBy(func(body string) bool {
 		return strings.Contains(body, "https://cal.example.com/auth/forgot-password") &&
+			strings.Contains(body, "do not open an activation link") &&
 			!strings.Contains(body, "/auth/verify") &&
 			!strings.Contains(body, existing.DisplayName)
 	})).Return(nil)
