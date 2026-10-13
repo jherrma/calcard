@@ -11,14 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestUsernameLookupIsCaseInsensitive covers F02. The server assigns random
+// TestUsernameLookupIsCaseInsensitive covers F02. The server assigned random
 // mixed-case usernames, hands them to DAV clients as credentials.username and
 // accepts them as a share's user_identifier — but the lookups lower-cased the
 // input before an exact match, so the issued username was never found: Basic
 // auth answered 401 and sharing 400 "user not found". A mixed-case CardDAV
-// credential was created (201) and then never authenticated; new credential
-// usernames are lowercase now, so the case-insensitive match is checked by
-// sending one in upper case.
+// credential was created (201) and then never authenticated. New account and
+// credential usernames are lowercase now, so the case-insensitive match is
+// checked by sending them in upper case — for a CalDAV credential too, whose
+// lookup used to be exact.
 func TestUsernameLookupIsCaseInsensitive(t *testing.T) {
 	ownerToken, ownerUsername := registerAndLoginFull(t, "f02-owner@example.test", "f02Secret!123", "F02 Owner")
 	shareeToken, shareeUsername := registerAndLoginFull(t, "f02-sharee@example.test", "f02Secret!123", "F02 Sharee")
@@ -53,9 +54,9 @@ func TestUsernameLookupIsCaseInsensitive(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code, "share an address book with the username in another case")
 
 	// --- CardDAV credential in another case -------------------------------
-	// A new credential's username is lowercase letters only, but a client may
-	// send it in another case. Rows stored in mixed case before that rule keep
-	// authenticating: webdav TestBasicAuthAcceptsMixedCaseUsernames.
+	// A credential's username is lowercase letters only, but a client may send
+	// it in another case. (The CardDAV lookup also matches a mixed-case stored
+	// name: webdav TestBasicAuthAcceptsMixedCaseUsernames.)
 	credUser := credUsername("ftwocard")
 	credPass := "MixedCase_Pass_v3rY!"
 	code = doJSONRaw(t, http.MethodPost, "/carddav-credentials/", ownerToken, map[string]any{
@@ -67,4 +68,22 @@ func TestUsernameLookupIsCaseInsensitive(t *testing.T) {
 			propfindAddressBookBody, depthHeader("1"))
 		assert.Equalf(t, http.StatusMultiStatus, status, "CardDAV credential as %q: %s", name, string(body))
 	}
+
+	// --- CalDAV credential in another case --------------------------------
+	// The CalDAV lookup used to match exactly: the same credential sent in
+	// upper case was a 401 while CardDAV accepted it.
+	calUser := credUsername("ftwocal")
+	calPass := "CalCase_Pass_v3rY!"
+	code = doJSONRaw(t, http.MethodPost, "/caldav-credentials/", ownerToken, map[string]any{
+		"name": "f02 cal", "username": calUser, "password": calPass, "permission": "read",
+	}, nil)
+	require.Equal(t, http.StatusCreated, code, "create a CalDAV credential")
+	for _, name := range []string{calUser, strings.ToUpper(calUser)} {
+		status, _, body := davCall(t, "PROPFIND", "/dav/"+ownerUsername+"/calendars/", name, calPass,
+			propfindCalendarBody, depthHeader("1"))
+		assert.Equalf(t, http.StatusMultiStatus, status, "CalDAV credential as %q: %s", name, string(body))
+	}
+	status, _, _ := davCall(t, "PROPFIND", "/dav/"+ownerUsername+"/calendars/", strings.ToUpper(calUser), "wrong-Pass_123!",
+		propfindCalendarBody, depthHeader("1"))
+	assert.Equal(t, http.StatusUnauthorized, status, "CalDAV credential in upper case with a wrong password")
 }

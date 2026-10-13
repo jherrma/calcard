@@ -22,7 +22,7 @@ Authentication and authorization logic. See [auth/AGENT.md](auth/AGENT.md) for d
 - `oauth_initiate.go`, `oauth_callback.go`, `oauth_link.go`, `oauth_providers.go` — OAuth2/OIDC flows.
 - `email_service.go` — Email service interface for auth-related emails.
 - `setup.go` — First-run setup: creates the initial administrator (`IsAdmin`), only while no account has ever existed.
-- `username_util.go` — Username generation utilities.
+- `username_util.go` — Username generation for registration and OAuth sign-up: 16 random lowercase letters (older accounts keep their mixed-case names).
 
 ### [calendar/](calendar/)
 

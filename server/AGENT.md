@@ -65,7 +65,7 @@ JSON API for the web frontend. Two response shapes coexist: `/auth/*` (setup, re
 
 ### CalDAV/CardDAV (`/dav/...`)
 
-WebDAV protocol endpoints for native calendar/contact client sync (Apple Calendar, Thunderbird, DAVx5, etc.). Uses HTTP Basic Auth with app passwords or DAV credentials.
+WebDAV protocol endpoints for native calendar/contact client sync (Apple Calendar, Thunderbird, DAVx5, etc.). Uses HTTP Basic Auth with app passwords or DAV credentials. The Basic-auth username — the account's (or its e-mail), a CalDAV or a CardDAV credential's — is accepted in any case. New usernames are stored in lower case (registration generates 16 lowercase letters, setup lower-cases the admin's, a credential's must be lowercase). The CalDAV credential lookup lower-cases the input in Go and matches it exactly; account and CardDAV credential lookups try the exact spelling, then an unambiguous `LOWER()` match in SQL (F02). The `/dav/{username}/` URL segment is compared exactly.
 
 ### MCP (`/mcp`)
 

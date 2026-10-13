@@ -17,7 +17,7 @@ func newUsernameTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&user.User{}, &user.CardDAVCredential{}))
+	require.NoError(t, db.AutoMigrate(&user.User{}, &user.CalDAVCredential{}, &user.CardDAVCredential{}))
 	return db
 }
 
@@ -106,4 +106,60 @@ func TestCardDAVCredentialRepoGetByUsername_CaseInsensitive(t *testing.T) {
 	got, err := repo.GetByUsername(ctx, "Mixed-Card")
 	require.NoError(t, err)
 	assert.Nil(t, got, "a revoked credential must not be found")
+}
+
+// The CalDAV credential lookup folds the input to lower case in Go (no SQL
+// LOWER or COLLATE): credential usernames are lowercase letters only, so a
+// client may send one in any case. It used to match exactly, so "CALSYNC" for
+// a stored "calsync" was a 401 while CardDAV accepted it.
+func TestCalDAVCredentialRepoGetByUsername_AnyCase(t *testing.T) {
+	db := newUsernameTestDB(t)
+	repo := repository.NewCalDAVCredentialRepository(db)
+	ctx := context.Background()
+
+	cred := &user.CalDAVCredential{UUID: "c1", UserID: 1, Name: "n", Username: "calsync", PasswordHash: "x", Permission: "read", CreatedAt: time.Now()}
+	require.NoError(t, repo.Create(ctx, cred))
+
+	for _, in := range []string{"calsync", "CALSYNC", "CalSync", " calsync "} {
+		got, err := repo.GetByUsername(ctx, in)
+		require.NoError(t, err, "lookup %q", in)
+		if assert.NotNil(t, got, "lookup %q", in) {
+			assert.Equal(t, cred.ID, got.ID)
+		}
+	}
+
+	got, err := repo.GetByUsername(ctx, "calsyncx")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	assert.Nil(t, got)
+
+	require.NoError(t, repo.Revoke(ctx, cred.ID))
+	got, err = repo.GetByUsername(ctx, "CALSYNC")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "a revoked credential must not be found")
+	assert.Nil(t, got)
+}
+
+// A mixed-case input finds the lowercase-stored credential it names, and only
+// that one: with several credentials stored, each spelling resolves to its own.
+func TestCalDAVCredentialRepoGetByUsername_MixedCaseInputFindsLowercaseRow(t *testing.T) {
+	db := newUsernameTestDB(t)
+	repo := repository.NewCalDAVCredentialRepository(db)
+	ctx := context.Background()
+
+	phone := &user.CalDAVCredential{UUID: "p1", UserID: 1, Name: "phone", Username: "phonesync", PasswordHash: "x", Permission: "read", CreatedAt: time.Now()}
+	laptop := &user.CalDAVCredential{UUID: "l1", UserID: 1, Name: "laptop", Username: "laptopsync", PasswordHash: "x", Permission: "read-write", CreatedAt: time.Now()}
+	require.NoError(t, repo.Create(ctx, phone))
+	require.NoError(t, repo.Create(ctx, laptop))
+
+	for in, want := range map[string]uint{
+		"PhoneSync":  phone.ID,
+		"pHONEsYNC":  phone.ID,
+		"LaptopSync": laptop.ID,
+		"LAPTOPsync": laptop.ID,
+	} {
+		got, err := repo.GetByUsername(ctx, in)
+		require.NoError(t, err, "lookup %q", in)
+		if assert.NotNil(t, got, "lookup %q", in) {
+			assert.Equal(t, want, got.ID, "lookup %q", in)
+		}
+	}
 }

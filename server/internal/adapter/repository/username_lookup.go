@@ -8,9 +8,9 @@ import (
 
 // findByUsername looks a row up by its username column, case-insensitively.
 //
-// Usernames are stored as issued: generated account usernames are mixed-case
-// and are also the /dav/{username}/ URL segment (compared exactly), so they
-// cannot be rewritten. Clients may send any case, though (the old lookups
+// Usernames are stored as issued: account usernames generated before
+// registration went lowercase-only are mixed-case and are also the
+// /dav/{username}/ URL segment (compared exactly), so they cannot be rewritten. Clients may send any case, though (the old lookups
 // lower-cased the input, so a lower-cased stored name matched every spelling).
 //
 // The exact spelling is tried first (index-backed, the normal case). Only if

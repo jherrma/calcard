@@ -29,8 +29,9 @@ var (
 	ErrInvalidUsername = errors.New("username must be 3-64 characters: lowercase letters, digits, '.', '_' or '-', starting with a letter or digit")
 )
 
-// usernamePattern is lowercase-only on purpose: user lookup lower-cases the
-// name before matching, so a mixed-case username could never log in.
+// usernamePattern is lowercase-only on purpose: every new username is stored in
+// lower case (registration generates lowercase letters too), so the stored
+// name is what a client that lower-cases it sends.
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
 
 // SetupUseCase creates the first account, as an administrator. It is open only

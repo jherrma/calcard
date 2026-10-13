@@ -48,7 +48,7 @@ The OAuth implementation follows the standard authorization code flow.
 
 - **Email Service** (`email_service.go`): Interface for sending auth-related emails (verification, password reset).
 - **Setup** (`setup.go`): First-run setup. Creates the first account as admin (active + verified, SMTP or not) while `UserRepository.Count` — which includes soft-deleted rows — is 0; refuses with `ErrSetupCompleted` (409) afterwards. The check-then-insert is serialised in-process only. When `Registration.SetupToken` is set (`CALDAV_SETUP_TOKEN`) the request must carry it (constant-time compare, 403 otherwise) and `RegisterUseCase` / OAuth sign-up refuse with `ErrSetupRequired` until the first account exists; empty keeps the old open behaviour.
-- **Username Util** (`username_util.go`): Generates unique usernames from email addresses or OAuth profile data.
+- **Username Util** (`username_util.go`): `GenerateUniqueUsername`, used by registration and OAuth sign-up: 16 random lowercase letters `a`–`z`, retried while `GetByUsername` (case-insensitive) finds a match. Lowercase like the set-up admin's name (`setup.go` lower-cases and validates it) and every new DAV credential's; accounts registered before keep their mixed-case names, which are their `/dav/{username}/` segment and never rewritten.
 
 ## Dependencies
 

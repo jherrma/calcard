@@ -412,8 +412,8 @@ strings come from `utils/davUrls.ts`.
   clipboard), so generation works over plain http.
 - **The username rule mirrors the server** (`ValidateDAVCredentialUsername`): a NEW credential's
   username is 3–50 lowercase letters `a`–`z`. Upper case is an inline error, never lower-cased
-  silently: the name has to reach the DAV client exactly as it is stored. Credentials created
-  before the rule (capitals, digits, `-`, `_`) keep working and are listed unchanged.
+  silently: the name has to reach the DAV client exactly as it is stored. Every stored name is
+  therefore lowercase, which the server's CalDAV credential lookup relies on.
 - **The password is shown once**, in the "Credential Created" panel after the POST: the server
   keeps a bcrypt hash and no list returns it. Closing the dialog clears it from memory.
 - **409 = username taken** (unique across all accounts, `user.ErrCredentialUsernameTaken`). A
