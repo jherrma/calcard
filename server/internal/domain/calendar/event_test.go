@@ -53,6 +53,22 @@ END:VCALENDAR`,
 	})
 }
 
+func TestExpandRecurringEvent_LimitsDenseSeries(t *testing.T) {
+	obj := &CalendarObject{ICalData: wrap("BEGIN:VEVENT\r\nUID:a@x\r\nDTSTART:19700101T000000Z\r\nDTEND:19700101T000001Z\r\nRRULE:FREQ=SECONDLY\r\nEND:VEVENT")}
+
+	// The iterator must stop before scanning decades of seconds to reach this window.
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	instances, err := ExpandRecurringEvent(obj, start, start.Add(time.Hour))
+	require.NoError(t, err)
+	assert.Empty(t, instances)
+
+	// A nearby dense series must also have a bounded response size.
+	start = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	instances, err = ExpandRecurringEvent(obj, start, start.Add(24*time.Hour))
+	require.NoError(t, err)
+	assert.Len(t, instances, maxRecurrenceInstances)
+}
+
 // TestExpandRecurringEventTZIDMatching is the regression test for M8: a
 // RECURRENCE-ID / EXDATE written with TZID= or VALUE=DATE must normalize to the
 // same canonical UTC key the generated occurrences use, so overrides match

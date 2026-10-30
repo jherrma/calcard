@@ -99,6 +99,7 @@ func (o *CalendarObject) PopulateDenormFieldsFromICal() error {
 // nil when no master carries an RRULE or RDATE (i.e. a non-recurring object).
 func recurrenceEndTime(masters []*ical.Component) *time.Time {
 	var result *time.Time
+	remaining := maxRecurrenceIterations
 	update := func(candidate time.Time) {
 		if result == nil || candidate.After(*result) {
 			c := candidate
@@ -133,12 +134,24 @@ func recurrenceEndTime(masters []*ical.Component) *time.Time {
 				// which we must treat as far-future, not a real bound.
 				switch {
 				case rule.OrigOptions.Count > 0:
-					all := rule.All()
-					if len(all) > 0 {
-						update(all[len(all)-1].Add(dur))
-					} else {
-						update(mStart.Add(dur))
+					// A large COUNT must not materialize the entire series. Keep
+					// the exact end for short series and conservatively include
+					// longer ones in listing windows.
+					if rule.OrigOptions.Count > remaining {
+						update(farFuture)
+						break
 					}
+					next := rule.Iterator()
+					last := mStart
+					for range rule.OrigOptions.Count {
+						remaining--
+						occurrence, ok := next()
+						if !ok {
+							break
+						}
+						last = occurrence
+					}
+					update(last.Add(dur))
 				case !rule.OrigOptions.Until.IsZero():
 					update(rule.OrigOptions.Until.Add(dur))
 				default:
