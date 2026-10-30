@@ -50,6 +50,16 @@ func TestPopulateDenormFields_CountRecurring(t *testing.T) {
 	}
 }
 
+func TestPopulateDenormFields_LargeCountRecurring(t *testing.T) {
+	o := &CalendarObject{ICalData: wrap("BEGIN:VEVENT\r\nUID:a@x\r\nDTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z\r\nRRULE:FREQ=SECONDLY;COUNT=1000000000\r\nEND:VEVENT")}
+	if err := o.PopulateDenormFieldsFromICal(); err != nil {
+		t.Fatal(err)
+	}
+	if o.RecurrenceEndTime == nil || !o.RecurrenceEndTime.Equal(farFuture) {
+		t.Errorf("large COUNT should map to farFuture, got %v", o.RecurrenceEndTime)
+	}
+}
+
 func TestPopulateDenormFields_UntilRecurring(t *testing.T) {
 	o := &CalendarObject{ICalData: wrap("BEGIN:VEVENT\r\nUID:a@x\r\nDTSTART:20260101T100000Z\r\nDTEND:20260101T110000Z\r\nRRULE:FREQ=DAILY;UNTIL=20260110T100000Z\r\nEND:VEVENT")}
 	if err := o.PopulateDenormFieldsFromICal(); err != nil {

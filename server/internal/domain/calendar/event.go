@@ -151,6 +151,8 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 	}
 
 	var instances []EventInstance
+	remainingIterations := maxRecurrenceIterations
+	remainingInstances := maxRecurrenceInstances
 
 	// Process each master series
 	for i := range masters {
@@ -177,12 +179,13 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		if rruleProp == nil {
 			// Single occurrence master
 			rid := mStart.UTC().Format("20060102T150405Z")
-			if mStart.Before(end) && mEnd.After(start) {
+			if remainingInstances > 0 && mStart.Before(end) && mEnd.After(start) {
 				if exc, ok := exceptions[rid]; ok {
 					instances = append(instances, ToEventInstance(obj, mStart, mEnd, rid, master, &exc))
 				} else {
 					instances = append(instances, ToEventInstance(obj, mStart, mEnd, "", master, nil))
 				}
+				remainingInstances--
 			}
 			continue
 		}
@@ -203,11 +206,24 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 			}
 		}
 
-		// Generate within range: rule.Between works best in series timezone.
+		// Generate within range in the series timezone.
 		// Widen the lower bound by the event duration so an occurrence that
 		// STARTED before the window but is still running inside it is produced;
 		// the overlap filter below discards any that don't actually intersect.
-		for _, dt := range rule.Between(start.Add(-mDuration).In(loc), end.In(loc), true) {
+		// The iterator starts at DTSTART even for a much later window, so cap
+		// both the scan and the number of returned instances.
+		lower := start.Add(-mDuration).In(loc)
+		upper := end.In(loc)
+		next := rule.Iterator()
+		for remainingIterations > 0 && remainingInstances > 0 {
+			remainingIterations--
+			dt, ok := next()
+			if !ok || dt.After(upper) {
+				break
+			}
+			if dt.Before(lower) {
+				continue
+			}
 			dtUTC := dt.UTC()
 			rid := dtUTC.Format("20060102T150405Z")
 
@@ -233,6 +249,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 					continue
 				}
 				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, master, &exc))
+				remainingInstances--
 			} else {
 				// Keep only occurrences that actually overlap [start, end): the
 				// widened lower bound can surface beats that ended before the
@@ -242,6 +259,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 					continue
 				}
 				instances = append(instances, ToEventInstance(obj, dt, occEnd, rid, master, nil))
+				remainingInstances--
 			}
 		}
 	}
@@ -249,6 +267,9 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 	// Add any "stray" exceptions that weren't picked up by any master expansion
 	// (This can happen if an exception's recurrence-id doesn't match expansion beats)
 	for rid, e := range exceptions {
+		if remainingInstances == 0 {
+			break
+		}
 		found := false
 		for _, inst := range instances {
 			if inst.RecurrenceID == rid {
@@ -261,6 +282,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 			tEnd, _ := e.DateTimeEnd(time.UTC)
 			if tStart.Before(end) && tEnd.After(start) {
 				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, nil, &e))
+				remainingInstances--
 			}
 		}
 	}
