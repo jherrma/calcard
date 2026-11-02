@@ -288,8 +288,9 @@ describe('HTTP 429 is not a logout', () => {
     const store = useAuthStore();
     store.setAuth(loginResponse(), true);
 
-    apiMock.mockRejectedValueOnce(tooMany('20'));
-    await store.refreshToken();
+    const error = tooMany('20');
+    apiMock.mockRejectedValueOnce(error);
+    await expect(store.refreshToken()).rejects.toBe(error);
 
     expect(store.isAuthenticated).toBe(true);
     expect(store.accessToken).toBe('access-1');
@@ -332,7 +333,7 @@ describe('HTTP 429 is not a logout', () => {
     expect(cookies.get('refresh_token')?.value).toBe('refresh-token-1');
   });
 
-  it('any other refresh failure still logs out', async () => {
+  it('an unauthorized refresh still logs out', async () => {
     vi.stubGlobal('navigator', {});
     const store = useAuthStore();
     store.setAuth(loginResponse(), true);
@@ -342,5 +343,112 @@ describe('HTTP 429 is not a logout', () => {
 
     expect(store.isAuthenticated).toBe(false);
     expect(cookies.get('refresh_token')?.value).toBeNull();
+  });
+});
+
+describe('server downtime preserves remembered sessions', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const outages = [
+    ['network failure', new TypeError('Failed to fetch')],
+    ['timeout', { status: 408 }],
+    ['server error', { status: 500 }],
+    ['bad gateway', { statusCode: 502 }],
+    ['unavailable server', { status: 503 }],
+    ['gateway timeout', { status: 504 }],
+  ] as const;
+
+  it.each(outages)('retries a live session after %s without removing cookies', async (_label, error) => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', {});
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+    apiMock.mockRejectedValueOnce(error);
+
+    await expect(store.refreshToken()).rejects.toBe(error);
+
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.accessToken).toBe('access-1');
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-1');
+    expect(cookies.get('remember_me')?.value).toBe('1');
+    expect(store.refreshPromise).toBeNull();
+
+    apiMock.mockResolvedValueOnce({
+      ...loginResponse(), access_token: 'access-2', refresh_token: 'refresh-token-2',
+    });
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(store.accessToken).toBe('access-2');
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-2');
+  });
+
+  it.each(outages)('restores a session on the next load after %s', async (_label, error) => {
+    vi.stubGlobal('navigator', {});
+    cookies.set('refresh_token', { value: 'refresh-token-1' });
+    cookies.set('remember_me', { value: '1' });
+    apiMock.mockRejectedValueOnce(error);
+    const store = useAuthStore();
+
+    await store.initAuth();
+
+    expect(store.isLoading).toBe(false);
+    expect(store.isAuthenticated).toBe(false);
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-1');
+    expect(cookies.get('remember_me')?.value).toBe('1');
+
+    apiMock.mockResolvedValueOnce(loginResponse()).mockResolvedValueOnce(loginResponse().user);
+    await store.initAuth();
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.user?.email).toBe('a@b.c');
+  });
+
+  it.each(outages)('keeps the rotated cookie if loading the profile hits %s', async (_label, error) => {
+    vi.stubGlobal('navigator', {});
+    cookies.set('refresh_token', { value: 'refresh-token-1' });
+    apiMock
+      .mockResolvedValueOnce({ ...loginResponse(), refresh_token: 'refresh-token-2' })
+      .mockRejectedValueOnce(error);
+    const store = useAuthStore();
+
+    await store.initAuth();
+
+    expect(store.isLoading).toBe(false);
+    expect(store.isAuthenticated).toBe(false);
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-2');
+  });
+
+  it.each([401, 403])('clears the session when refresh explicitly rejects it with %i', async (status) => {
+    vi.stubGlobal('navigator', {});
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+    apiMock.mockRejectedValueOnce({ status });
+
+    await store.refreshToken();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(cookies.get('refresh_token')?.value).toBeNull();
+    expect(cookies.get('remember_me')?.value).toBeNull();
+    expect(store.refreshTimer).toBeNull();
+  });
+
+  it('handles repeated failures from the scheduled refresh without an unhandled rejection', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', {});
+    const store = useAuthStore();
+    store.setAuth(loginResponse({ expires_at: Math.floor(Date.now() / 1000) + 61 }), true);
+    apiMock.mockRejectedValue({ status: 503 });
+
+    await vi.advanceTimersByTimeAsync(61_000);
+
+    expect(apiMock).toHaveBeenCalledTimes(3);
+    expect(store.isAuthenticated).toBe(true);
+    expect(cookies.get('refresh_token')?.value).toBe('refresh-token-1');
+    store.clearAuth();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(apiMock).toHaveBeenCalledTimes(3);
   });
 });

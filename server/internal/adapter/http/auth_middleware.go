@@ -2,6 +2,7 @@ package http
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -35,7 +36,11 @@ func Authenticate(jwtManager user.TokenProvider, userRepo user.UserRepository) f
 		// as an auth failure rather than falling through and NPE-ing on
 		// u.ID below.
 		u, err := userRepo.GetByUUID(c.Context(), claims.UserUUID)
-		if err != nil || u == nil {
+		if err != nil {
+			log.Printf("authentication user lookup failed: %v", err)
+			return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to authenticate request")
+		}
+		if u == nil {
 			return UnauthorizedResponse(c, "user not found")
 		}
 		if !u.IsActive {

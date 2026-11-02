@@ -56,9 +56,9 @@ export const useApi = () => {
         // retry, so the new token is in the store (and picked up by onRequest)
         // before the request is re-issued.
         await authStore.refreshToken();
-        // refreshToken() never rejects: on failure it clears auth and redirects
-        // to login. If we have no token afterwards the refresh failed, so cancel
-        // the pending retry to avoid a pointless second 401.
+        // Temporary refresh errors propagate to the caller without replaying
+        // the request. An explicit rejection clears auth and redirects to login;
+        // cancel the pending retry when that leaves us without a token.
         if (!authStore.accessToken) {
           options.retry = 0;
         }

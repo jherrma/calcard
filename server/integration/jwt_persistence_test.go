@@ -70,6 +70,13 @@ func TestJWTSecretPersistsAcrossRestart(t *testing.T) {
 	require.Equalf(t, http.StatusOK, loginStatus, "login: %s", string(loginRaw))
 	token := unwrapAccessToken(t, loginRaw)
 	require.NotEmpty(t, token)
+	var login struct {
+		Data struct {
+			RefreshToken string `json:"refresh_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(loginRaw, &login))
+	require.NotEmpty(t, login.Data.RefreshToken)
 
 	// The token works on boot 1.
 	meStatus, _ := rawCall(t, http.MethodGet, base1+"/api/v1/users/me", token, nil, nil)
@@ -83,6 +90,16 @@ func TestJWTSecretPersistsAcrossRestart(t *testing.T) {
 	meStatus2, meRaw2 := rawCall(t, http.MethodGet, base2+"/api/v1/users/me", token, nil, nil)
 	require.Equalf(t, http.StatusOK, meStatus2,
 		"access token must survive a restart when the secret is DB-persisted: %s", string(meRaw2))
+
+	// A browser reload has no access token in memory: it restores the remembered
+	// session using the refresh cookie issued before the server restarted.
+	refreshStatus, refreshRaw := rawCall(t, http.MethodPost, base2+"/api/v1/auth/refresh", "",
+		map[string]string{"refresh_token": login.Data.RefreshToken}, nil)
+	require.Equalf(t, http.StatusOK, refreshStatus, "refresh token must survive a restart: %s", string(refreshRaw))
+	refreshedAccess := unwrapAccessToken(t, refreshRaw)
+	require.NotEmpty(t, refreshedAccess)
+	meStatus3, _ := rawCall(t, http.MethodGet, base2+"/api/v1/users/me", refreshedAccess, nil, nil)
+	require.Equal(t, http.StatusOK, meStatus3, "restored session must authenticate after restart")
 }
 
 func unwrapAccessToken(t *testing.T, raw []byte) string {

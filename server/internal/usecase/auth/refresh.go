@@ -64,7 +64,7 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, presented string) (*Refre
 
 	t, err := uc.tokenRepo.GetByHash(ctx, hash)
 	if err != nil {
-		return nil, ErrInvalidRefreshToken
+		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 	if t == nil {
 		return nil, ErrInvalidRefreshToken

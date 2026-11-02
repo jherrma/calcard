@@ -136,8 +136,8 @@ webinterface/
 3. Access tokens are stored in Pinia state (memory only — not localStorage). Refresh tokens are stored in a cookie (7-day expiry).
 4. `scheduleTokenRefresh()` sets a `setTimeout` to refresh the access token 1 minute before it expires (using `expires_at` Unix timestamp from the backend).
 5. The `useApi()` composable automatically attaches `Authorization: Bearer <token>` to every request.
-6. On 401 response, `useApi`'s `onResponseError` attempts a token refresh. On failure, auth state is cleared and user is redirected to login.
-7. A 429 (rate limit) is NOT a failed refresh: the session and the refresh cookie are kept (see Rate limiting below).
+6. On 401 response, `useApi`'s `onResponseError` attempts a token refresh. An explicit refresh rejection (401/403) clears auth and redirects to login.
+7. Network failures, server errors and 429 keep the session and refresh cookie. A live session retries after `Retry-After` (30 seconds by default); failed initialization keeps the cookie for the next page load. Temporary refresh errors propagate through `useApi` so it cannot replay the original request with an expired token. Timer callbacks catch these errors; `initAuth` always finishes loading. Profile-fetch failures only clear auth on 401/403.
 
 ### Store Pattern
 

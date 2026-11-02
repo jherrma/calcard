@@ -181,7 +181,11 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 
 	res, err := h.refreshUC.Execute(c.Context(), req.RefreshToken)
 	if err != nil {
-		return UnauthorizedResponse(c, "Invalid or expired refresh token")
+		if errors.Is(err, authusecase.ErrInvalidRefreshToken) || errors.Is(err, authusecase.ErrInactiveAccount) {
+			return UnauthorizedResponse(c, "Invalid or expired refresh token")
+		}
+		log.Printf("refresh token failed: %v", err)
+		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to refresh session")
 	}
 
 	// The refresh token is rotated on every use: the client MUST replace the
