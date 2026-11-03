@@ -6,6 +6,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// Values of CalendarObject.ComponentType: the iCalendar component name of the
+// object's first VEVENT/VTODO, copied verbatim by PopulateDenormFieldsFromICal.
+const (
+	ComponentEvent = "VEVENT"
+	ComponentToDo  = "VTODO"
+)
+
 // CalendarObject represents an event or todo in a calendar
 type CalendarObject struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`
