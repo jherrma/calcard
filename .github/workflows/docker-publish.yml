@@ -21,6 +21,10 @@ on:
         description: "Build linux/arm64 (native ubuntu-24.04-arm runner)"
         type: boolean
         default: true
+      set_latest:
+        description: Also set the latest tag on the pushed image
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -114,9 +118,14 @@ jobs:
         working-directory: ${{ runner.temp }}/digests
         env:
           VERSION: ${{ inputs.version }}
+          SET_LATEST: ${{ inputs.set_latest }}
         run: |
           sources=()
           for d in *; do
             sources+=("$IMAGE@sha256:$d")
           done
-          docker buildx imagetools create -t "$IMAGE:$VERSION" "${sources[@]}"
+          tags=(-t "$IMAGE:$VERSION")
+          if [ "$SET_LATEST" = "true" ]; then
+            tags+=(-t "$IMAGE:latest")
+          fi
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
