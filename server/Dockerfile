@@ -51,7 +51,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # defeat the build cache mounted here.
 ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -ldflags "-linkmode external -extldflags '-static' -X github.com/jherrma/caldav-server/internal/adapter/mcp.ServerVersion=${VERSION}" -o server ./cmd/server
+    CGO_ENABLED=1 GOOS=linux go build -ldflags "-linkmode external -extldflags '-static' -X github.com/jherrma/caldav-server/internal/version.Version=${VERSION}" -o server ./cmd/server
 
 # Runtime stage
 FROM alpine:3.24

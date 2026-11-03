@@ -12,6 +12,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	"github.com/jherrma/caldav-server/internal/usecase/mcptoken"
+	"github.com/jherrma/caldav-server/internal/version"
 )
 
 // HTTP headers the Streamable HTTP transport defines.
@@ -310,7 +311,7 @@ func (h *Handler) HandleGet(c fiber.Ctx) error {
 
 	return c.JSON(manifest{
 		Name:                      ServerName,
-		Version:                   ServerVersion,
+		Version:                   version.Version,
 		ProtocolVersion:           PreferredProtocolVersion,
 		SupportedProtocolVersions: supportedProtocolVersions,
 		Capabilities: capabilities{
