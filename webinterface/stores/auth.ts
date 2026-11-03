@@ -30,6 +30,12 @@ function refreshCookieOptions(remember: boolean) {
 // token's lifetime, so the two always expire together.
 const REMEMBER_COOKIE = "remember_me";
 
+function isAuthRejection(error: unknown): boolean {
+  const err = error as { status?: number; statusCode?: number } | null;
+  const status = err?.status ?? err?.statusCode;
+  return status === 401 || status === 403;
+}
+
 interface AuthState {
   user: User | null;
   accessToken: string | null;
@@ -170,22 +176,20 @@ export const useAuthStore = defineStore("auth", {
           cookie.value = response.refresh_token;
           this.scheduleTokenRefresh(response.expires_at);
         } catch (e) {
-          if (isRateLimitError(e)) {
-            // A 429 is not a verdict on the session: the limiter refused the
-            // request before the handler ran, so the presented refresh token
-            // was neither checked nor rotated and is still valid. Logging out
-            // here would wipe that cookie and throw away a good session just
-            // because the IP was busy. Keep it; a live session retries once
-            // the window reopens, a page load simply tries again next time.
+          if (!isAuthRejection(e)) {
+            // Network errors, server downtime and rate limits say nothing about
+            // the token's validity. Keep the cookie and retry a live session.
             if (this.isAuthenticated) {
               const seconds = retryAfterFromError(e) ?? 30;
               if (this.refreshTimer) clearTimeout(this.refreshTimer);
               this.refreshTimer = setTimeout(
-                () => this.refreshToken(),
+                () => this.refreshToken().catch(() => {}),
                 Math.max(seconds, 1) * 1000,
               );
             }
-            return;
+            // Propagate the outage to useApi: retrying the original request
+            // with the expired access token would turn it back into a 401.
+            throw e;
           }
           // Refresh failed (revoked/expired): drop auth and go to login instead
           // of looping on more refresh attempts.
@@ -225,7 +229,7 @@ export const useAuthStore = defineStore("auth", {
       const now = Math.floor(Date.now() / 1000);
       const refreshTime = (expiresAt - now - 60) * 1000;
       if (refreshTime > 0) {
-        this.refreshTimer = setTimeout(() => this.refreshToken(), refreshTime);
+        this.refreshTimer = setTimeout(() => this.refreshToken().catch(() => {}), refreshTime);
       }
     },
 
@@ -250,14 +254,19 @@ export const useAuthStore = defineStore("auth", {
 
     async initAuth() {
       this.isLoading = true;
-      const refreshCookie = useCookie("refresh_token");
-      if (refreshCookie.value) {
-        await this.refreshToken();
-        if (this.accessToken) {
-          await this.fetchUser();
+      try {
+        const refreshCookie = useCookie("refresh_token");
+        if (refreshCookie.value) {
+          await this.refreshToken();
+          if (this.accessToken) {
+            await this.fetchUser();
+          }
         }
+      } catch {
+        // A temporary refresh failure keeps the cookie for the next page load.
+      } finally {
+        this.isLoading = false;
       }
-      this.isLoading = false;
     },
 
     async fetchUser() {
@@ -267,10 +276,9 @@ export const useAuthStore = defineStore("auth", {
         this.isAuthenticated = true;
         this.isAdmin = this.user.is_admin || false;
       } catch (e) {
-        // Rate-limited is not logged out: keep the refresh cookie so the next
-        // page load restores the session instead of demanding a new login.
-        if (isRateLimitError(e)) return;
-        this.clearAuth();
+        // Only an explicit auth rejection invalidates the session. A failed
+        // profile request during a restart must not erase a valid refresh token.
+        if (isAuthRejection(e)) this.clearAuth();
       }
     },
   },

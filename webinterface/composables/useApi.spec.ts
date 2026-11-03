@@ -109,6 +109,28 @@ describe('token refresh scheduling uses expires_at (Unix timestamp), not expires
   });
 });
 
+describe('temporary refresh failures during a 401', () => {
+  it('propagates the outage instead of retrying with the expired access token', async () => {
+    const store = useAuthStore();
+    store.isAuthenticated = true;
+    store.accessToken = 'expired-access';
+    const outage = { status: 503 };
+    vi.spyOn(store, 'refreshToken').mockRejectedValueOnce(outage);
+    useApi();
+    const cfg = createSpy.mock.calls[0]![0];
+
+    await expect(cfg.onResponseError({
+      request: '/api/v1/users/me',
+      response: { status: 401 },
+      options: { retry: 1 },
+    })).rejects.toBe(outage);
+
+    expect(store.refreshToken).toHaveBeenCalledTimes(1);
+    expect(store.isAuthenticated).toBe(true);
+    expect(inner).not.toHaveBeenCalled();
+  });
+});
+
 // A FetchError as ofetch builds it for a 429: message from method/url/status,
 // `data` and `response` as getters over the same response object.
 function tooManyRequests(

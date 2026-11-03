@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -29,6 +30,23 @@ func newTestRefreshUC(repo user.RefreshTokenRepository, jwt user.TokenProvider) 
 
 func activeUser() user.User {
 	return user.User{ID: 1, UUID: "user-uuid", Email: "user@example.com", IsActive: true}
+}
+
+func TestRefresh_StorageFailureIsNotInvalidToken(t *testing.T) {
+	repo := new(mockRefreshTokenRepo)
+	jwt := new(mockTokenProvider)
+	uc := newTestRefreshUC(repo, jwt)
+	ctx := context.Background()
+	storageErr := errors.New("database unavailable")
+	jwt.On("HashToken", "refresh").Return("hash")
+	repo.On("GetByHash", ctx, "hash").Return(nil, storageErr)
+
+	res, err := uc.Execute(ctx, "refresh")
+
+	assert.Nil(t, res)
+	assert.ErrorIs(t, err, storageErr)
+	assert.NotErrorIs(t, err, ErrInvalidRefreshToken)
+	repo.AssertNotCalled(t, "Rotate", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestRefresh_RotatesAndOldTokenStopsWorking proves the happy path rotates the

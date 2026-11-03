@@ -475,6 +475,39 @@ func TestAuthHandler_Refresh(t *testing.T) {
 	})
 }
 
+func TestAuthHandler_RefreshDatabaseFailure(t *testing.T) {
+	app, db, _ := setupTestApp(t)
+	require.NoError(t, db.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBufferString(`{"refresh_token":"stored-token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
+	var body map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "Failed to refresh session", body["message"])
+}
+
+func TestAuthenticate_DatabaseFailure(t *testing.T) {
+	app, db, cfg := setupTestApp(t)
+	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
+	token, _, err := jwtManager.GenerateAccessToken("user-uuid", "user@example.com")
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
+	var body map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "Failed to authenticate request", body["message"])
+}
+
 func TestAuthHandler_Logout(t *testing.T) {
 	app, db, cfg := setupTestApp(t)
 	tokenRepo := repository.NewRefreshTokenRepository(db.DB())
