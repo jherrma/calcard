@@ -126,6 +126,9 @@ server/scripts/docker-release.sh 1.0.0          # or give the version explicitly
 server/scripts/docker-release.sh 1.0.0 --no-push   # build both platforms, don't push
 ```
 
+The version is also baked into the image: the script passes it as `--build-arg VERSION`, and
+it becomes the MCP `serverInfo.version`. A plain `docker build` (or a local `go build`) reports `dev`.
+
 Stable versions are also tagged `latest`; pre-releases (a version with a `-` suffix) never are.
 The arm64 image is built under QEMU, so expect it to be slow. A single-platform
 local build is just `docker build -f server/Dockerfile -t calcard .` from the
