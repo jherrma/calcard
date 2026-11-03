@@ -41,4 +41,4 @@ OUT=(--push)
 [ "$PUSH" = 1 ] || OUT=()
 
 echo "Building $IMAGE:$VERSION for $PLATFORMS (push=$PUSH)"
-docker buildx build --platform "$PLATFORMS" -f server/Dockerfile "${TAGS[@]}" "${OUT[@]}" .
+docker buildx build --platform "$PLATFORMS" --build-arg VERSION="$VERSION" -f server/Dockerfile "${TAGS[@]}" "${OUT[@]}" .
