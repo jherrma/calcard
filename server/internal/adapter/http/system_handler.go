@@ -5,6 +5,7 @@ import (
 	authadapter "github.com/jherrma/caldav-server/internal/adapter/auth"
 	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/user"
+	"github.com/jherrma/caldav-server/internal/version"
 )
 
 // SystemHandler handles system-level endpoints
@@ -33,6 +34,8 @@ func (h *SystemHandler) Settings(c fiber.Ctx) error {
 		"registration_enabled": !h.cfg.Registration.Disabled,
 		// The setup form asks for the token only while setup is still open.
 		"setup_token_required": h.cfg.Registration.SetupToken != "" && userCount == 0,
+		// Release version of this build ("dev" for a local build).
+		"version": version.Version,
 	})
 }
 

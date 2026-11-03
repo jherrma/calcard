@@ -153,8 +153,8 @@ See `server/integration/CLAUDE.md` for guidance on adding new integration tests 
 
     The resulting `server` binary is self-contained and can be deployed to any compatible Linux host.
 
-    The MCP `serverInfo.version` defaults to `dev`. To set it, add
-    `-X github.com/jherrma/caldav-server/internal/adapter/mcp.ServerVersion=<version>` to the
+    The server version (MCP `serverInfo.version`, `GET /system/settings` `version`) defaults to `dev`. To set it, add
+    `-X github.com/jherrma/caldav-server/internal/version.Version=<version>` to the
     `-ldflags`. The Docker build does this from `--build-arg VERSION=<version>`
     (`docker-release.sh` passes the release tag).
 

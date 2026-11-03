@@ -94,13 +94,9 @@ func negotiateProtocolVersion(requested string) string {
 	return PreferredProtocolVersion
 }
 
-// ServerName and ServerVersion identify this implementation to clients.
+// ServerName identifies this implementation to clients. The version reported
+// as serverInfo.version is version.Version.
 const ServerName = "calcard"
-
-// ServerVersion is reported as serverInfo.version. It is a var, not a const,
-// because the linker's -X flag can only set string variables. The Docker build
-// injects the release version (see server/Dockerfile); local builds report "dev".
-var ServerVersion = "dev"
 
 // initializeParams is the subset of the handshake we act on.
 type initializeParams struct {

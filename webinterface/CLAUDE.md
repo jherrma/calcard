@@ -37,6 +37,7 @@ webinterface/
 │   │   └── index.vue        # Contact list with search, grouping, detail panel
 │   ├── search.vue           # Full global-search results page (?q=…), uncapped
 │   └── settings/            # Profile, password, credentials, MCP access, subscriptions, connections, import/export, admin, danger
+│       ├── about-app.vue    # About CalCard: server version (from GET /system/settings) + link to /settings/about
 │       ├── about.vue        # Open Source Attribution (story 101)
 │       └── appearance.vue   # Theme + accent colour picker (story 046)
 ├── components/              # Auto-imported by Nuxt (directory prefix = component name)

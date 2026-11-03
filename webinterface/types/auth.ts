@@ -31,6 +31,8 @@ export interface SystemSettings {
   registration_enabled: boolean;
   // True only while first-run setup is open AND the server has CALDAV_SETUP_TOKEN set.
   setup_token_required?: boolean;
+  // Server release version ("dev" for a local build); older servers omit it.
+  version?: string;
 }
 
 export interface AuthMethod {

@@ -127,7 +127,7 @@ server/scripts/docker-release.sh 1.0.0 --no-push   # build both platforms, don't
 ```
 
 The version is also baked into the image: the script passes it as `--build-arg VERSION`, and
-it becomes the MCP `serverInfo.version`. A plain `docker build` (or a local `go build`) reports `dev`.
+it becomes the MCP `serverInfo.version` and the `version` shown on Settings > About. A plain `docker build` (or a local `go build`) reports `dev`.
 
 Stable versions are also tagged `latest`; pre-releases (a version with a `-` suffix) never are.
 The arm64 image is built under QEMU, so expect it to be slow. A single-platform

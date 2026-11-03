@@ -15,6 +15,7 @@ import (
 	contactuc "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventuc "github.com/jherrma/caldav-server/internal/usecase/event"
 	searchuc "github.com/jherrma/caldav-server/internal/usecase/search"
+	"github.com/jherrma/caldav-server/internal/version"
 )
 
 // Deps are the use cases and repositories the tools delegate to.
@@ -182,16 +183,16 @@ func (s *Server) handleInitialize(req *Request, userID uint) (*Response, string)
 	if params.ClientInfo != nil {
 		clientName = params.ClientInfo.Name
 	}
-	version := negotiateProtocolVersion(params.ProtocolVersion)
+	protocol := negotiateProtocolVersion(params.ProtocolVersion)
 
-	sess, err := s.sessions.Create(userID, version, clientName)
+	sess, err := s.sessions.Create(userID, protocol, clientName)
 	if err != nil {
 		return errorResponse(req.ID, rpcError(CodeInternalError, "failed to open session")), ""
 	}
 
 	return resultResponse(req.ID, initializeResult{
-		ProtocolVersion: version,
-		ServerInfo:      serverInfo{Name: ServerName, Version: ServerVersion},
+		ProtocolVersion: protocol,
+		ServerInfo:      serverInfo{Name: ServerName, Version: version.Version},
 		Capabilities: capabilities{
 			Tools:     &toolsCapability{},
 			Resources: &resourcesCapability{},
