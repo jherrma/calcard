@@ -301,7 +301,11 @@ func (r *CalendarRepository) GetCalendarObjectByUID(ctx context.Context, calenda
 	return &obj, nil
 }
 
-// ListEvents retrieves calendar objects within a time range
+// ListEvents retrieves the events (VEVENT objects) of a calendar within a time
+// range. Tasks (VTODO) stored in the same collection are excluded (#170): this
+// feeds the REST event list and the MCP event tools, which would otherwise show
+// a task with a DTSTART as an event. DAV reads go through GetCalendarObjects
+// and still see every object.
 func (r *CalendarRepository) ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*calendar.CalendarObject, error) {
 	var objects []*calendar.CalendarObject
 	// For recurring masters, end_time holds only the FIRST occurrence's end;
@@ -314,6 +318,7 @@ func (r *CalendarRepository) ListEvents(ctx context.Context, calendarID uint, st
 	// with a Z, which is UTC by luck rather than by contract.
 	err := r.db.WithContext(ctx).
 		Where("calendar_id = ?", calendarID).
+		Where("component_type = ?", calendar.ComponentEvent).
 		Where("start_time < ? AND COALESCE(recurrence_end_time, end_time) > ?", end.UTC(), start.UTC()).
 		Order("start_time ASC, created_at ASC").
 		Find(&objects).Error
@@ -370,6 +375,9 @@ func (r *CalendarRepository) SearchEvents(ctx context.Context, q calendar.EventS
 		db := r.db.WithContext(ctx).
 			Model(&calendar.CalendarObject{}).
 			Where("calendar_id IN ?", q.CalendarIDs).
+			// Events only, like ListEvents: a task (VTODO) is not an event and
+			// must not come back as one (#170).
+			Where("component_type = ?", calendar.ComponentEvent).
 			// An object without a start time has no place on a timeline and is
 			// invisible to ListEvents too; keep both endpoints consistent.
 			Where("start_time IS NOT NULL").

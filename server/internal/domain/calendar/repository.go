@@ -98,13 +98,15 @@ type CalendarRepository interface {
 	// change-log row atomically (for mutations outside the object CRUD methods).
 	RecordChange(ctx context.Context, calendarID uint, path, uid, changeType string) error
 
-	// ListEvents retrieves calendar objects within a time range
+	// ListEvents retrieves the events (ComponentEvent objects) of a calendar
+	// within a time range; tasks (VTODO) are excluded.
 	ListEvents(ctx context.Context, calendarID uint, start, end time.Time) ([]*CalendarObject, error)
 
-	// SearchEvents finds calendar objects across several calendars whose
-	// denormalized summary/location/description match q.Text, ordered as
-	// described on EventSearchQuery. It returns series masters, one row per
-	// stored object — expanding them into occurrences is the caller's job.
+	// SearchEvents finds events (ComponentEvent objects; tasks are excluded)
+	// across several calendars whose denormalized summary/location/description
+	// match q.Text, ordered as described on EventSearchQuery. It returns series
+	// masters, one row per stored object — expanding them into occurrences is
+	// the caller's job.
 	SearchEvents(ctx context.Context, q EventSearchQuery) ([]*CalendarObject, error)
 
 	// GetCalendarObjectByUUID retrieves a calendar object by UUID
