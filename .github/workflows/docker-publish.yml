@@ -1,0 +1,72 @@
+name: Docker publish
+
+# Manual only: build the server image and push it to Docker Hub.
+# Run from Actions → "Docker publish" → Run workflow, pick the version tag and
+# the platforms (both are ticked by default).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image tag and MCP serverInfo.version (e.g. dev, 1.0.2)
+        required: true
+        default: dev
+        type: string
+      linux_amd64:
+        description: Build linux/amd64
+        type: boolean
+        default: true
+      linux_arm64:
+        description: Build linux/arm64 (slow: built under QEMU)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ${{ vars.DOCKER_HUB_USERNAME }}/calcard
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select platforms
+        id: platforms
+        env:
+          AMD64: ${{ inputs.linux_amd64 }}
+          ARM64: ${{ inputs.linux_arm64 }}
+        run: |
+          list=()
+          if [ "$AMD64" = "true" ]; then list+=(linux/amd64); fi
+          if [ "$ARM64" = "true" ]; then list+=(linux/arm64); fi
+          if [ "${#list[@]}" -eq 0 ]; then
+            echo "Select at least one platform" >&2
+            exit 1
+          fi
+          echo "platforms=$(IFS=,; echo "${list[*]}")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ inputs.linux_arm64 && 'arm64' || '' }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: ${{ steps.platforms.outputs.platforms }}
+          push: true
+          build-args: |
+            VERSION=${{ inputs.version }}
+          tags: ${{ env.IMAGE }}:${{ inputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
