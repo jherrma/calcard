@@ -77,17 +77,18 @@ func (p *mkcolCalendarProps) applyTo(c *calendar.Calendar) {
 }
 
 // calendarComponentSet is the supported-calendar-component-set reported for a
-// stored calendar. Rows created before MKCALENDAR could narrow it all hold
-// "VEVENT,VTODO", so their report is unchanged.
+// stored calendar, and the set a PUT is checked against (checkSupportedComponents):
+// every component calendar.SupportsComponent accepts for it, VEVENT before
+// VTODO. Delegating keeps DAV and the REST write paths on one rule (#170). For
+// every value ever stored ("VEVENT", "VTODO", "VEVENT,VTODO", legacy "" = both)
+// the result is the stored list unchanged.
 func calendarComponentSet(stored string) []string {
+	cal := &calendar.Calendar{SupportedComponents: stored}
 	var set []string
-	for _, comp := range strings.Split(stored, ",") {
-		if comp = strings.TrimSpace(comp); comp != "" {
+	for _, comp := range []string{calendar.ComponentEvent, calendar.ComponentToDo} {
+		if calendar.SupportsComponent(cal, comp) {
 			set = append(set, comp)
 		}
-	}
-	if len(set) == 0 {
-		return []string{"VEVENT", "VTODO"}
 	}
 	return set
 }

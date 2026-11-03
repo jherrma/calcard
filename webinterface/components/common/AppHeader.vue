@@ -123,6 +123,7 @@ const pageTitle = computed(() => {
     // the startsWith loop skips '/' deliberately, or it would match every route.
     '/': 'Dashboard',
     '/calendar': 'Calendar',
+    '/tasks': 'Tasks',
     '/contacts': 'Contacts',
     '/settings': 'Settings',
     '/settings/profile': 'Profile Settings',

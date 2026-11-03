@@ -501,3 +501,82 @@ describe('keyboard', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/contacts');
   });
 });
+
+// SCOPE (#170, story 28): a calendars-group hit that is a task list opens in the
+// Tasks section, never in the Calendar, where task lists are not shown. Every
+// other calendar hit keeps opening the Calendar section exactly as before.
+describe('task-list hits (#170)', () => {
+  function cal(id: number, uuid: string, name: string, kind?: Calendar['kind']): Calendar {
+    return { id: String(id), uuid, path: `/c/${id}`, name, color: '#123456', created_at: '', updated_at: '', kind };
+  }
+
+  const CALENDARS = [
+    cal(1, 'cal-work', 'Work', 'events'),
+    cal(2, 'list-errands', 'Errands', 'tasks'),
+    cal(3, 'cal-mixed', 'Old mixed', 'both'),
+    cal(4, 'cal-legacy', 'Legacy'),
+  ];
+
+  async function openWithCalendars() {
+    const store = seed('err', { calendars: CALENDARS });
+    const { wrapper, vm } = mountFull();
+    await open(vm, 'err');
+    const rows = wrapper.findAll('[role="option"]');
+    expect(rows.map((r) => r.get('span.font-medium').text())).toEqual(['Work', 'Errands', 'Old mixed', 'Legacy']);
+    return { store, wrapper, vm, rows };
+  }
+
+  it('opens a task list at /tasks?list=<uuid>, records the search and closes', async () => {
+    const { store, vm, rows } = await openWithCalendars();
+
+    await rows[1]!.trigger('click');
+
+    expect(navigateToMock).toHaveBeenCalledTimes(1);
+    expect(navigateToMock).toHaveBeenCalledWith({ path: '/tasks', query: { list: 'list-errands' } });
+    expect(store.rememberSearch).toHaveBeenCalledWith('err');
+    expect(vm.visible).toBe(false);
+  });
+
+  it.each([
+    [0, 'events'],
+    [2, 'both'],
+    [3, 'no kind'],
+  ])('keeps opening the Calendar for row %i (%s)', async (index) => {
+    const { vm, rows } = await openWithCalendars();
+
+    await rows[index]!.trigger('click');
+
+    expect(navigateToMock).toHaveBeenCalledTimes(1);
+    expect(navigateToMock).toHaveBeenCalledWith('/calendar');
+    expect(vm.visible).toBe(false);
+  });
+
+  it('Enter on a highlighted task list opens it in Tasks', async () => {
+    const { wrapper } = await openWithCalendars();
+    const input = wrapper.find('input');
+
+    await input.trigger('keydown', { key: 'ArrowDown' });
+    await input.trigger('keydown', { key: 'Enter' });
+
+    expect(navigateToMock).toHaveBeenCalledWith({ path: '/tasks', query: { list: 'list-errands' } });
+  });
+
+  it('Enter on a highlighted event calendar still opens the Calendar', async () => {
+    const { wrapper } = await openWithCalendars();
+
+    await wrapper.find('input').trigger('keydown', { key: 'Enter' });
+
+    expect(navigateToMock).toHaveBeenCalledWith('/calendar');
+  });
+
+  it('labels only the task-list row "Task list", in muted ink', async () => {
+    const { rows } = await openWithCalendars();
+
+    const hints = rows.map((r) => r.find('[data-testid="task-list-hint"]'));
+    expect(hints.map((h) => h.exists())).toEqual([false, true, false, false]);
+    expect(hints[1]!.text()).toBe('Task list');
+    expect(hints[1]!.classes()).toEqual(
+      expect.arrayContaining(['text-xs', 'text-surface-500', 'dark:text-surface-400'])
+    );
+  });
+});

@@ -21,16 +21,19 @@ import (
 // text, so nothing but the component type can keep it out. CalDAV itself must
 // keep serving the task: GET, a Depth 1 PROPFIND, a VTODO calendar-query and
 // a sync-collection REPORT all still see it.
+//
+// The task and the event share one mixed calendar (`kind: "both"`), the case
+// that needs the component-type filter. The default "Personal" calendar stores
+// VEVENT only since #170 and would refuse the VTODO PUT.
 func TestCalDAVTasksStayOutOfEventReads(t *testing.T) {
 	email := "dav-vtodo-170@example.test"
 	password := "vtodoSecret!123"
 	token, username := registerAndLoginFull(t, email, password, "Vtodo User")
 	_, appPass := createAppPassword(t, token, "vtodo-test")
 
-	idx := listCalendarsIndex(t, token)
-	personal, ok := idx["Personal"]
-	require.True(t, ok)
-	collection := "/dav/" + username + "/calendars/" + personal.UUID + ".ics/"
+	mixed := createTaskCalendar(t, token, "Mixed", "both")
+	require.Equal(t, "VEVENT,VTODO", mixed.SupportedComponents)
+	collection := "/dav/" + username + "/calendars/" + mixed.Path + "/"
 
 	start := time.Date(2034, 4, 10, 10, 0, 0, 0, time.UTC)
 	putEvent(t, collection, email, appPass, "vtodo170-event", "Harbour inspection", start)
@@ -50,7 +53,7 @@ func TestCalDAVTasksStayOutOfEventReads(t *testing.T) {
 		window := fmt.Sprintf("?start=%s&end=%s",
 			start.Add(-24*time.Hour).Format(time.RFC3339), start.Add(24*time.Hour).Format(time.RFC3339))
 		for _, expand := range []string{"true", "false"} {
-			got := listEvents(t, token, personal.UUID, window+"&expand="+expand)
+			got := listEvents(t, token, mixed.UUID, window+"&expand="+expand)
 			uids := make([]string, 0, len(got))
 			for _, ev := range got {
 				uids = append(uids, ev.UID)

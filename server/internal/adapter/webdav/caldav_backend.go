@@ -213,7 +213,22 @@ func (b *CalDAVBackend) GetCalendarObject(ctx context.Context, p string, req *ca
 }
 
 func (b *CalDAVBackend) ListCalendarObjects(ctx context.Context, p string, req *caldav.CalendarCompRequest) ([]caldav.CalendarObject, error) {
-	// Trim trailing slash for ResolvePath compatibility if needed, or handle it
+	members, err := b.collectionMembers(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]caldav.CalendarObject, 0, len(members))
+	for _, m := range members {
+		res = append(res, m.object)
+	}
+	return res, nil
+}
+
+// collectionMembers resolves the calendar collection at p and returns every
+// object in it, decoded, together with its denormalised series end (which the
+// VTODO time-range matcher needs). An object whose stored iCalendar does not
+// decode is left out, as it always was.
+func (b *CalDAVBackend) collectionMembers(ctx context.Context, p string) ([]queryCandidate, error) {
 	c, _, perm, err := b.ResolvePath(ctx, p)
 	if err != nil {
 		return nil, err
@@ -228,34 +243,27 @@ func (b *CalDAVBackend) ListCalendarObjects(ctx context.Context, p string, req *
 		return nil, err
 	}
 
-	res := make([]caldav.CalendarObject, 0, len(objects))
+	res := make([]queryCandidate, 0, len(objects))
 	for _, obj := range objects {
-		// Join path correctly
-		objUrl := path.Join(p, obj.Path)
-		// Ensure it starts with /dav/ if p didn't
-		if !strings.HasPrefix(objUrl, "/dav/") {
-			// This shouldn't happen given standard usage, but let's be safe
-		}
-
-		co, err := b.mapCalendarObject(objUrl, obj)
+		co, err := b.mapCalendarObject(path.Join(p, obj.Path), obj)
 		if err == nil {
-			res = append(res, *co)
+			res = append(res, queryCandidate{object: *co, recurrenceEnd: obj.RecurrenceEndTime})
 		}
 	}
-
 	return res, nil
 }
 
 func (b *CalDAVBackend) QueryCalendarObjects(ctx context.Context, p string, query *caldav.CalendarQuery) ([]caldav.CalendarObject, error) {
-	all, err := b.ListCalendarObjects(ctx, p, &query.CompRequest)
+	members, err := b.collectionMembers(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 	// Apply the query's CompFilter (e.g. VEVENT time-range) so that clients
-	// like Apple Calendar / Thunderbird / DAVx5 only see the events that fall
+	// like Apple Calendar / Thunderbird / DAVx5 only see the objects that fall
 	// inside the window they requested. Without this, every calendar-query
-	// REPORT effectively behaves like an unfiltered list.
-	return caldav.Filter(query, all)
+	// REPORT effectively behaves like an unfiltered list. A VTODO time-range
+	// is matched in caldav_vtodo_filter.go (#170); everything else by go-webdav.
+	return filterCalendarQuery(query, members)
 }
 
 func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal *ical.Calendar, opts *caldav.PutCalendarObjectOptions) (*caldav.CalendarObject, error) {
@@ -436,6 +444,22 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 	obj, err := b.calendarRepo.GetCalendarObjectByPath(ctx, c.ID, objPath)
 	if err != nil || obj == nil {
 		return webdav.NewHTTPError(http.StatusNotFound, nil)
+	}
+
+	// A task (VTODO) is deleted for good, exactly like the REST task DELETE
+	// (#170, user decision after story 23): no deleted_at tombstone, and the
+	// "deleted" change-log row with the calendar's new sync token is written in
+	// the same transaction. A row that is already gone when the delete runs (a
+	// concurrent DELETE won) is a 404 with nothing recorded, as over REST.
+	// Every other object (an event) keeps the soft delete.
+	if obj.IsTask() {
+		if err := b.calendarRepo.HardDeleteCalendarObject(ctx, obj); err != nil {
+			if errors.Is(err, calendar.ErrNotFound) {
+				return webdav.NewHTTPError(http.StatusNotFound, nil)
+			}
+			return err
+		}
+		return nil
 	}
 
 	if err := b.calendarRepo.DeleteCalendarObject(ctx, obj); err != nil {

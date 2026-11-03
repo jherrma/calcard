@@ -258,7 +258,8 @@ def test_mkcol_existing(t, u1):
   module-scoped autouse fixture. If it fails, every test of that suite FAILs
   with the setup error and the other suites still run.
 - **Factories** register their own cleanup and return the raw JSON:
-  `u.mk_calendar(name)`, `u.mk_addressbook(name)`, `u.mk_event(cal_uuid, …)`,
+  `u.mk_calendar(name)` (an event calendar; `kind="tasks"` or `kind="both"` for
+  a collection that must take VTODOs), `u.mk_addressbook(name)`, `u.mk_event(cal_uuid, …)`,
   `u.mk_contact(ab_uuid, …)`. For anything else call
   `e2e.defer("description", e2e.cleanup_api, user, "DELETE", path)`.
 - **Checks** (`harness/checks.py`) record a failure and return `False` — they do

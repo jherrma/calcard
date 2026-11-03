@@ -16,14 +16,38 @@ type stubCalendarRepo struct {
 	calendar.CalendarRepository
 	obj     *calendar.CalendarObject
 	updated *calendar.CalendarObject
+	created *calendar.CalendarObject
+	moved   *calendar.CalendarObject
+	deleted *calendar.CalendarObject
+	// calendars answers GetByID. An id not in it is a legacy calendar
+	// (SupportedComponents "" = VEVENT and VTODO), so the component-set check
+	// (#170) passes for every test that does not file a calendar.
+	calendars map[uint]*calendar.Calendar
 }
 
 func (s *stubCalendarRepo) GetCalendarObjectByUUID(_ context.Context, _ string) (*calendar.CalendarObject, error) {
 	return s.obj, nil
 }
 
+func (s *stubCalendarRepo) GetByID(_ context.Context, id uint) (*calendar.Calendar, error) {
+	if cal, ok := s.calendars[id]; ok {
+		return cal, nil
+	}
+	return &calendar.Calendar{ID: id}, nil
+}
+
+func (s *stubCalendarRepo) MoveCalendarObject(_ context.Context, obj *calendar.CalendarObject, _ uint) error {
+	s.moved = obj
+	return nil
+}
+
 func (s *stubCalendarRepo) UpdateCalendarObject(_ context.Context, obj *calendar.CalendarObject) error {
 	s.updated = obj
+	return nil
+}
+
+func (s *stubCalendarRepo) DeleteCalendarObject(_ context.Context, obj *calendar.CalendarObject) error {
+	s.deleted = obj
 	return nil
 }
 

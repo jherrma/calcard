@@ -115,6 +115,10 @@ func (uc *CreateUseCase) Execute(ctx context.Context, userID uint, input CreateI
 		return nil, ErrEmptyFeed
 	}
 
+	// SupportedComponents is mixed on purpose (#170), unlike a REST calendar's
+	// "VEVENT" default: ParseFeed keeps a feed's VTODOs and ReplaceFeedObjects
+	// bypasses the component check, so a narrower set would store objects the
+	// collection does not advertise.
 	cal := &calendar.Calendar{
 		UUID:                uuid.New().String(),
 		UserID:              userID,
@@ -162,8 +166,22 @@ func (uc *CreateUseCase) Execute(ctx context.Context, userID uint, input CreateI
 
 	sub.Calendar = *cal
 	// The events were just written, so the count is what was stored — no need
-	// to ask the database what we put there a line ago.
-	return &View{Subscription: sub, Calendar: cal, EventCount: int64(len(feed.Objects))}, nil
+	// to ask the database what we put there a line ago. Like GetEventCount,
+	// which the other subscription views use, it counts events only: a feed's
+	// VTODOs are stored too, but they are tasks (#170).
+	return &View{Subscription: sub, Calendar: cal, EventCount: countEvents(feed.Objects)}, nil
+}
+
+// countEvents counts the VEVENT objects among objs, the number GetEventCount
+// reports once they are stored.
+func countEvents(objs []*calendar.CalendarObject) int64 {
+	var n int64
+	for _, obj := range objs {
+		if obj.IsEvent() {
+			n++
+		}
+	}
+	return n
 }
 
 // rollback removes a calendar created moments ago for a subscription that then

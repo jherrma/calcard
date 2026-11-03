@@ -32,6 +32,7 @@ import (
 	searchusecase "github.com/jherrma/caldav-server/internal/usecase/search"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 	subscriptionusecase "github.com/jherrma/caldav-server/internal/usecase/subscription"
+	taskusecase "github.com/jherrma/caldav-server/internal/usecase/task"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
 
@@ -486,6 +487,38 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	eventGroup.Patch("/:event_id", eventHandler.Update)
 	eventGroup.Delete("/:event_id", eventHandler.Delete)
 	eventGroup.Post("/:event_id/move", eventHandler.Move)
+
+	// Task Routes (Protected, #170): the VTODOs of a task list, with the event
+	// routes' access rules. Raw JSON like events.
+	taskHandler := http.NewTaskHandler(
+		taskusecase.NewListTasksUseCase(calendarRepo),
+		taskusecase.NewGetTaskUseCase(calendarRepo),
+		taskusecase.NewCreateTaskUseCase(calendarRepo, nil),
+		taskusecase.NewUpdateTaskUseCase(calendarRepo, nil),
+		taskusecase.NewDeleteTaskUseCase(calendarRepo),
+		taskusecase.NewCompleteTaskUseCase(calendarRepo, nil),
+		taskusecase.NewUncompleteTaskUseCase(calendarRepo, nil),
+		taskusecase.NewListAllTasksUseCase(calendarRepo),
+		taskusecase.NewTaskSummaryUseCase(calendarRepo),
+		calendarRepo,
+	)
+
+	taskGroup := calendarGroup.Group("/:calendar_id/tasks")
+	taskGroup.Get("/", taskHandler.List)
+	taskGroup.Post("/", taskHandler.Create)
+	taskGroup.Get("/:task_id", taskHandler.Get)
+	taskGroup.Patch("/:task_id", taskHandler.Update)
+	taskGroup.Delete("/:task_id", taskHandler.Delete)
+	taskGroup.Post("/:task_id/complete", taskHandler.Complete)
+	taskGroup.Post("/:task_id/uncomplete", taskHandler.Uncomplete)
+
+	// Cross-list tasks (#170): every task list the caller can read, in one
+	// query. On v1 itself, so it needs its own Authenticate like /search and
+	// /contacts/search (without it the handler has no user).
+	v1.Get("/tasks", http.Authenticate(jwtManager, userRepo), taskHandler.ListAll)
+	// Open/overdue/due-today/completed counts of those lists at the caller's
+	// as_of, in one query (#170): the sidebar badge and per-list counts.
+	v1.Get("/tasks/summary", http.Authenticate(jwtManager, userRepo), taskHandler.Summary)
 
 	// MCP Server (story 104). Registered here, after every use case it delegates
 	// to exists, and mounted at /mcp rather than under /api/v1 because the

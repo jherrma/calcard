@@ -39,19 +39,32 @@ export const useCalendarStore = defineStore('calendars', {
       return state.events.filter((e: CalendarEvent) => state.visibleCalendarIds.has(String(e.calendar_id)));
     },
 
-    calendarOptions(state: CalendarState) {
-      return state.calendars.map((cal: Calendar) => ({
+    // Every calendar that can hold events: `events` and `both` (mixed legacy
+    // calendars and subscriptions), never a task list (`kind: 'tasks'`, #170).
+    // `calendars` itself stays the full list from GET /calendars (one request,
+    // which the tasks section reuses), so anything that lists calendars for
+    // EVENTS — the Calendar sidebar, the event form, the /events fan-outs of
+    // this store and the dashboard, the dashboard stats, the import/export
+    // selectors — reads this getter or one built on it, never `calendars`.
+    // A lookup by id (colour, name of an event's calendar) may still use
+    // `calendars`. A missing `kind` counts as an event calendar.
+    eventCalendars(state: CalendarState): Calendar[] {
+      return state.calendars.filter((c: Calendar) => c.kind !== 'tasks');
+    },
+
+    calendarOptions(state: CalendarState): Array<Calendar & { visible: boolean }> {
+      return this.eventCalendars.map((cal: Calendar) => ({
         ...cal,
         visible: state.visibleCalendarIds.has(String(cal.id)),
       }));
     },
 
-    ownedCalendars(state: CalendarState) {
-      return state.calendars.filter((c: Calendar) => !c.shared && !c.subscribed);
+    ownedCalendars(): Calendar[] {
+      return this.eventCalendars.filter((c: Calendar) => !c.shared && !c.subscribed);
     },
 
-    sharedCalendars(state: CalendarState) {
-      return state.calendars.filter((c: Calendar) => c.shared);
+    sharedCalendars(): Calendar[] {
+      return this.eventCalendars.filter((c: Calendar) => c.shared);
     },
 
     // Calendars the user may create or edit events in. A subscribed calendar
@@ -59,16 +72,19 @@ export const useCalendarStore = defineStore('calendars', {
     // and the next refresh replaces its contents wholesale, so anything saved
     // into it would silently disappear. This getter is the single place the
     // event form and the dashboard's quick-add read, so excluding it here is
-    // what keeps the UI from offering a write the server will refuse.
-    writableCalendars(state: CalendarState) {
-      return state.calendars.filter(
+    // what keeps the UI from offering a write the server will refuse. Task
+    // lists are out too (built on eventCalendars): the server answers an event
+    // saved into one with 400 "This calendar does not store events".
+    writableCalendars(): Calendar[] {
+      return this.eventCalendars.filter(
         (c: Calendar) => !c.subscribed && (!c.shared || c.permission === 'read-write'),
       );
     },
 
-    // Subscribed calendars, for the sidebar's own section.
-    subscribedCalendars(state: CalendarState) {
-      return state.calendars.filter((c: Calendar) => c.subscribed);
+    // Subscribed calendars, for the sidebar's own section. Always `both` on the
+    // server today; built on eventCalendars like the other sidebar sections.
+    subscribedCalendars(): Calendar[] {
+      return this.eventCalendars.filter((c: Calendar) => c.subscribed);
     },
   },
 
@@ -112,8 +128,11 @@ export const useCalendarStore = defineStore('calendars', {
         // calendars are fetched — not just visible ones — so toggling visibility
         // doesn't require a refetch. allSettled preserves the previous
         // continue-on-error behaviour: one failing calendar doesn't block others.
+        // Task lists are skipped (#170): they hold no events, so asking them is
+        // a wasted request against the per-IP rate limiter.
+        const calendars = this.eventCalendars;
         const results = await Promise.allSettled(
-          this.calendars.map((c: Calendar) =>
+          calendars.map((c: Calendar) =>
             api<{ events: CalendarEvent[] }>(
               `/api/v1/calendars/${c.uuid}/events?start=${start.toISOString()}&end=${end.toISOString()}`
             )
@@ -125,7 +144,7 @@ export const useCalendarStore = defineStore('calendars', {
           if (r.status === 'fulfilled') {
             if (r.value.events) allEvents.push(...r.value.events);
           } else {
-            console.warn(`Failed to load events for calendar ${this.calendars[i]?.id}`, r.reason);
+            console.warn(`Failed to load events for calendar ${calendars[i]?.id}`, r.reason);
           }
         });
 

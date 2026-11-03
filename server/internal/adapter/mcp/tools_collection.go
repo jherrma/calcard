@@ -75,7 +75,8 @@ func (s *Server) registerCollectionTools() {
 			"it. This cannot be undone, and everyone the calendar is shared with loses it too. " +
 			"Always tell the user which calendar (by name) and how many events will be lost, and " +
 			"call this only after they have explicitly agreed. Calendars shared with the user " +
-			"cannot be deleted here, and the user's last remaining calendar cannot be deleted.",
+			"cannot be deleted here, and the user's last remaining calendar that can hold events " +
+			"cannot be deleted (a task list always can).",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -155,13 +156,16 @@ func addressBookNotOwned(id string) *toolCallResult {
 // calendarToolError maps a calendar use-case error the way REST's
 // calendarError does: not found (missing or not owned) → the "not owned"
 // answer, ErrInvalidInput → its bare message (validation, the DELETE
-// confirmation, the last-calendar guard), anything else → a generic internal
-// error (toolInternalError, errors.go).
+// confirmation, the last-calendar guard), ErrConflict → its bare message (REST's
+// 409, e.g. "Cannot narrow a calendar's component set", #170), anything else →
+// a generic internal error (toolInternalError, errors.go).
 func calendarToolError(tool, calendarID string, err error) *toolCallResult {
 	switch {
 	case errors.Is(err, calendar.ErrNotFound):
 		return calendarNotOwned(calendarID)
 	case errors.Is(err, calendar.ErrInvalidInput):
+		return errorResult(err.Error())
+	case errors.Is(err, calendar.ErrConflict):
 		return errorResult(err.Error())
 	}
 	return toolInternalError(tool, err)
@@ -177,6 +181,7 @@ func ownedCalendarView(cal *calendar.Calendar, eventCount *int64) calendarView {
 		Color:       cal.Color,
 		Timezone:    cal.Timezone,
 		EventCount:  eventCount,
+		Kind:        calendar.KindOf(cal),
 		Permission:  permissionLabel(calendar.PermissionOwner),
 		Shared:      false,
 	}

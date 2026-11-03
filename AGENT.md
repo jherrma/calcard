@@ -10,6 +10,7 @@ CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalD
 
 ```
 /
+├── docs/                    # README screenshots; release-notes/ = drafts for the GitHub release body (e.g. 170-tasks.md)
 ├── docker-compose/          # Example compose files (SQLite, PostgreSQL) using herrj/calcard
 ├── stories/                 # User stories for implementation
 │   ├── backend/             # Backend stories (001–029)
@@ -22,17 +23,17 @@ CalCard is a self-hostable **CalDAV/CardDAV server** implementing RFC 4791 (CalD
 │   │   ├── adapter/         # HTTP handlers, repositories, auth (JWT, OAuth), WebDAV, MCP (#104)
 │   │   ├── domain/          # Domain models and repository interfaces
 │   │   ├── infrastructure/  # Database, email, server setup, migrations
-│   │   ├── usecase/         # Business logic (auth, calendar, contact, sharing, import/export, mcptoken, subscription)
+│   │   ├── usecase/         # Business logic (auth, calendar, task, contact, sharing, import/export, mcptoken, subscription)
 │   │   └── config/          # Configuration loading
 │   └── Dockerfile           # Multi-stage Alpine build (static binary)
 └── webinterface/            # Nuxt 4 SPA frontend
-    ├── pages/               # File-based routing (auth, calendar, contacts, search)
-    ├── components/          # Auto-imported Vue components (auth, calendar, contacts, common)
-    ├── stores/              # Pinia stores (auth, calendars, contacts, search)
+    ├── pages/               # File-based routing (auth, calendar, contacts, tasks, search)
+    ├── components/          # Auto-imported Vue components (auth, calendar, contacts, tasks, common)
+    ├── stores/              # Pinia stores (auth, calendars, contacts, tasks, search)
     ├── composables/         # useApi (fetch + auth + response unwrap), useAppToast
     ├── middleware/           # Route guards (auth, guest)
     ├── layouts/             # default (app shell), auth (centered card)
-    ├── types/               # TypeScript interfaces (auth, calendar, contacts, search, api)
+    ├── types/               # TypeScript interfaces (auth, calendar, contacts, tasks, search, api)
     └── plugins/             # PrimeVue service registration
 ```
 

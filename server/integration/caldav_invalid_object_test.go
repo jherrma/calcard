@@ -15,16 +15,21 @@ import (
 // UID (RFC 4791 §4.1), and must be valid iCalendar (§5.3.2.1). A PUT that breaks
 // that is the client's mistake and must be answered with a 409 precondition
 // error, not a 500.
+//
+// The collection stores VEVENT and VTODO (`kind: "both"`), so the VEVENT+VTODO
+// body is refused for being two component types, not for its VTODO: the PUT
+// checks the collection's component set first, and the default "Personal"
+// calendar stores VEVENT only since #170 (there that body is a 403
+// supported-calendar-component).
 func TestCalDAVPutRejectsInvalidCalendarObject(t *testing.T) {
 	email := "caldav-invalid@example.test"
 	password := "caldavSecret!123"
 	token, username := registerAndLoginFull(t, email, password, "CalDAV Invalid")
 	_, appPassword := createAppPassword(t, token, "caldav-invalid")
 
-	idx := listCalendarsIndex(t, token)
-	personal, ok := idx["Personal"]
-	require.True(t, ok, "default Personal calendar should exist")
-	collection := "/dav/" + username + "/calendars/" + personal.UUID + ".ics/"
+	mixed := createTaskCalendar(t, token, "Mixed", "both")
+	require.Equal(t, "VEVENT,VTODO", mixed.SupportedComponents)
+	collection := "/dav/" + username + "/calendars/" + mixed.Path + "/"
 
 	vevent := func(uid string) string {
 		return "BEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTAMP:20300101T000000Z\r\n" +

@@ -78,6 +78,9 @@ func (m *mockCalendarRepo) Update(ctx context.Context, c *calendar.Calendar) err
 func (m *mockCalendarRepo) UpdateMetadata(ctx context.Context, c *calendar.Calendar) error {
 	return nil
 }
+func (m *mockCalendarRepo) UpdateSupportedComponents(ctx context.Context, id uint, set string) error {
+	return nil
+}
 func (m *mockCalendarRepo) Delete(ctx context.Context, id uint) error                 { return nil }
 func (m *mockCalendarRepo) CountByUserID(ctx context.Context, id uint) (int64, error) { return 0, nil }
 func (m *mockCalendarRepo) GetEventCount(ctx context.Context, id uint) (int64, error) { return 0, nil }
@@ -102,6 +105,9 @@ func (m *mockCalendarRepo) MoveCalendarObject(ctx context.Context, obj *calendar
 func (m *mockCalendarRepo) DeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return nil
 }
+func (m *mockCalendarRepo) HardDeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
+	return nil
+}
 func (m *mockCalendarRepo) GetChangesSinceToken(ctx context.Context, cid uint, t string) ([]*calendar.SyncChangeLog, error) {
 	return nil, nil
 }
@@ -110,6 +116,15 @@ func (m *mockCalendarRepo) RecordChange(ctx context.Context, cid uint, path, uid
 }
 func (m *mockCalendarRepo) ListEvents(ctx context.Context, cid uint, s, e time.Time) ([]*calendar.CalendarObject, error) {
 	return nil, nil
+}
+func (m *mockCalendarRepo) ListTasks(ctx context.Context, q calendar.TaskQuery) ([]*calendar.CalendarObject, int64, error) {
+	return nil, 0, nil
+}
+func (m *mockCalendarRepo) ListReadableCalendarIDs(ctx context.Context, userID uint) ([]calendar.ReadableCalendar, error) {
+	return nil, nil
+}
+func (m *mockCalendarRepo) CountTasks(ctx context.Context, calendarIDs []uint, asOf time.Time) (calendar.TaskCounts, error) {
+	return calendar.TaskCounts{}, nil
 }
 func (m *mockCalendarRepo) SearchEvents(ctx context.Context, q calendar.EventSearchQuery) ([]*calendar.CalendarObject, error) {
 	return nil, nil

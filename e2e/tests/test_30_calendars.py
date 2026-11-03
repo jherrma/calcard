@@ -238,15 +238,23 @@ def _cleanup_calendars_at(e2e, user, path):
 
 
 def test_last_guard(t, e2e):
-    """the last remaining calendar cannot be deleted"""
+    """the last remaining event calendar cannot be deleted; a task list can"""
     ucal = e2e.create_user("UCAL", "E2E Single Calendar")
     r = ucal.api("GET", "/calendars/")
     if not t.status(r, 200):
         return
     cals = r.jdict().get("calendars") or []
-    if not t.eq(len(cals), 1, "a fresh account has exactly one calendar"):
+    # Since #170 registration seeds an event calendar and a task list.
+    defaults = sorted((c.get("name"), c.get("kind"), c.get("supported_components")) for c in cals)
+    if not t.eq(defaults, [("Personal", "events", "VEVENT"), ("Tasks", "tasks", "VTODO")],
+                "a fresh account has a calendar (Personal) and a task list (Tasks)"):
         return
-    uuid = cals[0].get("uuid")
-    t.status_class(ucal.api("DELETE", f"/calendars/{uuid}", json='{"confirmation":"DELETE"}'), "4xx",
+    uuids = {c.get("name"): c.get("uuid") for c in cals}
+    personal, tasks = uuids["Personal"], uuids["Tasks"]
+    t.status_class(ucal.api("DELETE", f"/calendars/{personal}", json='{"confirmation":"DELETE"}'), "4xx",
+                   msg="deleting the only event calendar must be refused, also next to a task list")
+    t.status(ucal.api("DELETE", f"/calendars/{tasks}", json='{"confirmation":"DELETE"}'), 204,
+             msg="a task list is never protected by the guard")
+    t.status_class(ucal.api("DELETE", f"/calendars/{personal}", json='{"confirmation":"DELETE"}'), "4xx",
                    msg="deleting the only calendar must be refused")
-    t.status(ucal.api("GET", f"/calendars/{uuid}"), 200, msg="the only calendar must survive")
+    t.status(ucal.api("GET", f"/calendars/{personal}"), 200, msg="the only calendar must survive")

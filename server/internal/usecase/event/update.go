@@ -40,8 +40,16 @@ func NewUpdateEventUseCase(calendarRepo calendar.CalendarRepository) *UpdateEven
 }
 
 func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInput) (*calendar.CalendarObject, error) {
-	obj, err := uc.calendarRepo.GetCalendarObjectByUUID(ctx, input.UUID)
+	// A task is ErrNotFound (#170), checked before the calendar's component
+	// set: a task in a task list is an unknown event, not a refused write.
+	obj, err := loadEvent(ctx, uc.calendarRepo, input.UUID)
 	if err != nil {
+		return nil, err
+	}
+	// Rewriting an event in a calendar that does not store events is refused
+	// like a create (#170), as a DAV PUT of it would be. Deleting it stays
+	// possible.
+	if err := requireEventCalendar(ctx, uc.calendarRepo, obj.CalendarID); err != nil {
 		return nil, err
 	}
 
@@ -291,16 +299,18 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 
 	if input.Summary != nil {
 		// Denormalized obj.Summary is rederived by PopulateDenormFieldsFromICal
-		// after re-encoding; only the iCal property needs setting here.
-		targetEvent.Props.SetText(ical.PropSummary, *input.Summary)
+		// after re-encoding; only the iCal property needs setting here. The
+		// API's text is plain: calendar.NewTextProp escapes it once, so an
+		// event read over REST and sent back unchanged stays unchanged.
+		targetEvent.Props.Set(calendar.NewTextProp(ical.PropSummary, *input.Summary))
 	}
 
 	if input.Description != nil {
-		targetEvent.Props.SetText(ical.PropDescription, *input.Description)
+		targetEvent.Props.Set(calendar.NewTextProp(ical.PropDescription, *input.Description))
 	}
 
 	if input.Location != nil {
-		targetEvent.Props.SetText(ical.PropLocation, *input.Location)
+		targetEvent.Props.Set(calendar.NewTextProp(ical.PropLocation, *input.Location))
 	}
 
 	// Determine current effective times

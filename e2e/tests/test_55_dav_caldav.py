@@ -23,7 +23,10 @@ CONFIRM = {"confirmation": "DELETE"}
 @pytest.fixture(scope="module", autouse=True)
 def cd_setup(e2e, u1, st):
     u1.require_dav()
-    st.cal = u1.mk_calendar(e2e.uniq("caldav"))
+    # A mixed collection: the suite PUTs VEVENTs and VTODOs into it, and a
+    # REST calendar created without a kind stores VEVENT only (#170). A server
+    # older than #170 ignores the field and creates a mixed one anyway.
+    st.cal = u1.mk_calendar(e2e.uniq("caldav"), kind="both")
     st.col = f"{u1.home_cal}{st.cal['path']}/"
 
 

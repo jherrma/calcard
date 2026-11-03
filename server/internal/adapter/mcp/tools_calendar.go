@@ -29,6 +29,10 @@ type calendarView struct {
 	// pointer so the collection tools can leave it out: update_calendar's use
 	// case does not count events, and reporting 0 there would be false.
 	EventCount *int64 `json:"event_count,omitempty"`
+	// Kind is "events" (a calendar), "tasks" (a task list, which stores no
+	// events) or "both" — the same derived value the REST calendar list
+	// reports (#170). Without it a task list reads like an empty calendar.
+	Kind string `json:"kind"`
 	// Permission is "owner", "read" or "read-write". The model needs it to
 	// know a write will be refused before attempting it.
 	Permission string `json:"permission"`
@@ -58,7 +62,8 @@ func (s *Server) registerCalendarTools() {
 		Name: "list_calendars",
 		Description: "List the calendars the signed-in user can see, including calendars shared " +
 			"with them. Returns each calendar's id (a UUID, required by every other calendar " +
-			"tool), name, colour, timezone, event count and the caller's permission on it.",
+			"tool), name, colour, timezone, event count, kind (events, tasks for a task list " +
+			"that holds no events, or both) and the caller's permission on it.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 	}, s.toolListCalendars)
 
@@ -206,6 +211,7 @@ func (s *Server) calendarListing(cc *callContext) (map[string]interface{}, error
 			Color:       c.Color,
 			Timezone:    c.Timezone,
 			EventCount:  &count,
+			Kind:        c.Kind,
 			Permission:  c.Permission,
 			Shared:      c.Shared,
 		}
@@ -436,6 +442,11 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		Scope:        scope,
 	})
 	if err != nil {
+		// The object became a task after eventPermission looked (a CalDAV
+		// PUT keeps the UUID): still an unknown event (#170).
+		if errors.Is(err, eventuc.ErrNotFound) {
+			return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+		}
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
 		}
@@ -473,6 +484,9 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 	}
 
 	if err := s.deps.EventDelete.Execute(cc.ctx, in.EventID, scope, in.RecurrenceID); err != nil {
+		if errors.Is(err, eventuc.ErrNotFound) {
+			return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+		}
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
 		}

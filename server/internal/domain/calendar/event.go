@@ -306,29 +306,30 @@ func ToEventInstance(obj *CalendarObject, start, end time.Time, recurrenceID str
 		RecurrenceID: recurrenceID,
 	}
 
-	// Use master properties if available
+	// Use master properties if available. Text is unescaped (text.go), like
+	// the denormalized columns above.
 	if master != nil {
 		if p := master.Props.Get(ical.PropSummary); p != nil {
-			inst.Summary = p.Value
+			inst.Summary = UnescapeText(p.Value)
 		}
 		if p := master.Props.Get(ical.PropDescription); p != nil {
-			inst.Description = p.Value
+			inst.Description = UnescapeText(p.Value)
 		}
 		if p := master.Props.Get(ical.PropLocation); p != nil {
-			inst.Location = p.Value
+			inst.Location = UnescapeText(p.Value)
 		}
 	}
 
 	// Override with exception properties
 	if override != nil {
 		if p := override.Props.Get(ical.PropSummary); p != nil {
-			inst.Summary = p.Value
+			inst.Summary = UnescapeText(p.Value)
 		}
 		if p := override.Props.Get(ical.PropDescription); p != nil {
-			inst.Description = p.Value
+			inst.Description = UnescapeText(p.Value)
 		}
 		if p := override.Props.Get(ical.PropLocation); p != nil {
-			inst.Location = p.Value
+			inst.Location = UnescapeText(p.Value)
 		}
 		inst.IsException = true
 	}

@@ -168,7 +168,8 @@ const DEEP_LINK_PARAMS = ['date', 'event', 'cal', 'recurrence'];
 /**
  * Deep link from global search (story 044):
  *   /calendar?date=YYYY-MM-DD&event=<event id>&cal=<numeric calendar id>[&recurrence=<recurrence_id>]
- * Jumps the view to that date and opens the event's detail dialog.
+ * Jumps the view to that date and opens the event's detail dialog. The search
+ * page's calendar hits send `?cal=` alone (#170); that only lands here.
  *
  * Watched (not just read once on mount) because the header search lives in the
  * layout: picking a result while already on /calendar changes only the query, which
@@ -182,7 +183,9 @@ const applyDeepLink = async () => {
   const calParam = str(q.cal);
   const recurrenceParam = str(q.recurrence);
 
-  if (!dateParam && !eventParam) return;
+  // A lone `cal` is a calendars-group hit from the search page (#170): nothing to
+  // jump to or open, but it is still consumed below so it does not linger.
+  if (!dateParam && !eventParam && !calParam) return;
 
   // Parsed as local midnight (a bare 'YYYY-MM-DD' would be read as UTC and can
   // land on the previous day west of Greenwich).

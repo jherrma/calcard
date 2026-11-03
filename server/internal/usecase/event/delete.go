@@ -19,7 +19,8 @@ func NewDeleteEventUseCase(calendarRepo calendar.CalendarRepository) *DeleteEven
 }
 
 func (uc *DeleteEventUseCase) Execute(ctx context.Context, uuid string, scope string, recurrenceID string) error {
-	obj, err := uc.calendarRepo.GetCalendarObjectByUUID(ctx, uuid)
+	// A task is ErrNotFound (#170): the event route never deletes one.
+	obj, err := loadEvent(ctx, uc.calendarRepo, uuid)
 	if err != nil {
 		return err
 	}

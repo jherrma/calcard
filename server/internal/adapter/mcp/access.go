@@ -58,9 +58,14 @@ func (s *Server) calendarPermission(cc *callContext, calendarID uint) calendar.C
 
 // eventPermission returns the caller's permission on the calendar holding the
 // given event, or PermissionNone if the event is unknown or unreachable.
+//
+// Like EventHandler.eventPermission, an object that is not an event (a task,
+// #170) is an unknown event, checked before the permission, so the event tools
+// give a task UUID the same "No event with id …" answer as an unknown one,
+// also on a calendar shared read-only.
 func (s *Server) eventPermission(cc *callContext, eventUUID string) (*calendar.CalendarObject, calendar.CalendarPermission) {
 	obj, err := s.deps.CalendarRepo.GetCalendarObjectByUUID(cc.ctx, eventUUID)
-	if err != nil || obj == nil {
+	if err != nil || !obj.IsEvent() {
 		return nil, calendar.PermissionNone
 	}
 	return obj, s.calendarPermission(cc, obj.CalendarID)

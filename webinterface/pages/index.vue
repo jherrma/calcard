@@ -15,7 +15,7 @@
         outlined
         size="small"
         :loading="dashboardStore.isLoadingEvents || dashboardStore.isLoadingContacts"
-        @click="dashboardStore.refresh()"
+        @click="refresh()"
       />
     </header>
 
@@ -82,7 +82,7 @@
         :month="dashboardStore.miniMonth"
         :event-day-keys="dashboardStore.eventDayKeys"
         :now="dashboardStore.now"
-        :calendar-count="calendarStore.calendars.length"
+        :calendar-count="calendarStore.eventCalendars.length"
         :event-count="dashboardStore.eventCountInMonth(dashboardStore.miniMonth)"
         :first-day="preferencesStore.firstDayOfWeek"
         :loading="dashboardStore.isLoadingEvents"
@@ -100,11 +100,16 @@
         @add="navigateTo('/contacts/new')"
       />
 
+      <!-- "Calendars" counts event calendars only (#170): a task list is not a
+           calendar to the user, and the Calendar section does not show it. Task
+           lists are counted by "Open tasks" (the task summary's `open`). -->
       <DashboardQuickStatsCard
-        :calendars="calendarStore.calendars.length"
+        :calendars="calendarStore.eventCalendars.length"
         :events-this-month="dashboardStore.monthEventCount"
         :address-books="contactsStore.addressBooks.length"
         :contacts="dashboardStore.totalContacts"
+        :open-tasks="tasksStore.summary?.open ?? null"
+        :open-tasks-loading="summaryLoads > 0"
         :loading="dashboardStore.isLoadingEvents || dashboardStore.isLoadingContacts"
       />
     </div>
@@ -128,6 +133,7 @@ import { useCalendarStore } from '~/stores/calendars';
 import { useContactsStore } from '~/stores/contacts';
 import { useDashboardStore } from '~/stores/dashboard';
 import { usePreferencesStore } from '~/stores/preferences';
+import { useTasksStore } from '~/stores/tasks';
 import type { CalendarEvent } from '~/types/calendar';
 import type { Contact } from '~/types/contacts';
 
@@ -152,8 +158,32 @@ const calendarStore = useCalendarStore();
 const contactsStore = useContactsStore();
 const dashboardStore = useDashboardStore();
 const preferencesStore = usePreferencesStore();
+const tasksStore = useTasksStore();
 
 const showCreateEventDialog = ref(false);
+
+/** Task summary requests this page has in flight (mount, timer and Refresh can overlap). */
+const summaryLoads = ref(0);
+
+/**
+ * The "Open tasks" figure (#170). AppSidebar also asks for the summary, but only
+ * when it mounts: coming here from another page of the same layout does not
+ * remount it, so the page asks for itself. Never rejects (the store keeps the old
+ * counts on a failure).
+ */
+const loadSummary = async () => {
+  summaryLoads.value++;
+  try {
+    await tasksStore.fetchSummary();
+  } finally {
+    summaryLoads.value--;
+  }
+};
+
+/** Everything on screen: the dashboard's events and contacts plus the task summary. */
+const refresh = async () => {
+  await Promise.all([dashboardStore.refresh(), loadSummary()]);
+};
 
 const greeting = computed(() => {
   const name = authStore.user?.display_name || authStore.user?.username;
@@ -179,7 +209,7 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
   clockTimer = setInterval(() => dashboardStore.tick(), CLOCK_INTERVAL_MS);
-  refreshTimer = setInterval(() => dashboardStore.refresh(), REFRESH_INTERVAL_MS);
+  refreshTimer = setInterval(() => refresh(), REFRESH_INTERVAL_MS);
   dashboardStore.tick();
   // The mini calendar starts its weeks on the user's first_day_of_week. Usually
   // already loaded at login (useAccentColor asks for preferences); this is a
@@ -188,8 +218,9 @@ onMounted(async () => {
   // Mount and the background timer share one path on purpose: the store survives
   // client-side navigation, so re-entering the dashboard must RE-READ the events
   // rather than keep the first visit's snapshot (an event created on the calendar
-  // page in between would otherwise be missing from the agenda).
-  await dashboardStore.refresh();
+  // page in between would otherwise be missing from the agenda). The task summary
+  // behind "Open tasks" is re-read the same way.
+  await refresh();
 });
 
 onBeforeUnmount(() => {
