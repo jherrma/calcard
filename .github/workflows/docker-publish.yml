@@ -17,7 +17,7 @@ on:
         type: boolean
         default: true
       linux_arm64:
-        description: Build linux/arm64 (slow: built under QEMU)
+        description: "Build linux/arm64 (slow: built under QEMU)"
         type: boolean
         default: true
 
