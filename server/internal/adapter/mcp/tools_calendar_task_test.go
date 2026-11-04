@@ -10,26 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// storeTask writes a task into cal the way a CalDAV PUT does (the MCP surface
-// has no task tools) and returns its UUID.
-func (e *testEnv) storeTask(cal *calendar.Calendar, uid string) string {
-	e.t.Helper()
-	obj := &calendar.CalendarObject{
-		UUID:       uid + "-uuid",
-		CalendarID: cal.ID,
-		Path:       uid + ".ics",
-		UID:        uid,
-		ETag:       calendar.NewETag(),
-		ICalData: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VTODO\r\n" +
-			"UID:" + uid + "\r\nDTSTAMP:20260301T000000Z\r\nDUE:20260306T090000Z\r\n" +
-			"SUMMARY:Renew passport\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
-	}
-	require.NoError(e.t, obj.PopulateDenormFieldsFromICal())
-	require.Equal(e.t, calendar.ComponentToDo, obj.ComponentType)
-	require.NoError(e.t, e.calRepo.CreateCalendarObject(e.ctx(), obj))
-	return obj.UUID
-}
-
 // TestEventToolsTreatTasksAsUnknown (#170, spec §3.1): update_event and
 // delete_event answer a task's UUID with the very text an unknown event id
 // gets, write nothing, and never reach the use case's "no VEVENT found". The

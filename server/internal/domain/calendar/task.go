@@ -105,19 +105,19 @@ func (o *CalendarObject) TaskDetails() TaskDetails {
 	if master == nil {
 		return TaskDetails{}
 	}
-	var d TaskDetails
+	var details TaskDetails
 	if p := master.Props.Get(ical.PropDateTimeStart); p != nil {
-		d.Start = utcDateTime(p)
-		d.StartAllDay = d.Start != nil && p.ValueType() == ical.ValueDate
+		details.Start = utcDateTime(p)
+		details.StartAllDay = details.Start != nil && p.ValueType() == ical.ValueDate
 	}
 	rule := master.Props.Get(ical.PropRecurrenceRule)
 	if rule != nil {
-		d.RRule = rule.Value
+		details.RRule = rule.Value
 	}
 	// Any RRULE counts, an unparseable one too: RecurrenceEndTime treats it
 	// as an unbounded series as well.
-	d.Recurring = rule != nil || master.Props.Get(ical.PropRecurrenceDates) != nil
-	return d
+	details.Recurring = rule != nil || master.Props.Get(ical.PropRecurrenceDates) != nil
+	return details
 }
 
 // TaskMaster returns the VTODO a task is read from and edited in: the first

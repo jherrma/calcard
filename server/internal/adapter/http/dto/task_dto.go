@@ -139,6 +139,18 @@ type TaskWithCalendarResponse struct {
 	CalendarColor string `json:"calendar_color"`
 }
 
+// NewTaskWithCalendarResponse renders a task of the cross-list page with the
+// name and colour of list, the task list that holds it. REST GET /api/v1/tasks
+// and the MCP list_tasks tool both render through it, so the two answer a task
+// alike.
+func NewTaskWithCalendarResponse(obj *calendar.CalendarObject, details calendar.TaskDetails, list calendar.ReadableCalendar) TaskWithCalendarResponse {
+	return TaskWithCalendarResponse{
+		TaskResponse:  NewTaskResponse(obj, details, list.UUID),
+		CalendarName:  list.Name,
+		CalendarColor: list.Color,
+	}
+}
+
 // TaskWithCalendarListResponse is one page of GET /api/v1/tasks: Count tasks
 // on this page, Total across all pages.
 type TaskWithCalendarListResponse struct {

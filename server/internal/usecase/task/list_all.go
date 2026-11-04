@@ -68,33 +68,25 @@ func (uc *ListAllTasksUseCase) Execute(ctx context.Context, input ListAllTasksIn
 	if err != nil {
 		return nil, err
 	}
-
-	ids := make([]uint, 0, len(readable))
-	byID := make(map[uint]calendar.ReadableCalendar, len(readable))
-	named := false
-	for _, cal := range readable {
-		if input.CalendarUUID != "" {
-			if cal.UUID != input.CalendarUUID {
-				continue
+	if input.CalendarUUID != "" {
+		// The filter narrows the readable set and never widens it, so a UUID
+		// outside it is unknown to this user. Answering an empty page instead
+		// would read as "that list has no tasks".
+		var named []calendar.ReadableCalendar
+		for _, cal := range readable {
+			if cal.UUID == input.CalendarUUID {
+				named = append(named, cal)
 			}
-			named = true
 		}
-		if !cal.SupportsComponent(calendar.ComponentToDo) {
-			continue
+		if len(named) == 0 {
+			return nil, ErrCalendarNotFound
 		}
-		ids = append(ids, cal.ID)
-		byID[cal.ID] = cal
-	}
-	// The filter narrows the readable set and never widens it, so a UUID
-	// outside it is unknown to this user. Answering an empty page instead
-	// would read as "that list has no tasks".
-	if input.CalendarUUID != "" && !named {
-		return nil, ErrCalendarNotFound
+		readable = named
 	}
 
-	out := &ListAllTasksOutput{Tasks: []*ListedTask{}}
+	ids, lists := taskListsByID(readable)
 	if len(ids) == 0 {
-		return out, nil
+		return &ListAllTasksOutput{Tasks: []*ListedTask{}}, nil
 	}
 	objects, total, err := uc.calendarRepo.ListTasks(ctx, calendar.TaskQuery{
 		CalendarIDs: ids,
@@ -108,17 +100,43 @@ func (uc *ListAllTasksUseCase) Execute(ctx context.Context, input ListAllTasksIn
 	if err != nil {
 		return nil, err
 	}
+	tasks, err := listedTasks(objects, lists)
+	if err != nil {
+		return nil, err
+	}
+	return &ListAllTasksOutput{Tasks: tasks, Total: total}, nil
+}
+
+// taskListsByID keeps the readable calendars that store tasks
+// (calendar.SupportsComponent): their ids in the order read, and each by id.
+// The cross-list page and the summary count exactly these task lists.
+func taskListsByID(readable []calendar.ReadableCalendar) ([]uint, map[uint]calendar.ReadableCalendar) {
+	ids := make([]uint, 0, len(readable))
+	lists := make(map[uint]calendar.ReadableCalendar, len(readable))
+	for _, cal := range readable {
+		if !cal.SupportsComponent(calendar.ComponentToDo) {
+			continue
+		}
+		ids = append(ids, cal.ID)
+		lists[cal.ID] = cal
+	}
+	return ids, lists
+}
+
+// listedTasks pairs each task with the task list that holds it (never nil:
+// an empty page is an empty slice).
+func listedTasks(objects []*calendar.CalendarObject, lists map[uint]calendar.ReadableCalendar) ([]*ListedTask, error) {
+	tasks := make([]*ListedTask, 0, len(objects))
 	for _, obj := range objects {
-		cal, ok := byID[obj.CalendarID]
+		list, ok := lists[obj.CalendarID]
 		if !ok {
 			// The repository trusts CalendarIDs; a row from elsewhere would
 			// be a bug that leaks another user's task, so fail loudly.
 			return nil, fmt.Errorf("list all tasks: task %s of calendar %d is outside the readable calendars", obj.UUID, obj.CalendarID)
 		}
-		out.Tasks = append(out.Tasks, &ListedTask{Task: newTask(obj), Calendar: cal})
+		tasks = append(tasks, &ListedTask{Task: newTask(obj), Calendar: list})
 	}
-	out.Total = total
-	return out, nil
+	return tasks, nil
 }
 
 // utcTime returns a copy of t in UTC, nil for nil.

@@ -82,15 +82,15 @@ func decodeArgs(args json.RawMessage, dst interface{}) *toolCallResult {
 // argument with its own UnmarshalJSON (dto.OptionalField, the nullable
 // arguments of update_task) fails inside a nested json.Unmarshal, and what
 // encoding/json then puts into Field is an implementation detail.
-func wronglyTypedArgument(keys map[string]json.RawMessage, t reflect.Type) *toolCallResult {
-	fields := argumentFields(t)
-	for _, name := range argumentNames(t) {
+func wronglyTypedArgument(keys map[string]json.RawMessage, argsType reflect.Type) *toolCallResult {
+	fields := argumentFields(argsType)
+	for _, name := range argumentNames(argsType) {
 		raw, ok := keys[name]
 		if !ok {
 			continue
 		}
-		f := fields[name]
-		err := json.Unmarshal(raw, reflect.New(f.Type).Interface())
+		field := fields[name]
+		err := json.Unmarshal(raw, reflect.New(field.Type).Interface())
 		if err == nil {
 			continue
 		}
@@ -102,7 +102,7 @@ func wronglyTypedArgument(keys map[string]json.RawMessage, t reflect.Type) *tool
 			got = describeJSONValue(typeErr.Value)
 		}
 		return errorResult(fmt.Sprintf("Argument %q must be %s, got %s; the tool did not run.",
-			name, jsonTypeOf(f.Type), got))
+			name, jsonTypeOf(field.Type), got))
 	}
 	return nil
 }
@@ -213,12 +213,12 @@ func jsonTypeOf(t reflect.Type) string {
 // that takes a value or null (null removes, absent keeps) — and returns T. The
 // type is generic, so it is recognised by its package and name rather than
 // compared with one instantiation.
-func optionalFieldValue(t reflect.Type) (reflect.Type, bool) {
+func optionalFieldValue(fieldType reflect.Type) (reflect.Type, bool) {
 	ref := reflect.TypeOf(dto.OptionalField[int]{})
-	if t.Kind() != reflect.Struct || t.PkgPath() != ref.PkgPath() || !strings.HasPrefix(t.Name(), "OptionalField[") {
+	if fieldType.Kind() != reflect.Struct || fieldType.PkgPath() != ref.PkgPath() || !strings.HasPrefix(fieldType.Name(), "OptionalField[") {
 		return nil, false
 	}
-	value, ok := t.FieldByName("Value")
+	value, ok := fieldType.FieldByName("Value")
 	if !ok || value.Type.Kind() != reflect.Pointer {
 		return nil, false
 	}

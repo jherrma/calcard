@@ -50,16 +50,10 @@ func (uc *TaskSummaryUseCase) Execute(ctx context.Context, input TaskSummaryInpu
 		return nil, err
 	}
 
-	out := &TaskSummary{ByCalendar: map[string]calendar.TaskCount{}}
-	ids := make([]uint, 0, len(readable))
-	uuids := make(map[uint]string, len(readable))
-	for _, cal := range readable {
-		if !cal.SupportsComponent(calendar.ComponentToDo) {
-			continue
-		}
-		ids = append(ids, cal.ID)
-		uuids[cal.ID] = cal.UUID
-		out.ByCalendar[cal.UUID] = calendar.TaskCount{}
+	ids, lists := taskListsByID(readable)
+	out := &TaskSummary{ByCalendar: make(map[string]calendar.TaskCount, len(lists))}
+	for _, list := range lists {
+		out.ByCalendar[list.UUID] = calendar.TaskCount{}
 	}
 	if len(ids) == 0 {
 		return out, nil
@@ -70,13 +64,13 @@ func (uc *TaskSummaryUseCase) Execute(ctx context.Context, input TaskSummaryInpu
 		return nil, err
 	}
 	for id, count := range counts.ByCalendar {
-		uuid, ok := uuids[id]
+		list, ok := lists[id]
 		if !ok {
 			// The repository trusts the ids it is given; counts of another
 			// calendar would be a bug that leaks another user's numbers.
 			return nil, fmt.Errorf("task summary: counts of calendar %d, which is outside the readable calendars", id)
 		}
-		out.ByCalendar[uuid] = count
+		out.ByCalendar[list.UUID] = count
 	}
 	out.Total = counts.Total
 	return out, nil

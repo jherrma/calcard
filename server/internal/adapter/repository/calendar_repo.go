@@ -143,13 +143,13 @@ func (r *CalendarRepository) UpdateMetadata(ctx context.Context, cal *calendar.C
 // change-log row.
 func (r *CalendarRepository) UpdateSupportedComponents(ctx context.Context, id uint, set string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&calendar.Calendar{}).
+		updated := tx.Model(&calendar.Calendar{}).
 			Where("id = ?", id).
 			Update("supported_components", set)
-		if res.Error != nil {
-			return res.Error
+		if updated.Error != nil {
+			return updated.Error
 		}
-		if res.RowsAffected == 0 {
+		if updated.RowsAffected == 0 {
 			return calendar.ErrNotFound
 		}
 		return r.recordChange(tx, id, "", "", "collection")
@@ -285,11 +285,11 @@ func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, obj *cale
 // race does not log a second removal.
 func (r *CalendarRepository) HardDeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Unscoped().Delete(&calendar.CalendarObject{}, obj.ID)
-		if res.Error != nil {
-			return res.Error
+		deleted := tx.Unscoped().Delete(&calendar.CalendarObject{}, obj.ID)
+		if deleted.Error != nil {
+			return deleted.Error
 		}
-		if res.RowsAffected == 0 {
+		if deleted.RowsAffected == 0 {
 			return calendar.ErrNotFound
 		}
 		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "deleted")
@@ -510,53 +510,19 @@ const taskOrder = "(due_at IS NULL), due_at, (priority IS NULL), priority, creat
 // shorter than the limit that is not empty, or the first page coming back
 // empty), so the usual small list costs one query; otherwise it is a COUNT.
 func (r *CalendarRepository) ListTasks(ctx context.Context, q calendar.TaskQuery) ([]*calendar.CalendarObject, int64, error) {
-	var statusWhere string
-	var statusArgs []interface{}
-	switch q.Status {
-	case calendar.TaskFilterOpen:
-		// Not done. NULL/"" can only be a row the backfill could not decode;
-		// the API reports it as needs-action, so it is open here too.
-		statusWhere = "(status IS NULL OR status NOT IN ?)"
-		statusArgs = []interface{}{calendar.TaskDoneStatuses()}
-	case calendar.TaskFilterCompleted:
-		statusWhere = "status IN ?"
-		statusArgs = []interface{}{calendar.TaskDoneStatuses()}
-	case calendar.TaskFilterAll:
-	default:
-		return nil, 0, fmt.Errorf("unknown task status filter %q", q.Status)
+	statusWhere, statusArgs, err := taskStatusCondition(q.Status)
+	if err != nil {
+		return nil, 0, err
 	}
 	if len(q.CalendarIDs) == 0 {
 		return nil, 0, nil
 	}
 	offset := max(q.Offset, 0)
 
-	base := func() *gorm.DB {
-		db := r.db.WithContext(ctx).
-			Model(&calendar.CalendarObject{}).
-			Where("calendar_id IN ?", q.CalendarIDs).
-			Where("component_type = ?", calendar.ComponentToDo)
-		if statusWhere != "" {
-			db = db.Where(statusWhere, statusArgs...)
-		}
-		if q.Text != "" {
-			textWhere, textArgs := foldedLike(q.Text, "summary", "description")
-			db = db.Where(textWhere, textArgs...)
-		}
-		// UTC-normalised like SearchEvents: under SQLite these are TEXT
-		// columns compared lexicographically, so a bound with a non-UTC
-		// offset would shift the range by that offset.
-		if q.DueAfter != nil {
-			db = db.Where("due_at >= ?", q.DueAfter.UTC())
-		}
-		if q.DueBefore != nil {
-			db = db.Where("due_at < ?", q.DueBefore.UTC())
-		}
-		return db
-	}
-
 	var tasks []*calendar.CalendarObject
 	if q.Limit > 0 {
-		if err := base().Order(taskOrder).Limit(q.Limit).Offset(offset).Find(&tasks).Error; err != nil {
+		page := r.matchingTasks(ctx, q, statusWhere, statusArgs).Order(taskOrder).Limit(q.Limit).Offset(offset)
+		if err := page.Find(&tasks).Error; err != nil {
 			return nil, 0, err
 		}
 	}
@@ -567,10 +533,54 @@ func (r *CalendarRepository) ListTasks(ctx context.Context, q calendar.TaskQuery
 		return tasks, int64(offset + len(tasks)), nil
 	}
 	var total int64
-	if err := base().Count(&total).Error; err != nil {
+	if err := r.matchingTasks(ctx, q, statusWhere, statusArgs).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	return tasks, total, nil
+}
+
+// taskStatusCondition is the SQL condition of a task status filter (empty for
+// TaskFilterAll); an unknown filter is an error.
+func taskStatusCondition(filter string) (string, []interface{}, error) {
+	switch filter {
+	case calendar.TaskFilterOpen:
+		// Not done. NULL/"" can only be a row the backfill could not decode;
+		// the API reports it as needs-action, so it is open here too.
+		return "(status IS NULL OR status NOT IN ?)", []interface{}{calendar.TaskDoneStatuses()}, nil
+	case calendar.TaskFilterCompleted:
+		return "status IN ?", []interface{}{calendar.TaskDoneStatuses()}, nil
+	case calendar.TaskFilterAll:
+		return "", nil, nil
+	}
+	return "", nil, fmt.Errorf("unknown task status filter %q", filter)
+}
+
+// matchingTasks starts a fresh query of the VTODO objects q selects: its
+// calendars, the status condition, the text and the due bounds, without
+// paging or order. Fresh per call: a reused *gorm.DB would accumulate
+// conditions.
+func (r *CalendarRepository) matchingTasks(ctx context.Context, q calendar.TaskQuery, statusWhere string, statusArgs []interface{}) *gorm.DB {
+	db := r.db.WithContext(ctx).
+		Model(&calendar.CalendarObject{}).
+		Where("calendar_id IN ?", q.CalendarIDs).
+		Where("component_type = ?", calendar.ComponentToDo)
+	if statusWhere != "" {
+		db = db.Where(statusWhere, statusArgs...)
+	}
+	if q.Text != "" {
+		textWhere, textArgs := foldedLike(q.Text, "summary", "description")
+		db = db.Where(textWhere, textArgs...)
+	}
+	// UTC-normalised like SearchEvents: under SQLite these are TEXT
+	// columns compared lexicographically, so a bound with a non-UTC
+	// offset would shift the range by that offset.
+	if q.DueAfter != nil {
+		db = db.Where("due_at >= ?", q.DueAfter.UTC())
+	}
+	if q.DueBefore != nil {
+		db = db.Where("due_at < ?", q.DueBefore.UTC())
+	}
+	return db
 }
 
 // taskCountsSelect is the conditional aggregation behind CountTasks, one row
@@ -631,17 +641,17 @@ func (r *CalendarRepository) CountTasks(ctx context.Context, calendarIDs []uint,
 		return calendar.TaskCounts{}, err
 	}
 	for _, row := range rows {
-		c := calendar.TaskCount{
+		count := calendar.TaskCount{
 			Open:      row.OpenCount,
 			Overdue:   row.OverdueCount,
 			DueToday:  row.DueTodayCount,
 			Completed: row.CompletedCount,
 		}
-		counts.ByCalendar[row.CalendarID] = c
-		counts.Total.Open += c.Open
-		counts.Total.Overdue += c.Overdue
-		counts.Total.DueToday += c.DueToday
-		counts.Total.Completed += c.Completed
+		counts.ByCalendar[row.CalendarID] = count
+		counts.Total.Open += count.Open
+		counts.Total.Overdue += count.Overdue
+		counts.Total.DueToday += count.DueToday
+		counts.Total.Completed += count.Completed
 	}
 	return counts, nil
 }

@@ -57,6 +57,13 @@ func (e *testEnv) storeTaskLines(cal *calendar.Calendar, uid string, lines ...st
 	return obj.UUID
 }
 
+// storeTask writes the default fixture task (due 2026-03-06 09:00 UTC,
+// "Renew passport") into cal the way a CalDAV PUT does and returns its UUID.
+func (e *testEnv) storeTask(cal *calendar.Calendar, uid string) string {
+	e.t.Helper()
+	return e.storeTaskLines(cal, uid, "DUE:20260306T090000Z", "SUMMARY:Renew passport")
+}
+
 // storedTaskJSON is the REST rendering of the stored task, what
 // GET /api/v1/calendars/:calendar_id/tasks/:task_id answers for it.
 func (e *testEnv) storedTaskJSON(taskUUID string) string {

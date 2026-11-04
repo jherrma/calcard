@@ -446,101 +446,16 @@ const legacyComponentSet = "VEVENT,VTODO"
 func narrowCalendarComponentSets(db *gorm.DB, now time.Time) error {
 	var toEvents, toTasks int
 	err := db.Transaction(func(tx *gorm.DB) error {
-		claim := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&domain.SystemSetting{
-			Key:   narrowComponentSetsMarkerKey,
-			Value: now.UTC().Format(time.RFC3339Nano),
-		})
-		if claim.Error != nil {
-			return claim.Error
+		claimed, err := claimNarrowingMarker(tx, now)
+		if err != nil || !claimed {
+			return err // not claimed: ran before
 		}
-		if claim.RowsAffected == 0 {
-			return nil // ran before
-		}
-
-		var setting domain.SystemSetting
-		if err := tx.Where("key = ?", taskKindIntroducedAtKey).Take(&setting).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%s is not recorded", taskKindIntroducedAtKey)
-			}
-			return err
-		}
-		cutoff, err := time.Parse(time.RFC3339Nano, setting.Value)
+		cutoff, err := readTaskKindCutoff(tx)
 		if err != nil {
-			return fmt.Errorf("%s: %w", taskKindIntroducedAtKey, err)
-		}
-
-		// A fresh chain per use: a stored *gorm.DB would accumulate conditions.
-		legacy := func() *gorm.DB {
-			return tx.Model(&calendar.Calendar{}).
-				Where("supported_components = ? AND subscribed = ?", legacyComponentSet, false)
-		}
-		var cals []calendar.Calendar
-		if err := legacy().Select("id", "created_at").Order("id").Find(&cals).Error; err != nil {
 			return err
 		}
-		if len(cals) == 0 {
-			return nil
-		}
-
-		// Live objects per calendar and component type, in one query.
-		var rows []struct {
-			CalendarID    uint
-			ComponentType string
-			Objects       int64
-		}
-		if err := tx.Model(&calendar.CalendarObject{}).
-			Select("calendar_id, component_type, COUNT(*) AS objects").
-			Where("calendar_id IN (?)", legacy().Select("id")).
-			Group("calendar_id, component_type").
-			Scan(&rows).Error; err != nil {
-			return err
-		}
-		type contents struct{ events, tasks, other int64 }
-		held := make(map[uint]*contents, len(cals))
-		for _, r := range rows {
-			c := held[r.CalendarID]
-			if c == nil {
-				c = &contents{}
-				held[r.CalendarID] = c
-			}
-			switch r.ComponentType {
-			case calendar.ComponentEvent:
-				c.events += r.Objects
-			case calendar.ComponentToDo:
-				c.tasks += r.Objects
-			default:
-				c.other += r.Objects
-			}
-		}
-
-		repo := repository.NewCalendarRepository(tx)
-		for _, cal := range cals {
-			if !cal.CreatedAt.Before(cutoff) {
-				continue // created with a deliberate kind
-			}
-			c := held[cal.ID]
-			if c == nil || c.other > 0 {
-				continue // empty, or holding something it cannot be narrowed around
-			}
-			var set string // a one-component set is the component's name
-			switch {
-			case c.events > 0 && c.tasks == 0:
-				set = calendar.ComponentEvent
-			case c.tasks > 0 && c.events == 0:
-				set = calendar.ComponentToDo
-			default:
-				continue // mixed
-			}
-			if err := repo.UpdateSupportedComponents(context.Background(), cal.ID, set); err != nil {
-				return fmt.Errorf("calendar %d: %w", cal.ID, err)
-			}
-			if set == calendar.ComponentEvent {
-				toEvents++
-			} else {
-				toTasks++
-			}
-		}
-		return nil
+		toEvents, toTasks, err = narrowLegacyCalendars(tx, cutoff)
+		return err
 	})
 	if err != nil {
 		return err
@@ -550,6 +465,136 @@ func narrowCalendarComponentSets(db *gorm.DB, now time.Time) error {
 			"event_calendars", toEvents, "task_lists", toTasks)
 	}
 	return nil
+}
+
+// claimNarrowingMarker inserts narrowComponentSetsMarkerKey (value: now, RFC
+// 3339 UTC) unless it exists (INSERT … ON CONFLICT DO NOTHING). It reports
+// whether this call wrote it; false means the narrowing ran before.
+func claimNarrowingMarker(tx *gorm.DB, now time.Time) (bool, error) {
+	claim := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&domain.SystemSetting{
+		Key:   narrowComponentSetsMarkerKey,
+		Value: now.UTC().Format(time.RFC3339Nano),
+	})
+	if claim.Error != nil {
+		return false, claim.Error
+	}
+	return claim.RowsAffected > 0, nil
+}
+
+// readTaskKindCutoff reads the recorded taskKindIntroducedAtKey. A missing or
+// unparseable value is an error, never "every calendar is legacy".
+func readTaskKindCutoff(tx *gorm.DB) (time.Time, error) {
+	var setting domain.SystemSetting
+	if err := tx.Where("key = ?", taskKindIntroducedAtKey).Take(&setting).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return time.Time{}, fmt.Errorf("%s is not recorded", taskKindIntroducedAtKey)
+		}
+		return time.Time{}, err
+	}
+	cutoff, err := time.Parse(time.RFC3339Nano, setting.Value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s: %w", taskKindIntroducedAtKey, err)
+	}
+	return cutoff, nil
+}
+
+// narrowLegacyCalendars narrows every candidate created before cutoff whose
+// contents allow it (narrowedComponentSet), through
+// CalendarRepository.UpdateSupportedComponents inside tx, in id order. It
+// returns how many became event calendars and how many task lists.
+func narrowLegacyCalendars(tx *gorm.DB, cutoff time.Time) (toEvents, toTasks int, err error) {
+	// A fresh chain per use: a stored *gorm.DB would accumulate conditions.
+	legacy := func() *gorm.DB {
+		return tx.Model(&calendar.Calendar{}).
+			Where("supported_components = ? AND subscribed = ?", legacyComponentSet, false)
+	}
+	var cals []calendar.Calendar
+	if err := legacy().Select("id", "created_at").Order("id").Find(&cals).Error; err != nil {
+		return 0, 0, err
+	}
+	if len(cals) == 0 {
+		return 0, 0, nil
+	}
+	held, err := countLegacyContents(tx, legacy().Select("id"))
+	if err != nil {
+		return 0, 0, err
+	}
+
+	repo := repository.NewCalendarRepository(tx)
+	for _, cal := range cals {
+		if !cal.CreatedAt.Before(cutoff) {
+			continue // created with a deliberate kind
+		}
+		set := narrowedComponentSet(held[cal.ID])
+		if set == "" {
+			continue
+		}
+		if err := repo.UpdateSupportedComponents(context.Background(), cal.ID, set); err != nil {
+			return toEvents, toTasks, fmt.Errorf("calendar %d: %w", cal.ID, err)
+		}
+		if set == calendar.ComponentEvent {
+			toEvents++
+		} else {
+			toTasks++
+		}
+	}
+	return toEvents, toTasks, nil
+}
+
+// legacyContents counts a calendar's live objects by component type.
+type legacyContents struct{ events, tasks, other int64 }
+
+// countLegacyContents counts the live objects of the calendars calendarIDs
+// selects (a subquery), per calendar and component type, in one query.
+// Soft-deleted objects do not count; a calendar without objects has no entry.
+func countLegacyContents(tx *gorm.DB, calendarIDs *gorm.DB) (map[uint]*legacyContents, error) {
+	var rows []struct {
+		CalendarID    uint
+		ComponentType string
+		Objects       int64
+	}
+	if err := tx.Model(&calendar.CalendarObject{}).
+		Select("calendar_id, component_type, COUNT(*) AS objects").
+		Where("calendar_id IN (?)", calendarIDs).
+		Group("calendar_id, component_type").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	held := make(map[uint]*legacyContents)
+	for _, row := range rows {
+		contents := held[row.CalendarID]
+		if contents == nil {
+			contents = &legacyContents{}
+			held[row.CalendarID] = contents
+		}
+		switch row.ComponentType {
+		case calendar.ComponentEvent:
+			contents.events += row.Objects
+		case calendar.ComponentToDo:
+			contents.tasks += row.Objects
+		default:
+			contents.other += row.Objects
+		}
+	}
+	return held, nil
+}
+
+// narrowedComponentSet is the set a legacy calendar holding contents gets: a
+// one-component set is the component's name, "VEVENT" for events only and
+// "VTODO" for tasks only. "" keeps "VEVENT,VTODO": no objects (intent
+// unknown), both kinds (mixed), or any other component type (nothing is ever
+// narrowed out from under an object).
+func narrowedComponentSet(contents *legacyContents) string {
+	if contents == nil || contents.other > 0 {
+		return ""
+	}
+	switch {
+	case contents.events > 0 && contents.tasks == 0:
+		return calendar.ComponentEvent
+	case contents.tasks > 0 && contents.events == 0:
+		return calendar.ComponentToDo
+	}
+	return ""
 }
 
 // releaseRevokedCredentialUsernames frees the usernames of CalDAV/CardDAV

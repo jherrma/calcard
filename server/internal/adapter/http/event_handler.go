@@ -206,6 +206,21 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(eventResponseFromObject(obj))
 }
 
+// eventWriteError answers an event write (update, delete, move) the use case
+// refused: ErrNotFound — the object became a task after eventPermission
+// looked, a CalDAV PUT keeps the UUID (#170) — is the 404 of an unknown
+// event, ErrInvalidInput a 400 with the error's own message, anything else a
+// 500 with the route's failure text.
+func eventWriteError(c fiber.Ctx, err error, failure string) error {
+	switch {
+	case errors.Is(err, event.ErrNotFound):
+		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
+	case errors.Is(err, event.ErrInvalidInput):
+		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+	}
+	return ErrorResponse(c, fiber.StatusInternalServerError, failure)
+}
+
 // PATCH /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Update(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
@@ -248,15 +263,7 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 
 	obj, err := h.updateUC.Execute(c.Context(), input)
 	if err != nil {
-		// The object became a task after eventPermission looked (a CalDAV
-		// PUT keeps the UUID): still an unknown event (#170).
-		if errors.Is(err, event.ErrNotFound) {
-			return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
-		}
-		if errors.Is(err, event.ErrInvalidInput) {
-			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
-		}
-		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update event")
+		return eventWriteError(c, err, "Failed to update event")
 	}
 
 	return c.JSON(eventResponseFromObject(obj))
@@ -279,13 +286,7 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 	recurrenceID := c.Query("recurrence_id")
 
 	if err := h.deleteUC.Execute(c.Context(), eventID, scope, recurrenceID); err != nil {
-		if errors.Is(err, event.ErrNotFound) {
-			return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
-		}
-		if errors.Is(err, event.ErrInvalidInput) {
-			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
-		}
-		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to delete event")
+		return eventWriteError(c, err, "Failed to delete event")
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -324,15 +325,9 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 		TargetCalendarID: targetCal.ID,
 	})
 	if err != nil {
-		if errors.Is(err, event.ErrNotFound) {
-			return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
-		}
-		// A target that does not store events (#170): 400 with the use
-		// case's message, "This calendar does not store events".
-		if errors.Is(err, event.ErrInvalidInput) {
-			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
-		}
-		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to move event")
+		// A target that does not store events (#170) is ErrInvalidInput:
+		// 400 "This calendar does not store events".
+		return eventWriteError(c, err, "Failed to move event")
 	}
 
 	return c.JSON(eventResponseFromObject(obj))

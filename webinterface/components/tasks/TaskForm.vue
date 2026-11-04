@@ -282,7 +282,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  submit: [data: TaskFormData, initial: TaskFormData];
+  submit: [form: TaskFormData, initial: TaskFormData];
   cancel: [];
   /** "Delete task" (edit only); the dialog asks and deletes. */
   delete: [];

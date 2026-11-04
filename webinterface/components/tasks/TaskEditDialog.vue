@@ -67,10 +67,10 @@ const tasksStore = useTasksStore();
 const toast = useAppToast();
 const isSubmitting = ref(false);
 
-async function handleSubmit(data: TaskFormData, initial: TaskFormData) {
+async function handleSubmit(form: TaskFormData, initial: TaskFormData) {
   const task = props.task;
   if (!task || props.readOnly || isSubmitting.value) return;
-  const patch = buildTaskPatch(initial, data, task.is_recurring);
+  const patch = buildTaskPatch(initial, form, task.is_recurring);
   if (isEmptyTaskPatch(patch)) {
     emit('update:visible', false);
     return;

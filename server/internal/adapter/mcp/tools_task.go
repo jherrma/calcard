@@ -36,156 +36,13 @@ const defaultTaskLimit = 50
 const taskReadOnly = "You have read-only access to the task list holding that task."
 
 func (s *Server) registerTaskTools() {
-	s.register(Tool{
-		Name: "list_tasks",
-		Description: "List tasks (to-dos) across every task list the user can read — own, shared " +
-			"and subscribed — or, with calendar_id, in one list. Each task carries its id (a UUID " +
-			"for update_task, complete_task, uncomplete_task and delete_task), the calendar_uuid, " +
-			"calendar_name and calendar_color of its list, status, due date, priority and " +
-			"is_recurring. status open (the default) lists needs-action and in-process tasks, " +
-			"completed lists completed AND cancelled ones, all lists both. Sorted by due date " +
-			"(undated last), then priority. Returns at most limit tasks (default 50, max 1000); " +
-			"total is the number of matching tasks, so a total above count means more exist: " +
-			"fetch them with offset. A task without a due date never matches due_after or " +
-			"due_before. For counts (overdue, due today) use get_task_summary.",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "calendar_id": {"type": "string", "description": "Optional UUID of one task list (kind tasks or both) from list_calendars. Without it, every task list the user can read"},
-    "status": {"type": "string", "enum": ["open", "completed", "all"], "description": "open (default: needs-action and in-process), completed (completed and cancelled) or all"},
-    "query": {"type": "string", "description": "Case-insensitive text to find in the title or the notes"},
-    "due_after": {"type": "string", "description": "Only tasks due at or after this instant, RFC 3339 with an offset or Z"},
-    "due_before": {"type": "string", "description": "Only tasks due before this instant, RFC 3339 with an offset or Z"},
-    "limit": {"type": "integer", "description": "Maximum tasks returned, default 50, max 1000"},
-    "offset": {"type": "integer", "description": "Number of matching tasks to skip, for the next page"}
-  },
-  "additionalProperties": false
-}`),
-	}, s.toolListTasks)
-
-	s.register(Tool{
-		Name: "create_task",
-		Description: "Create a task (to-do) in a task list. Only a calendar of kind tasks or both " +
-			"(list_calendars) takes tasks; a calendar of kind events refuses them. A task created " +
-			"here cannot repeat: there is no repeat rule. due and start are RFC 3339 date-times " +
-			"with an offset or Z (e.g. 2026-11-05T17:00:00+01:00), or dates (YYYY-MM-DD) when " +
-			"due_all_day is true; due must not be before start. With timezone (IANA) a timed " +
-			"due/start is stored in that zone, otherwise in UTC. Returns the task with its id.",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "calendar_id": {"type": "string", "description": "UUID of a task list (kind tasks or both) from list_calendars"},
-    "summary": {"type": "string", "description": "Title, required, at most 500 characters"},
-    "description": {"type": "string", "description": "Notes"},
-    "due": {"type": "string", "description": "Due date-time, RFC 3339 with an offset or Z; a date YYYY-MM-DD when due_all_day is true"},
-    "due_all_day": {"type": "boolean", "description": "true: due and start are dates (YYYY-MM-DD). Defaults to false"},
-    "start": {"type": "string", "description": "Start, in the same format as due"},
-    "priority": {"type": "integer", "minimum": 0, "maximum": 9, "description": "1 (highest) to 9 (lowest): 1 high, 5 medium, 9 low; 0: none"},
-    "percent_complete": {"type": "integer", "minimum": 0, "maximum": 100},
-    "status": {"type": "string", "enum": ["needs-action", "in-process", "completed", "cancelled"], "description": "Defaults to needs-action"},
-    "timezone": {"type": "string", "description": "IANA timezone for a timed due/start, e.g. Europe/Berlin"}
-  },
-  "required": ["calendar_id", "summary"],
-  "additionalProperties": false
-}`),
-	}, s.toolCreateTask)
-
-	s.register(Tool{
-		Name: "update_task",
-		Description: "Change a task. Only the fields you pass change; omitted fields keep their " +
-			"stored value. Pass null to remove description, due, start, priority or " +
-			"percent_complete; summary, status and due_all_day cannot be removed. The stored task " +
-			"keeps everything else a task app wrote on it, including its alarms, subtask links and " +
-			"repeat rule. status completed works like complete_task, another status on a " +
-			"completed task like uncomplete_task; a repeating task (is_recurring) refuses status " +
-			"completed or cancelled and percent_complete 100. due/start formats as in " +
-			"create_task. A call that changes nothing returns the task unchanged (same etag).",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "task_id": {"type": "string", "description": "Task UUID from list_tasks"},
-    "summary": {"type": "string", "description": "New title, at most 500 characters"},
-    "description": {"type": ["string", "null"], "description": "New notes; null removes them"},
-    "due": {"type": ["string", "null"], "description": "New due date-time (RFC 3339 with an offset or Z) or date (YYYY-MM-DD when the task is all-day); null removes it"},
-    "start": {"type": ["string", "null"], "description": "New start, in the same format as due; null removes it"},
-    "due_all_day": {"type": "boolean", "description": "Whether due and start are dates; send it with due/start when switching"},
-    "priority": {"type": ["integer", "null"], "minimum": 0, "maximum": 9, "description": "1 (highest) to 9 (lowest); null removes it"},
-    "percent_complete": {"type": ["integer", "null"], "minimum": 0, "maximum": 100, "description": "null removes it"},
-    "status": {"type": "string", "enum": ["needs-action", "in-process", "completed", "cancelled"]},
-    "timezone": {"type": "string", "description": "IANA timezone for a timed due/start passed in this call; without it they are stored in UTC"}
-  },
-  "required": ["task_id"],
-  "additionalProperties": false
-}`),
-	}, s.toolUpdateTask)
-
-	s.register(Tool{
-		Name: "complete_task",
-		Description: "Mark a task completed: status completed, completed_at now, percent_complete " +
-			"100. Idempotent: completing a completed task changes nothing (same etag). A repeating " +
-			"task (is_recurring true) is refused: it cannot be completed here, the user has to " +
-			"complete it in their task app.",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "task_id": {"type": "string", "description": "Task UUID from list_tasks"}
-  },
-  "required": ["task_id"],
-  "additionalProperties": false
-}`),
-	}, s.toolCompleteTask)
-
-	s.register(Tool{
-		Name: "uncomplete_task",
-		Description: "Reopen a completed task: status needs-action, completed_at removed, and " +
-			"percent_complete back to 0 only if it was 100 (a percentage from before completing is " +
-			"not restored). Allowed for repeating tasks too. A task that is not completed " +
-			"(needs-action, in-process or cancelled) is returned unchanged.",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "task_id": {"type": "string", "description": "Task UUID from list_tasks"}
-  },
-  "required": ["task_id"],
-  "additionalProperties": false
-}`),
-	}, s.toolUncompleteTask)
-
-	s.register(Tool{
-		Name: "delete_task",
-		Description: "PERMANENTLY delete a task. It cannot be undone or restored and disappears " +
-			"from every device that syncs the task list; a repeating task goes with all its " +
-			"occurrences. Always name the task to the user and call this only after they agreed. " +
-			"To tick a task off, use complete_task instead.",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "task_id": {"type": "string", "description": "Task UUID from list_tasks"}
-  },
-  "required": ["task_id"],
-  "additionalProperties": false
-}`),
-	}, s.toolDeleteTask)
-
-	s.register(Tool{
-		Name: "get_task_summary",
-		Description: "Count the user's tasks across every task list they can read: open " +
-			"(needs-action and in-process), overdue, due_today and completed (completed AND " +
-			"cancelled), plus open and overdue per list in by_calendar, keyed by the list's UUID " +
-			"(every list, zeros included). as_of is the user's current time with their UTC offset; " +
-			"that offset decides which date is \"today\". A timed task is overdue once its due time " +
-			"has passed, an all-day task only from the day after its date. overdue and due_today " +
-			"overlap: a timed task due earlier today counts in both. Answers \"what is overdue / " +
-			"due today?\" without listing every task.",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "as_of": {"type": "string", "description": "The user's current time, RFC 3339 with their UTC offset, e.g. 2026-11-04T09:00:00+01:00"}
-  },
-  "required": ["as_of"],
-  "additionalProperties": false
-}`),
-	}, s.toolGetTaskSummary)
+	s.register(listTasksTool, s.toolListTasks)
+	s.register(createTaskTool, s.toolCreateTask)
+	s.register(updateTaskTool, s.toolUpdateTask)
+	s.register(completeTaskTool, s.toolCompleteTask)
+	s.register(uncompleteTaskTool, s.toolUncompleteTask)
+	s.register(deleteTaskTool, s.toolDeleteTask)
+	s.register(getTaskSummaryTool, s.toolGetTaskSummary)
 }
 
 // taskNotReadable is the one answer for a task id the caller cannot reach:
@@ -242,9 +99,27 @@ func (s *Server) writableTask(cc *callContext, taskID string) (*calendar.Calenda
 	return cal, nil
 }
 
+// writableTaskArgument is the opening of the tools whose one argument is
+// task_id (complete_task, uncomplete_task, delete_task): it decodes the
+// arguments strictly and runs writableTask. It returns the task id and its
+// calendar, or the refusal to answer with.
+func (s *Server) writableTaskArgument(cc *callContext, args json.RawMessage) (string, *calendar.Calendar, *toolCallResult) {
+	var in struct {
+		TaskID string `json:"task_id"`
+	}
+	if bad := decodeArgs(args, &in); bad != nil {
+		return "", nil, bad
+	}
+	cal, refused := s.writableTask(cc, in.TaskID)
+	if refused != nil {
+		return "", nil, refused
+	}
+	return in.TaskID, cal, nil
+}
+
 // taskView renders a task of cal exactly as the REST task routes do.
-func taskView(t *taskuc.Task, cal *calendar.Calendar) dto.TaskResponse {
-	return dto.NewTaskResponse(t.Object, t.Details, cal.UUID)
+func taskView(task *taskuc.Task, cal *calendar.Calendar) dto.TaskResponse {
+	return dto.NewTaskResponse(task.Object, task.Details, cal.UUID)
 }
 
 // rfc3339Argument parses an optional instant argument the way the REST task
@@ -254,34 +129,63 @@ func rfc3339Argument(field, value string) (*time.Time, *toolCallResult) {
 	if value == "" {
 		return nil, nil
 	}
-	t, err := time.Parse(time.RFC3339, value)
+	instant, err := time.Parse(time.RFC3339, value)
 	if err != nil {
 		return nil, errorResult(fmt.Sprintf("%s must be an RFC 3339 timestamp with a UTC offset, got %q.", field, value))
 	}
-	return &t, nil
+	return &instant, nil
 }
 
-func (s *Server) toolListTasks(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
-	var in struct {
-		CalendarID string `json:"calendar_id"`
-		Status     string `json:"status"`
-		Query      string `json:"query"`
-		DueAfter   string `json:"due_after"`
-		DueBefore  string `json:"due_before"`
-		Limit      int    `json:"limit"`
-		Offset     int    `json:"offset"`
-	}
-	if bad := decodeArgs(args, &in); bad != nil {
-		return bad, nil
-	}
+// listTasksTool is the list_tasks tool's definition, next to its handler: the
+// handler's argument struct lists exactly these properties, in this order.
+var listTasksTool = Tool{
+	Name: "list_tasks",
+	Description: "List tasks (to-dos) across every task list the user can read — own, shared " +
+		"and subscribed — or, with calendar_id, in one list. Each task carries its id (a UUID " +
+		"for update_task, complete_task, uncomplete_task and delete_task), the calendar_uuid, " +
+		"calendar_name and calendar_color of its list, status, due date, priority and " +
+		"is_recurring. status open (the default) lists needs-action and in-process tasks, " +
+		"completed lists completed AND cancelled ones, all lists both. Sorted by due date " +
+		"(undated last), then priority. Returns at most limit tasks (default 50, max 1000); " +
+		"total is the number of matching tasks, so a total above count means more exist: " +
+		"fetch them with offset. A task without a due date never matches due_after or " +
+		"due_before. For counts (overdue, due today) use get_task_summary.",
+	InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "calendar_id": {"type": "string", "description": "Optional UUID of one task list (kind tasks or both) from list_calendars. Without it, every task list the user can read"},
+    "status": {"type": "string", "enum": ["open", "completed", "all"], "description": "open (default: needs-action and in-process), completed (completed and cancelled) or all"},
+    "query": {"type": "string", "description": "Case-insensitive text to find in the title or the notes"},
+    "due_after": {"type": "string", "description": "Only tasks due at or after this instant, RFC 3339 with an offset or Z"},
+    "due_before": {"type": "string", "description": "Only tasks due before this instant, RFC 3339 with an offset or Z"},
+    "limit": {"type": "integer", "description": "Maximum tasks returned, default 50, max 1000"},
+    "offset": {"type": "integer", "description": "Number of matching tasks to skip, for the next page"}
+  },
+  "additionalProperties": false
+}`),
+}
 
-	// The argument checks come before the use case's status check and its
-	// calendar check, as REST checks its query parameters first.
+// listTasksArguments are list_tasks' arguments, in schema order.
+type listTasksArguments struct {
+	CalendarID string `json:"calendar_id"`
+	Status     string `json:"status"`
+	Query      string `json:"query"`
+	DueAfter   string `json:"due_after"`
+	DueBefore  string `json:"due_before"`
+	Limit      int    `json:"limit"`
+	Offset     int    `json:"offset"`
+}
+
+// useCaseInput checks the arguments the use case does not (before its status
+// and calendar checks, as REST checks its query parameters first): limit and
+// offset not negative, the due bounds RFC 3339 with an offset. It applies the
+// default limit and returns the use-case input, or the refusal to answer with.
+func (in listTasksArguments) useCaseInput(userID uint) (taskuc.ListAllTasksInput, *toolCallResult) {
 	if in.Limit < 0 {
-		return errorResult("limit must not be negative."), nil
+		return taskuc.ListAllTasksInput{}, errorResult("limit must not be negative.")
 	}
 	if in.Offset < 0 {
-		return errorResult("offset must not be negative."), nil
+		return taskuc.ListAllTasksInput{}, errorResult("offset must not be negative.")
 	}
 	limit := in.Limit
 	if limit == 0 {
@@ -289,18 +193,17 @@ func (s *Server) toolListTasks(cc *callContext, args json.RawMessage) (*toolCall
 	}
 	dueAfter, bad := rfc3339Argument("due_after", in.DueAfter)
 	if bad != nil {
-		return bad, nil
+		return taskuc.ListAllTasksInput{}, bad
 	}
 	dueBefore, bad := rfc3339Argument("due_before", in.DueBefore)
 	if bad != nil {
-		return bad, nil
+		return taskuc.ListAllTasksInput{}, bad
 	}
-
 	// calendar_id narrows like REST's calendar_uuid: the use case answers a
 	// calendar the caller cannot read with ErrCalendarNotFound, never an
 	// empty page.
-	out, err := s.deps.TaskListAll.Execute(cc.ctx, taskuc.ListAllTasksInput{
-		UserID:       cc.userID,
+	return taskuc.ListAllTasksInput{
+		UserID:       userID,
 		CalendarUUID: in.CalendarID,
 		Status:       in.Status,
 		Query:        in.Query,
@@ -308,20 +211,57 @@ func (s *Server) toolListTasks(cc *callContext, args json.RawMessage) (*toolCall
 		DueBefore:    dueBefore,
 		Limit:        limit,
 		Offset:       in.Offset,
-	})
+	}, nil
+}
+
+func (s *Server) toolListTasks(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
+	var in listTasksArguments
+	if bad := decodeArgs(args, &in); bad != nil {
+		return bad, nil
+	}
+	input, bad := in.useCaseInput(cc.userID)
+	if bad != nil {
+		return bad, nil
+	}
+	out, err := s.deps.TaskListAll.Execute(cc.ctx, input)
 	if err != nil {
 		return taskToolError("list_tasks", in.CalendarID, err), nil
 	}
 
 	tasks := make([]dto.TaskWithCalendarResponse, len(out.Tasks))
-	for i, t := range out.Tasks {
-		tasks[i] = dto.TaskWithCalendarResponse{
-			TaskResponse:  dto.NewTaskResponse(t.Object, t.Details, t.Calendar.UUID),
-			CalendarName:  t.Calendar.Name,
-			CalendarColor: t.Calendar.Color,
-		}
+	for i, listed := range out.Tasks {
+		tasks[i] = dto.NewTaskWithCalendarResponse(listed.Object, listed.Details, listed.Calendar)
 	}
 	return jsonText(dto.TaskWithCalendarListResponse{Tasks: tasks, Count: len(tasks), Total: out.Total})
+}
+
+// createTaskTool is the create_task tool's definition, next to its handler: the
+// handler's argument struct lists exactly these properties, in this order.
+var createTaskTool = Tool{
+	Name: "create_task",
+	Description: "Create a task (to-do) in a task list. Only a calendar of kind tasks or both " +
+		"(list_calendars) takes tasks; a calendar of kind events refuses them. A task created " +
+		"here cannot repeat: there is no repeat rule. due and start are RFC 3339 date-times " +
+		"with an offset or Z (e.g. 2026-11-05T17:00:00+01:00), or dates (YYYY-MM-DD) when " +
+		"due_all_day is true; due must not be before start. With timezone (IANA) a timed " +
+		"due/start is stored in that zone, otherwise in UTC. Returns the task with its id.",
+	InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "calendar_id": {"type": "string", "description": "UUID of a task list (kind tasks or both) from list_calendars"},
+    "summary": {"type": "string", "description": "Title, required, at most 500 characters"},
+    "description": {"type": "string", "description": "Notes"},
+    "due": {"type": "string", "description": "Due date-time, RFC 3339 with an offset or Z; a date YYYY-MM-DD when due_all_day is true"},
+    "due_all_day": {"type": "boolean", "description": "true: due and start are dates (YYYY-MM-DD). Defaults to false"},
+    "start": {"type": "string", "description": "Start, in the same format as due"},
+    "priority": {"type": "integer", "minimum": 0, "maximum": 9, "description": "1 (highest) to 9 (lowest): 1 high, 5 medium, 9 low; 0: none"},
+    "percent_complete": {"type": "integer", "minimum": 0, "maximum": 100},
+    "status": {"type": "string", "enum": ["needs-action", "in-process", "completed", "cancelled"], "description": "Defaults to needs-action"},
+    "timezone": {"type": "string", "description": "IANA timezone for a timed due/start, e.g. Europe/Berlin"}
+  },
+  "required": ["calendar_id", "summary"],
+  "additionalProperties": false
+}`),
 }
 
 func (s *Server) toolCreateTask(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
@@ -352,7 +292,7 @@ func (s *Server) toolCreateTask(cc *callContext, args json.RawMessage) (*toolCal
 		return errorResult("You have read-only access to that calendar, so tasks cannot be created in it."), nil
 	}
 
-	t, err := s.deps.TaskCreate.Execute(cc.ctx, taskuc.CreateTaskInput{
+	task, err := s.deps.TaskCreate.Execute(cc.ctx, taskuc.CreateTaskInput{
 		Calendar:        cal,
 		Summary:         in.Summary,
 		Description:     in.Description,
@@ -369,8 +309,39 @@ func (s *Server) toolCreateTask(cc *callContext, args json.RawMessage) (*toolCal
 	}
 	return jsonText(map[string]interface{}{
 		"created": true,
-		"task":    taskView(t, cal),
+		"task":    taskView(task, cal),
 	})
+}
+
+// updateTaskTool is the update_task tool's definition, next to its handler: the
+// handler's argument struct lists exactly these properties, in this order.
+var updateTaskTool = Tool{
+	Name: "update_task",
+	Description: "Change a task. Only the fields you pass change; omitted fields keep their " +
+		"stored value. Pass null to remove description, due, start, priority or " +
+		"percent_complete; summary, status and due_all_day cannot be removed. The stored task " +
+		"keeps everything else a task app wrote on it, including its alarms, subtask links and " +
+		"repeat rule. status completed works like complete_task, another status on a " +
+		"completed task like uncomplete_task; a repeating task (is_recurring) refuses status " +
+		"completed or cancelled and percent_complete 100. due/start formats as in " +
+		"create_task. A call that changes nothing returns the task unchanged (same etag).",
+	InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "task_id": {"type": "string", "description": "Task UUID from list_tasks"},
+    "summary": {"type": "string", "description": "New title, at most 500 characters"},
+    "description": {"type": ["string", "null"], "description": "New notes; null removes them"},
+    "due": {"type": ["string", "null"], "description": "New due date-time (RFC 3339 with an offset or Z) or date (YYYY-MM-DD when the task is all-day); null removes it"},
+    "start": {"type": ["string", "null"], "description": "New start, in the same format as due; null removes it"},
+    "due_all_day": {"type": "boolean", "description": "Whether due and start are dates; send it with due/start when switching"},
+    "priority": {"type": ["integer", "null"], "minimum": 0, "maximum": 9, "description": "1 (highest) to 9 (lowest); null removes it"},
+    "percent_complete": {"type": ["integer", "null"], "minimum": 0, "maximum": 100, "description": "null removes it"},
+    "status": {"type": "string", "enum": ["needs-action", "in-process", "completed", "cancelled"]},
+    "timezone": {"type": "string", "description": "IANA timezone for a timed due/start passed in this call; without it they are stored in UTC"}
+  },
+  "required": ["task_id"],
+  "additionalProperties": false
+}`),
 }
 
 func (s *Server) toolUpdateTask(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
@@ -396,7 +367,7 @@ func (s *Server) toolUpdateTask(cc *callContext, args json.RawMessage) (*toolCal
 		return refused, nil
 	}
 
-	t, err := s.deps.TaskUpdate.Execute(cc.ctx, taskuc.UpdateTaskInput{
+	task, err := s.deps.TaskUpdate.Execute(cc.ctx, taskuc.UpdateTaskInput{
 		Calendar:        cal,
 		UUID:            in.TaskID,
 		Summary:         in.Summary,
@@ -414,69 +385,124 @@ func (s *Server) toolUpdateTask(cc *callContext, args json.RawMessage) (*toolCal
 	}
 	return jsonText(map[string]interface{}{
 		"updated": true,
-		"task":    taskView(t, cal),
+		"task":    taskView(task, cal),
 	})
+}
+
+// completeTaskTool is the complete_task tool's definition, next to its handler: the
+// handler's argument struct lists exactly these properties, in this order.
+var completeTaskTool = Tool{
+	Name: "complete_task",
+	Description: "Mark a task completed: status completed, completed_at now, percent_complete " +
+		"100. Idempotent: completing a completed task changes nothing (same etag). A repeating " +
+		"task (is_recurring true) is refused: it cannot be completed here, the user has to " +
+		"complete it in their task app.",
+	InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "task_id": {"type": "string", "description": "Task UUID from list_tasks"}
+  },
+  "required": ["task_id"],
+  "additionalProperties": false
+}`),
 }
 
 func (s *Server) toolCompleteTask(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
-	var in struct {
-		TaskID string `json:"task_id"`
-	}
-	if bad := decodeArgs(args, &in); bad != nil {
-		return bad, nil
-	}
-	cal, refused := s.writableTask(cc, in.TaskID)
+	taskID, cal, refused := s.writableTaskArgument(cc, args)
 	if refused != nil {
 		return refused, nil
 	}
-
-	t, err := s.deps.TaskComplete.Execute(cc.ctx, taskuc.CompleteTaskInput{Calendar: cal, UUID: in.TaskID})
+	task, err := s.deps.TaskComplete.Execute(cc.ctx, taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
 	if err != nil {
-		return taskToolError("complete_task", in.TaskID, err), nil
+		return taskToolError("complete_task", taskID, err), nil
 	}
-	return jsonText(map[string]interface{}{"task": taskView(t, cal)})
+	return jsonText(map[string]interface{}{"task": taskView(task, cal)})
+}
+
+// uncompleteTaskTool is the uncomplete_task tool's definition, next to its handler: the
+// handler's argument struct lists exactly these properties, in this order.
+var uncompleteTaskTool = Tool{
+	Name: "uncomplete_task",
+	Description: "Reopen a completed task: status needs-action, completed_at removed, and " +
+		"percent_complete back to 0 only if it was 100 (a percentage from before completing is " +
+		"not restored). Allowed for repeating tasks too. A task that is not completed " +
+		"(needs-action, in-process or cancelled) is returned unchanged.",
+	InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "task_id": {"type": "string", "description": "Task UUID from list_tasks"}
+  },
+  "required": ["task_id"],
+  "additionalProperties": false
+}`),
 }
 
 func (s *Server) toolUncompleteTask(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
-	var in struct {
-		TaskID string `json:"task_id"`
-	}
-	if bad := decodeArgs(args, &in); bad != nil {
-		return bad, nil
-	}
-	cal, refused := s.writableTask(cc, in.TaskID)
+	taskID, cal, refused := s.writableTaskArgument(cc, args)
 	if refused != nil {
 		return refused, nil
 	}
-
-	t, err := s.deps.TaskUncomplete.Execute(cc.ctx, taskuc.CompleteTaskInput{Calendar: cal, UUID: in.TaskID})
+	task, err := s.deps.TaskUncomplete.Execute(cc.ctx, taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
 	if err != nil {
-		return taskToolError("uncomplete_task", in.TaskID, err), nil
+		return taskToolError("uncomplete_task", taskID, err), nil
 	}
-	return jsonText(map[string]interface{}{"task": taskView(t, cal)})
+	return jsonText(map[string]interface{}{"task": taskView(task, cal)})
+}
+
+// deleteTaskTool is the delete_task tool's definition, next to its handler: the
+// handler's argument struct lists exactly these properties, in this order.
+var deleteTaskTool = Tool{
+	Name: "delete_task",
+	Description: "PERMANENTLY delete a task. It cannot be undone or restored and disappears " +
+		"from every device that syncs the task list; a repeating task goes with all its " +
+		"occurrences. Always name the task to the user and call this only after they agreed. " +
+		"To tick a task off, use complete_task instead.",
+	InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "task_id": {"type": "string", "description": "Task UUID from list_tasks"}
+  },
+  "required": ["task_id"],
+  "additionalProperties": false
+}`),
 }
 
 func (s *Server) toolDeleteTask(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {
-	var in struct {
-		TaskID string `json:"task_id"`
-	}
-	if bad := decodeArgs(args, &in); bad != nil {
-		return bad, nil
-	}
-	cal, refused := s.writableTask(cc, in.TaskID)
+	taskID, cal, refused := s.writableTaskArgument(cc, args)
 	if refused != nil {
 		return refused, nil
 	}
-
 	// A hard delete, like the REST route: the use case removes the row for
 	// good and records the deletion for DAV sync.
-	if err := s.deps.TaskDelete.Execute(cc.ctx, taskuc.DeleteTaskInput{CalendarID: cal.ID, UUID: in.TaskID}); err != nil {
-		return taskToolError("delete_task", in.TaskID, err), nil
+	if err := s.deps.TaskDelete.Execute(cc.ctx, taskuc.DeleteTaskInput{CalendarID: cal.ID, UUID: taskID}); err != nil {
+		return taskToolError("delete_task", taskID, err), nil
 	}
 	return jsonText(map[string]interface{}{
 		"deleted": true,
-		"task_id": in.TaskID,
+		"task_id": taskID,
 	})
+}
+
+// getTaskSummaryTool is the get_task_summary tool's definition, next to its handler: the
+// handler's argument struct lists exactly these properties, in this order.
+var getTaskSummaryTool = Tool{
+	Name: "get_task_summary",
+	Description: "Count the user's tasks across every task list they can read: open " +
+		"(needs-action and in-process), overdue, due_today and completed (completed AND " +
+		"cancelled), plus open and overdue per list in by_calendar, keyed by the list's UUID " +
+		"(every list, zeros included). as_of is the user's current time with their UTC offset; " +
+		"that offset decides which date is \"today\". A timed task is overdue once its due time " +
+		"has passed, an all-day task only from the day after its date. overdue and due_today " +
+		"overlap: a timed task due earlier today counts in both. Answers \"what is overdue / " +
+		"due today?\" without listing every task.",
+	InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "as_of": {"type": "string", "description": "The user's current time, RFC 3339 with their UTC offset, e.g. 2026-11-04T09:00:00+01:00"}
+  },
+  "required": ["as_of"],
+  "additionalProperties": false
+}`),
 }
 
 func (s *Server) toolGetTaskSummary(cc *callContext, args json.RawMessage) (*toolCallResult, *RPCError) {

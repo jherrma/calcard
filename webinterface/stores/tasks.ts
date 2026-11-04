@@ -148,8 +148,8 @@ function errorStatus(e: unknown): number | undefined {
  */
 function errorMessage(e: unknown, fallback: string): string {
   const status = errorStatus(e);
-  const data = (e as FetchErrorLike | null)?.data;
-  const message = data?.message ?? data?.error;
+  const body = (e as FetchErrorLike | null)?.data;
+  const message = body?.message ?? body?.error;
   if (status !== undefined && status >= 400 && status < 500 && typeof message === 'string' && message.trim()) {
     return message;
   }
@@ -259,8 +259,8 @@ export const useTasksStore = defineStore('tasks', {
       this.error = null;
       const query: Record<string, string> = { status: this.statusFilter };
       if (this.selectedListId) query.calendar_uuid = this.selectedListId;
-      const q = this.searchQuery.trim();
-      if (q) query.q = q;
+      const searchText = this.searchQuery.trim();
+      if (searchText) query.q = searchText;
       try {
         const api = useApi();
         const response = await api<TaskListResponse>('/api/v1/tasks', { query });

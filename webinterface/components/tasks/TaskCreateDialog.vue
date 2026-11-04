@@ -52,11 +52,11 @@ const DIALOG_BREAKPOINTS = { '640px': 'calc(100vw - 2rem)' };
 const tasksStore = useTasksStore();
 const isSubmitting = ref(false);
 
-async function handleSubmit(data: TaskFormData) {
+async function handleSubmit(form: TaskFormData) {
   if (isSubmitting.value) return;
   isSubmitting.value = true;
   try {
-    const task = await tasksStore.createTask(data.listId, buildTaskInput(data));
+    const task = await tasksStore.createTask(form.listId, buildTaskInput(form));
     if (!task) return;
     emit('update:visible', false);
     emit('created', task);

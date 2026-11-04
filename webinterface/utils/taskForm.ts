@@ -82,11 +82,11 @@ export function encodeTaskTime(value: Date | null, allDay: boolean): string | nu
 
 /** Whether `due` falls before `start` (equal is allowed, as on the server). All-day values compare by date. */
 export function isDueBeforeStart(due: Date | null, start: Date | null, allDay: boolean): boolean {
-  const d = encodeTaskTime(due, allDay);
-  const s = encodeTaskTime(start, allDay);
-  if (d === null || s === null) return false;
+  const dueValue = encodeTaskTime(due, allDay);
+  const startValue = encodeTaskTime(start, allDay);
+  if (dueValue === null || startValue === null) return false;
   // Both are dates (YYYY-MM-DD sorts as text) or both instants.
-  return allDay ? d < s : due!.getTime() < start!.getTime();
+  return allDay ? dueValue < startValue : due!.getTime() < start!.getTime();
 }
 
 /** Number of characters as the server counts them (code points), after trimming. */
@@ -103,26 +103,30 @@ function browserTimezone(): string | undefined {
   }
 }
 
+/** The zone sent with the encoded due/start: the browser's when one of them is a timed value, else none. */
+function timezoneForTimes(allDay: boolean, due: string | null, start: string | null): string | undefined {
+  if (allDay || (due === null && start === null)) return undefined;
+  return browserTimezone();
+}
+
 /**
  * The `POST …/tasks` body for the form values. Only what is set is sent:
  * no empty notes, no due/start, priority, progress or default status, so the
  * stored task carries no empty properties.
  */
-export function buildTaskInput(data: TaskFormData): TaskInput {
-  const input: TaskInput = { summary: data.summary.trim(), due_all_day: data.allDay };
-  if (data.description !== '') input.description = data.description;
-  const due = encodeTaskTime(data.due, data.allDay);
-  const start = encodeTaskTime(data.start, data.allDay);
+export function buildTaskInput(form: TaskFormData): TaskInput {
+  const input: TaskInput = { summary: form.summary.trim(), due_all_day: form.allDay };
+  if (form.description !== '') input.description = form.description;
+  const due = encodeTaskTime(form.due, form.allDay);
+  const start = encodeTaskTime(form.start, form.allDay);
   if (due !== null) input.due = due;
   if (start !== null) input.start = start;
-  if (!data.allDay && (due !== null || start !== null)) {
-    const timezone = browserTimezone();
-    if (timezone) input.timezone = timezone;
-  }
-  const priority = TASK_PRIORITY_VALUES[data.priority];
+  const timezone = timezoneForTimes(form.allDay, due, start);
+  if (timezone) input.timezone = timezone;
+  const priority = TASK_PRIORITY_VALUES[form.priority];
   if (priority !== null) input.priority = priority;
-  if (data.percent !== null) input.percent_complete = data.percent;
-  if (data.status !== 'needs-action') input.status = data.status;
+  if (form.percent !== null) input.percent_complete = form.percent;
+  if (form.status !== 'needs-action') input.status = form.status;
   return input;
 }
 
@@ -141,32 +145,30 @@ export function buildTaskInput(data: TaskFormData): TaskInput {
  * - On a repeating task status and progress are NEVER sent (the server
  *   refuses completed/cancelled and 100 % with a 409; the form disables both).
  */
-export function buildTaskPatch(initial: TaskFormData, data: TaskFormData, recurring: boolean): TaskPatch {
+export function buildTaskPatch(initial: TaskFormData, form: TaskFormData, recurring: boolean): TaskPatch {
   const patch: TaskPatch = {};
-  const summary = data.summary.trim();
+  const summary = form.summary.trim();
   if (summary !== initial.summary.trim()) patch.summary = summary;
-  if (data.description !== initial.description) patch.description = data.description === '' ? null : data.description;
+  if (form.description !== initial.description) patch.description = form.description === '' ? null : form.description;
 
-  const due = encodeTaskTime(data.due, data.allDay);
-  const start = encodeTaskTime(data.start, data.allDay);
+  const due = encodeTaskTime(form.due, form.allDay);
+  const start = encodeTaskTime(form.start, form.allDay);
   const timesChanged =
-    data.allDay !== initial.allDay ||
+    form.allDay !== initial.allDay ||
     due !== encodeTaskTime(initial.due, initial.allDay) ||
     start !== encodeTaskTime(initial.start, initial.allDay);
   if (timesChanged) {
-    if (data.allDay !== initial.allDay) patch.due_all_day = data.allDay;
+    if (form.allDay !== initial.allDay) patch.due_all_day = form.allDay;
     patch.due = due;
     patch.start = start;
-    if (!data.allDay && (due !== null || start !== null)) {
-      const timezone = browserTimezone();
-      if (timezone) patch.timezone = timezone;
-    }
+    const timezone = timezoneForTimes(form.allDay, due, start);
+    if (timezone) patch.timezone = timezone;
   }
 
-  if (data.priority !== initial.priority) patch.priority = TASK_PRIORITY_VALUES[data.priority];
+  if (form.priority !== initial.priority) patch.priority = TASK_PRIORITY_VALUES[form.priority];
   if (!recurring) {
-    if (data.percent !== initial.percent) patch.percent_complete = data.percent;
-    if (data.status !== initial.status) patch.status = data.status;
+    if (form.percent !== initial.percent) patch.percent_complete = form.percent;
+    if (form.status !== initial.status) patch.status = form.status;
   }
   return patch;
 }
@@ -235,9 +237,9 @@ export function describeRecurrence(rrule: string | null, locale?: string): strin
   const count = parts.get('COUNT');
   const until = parts.get('UNTIL');
   if (count !== undefined) {
-    const n = Number(count);
-    if (!Number.isInteger(n) || n < 1) return raw;
-    text += n === 1 ? ', once' : `, ${n} times`;
+    const times = Number(count);
+    if (!Number.isInteger(times) || times < 1) return raw;
+    text += times === 1 ? ', once' : `, ${times} times`;
   } else if (until !== undefined) {
     const label = untilLabel(until, locale);
     if (label === null) return raw;

@@ -252,9 +252,9 @@ var defaultCalendars = []struct{ name, kind, color string }{
 // next one, and the caller only logs it, as registration must not fail for it.
 func (uc *RegisterUseCase) createDefaultCalendars(ctx context.Context, userID uint) error {
 	var errs []error
-	for _, d := range defaultCalendars {
-		if err := uc.createDefaultCalendar(ctx, userID, d.name, d.kind, d.color); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", d.name, err))
+	for _, defaultCal := range defaultCalendars {
+		if err := uc.createDefaultCalendar(ctx, userID, defaultCal.name, defaultCal.kind, defaultCal.color); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", defaultCal.name, err))
 		}
 	}
 	return errors.Join(errs...)

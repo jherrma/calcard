@@ -68,6 +68,52 @@ func (uc *CreateTaskUseCase) Execute(ctx context.Context, input CreateTaskInput)
 	if input.Calendar == nil {
 		return nil, errors.New("create task: no calendar given")
 	}
+	create, err := newTaskCreate(input)
+	if err != nil {
+		return nil, err
+	}
+
+	taskUUID := uuid.New().String()
+	uid := taskUUID + "@calcard.io"
+	now := uc.now().UTC()
+	cal, todo := newTaskCalendar(uid, now)
+	create.writeTo(todo, now)
+	icalData, err := encodeTaskCalendar(cal)
+	if err != nil {
+		return nil, fmt.Errorf("encode task: %w", err)
+	}
+	obj := &calendar.CalendarObject{
+		UUID:       taskUUID,
+		CalendarID: input.Calendar.ID,
+		UID:        uid,
+		Path:       taskUUID + ".ics",
+		ETag:       calendar.NewETag(),
+		ICalData:   icalData,
+	}
+	// The object was built here from validated input, so a failure is a
+	// server bug, not the caller's to fix.
+	if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+		return nil, fmt.Errorf("derive task columns: %w", err)
+	}
+	if err := uc.calendarRepo.CreateCalendarObject(ctx, obj); err != nil {
+		return nil, err
+	}
+	return newTask(obj), nil
+}
+
+// taskCreate is a validated CreateTaskInput: the values create writes (the
+// counterpart of taskUpdate).
+type taskCreate struct {
+	summary, description, status string
+	due, start                   *taskTime
+	priority, percent            *int
+	loc                          *time.Location
+}
+
+// newTaskCreate validates input.Calendar's component set, then the fields in
+// this order: summary, status, priority, percent, due, start, due not before
+// start. The first refusal is returned.
+func newTaskCreate(input CreateTaskInput) (*taskCreate, error) {
 	if err := calendar.RequireComponent(input.Calendar, calendar.ComponentToDo); err != nil {
 		return nil, invalidInput(err)
 	}
@@ -96,55 +142,42 @@ func (uc *CreateTaskUseCase) Execute(ctx context.Context, input CreateTaskInput)
 	if err := checkDueAfterStart(due, start); err != nil {
 		return nil, err
 	}
-
-	taskUUID := uuid.New().String()
-	uid := taskUUID + "@calcard.io"
-	now := uc.now().UTC()
-
-	cal, todo := newTaskCalendar(uid, now)
-	// Text is escaped once (calendar.NewTextProp); the API reads it back
-	// unescaped, so the returned summary can be PATCHed back unchanged.
-	todo.Props.Set(calendar.NewTextProp(ical.PropSummary, summary))
-	if input.Description != "" {
-		todo.Props.Set(calendar.NewTextProp(ical.PropDescription, input.Description))
-	}
 	loc, _ := calendar.LoadEventLocation(input.Timezone)
-	if start != nil {
-		setTaskTime(todo, ical.PropDateTimeStart, start, loc)
+	return &taskCreate{
+		summary:     summary,
+		description: input.Description,
+		status:      status,
+		due:         due,
+		start:       start,
+		priority:    input.Priority,
+		percent:     input.PercentComplete,
+		loc:         loc,
+	}, nil
+}
+
+// writeTo writes the task's fields into the new VTODO. Text is escaped once
+// (calendar.NewTextProp); the API reads it back unescaped, so the returned
+// summary can be PATCHed back unchanged. Status completed also stamps
+// COMPLETED (now) and PERCENT-COMPLETE:100, whatever percent says.
+func (c *taskCreate) writeTo(todo *ical.Component, now time.Time) {
+	todo.Props.Set(calendar.NewTextProp(ical.PropSummary, c.summary))
+	if c.description != "" {
+		todo.Props.Set(calendar.NewTextProp(ical.PropDescription, c.description))
 	}
-	if due != nil {
-		setTaskTime(todo, ical.PropDue, due, loc)
+	if c.start != nil {
+		setTaskTime(todo, ical.PropDateTimeStart, c.start, c.loc)
 	}
-	if input.Priority != nil {
-		setIntProp(todo, ical.PropPriority, *input.Priority)
+	if c.due != nil {
+		setTaskTime(todo, ical.PropDue, c.due, c.loc)
 	}
-	if input.PercentComplete != nil {
-		setIntProp(todo, ical.PropPercentComplete, *input.PercentComplete)
+	if c.priority != nil {
+		setIntProp(todo, ical.PropPriority, *c.priority)
 	}
-	todo.Props.SetText(ical.PropStatus, status)
-	if status == calendar.TaskStatusCompleted {
+	if c.percent != nil {
+		setIntProp(todo, ical.PropPercentComplete, *c.percent)
+	}
+	todo.Props.SetText(ical.PropStatus, c.status)
+	if c.status == calendar.TaskStatusCompleted {
 		markCompleted(todo, now)
 	}
-
-	data, err := encodeTaskCalendar(cal)
-	if err != nil {
-		return nil, fmt.Errorf("encode task: %w", err)
-	}
-	obj := &calendar.CalendarObject{
-		UUID:       taskUUID,
-		CalendarID: input.Calendar.ID,
-		UID:        uid,
-		Path:       taskUUID + ".ics",
-		ETag:       calendar.NewETag(),
-		ICalData:   data,
-	}
-	// The object was built here from validated input, so a failure is a
-	// server bug, not the caller's to fix.
-	if err := obj.PopulateDenormFieldsFromICal(); err != nil {
-		return nil, fmt.Errorf("derive task columns: %w", err)
-	}
-	if err := uc.calendarRepo.CreateCalendarObject(ctx, obj); err != nil {
-		return nil, err
-	}
-	return newTask(obj), nil
 }

@@ -73,17 +73,17 @@ func filterCalendarQuery(query *caldav.CalendarQuery, candidates []queryCandidat
 	return out, nil
 }
 
-func hasTimeRange(f caldav.CompFilter) bool {
-	return !f.Start.IsZero() || !f.End.IsZero()
+func hasTimeRange(filter caldav.CompFilter) bool {
+	return !filter.Start.IsZero() || !filter.End.IsZero()
 }
 
 // hasVTODOTimeRange reports whether the query's VCALENDAR filter holds a VTODO
 // comp-filter with a time-range.
-func hasVTODOTimeRange(f caldav.CompFilter) bool {
-	if f.Name != ical.CompCalendar {
+func hasVTODOTimeRange(filter caldav.CompFilter) bool {
+	if filter.Name != ical.CompCalendar {
 		return false
 	}
-	for _, child := range f.Comps {
+	for _, child := range filter.Comps {
 		if child.Name == ical.CompToDo && hasTimeRange(child) {
 			return true
 		}
@@ -93,11 +93,11 @@ func hasVTODOTimeRange(f caldav.CompFilter) bool {
 
 // splitVTODOTimeRanges returns the VCALENDAR filter without its VTODO
 // time-range comp-filters, and those comp-filters.
-func splitVTODOTimeRanges(f caldav.CompFilter) (caldav.CompFilter, []caldav.CompFilter) {
-	rest := f
+func splitVTODOTimeRanges(filter caldav.CompFilter) (caldav.CompFilter, []caldav.CompFilter) {
+	rest := filter
 	rest.Comps = nil
 	var vtodo []caldav.CompFilter
-	for _, child := range f.Comps {
+	for _, child := range filter.Comps {
 		if child.Name == ical.CompToDo && hasTimeRange(child) {
 			vtodo = append(vtodo, child)
 		} else {
@@ -109,13 +109,13 @@ func splitVTODOTimeRanges(f caldav.CompFilter) (caldav.CompFilter, []caldav.Comp
 
 // matchCandidate ANDs go-webdav's verdict on everything but the VTODO
 // time-ranges with each VTODO time-range filter.
-func matchCandidate(rest caldav.CompFilter, vtodoFilters []caldav.CompFilter, c *queryCandidate) (bool, error) {
-	ok, err := caldav.Match(rest, &c.object)
+func matchCandidate(rest caldav.CompFilter, vtodoFilters []caldav.CompFilter, candidate *queryCandidate) (bool, error) {
+	ok, err := caldav.Match(rest, &candidate.object)
 	if err != nil || !ok {
 		return false, err
 	}
-	for _, f := range vtodoFilters {
-		ok, err := matchVTODOFilter(f, c)
+	for _, filter := range vtodoFilters {
+		ok, err := matchVTODOFilter(filter, candidate)
 		if err != nil || !ok {
 			return false, err
 		}
@@ -125,12 +125,12 @@ func matchCandidate(rest caldav.CompFilter, vtodoFilters []caldav.CompFilter, c 
 
 // matchVTODOFilter reports whether one VTODO of the object lies in the
 // filter's time-range and also meets the filter's other conditions.
-func matchVTODOFilter(f caldav.CompFilter, c *queryCandidate) (bool, error) {
-	window := timeWindow{start: f.Start, end: f.End}
-	others := f
+func matchVTODOFilter(filter caldav.CompFilter, candidate *queryCandidate) (bool, error) {
+	window := timeWindow{start: filter.Start, end: filter.End}
+	others := filter
 	others.Start, others.End = time.Time{}, time.Time{}
-	for _, comp := range c.object.Data.Children {
-		if comp.Name != ical.CompToDo || !vtodoInWindow(comp, window, c.recurrenceEnd) {
+	for _, comp := range candidate.object.Data.Children {
+		if comp.Name != ical.CompToDo || !vtodoInWindow(comp, window, candidate.recurrenceEnd) {
 			continue
 		}
 		ok, err := caldav.Match(others, &caldav.CalendarObject{Data: &ical.Calendar{Component: comp}})
@@ -145,28 +145,28 @@ func matchVTODOFilter(f caldav.CompFilter, c *queryCandidate) (bool, error) {
 }
 
 // vtodoInWindow decides the time-range for one VTODO component.
-func vtodoInWindow(comp *ical.Component, w timeWindow, recurrenceEnd *time.Time) bool {
-	t := readVTODOTimes(comp)
-	if t.recurring && comp.Props.Get(ical.PropRecurrenceID) == nil {
-		first := t.dtstart
+func vtodoInWindow(comp *ical.Component, window timeWindow, recurrenceEnd *time.Time) bool {
+	times := readVTODOTimes(comp)
+	if times.recurring && comp.Props.Get(ical.PropRecurrenceID) == nil {
+		first := times.dtstart
 		if first == nil {
-			first = t.due
+			first = times.due
 		}
 		if first != nil {
 			if recurrenceEnd == nil {
-				return w.endGE(*first)
+				return window.endGE(*first)
 			}
 			last := *recurrenceEnd
-			if t.dtstart != nil && t.due != nil && t.due.After(*t.dtstart) {
+			if times.dtstart != nil && times.due != nil && times.due.After(*times.dtstart) {
 				// RecurrenceEndTime is the last occurrence's DTSTART (go-ical's
 				// end of a task ignores DUE); its due date comes this much later.
-				last = last.Add(t.due.Sub(*t.dtstart))
+				last = last.Add(times.due.Sub(*times.dtstart))
 			}
-			return w.endGE(*first) && w.startLE(last)
+			return window.endGE(*first) && window.startLE(last)
 		}
 		// Neither DTSTART nor DUE: the series has no anchor; use the table.
 	}
-	return w.overlapsVTODO(t)
+	return window.overlapsVTODO(times)
 }
 
 // vtodoTimes are the properties the RFC 4791 §9.9 VTODO table looks at, as UTC
@@ -183,26 +183,26 @@ func readVTODOTimes(comp *ical.Component) vtodoTimes {
 		if p == nil {
 			return nil
 		}
-		t, err := p.DateTime(time.UTC)
+		value, err := p.DateTime(time.UTC)
 		if err != nil {
 			return nil
 		}
-		t = t.UTC()
-		return &t
+		value = value.UTC()
+		return &value
 	}
-	t := vtodoTimes{
+	times := vtodoTimes{
 		dtstart:   instant(ical.PropDateTimeStart),
 		due:       instant(ical.PropDue),
 		completed: instant(ical.PropCompleted),
 		created:   instant(ical.PropCreated),
 		recurring: comp.Props.Get(ical.PropRecurrenceRule) != nil || comp.Props.Get(ical.PropRecurrenceDates) != nil,
 	}
-	if p := comp.Props.Get(ical.PropDuration); p != nil && t.dtstart != nil {
-		if d, err := p.Duration(); err == nil && d >= 0 {
-			t.duration = &d
+	if p := comp.Props.Get(ical.PropDuration); p != nil && times.dtstart != nil {
+		if duration, err := p.Duration(); err == nil && duration >= 0 {
+			times.duration = &duration
 		}
 	}
-	return t
+	return times
 }
 
 // timeWindow is a time-range's [start, end); a zero bound is open.
@@ -218,25 +218,25 @@ func (w timeWindow) endGE(t time.Time) bool   { return w.end.IsZero() || !w.end.
 // overlapsVTODO is the RFC 4791 §9.9 VTODO table, row by row. A DUE next to a
 // DURATION (RFC 5545 forbids both) is read as DTSTART+DUE: DUE wins, as it
 // does for the task columns.
-func (w timeWindow) overlapsVTODO(t vtodoTimes) bool {
+func (w timeWindow) overlapsVTODO(times vtodoTimes) bool {
 	switch {
-	case t.dtstart != nil && t.due != nil: // DTSTART Y, DURATION N, DUE Y
-		return (w.startLT(*t.due) || w.startLE(*t.dtstart)) &&
-			(w.endGT(*t.dtstart) || w.endGE(*t.due))
-	case t.dtstart != nil && t.duration != nil: // DTSTART Y, DURATION Y, DUE N
-		end := t.dtstart.Add(*t.duration)
-		return w.startLE(end) && (w.endGT(*t.dtstart) || w.endGE(end))
-	case t.dtstart != nil: // DTSTART Y, DURATION N, DUE N
-		return w.startLE(*t.dtstart) && w.endGT(*t.dtstart)
-	case t.due != nil: // DTSTART N, DURATION N, DUE Y
-		return w.startLT(*t.due) && w.endGE(*t.due)
-	case t.completed != nil && t.created != nil: // COMPLETED Y, CREATED Y
-		return (w.startLE(*t.created) || w.startLE(*t.completed)) &&
-			(w.endGE(*t.created) || w.endGE(*t.completed))
-	case t.completed != nil: // COMPLETED Y, CREATED N
-		return w.startLE(*t.completed) && w.endGE(*t.completed)
-	case t.created != nil: // COMPLETED N, CREATED Y
-		return w.endGT(*t.created)
+	case times.dtstart != nil && times.due != nil: // DTSTART Y, DURATION N, DUE Y
+		return (w.startLT(*times.due) || w.startLE(*times.dtstart)) &&
+			(w.endGT(*times.dtstart) || w.endGE(*times.due))
+	case times.dtstart != nil && times.duration != nil: // DTSTART Y, DURATION Y, DUE N
+		end := times.dtstart.Add(*times.duration)
+		return w.startLE(end) && (w.endGT(*times.dtstart) || w.endGE(end))
+	case times.dtstart != nil: // DTSTART Y, DURATION N, DUE N
+		return w.startLE(*times.dtstart) && w.endGT(*times.dtstart)
+	case times.due != nil: // DTSTART N, DURATION N, DUE Y
+		return w.startLT(*times.due) && w.endGE(*times.due)
+	case times.completed != nil && times.created != nil: // COMPLETED Y, CREATED Y
+		return (w.startLE(*times.created) || w.startLE(*times.completed)) &&
+			(w.endGE(*times.created) || w.endGE(*times.completed))
+	case times.completed != nil: // COMPLETED Y, CREATED N
+		return w.startLE(*times.completed) && w.endGE(*times.completed)
+	case times.created != nil: // COMPLETED N, CREATED Y
+		return w.endGT(*times.created)
 	default: // none of them
 		return true
 	}

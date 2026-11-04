@@ -217,11 +217,11 @@ func (b *CalDAVBackend) ListCalendarObjects(ctx context.Context, p string, req *
 	if err != nil {
 		return nil, err
 	}
-	res := make([]caldav.CalendarObject, 0, len(members))
-	for _, m := range members {
-		res = append(res, m.object)
+	objects := make([]caldav.CalendarObject, 0, len(members))
+	for _, member := range members {
+		objects = append(objects, member.object)
 	}
-	return res, nil
+	return objects, nil
 }
 
 // collectionMembers resolves the calendar collection at p and returns every
@@ -243,14 +243,14 @@ func (b *CalDAVBackend) collectionMembers(ctx context.Context, p string) ([]quer
 		return nil, err
 	}
 
-	res := make([]queryCandidate, 0, len(objects))
+	members := make([]queryCandidate, 0, len(objects))
 	for _, obj := range objects {
 		co, err := b.mapCalendarObject(path.Join(p, obj.Path), obj)
 		if err == nil {
-			res = append(res, queryCandidate{object: *co, recurrenceEnd: obj.RecurrenceEndTime})
+			members = append(members, queryCandidate{object: *co, recurrenceEnd: obj.RecurrenceEndTime})
 		}
 	}
-	return res, nil
+	return members, nil
 }
 
 func (b *CalDAVBackend) QueryCalendarObjects(ctx context.Context, p string, query *caldav.CalendarQuery) ([]caldav.CalendarObject, error) {
@@ -446,27 +446,25 @@ func (b *CalDAVBackend) DeleteCalendarObject(ctx context.Context, p string) erro
 		return webdav.NewHTTPError(http.StatusNotFound, nil)
 	}
 
-	// A task (VTODO) is deleted for good, exactly like the REST task DELETE
-	// (#170, user decision after story 23): no deleted_at tombstone, and the
-	// "deleted" change-log row with the calendar's new sync token is written in
-	// the same transaction. A row that is already gone when the delete runs (a
-	// concurrent DELETE won) is a 404 with nothing recorded, as over REST.
-	// Every other object (an event) keeps the soft delete.
-	if obj.IsTask() {
-		if err := b.calendarRepo.HardDeleteCalendarObject(ctx, obj); err != nil {
-			if errors.Is(err, calendar.ErrNotFound) {
-				return webdav.NewHTTPError(http.StatusNotFound, nil)
-			}
-			return err
-		}
-		return nil
-	}
+	return b.deleteObject(ctx, obj)
+}
 
-	if err := b.calendarRepo.DeleteCalendarObject(ctx, obj); err != nil {
-		return err
+// deleteObject deletes one calendar object by its kind. A task (VTODO) is
+// deleted for good, exactly like the REST task DELETE (#170, user decision
+// after story 23): no deleted_at tombstone, and the "deleted" change-log row
+// with the calendar's new sync token is written in the same transaction. A
+// row that is already gone when the delete runs (a concurrent DELETE won) is
+// a 404 with nothing recorded, as over REST. Every other object (an event)
+// keeps the soft delete.
+func (b *CalDAVBackend) deleteObject(ctx context.Context, obj *calendar.CalendarObject) error {
+	if !obj.IsTask() {
+		return b.calendarRepo.DeleteCalendarObject(ctx, obj)
 	}
-
-	return nil
+	err := b.calendarRepo.HardDeleteCalendarObject(ctx, obj)
+	if errors.Is(err, calendar.ErrNotFound) {
+		return webdav.NewHTTPError(http.StatusNotFound, nil)
+	}
+	return err
 }
 
 func (b *CalDAVBackend) GetCalendarObjectByPath(ctx context.Context, calendarID uint, path string) (*calendar.CalendarObject, error) {

@@ -31,12 +31,6 @@ func NewUpdateCalendarUseCase(repo calendar.CalendarRepository) *UpdateCalendarU
 	return &UpdateCalendarUseCase{repo: repo}
 }
 
-// errNarrowComponentSet is the refusal of every kind change that would drop a
-// component (#170).
-func errNarrowComponentSet() error {
-	return calendar.Conflictf("Cannot narrow a calendar's component set")
-}
-
 // Execute updates a calendar. Every field is validated, and a kind change
 // checked, before anything is written, so a refused request (400 or 409)
 // changes nothing.
@@ -47,35 +41,9 @@ func (uc *UpdateCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		return nil, err
 	}
 
-	// Update fields if provided
-	if req.Name != nil {
-		if err := calendar.ValidateName(*req.Name); err != nil {
-			return nil, err
-		}
-		cal.Name = *req.Name
+	if err := applyFieldChanges(cal, req); err != nil {
+		return nil, err
 	}
-
-	if req.Description != nil {
-		if err := calendar.ValidateDescription(*req.Description); err != nil {
-			return nil, err
-		}
-		cal.Description = *req.Description
-	}
-
-	if req.Color != nil {
-		if err := calendar.ValidateHexColor(*req.Color); err != nil {
-			return nil, err
-		}
-		cal.Color = *req.Color
-	}
-
-	if req.Timezone != nil {
-		if err := calendar.ValidateTimezone(*req.Timezone); err != nil {
-			return nil, err
-		}
-		cal.Timezone = *req.Timezone
-	}
-
 	widenedSet, widen, err := widenComponents(cal, req.Kind)
 	if err != nil {
 		return nil, err
@@ -113,6 +81,38 @@ func (uc *UpdateCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 	return cal, nil
 }
 
+// applyFieldChanges validates each metadata field the request names (name,
+// description, colour, time zone, in that order) and sets it on cal; the
+// first invalid one is returned and cal is then only partly changed (nothing
+// is written).
+func applyFieldChanges(cal *calendar.Calendar, req UpdateCalendarRequest) error {
+	if req.Name != nil {
+		if err := calendar.ValidateName(*req.Name); err != nil {
+			return err
+		}
+		cal.Name = *req.Name
+	}
+	if req.Description != nil {
+		if err := calendar.ValidateDescription(*req.Description); err != nil {
+			return err
+		}
+		cal.Description = *req.Description
+	}
+	if req.Color != nil {
+		if err := calendar.ValidateHexColor(*req.Color); err != nil {
+			return err
+		}
+		cal.Color = *req.Color
+	}
+	if req.Timezone != nil {
+		if err := calendar.ValidateTimezone(*req.Timezone); err != nil {
+			return err
+		}
+		cal.Timezone = *req.Timezone
+	}
+	return nil
+}
+
 // widenComponents resolves a PATCH kind against what cal stores (#170). An
 // empty kind changes nothing. Otherwise the kind must be one of the closed enum
 // (calendar.SupportedComponentsForKind, ErrInvalidInput otherwise), and it may
@@ -135,7 +135,8 @@ func widenComponents(cal *calendar.Calendar, kind string) (set string, widen boo
 	for _, comp := range []string{calendar.ComponentEvent, calendar.ComponentToDo} {
 		stored, wanted := calendar.SupportsComponent(cal, comp), calendar.SupportsComponent(requested, comp)
 		if stored && !wanted {
-			return "", false, errNarrowComponentSet()
+			// The refusal of every kind change that would drop a component.
+			return "", false, calendar.Conflictf("Cannot narrow a calendar's component set")
 		}
 		if wanted && !stored {
 			widen = true

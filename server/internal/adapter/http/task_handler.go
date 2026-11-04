@@ -77,8 +77,8 @@ func (h *TaskHandler) taskPermission(c fiber.Ctx, taskUUID string) (calendar.Cal
 }
 
 // taskResponse renders a task of cal.
-func taskResponse(t *taskuc.Task, cal *calendar.Calendar) dto.TaskResponse {
-	return dto.NewTaskResponse(t.Object, t.Details, cal.UUID)
+func taskResponse(task *taskuc.Task, cal *calendar.Calendar) dto.TaskResponse {
+	return dto.NewTaskResponse(task.Object, task.Details, cal.UUID)
 }
 
 // taskServerError answers a failure the caller cannot fix: a generic 500, the
@@ -152,13 +152,9 @@ func (h *TaskHandler) List(c fiber.Ctx) error {
 	if !ok || calendarPermission(c, h.calendarRepo, cal.ID) == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, calendarNotFoundMessage)
 	}
-	limit, ok := nonNegativeQueryInt(c, "limit")
+	limit, offset, ok, resp := pageQuery(c)
 	if !ok {
-		return BadRequestResponse(c, "Invalid 'limit' value")
-	}
-	offset, ok := nonNegativeQueryInt(c, "offset")
-	if !ok {
-		return BadRequestResponse(c, "Invalid 'offset' value")
+		return resp
 	}
 
 	out, err := h.listUC.Execute(c.Context(), taskuc.ListTasksInput{
@@ -176,8 +172,8 @@ func (h *TaskHandler) List(c fiber.Ctx) error {
 	}
 
 	tasks := make([]dto.TaskResponse, len(out.Tasks))
-	for i, t := range out.Tasks {
-		tasks[i] = taskResponse(t, cal)
+	for i, task := range out.Tasks {
+		tasks[i] = taskResponse(task, cal)
 	}
 	return c.JSON(dto.TaskListResponse{Tasks: tasks, Count: len(tasks), Total: out.Total})
 }
@@ -193,7 +189,7 @@ func (h *TaskHandler) Get(c fiber.Ctx) error {
 	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, taskNotFoundMessage)
 	}
-	t, err := h.getUC.Execute(c.Context(), taskuc.GetTaskInput{CalendarID: cal.ID, UUID: taskID})
+	task, err := h.getUC.Execute(c.Context(), taskuc.GetTaskInput{CalendarID: cal.ID, UUID: taskID})
 	if err != nil {
 		// It stopped being a task of this calendar after the check above (a
 		// CalDAV PUT keeps the UUID): still an unknown task.
@@ -202,7 +198,7 @@ func (h *TaskHandler) Get(c fiber.Ctx) error {
 		}
 		return taskServerError(c, err)
 	}
-	return c.JSON(taskResponse(t, cal))
+	return c.JSON(taskResponse(task, cal))
 }
 
 // POST /api/v1/calendars/:calendar_id/tasks
@@ -232,7 +228,7 @@ func (h *TaskHandler) Create(c fiber.Ctx) error {
 		return BadRequestResponse(c, "Invalid request body")
 	}
 
-	t, err := h.createUC.Execute(c.Context(), taskuc.CreateTaskInput{
+	task, err := h.createUC.Execute(c.Context(), taskuc.CreateTaskInput{
 		Calendar:        cal,
 		Summary:         req.Summary,
 		Description:     req.Description,
@@ -250,7 +246,7 @@ func (h *TaskHandler) Create(c fiber.Ctx) error {
 		}
 		return taskServerError(c, err)
 	}
-	return c.Status(fiber.StatusCreated).JSON(taskResponse(t, cal))
+	return c.Status(fiber.StatusCreated).JSON(taskResponse(task, cal))
 }
 
 // PATCH /api/v1/calendars/:calendar_id/tasks/:task_id
@@ -279,7 +275,7 @@ func (h *TaskHandler) Update(c fiber.Ctx) error {
 	if err := c.Bind().Body(&req); err != nil {
 		return BadRequestResponse(c, "Invalid request body")
 	}
-	t, err := h.updateUC.Execute(c.Context(), taskuc.UpdateTaskInput{
+	task, err := h.updateUC.Execute(c.Context(), taskuc.UpdateTaskInput{
 		Calendar:        cal,
 		UUID:            taskID,
 		Summary:         req.Summary,
@@ -295,7 +291,7 @@ func (h *TaskHandler) Update(c fiber.Ctx) error {
 	if err != nil {
 		return taskWriteError(c, err)
 	}
-	return c.JSON(taskResponse(t, cal))
+	return c.JSON(taskResponse(task, cal))
 }
 
 // DELETE /api/v1/calendars/:calendar_id/tasks/:task_id
@@ -334,11 +330,11 @@ func (h *TaskHandler) Complete(c fiber.Ctx) error {
 	if !ok {
 		return resp
 	}
-	t, err := h.completeUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
+	task, err := h.completeUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
 	if err != nil {
 		return taskWriteError(c, err)
 	}
-	return c.JSON(taskResponse(t, cal))
+	return c.JSON(taskResponse(task, cal))
 }
 
 // POST /api/v1/calendars/:calendar_id/tasks/:task_id/uncomplete
@@ -355,11 +351,11 @@ func (h *TaskHandler) Uncomplete(c fiber.Ctx) error {
 	if !ok {
 		return resp
 	}
-	t, err := h.uncompleteUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
+	task, err := h.uncompleteUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
 	if err != nil {
 		return taskWriteError(c, err)
 	}
-	return c.JSON(taskResponse(t, cal))
+	return c.JSON(taskResponse(task, cal))
 }
 
 // GET /api/v1/tasks
@@ -390,13 +386,9 @@ func (h *TaskHandler) ListAll(c fiber.Ctx) error {
 		// Only reachable if the route lost its Authenticate middleware.
 		return UnauthorizedResponse(c, "missing authentication token")
 	}
-	limit, ok := nonNegativeQueryInt(c, "limit")
+	limit, offset, ok, resp := pageQuery(c)
 	if !ok {
-		return BadRequestResponse(c, "Invalid 'limit' value")
-	}
-	offset, ok := nonNegativeQueryInt(c, "offset")
-	if !ok {
-		return BadRequestResponse(c, "Invalid 'offset' value")
+		return resp
 	}
 	dueAfter, err := parseOptionalTime(c.Query("due_after"))
 	if err != nil {
@@ -428,12 +420,8 @@ func (h *TaskHandler) ListAll(c fiber.Ctx) error {
 	}
 
 	tasks := make([]dto.TaskWithCalendarResponse, len(out.Tasks))
-	for i, t := range out.Tasks {
-		tasks[i] = dto.TaskWithCalendarResponse{
-			TaskResponse:  dto.NewTaskResponse(t.Object, t.Details, t.Calendar.UUID),
-			CalendarName:  t.Calendar.Name,
-			CalendarColor: t.Calendar.Color,
-		}
+	for i, listed := range out.Tasks {
+		tasks[i] = dto.NewTaskWithCalendarResponse(listed.Object, listed.Details, listed.Calendar)
 	}
 	return c.JSON(dto.TaskWithCalendarListResponse{Tasks: tasks, Count: len(tasks), Total: out.Total})
 }
@@ -484,6 +472,20 @@ func (h *TaskHandler) Summary(c fiber.Ctx) error {
 		return taskServerError(c, err)
 	}
 	return c.JSON(dto.NewTaskSummaryResponse(out.Total, out.ByCalendar))
+}
+
+// pageQuery reads the paging parameters of the task list routes, limit first:
+// each is optional (0 when absent) and must be a non-negative integer, else
+// the 400 "Invalid 'limit' value" / "Invalid 'offset' value". It returns them
+// and true to go on, or false and the response the handler must return.
+func pageQuery(c fiber.Ctx) (limit, offset int, ok bool, resp error) {
+	if limit, ok = nonNegativeQueryInt(c, "limit"); !ok {
+		return 0, 0, false, BadRequestResponse(c, "Invalid 'limit' value")
+	}
+	if offset, ok = nonNegativeQueryInt(c, "offset"); !ok {
+		return 0, 0, false, BadRequestResponse(c, "Invalid 'offset' value")
+	}
+	return limit, offset, true, nil
 }
 
 // nonNegativeQueryInt reads an optional integer query parameter: 0 when
