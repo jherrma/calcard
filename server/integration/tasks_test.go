@@ -1103,6 +1103,69 @@ func TestTasksRESTDAVRoundTrip(t *testing.T) {
 		assert.Equal(t, []string{"Call the plumber"}, taskSummaries(taskPage(t, token, tasksURL(list.UUID)+"?status=all")),
 			"the other task of the list is untouched")
 	})
+
+	t.Run("a task list's export re-imports into another task list", func(t *testing.T) {
+		// Spec §1a: a task list shares the calendar export. Its .ics must carry
+		// the VTODOs, and importing that file into another task list must
+		// recreate every one of them: none skipped, none failed.
+		createTask(t, token, list.UUID, map[string]any{
+			"summary": "Renew passport", "due": "2030-12-03T10:00:00+01:00", "timezone": "Europe/Berlin",
+			"priority": 3, "percent_complete": 20,
+		})
+		createTask(t, token, list.UUID, map[string]any{
+			"summary": "Buy milk, eggs; bread \\ x", "description": "two lines,\nsecond; one",
+			"due": "2030-12-04", "due_all_day": true,
+		})
+		original := taskPage(t, token, tasksURL(list.UUID)+"?status=all")
+		require.Len(t, original.Tasks, 3, "the DAV-written task and the two REST tasks")
+
+		status, raw := restCall(t, http.MethodGet, "/calendars/"+list.UUID+"/export", token, nil)
+		require.Equalf(t, http.StatusOK, status, "export: %s", string(raw))
+		exported := string(raw)
+		assert.Equal(t, len(original.Tasks), strings.Count(exported, "BEGIN:VTODO\r\n"), "every task is exported")
+		for _, task := range original.Tasks {
+			assert.Contains(t, exported, "UID:"+task.UID+"\r\n")
+		}
+		assert.NotContains(t, exported, "BEGIN:VEVENT")
+
+		copied := createTaskCalendar(t, token, "Phone reminders (copy)", "tasks")
+		status, raw = rawCall(t, http.MethodPost, baseURL+"/api/v1/calendars/"+copied.UUID+"/import",
+			token, raw, map[string]string{"Content-Type": "text/calendar"})
+		require.Equalf(t, http.StatusOK, status, "import: %s", string(raw))
+		var result struct {
+			Total    int               `json:"total"`
+			Imported int               `json:"imported"`
+			Skipped  int               `json:"skipped"`
+			Failed   int               `json:"failed"`
+			Errors   []json.RawMessage `json:"errors"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &result))
+		assert.Equal(t, len(original.Tasks), result.Total, string(raw))
+		assert.Equal(t, len(original.Tasks), result.Imported, string(raw))
+		assert.Zero(t, result.Skipped, string(raw))
+		assert.Zero(t, result.Failed, string(raw))
+		assert.Empty(t, result.Errors, string(raw))
+
+		// The copy holds the same tasks: every field but the identity of the
+		// object (id, list, ETag, timestamps of the new rows) is unchanged.
+		imported := taskPage(t, token, tasksURL(copied.UUID)+"?status=all")
+		require.Len(t, imported.Tasks, len(original.Tasks))
+		byUID := map[string]taskJSON{}
+		for _, task := range imported.Tasks {
+			byUID[task.UID] = task
+		}
+		for _, want := range original.Tasks {
+			got, ok := byUID[want.UID]
+			if !assert.Truef(t, ok, "task %s was not imported", want.UID) {
+				continue
+			}
+			assert.Equal(t, copied.UUID, got.CalendarUUID)
+			for _, task := range []*taskJSON{&want, &got} {
+				task.ID, task.CalendarID, task.CalendarUUID, task.ETag, task.CreatedAt, task.UpdatedAt = "", 0, "", "", "", ""
+			}
+			assert.Equal(t, want, got, "imported %s", want.UID)
+		}
+	})
 }
 
 // ----------------------------------------------------------------------------

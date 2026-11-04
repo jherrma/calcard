@@ -145,18 +145,19 @@ re-authenticates them to delete them.
 | `tests/test_10_auth.py` | auth | registration + validation, login, refresh rotation, logout, password change, reset/verify edges, OAuth surface, account deletion |
 | `tests/test_15_credentials.py` | credentials | app passwords (scopes, revocation, isolation), CalDAV / CardDAV credentials (read vs read-write, protocol confinement, expiry, duplicates, lowercase-only usernames) |
 | `tests/test_20_profile.py` | profile | profile get/patch, preferences, full backup export (ZIP content) |
-| `tests/test_30_calendars.py` | calendars | calendar CRUD, validation, isolation, export, last-calendar guard, delete leaves nothing behind (a synced client's old token 404s, a calendar re-created at the same path or name is empty) |
-| `tests/test_35_events.py` | events | event CRUD, validation, If-Match, all-day, recurrence (expand, BYDAY, scope=this / this_and_future for update and delete), move |
-| `tests/test_38_import_export.py` | import_export | .ics / .vcf import (raw body, JSON, multipart, duplicate handling), export round trip |
+| `tests/test_30_calendars.py` | calendars | calendar CRUD, validation, isolation, export, last-calendar guard, delete leaves nothing behind (a synced client's old token 404s, a calendar re-created at the same path or name is empty), `kind` (#170: create `tasks`/`both`/`events`/default, unknown kind 400, `event_count` 0 for a task list, PATCH widens to `both` and advances the getctag, narrowing 409) |
+| `tests/test_35_events.py` | events | event CRUD, validation, If-Match, all-day, recurrence (expand, BYDAY, scope=this / this_and_future for update and delete), move; event routes never serve a task (a task's UUID is an unknown event on every verb, no event create or move into a task list, no dated task in an event listing) |
+| `tests/test_36_tasks.py` | tasks | tasks (#170): create/get/list (filters, paging, UTC `due`, all-day `due_date`), PATCH (null removes, no-op keeps the ETag), complete/uncomplete, the hard DELETE, refusals (400 texts, one 404 body for every miss, 412), repeating tasks (409, DAV bytes unchanged), sharing, `GET /tasks` and `GET /tasks/summary` (exact counts for a scratch user as of a fixed 2030 time), plain text, the REST ↔ DAV round trip (fields, ETags, foreign properties kept) and sync of deletions. Skipped as a whole against a server that predates #170 |
+| `tests/test_38_import_export.py` | import_export | .ics / .vcf import (raw body, JSON, multipart, duplicate handling), export round trip, an import skipping the items a calendar's kind does not store (and a task list exporting its VTODOs) |
 | `tests/test_40_addressbooks.py` | addressbooks | address book + contact CRUD, paging, photos, move, contact search, last-book guard |
-| `tests/test_45_search.py` | search | unified search: all groups, no date window, recurring series, types, bounds, limits, isolation |
+| `tests/test_45_search.py` | search | unified search: all groups, no date window, recurring series, types, bounds, limits, isolation; tasks are never event hits, calendar hits carry `kind` |
 | `tests/test_50_dav_discovery.py` | dav_discovery | `/.well-known/caldav|carddav` (GET and PROPFIND), OPTIONS/DAV header, principal, home sets, collection properties at Depth 0/1 |
-| `tests/test_55_dav_caldav.py` | dav_caldav | MKCALENDAR / MKCOL, PUT/GET/HEAD/DELETE with ETag, If-Match, If-None-Match, UID conflicts, VTODO, recurrence overrides, calendar-query, calendar-multiget, PROPPATCH, COPY/MOVE, REST↔DAV consistency, collection DELETE (old sync token 404s, re-created collection empty) |
+| `tests/test_55_dav_caldav.py` | dav_caldav | MKCALENDAR / MKCOL, PUT/GET/HEAD/DELETE with ETag, If-Match, If-None-Match, UID conflicts, VTODO, the component set per calendar kind (PROPFIND, 403 `supported-calendar-component`, a VTODO-only MKCALENDAR is a task list), recurrence overrides, calendar-query (incl. the VTODO time-range), calendar-multiget, PROPPATCH, COPY/MOVE, REST↔DAV consistency, collection DELETE (old sync token 404s, re-created collection empty) |
 | `tests/test_60_dav_carddav.py` | dav_carddav | the same for CardDAV: MKCOL, vCard 3/4, comma lists, addressbook-query / -multiget, photos over DAV, collection DELETE |
 | `tests/test_70_dav_sync.py` | dav_sync | WebDAV-Sync: initial / empty / create / modify / delete deltas, REST changes in DAV deltas, invalid tokens, `<limit>` truncation (507), ctag |
 | `tests/test_75_dav_authz.py` | dav_authz | 401 shapes, malformed Authorization, accepted credential kinds, and cross-user isolation on every DAV verb (PROPFIND, REPORT, GET, PUT, DELETE, PROPPATCH, MKCALENDAR, traversal) |
 | `tests/test_80_sharing.py` | sharing | calendar + address-book shares over REST and DAV (read vs read-write, revocation, cascades), public calendar links, deleted owners |
-| `tests/test_90_mcp.py` | mcp | MCP tokens, `POST /mcp` handshake/sessions, all tools cross-checked over REST (incl. creating, renaming and deleting calendars and address books), resources, JSON-RPC errors, misspelt tool arguments refused without side effects, batches, isolation (incl. owner-only collection management), revocation |
+| `tests/test_90_mcp.py` | mcp | MCP tokens, `POST /mcp` handshake/sessions, all tools cross-checked over REST (incl. creating, renaming and deleting calendars and address books, the calendar `kind` and the seven task tools), resources, JSON-RPC errors, the task tools refusing what REST refuses (repeating tasks, a read share, an event's id, an event calendar), misspelt tool arguments refused without side effects, batches, isolation (incl. owner-only collection management), revocation |
 | `tests/test_95_subscriptions.py` | subscriptions | URL validation, feed mirroring, read-only enforcement (REST + DAV), refresh deltas, failing feeds, isolation |
 | `tests/test_99_ratelimit.py` | ratelimit | limiter headers; opt-in login-limiter burst |
 
@@ -262,6 +263,17 @@ def test_mkcol_existing(t, u1):
   a collection that must take VTODOs), `u.mk_addressbook(name)`, `u.mk_event(cal_uuid, …)`,
   `u.mk_contact(ab_uuid, …)`. For anything else call
   `e2e.defer("description", e2e.cleanup_api, user, "DELETE", path)`.
+- **Bodies** (`harness/data.py`): `ics_event` / `ics_vevent` / `ics_calendar`,
+  `ics_todo(uid, summary)` (an undated VTODO), `ics_todo_due(uid, summary, due,
+  *extra)` (a VTODO due `due`: `20300601` is a DATE, `20300601T100000Z` a
+  date-time; `extra` adds lines such as `STATUS:…`, `DTSTART:…`, `PRIORITY:…`),
+  `ics_todo_rrule(uid, summary, due, rrule, *extra)` (a repeating task),
+  `ics_vtodo(uid, summary, *props)` (a bare VTODO block, e.g. next to
+  `VTIMEZONE_BERLIN` for a `DUE;TZID=Europe/Berlin` task), `ical_lines(body)`
+  (an iCalendar body unfolded into content lines), `vcard`, `sync_body` and the
+  PROPFIND bodies. A query string with a UTC offset goes through
+  `urllib.parse.urlencode` so its `+` is sent as `%2B` (a raw `+` arrives as a
+  space).
 - **Checks** (`harness/checks.py`) record a failure and return `False` — they do
   not stop the test, so later steps (and cleanups) still run: `t.status(r, 201, 204)`,
   `t.status_class(r, "4xx")`, `t.status_not`, `t.json(r, "data.items[0].id", value)`,

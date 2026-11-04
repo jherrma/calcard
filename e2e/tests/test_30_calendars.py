@@ -1,15 +1,15 @@
 """Calendars over REST: CRUD, validation, ownership isolation, export, the
-"cannot delete your last calendar" guard."""
+"cannot delete your last calendar" guard, the calendar kind (#170)."""
 
 import re
 
 import pytest
 
-from harness.data import PROPFIND_LIST, ics_event, sync_body
+from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_event, sync_body
 from harness.session import ZERO_UUID
 from harness.xml import lp, xcount, xml_text, xstr
 
-DESCRIPTION = "calendar CRUD, validation, isolation, export, last-calendar guard"
+DESCRIPTION = "calendar CRUD, validation, isolation, export, last-calendar guard, kind"
 
 pytestmark = pytest.mark.usefixtures("u1", "u2")
 
@@ -164,6 +164,69 @@ def test_export(t, e2e, u1, st):
     t.match(r, "^BEGIN:VCALENDAR", "export must start with BEGIN:VCALENDAR")
     t.contains(r, f"SUMMARY:Export me {e2e.run_id}")
     t.contains(r, "END:VCALENDAR")
+
+
+NARROWING = "Cannot narrow a calendar's component set"
+
+
+def _getctag(t, u1, cal):
+    """The collection's getctag over DAV ('' with a failure recorded)."""
+    r = u1.dav("PROPFIND", f"{u1.home_cal}{cal['path']}/", depth=0, xml=PROPFIND_COLLECTION)
+    if not t.status(r, 207, msg=f"PROPFIND {cal['path']}"):
+        return ""
+    return xml_text(r, "getctag")
+
+
+def test_kind(t, e2e, u1):
+    """kind: create tasks/both/events/none, unknown kind 400, event_count 0 for a task list, PATCH widens only"""
+    want = {"tasks": ("tasks", "VTODO"), "both": ("both", "VEVENT,VTODO"), "events": ("events", "VEVENT"),
+            None: ("events", "VEVENT")}
+    cals = {}
+    for kind, (wkind, wset) in want.items():
+        cals[kind] = cal = u1.mk_calendar(e2e.uniq(f"kind-{kind or 'default'}"), kind=kind)
+        t.eq((cal.get("kind"), cal.get("supported_components")), (wkind, wset),
+             f"POST /calendars with kind {kind!r} (none = the default)")
+        r = u1.api("GET", f"/calendars/{cal['uuid']}")
+        t.eq((r.jdict().get("kind"), r.jdict().get("supported_components")), (wkind, wset), f"GET of kind {kind!r}")
+
+    bad = e2e.uniq("kind-bad")
+    r = u1.api("POST", "/calendars/", json={"name": bad, "color": "#336699", "kind": "todo"})
+    if t.status(r, 400, msg="an unknown kind"):
+        t.eq(r.jmsg(), 'kind must be "events", "tasks" or "both"')
+    for c in u1.api("GET", "/calendars/").jdict().get("calendars") or []:
+        if c.get("name") == bad:  # never leave one behind if the server took it
+            u1.api("DELETE", f"/calendars/{c['uuid']}", json={"confirmation": "DELETE"})
+            t.fail("a calendar with an unknown kind was created")
+
+    tasks = cals["tasks"]
+    r = u1.api("POST", f"/calendars/{tasks['uuid']}/tasks", json={"summary": f"Counted? {e2e.run_id}"})
+    if t.status(r, 201, msg="a task in the task list"):
+        listed = {c.get("uuid"): c for c in u1.api("GET", "/calendars/").jdict().get("calendars") or []}
+        t.eq(listed.get(tasks["uuid"], {}).get("event_count"), 0, "event_count counts events only: 0 for a task list")
+
+    r = u1.api("PATCH", f"/calendars/{tasks['uuid']}", json={"kind": "tasks"})
+    if t.status(r, 200, msg="PATCH to the calendar's own kind"):
+        t.eq((r.jdict().get("kind"), r.jdict().get("supported_components")), ("tasks", "VTODO"), "own kind: a no-op")
+
+    events = cals["events"]
+    ctag = _getctag(t, u1, events) if u1.ensure_dav() else ""
+    r = u1.api("PATCH", f"/calendars/{events['uuid']}", json={"kind": "both"})
+    if t.status(r, 200, msg="PATCH kind both on an event calendar"):
+        t.eq((r.jdict().get("kind"), r.jdict().get("supported_components")), ("both", "VEVENT,VTODO"), "widened")
+        if ctag:
+            t.ne(_getctag(t, u1, events), ctag, "widening advances the getctag, so DAV clients re-read the collection")
+        else:
+            t.fail("no getctag to compare (DAV app password or PROPFIND failed)")
+
+    r = u1.api("PATCH", f"/calendars/{tasks['uuid']}", json={"kind": "events"})
+    if t.status(r, 409, msg="PATCH kind events on a task list"):
+        t.eq(r.jmsg(), NARROWING)
+    r = u1.api("PATCH", f"/calendars/{cals['both']['uuid']}", json={"kind": "tasks"})
+    if t.status(r, 409, msg="PATCH kind tasks on a mixed calendar"):
+        t.eq(r.jmsg(), NARROWING)
+    for cal, wset in ((tasks, "VTODO"), (cals["both"], "VEVENT,VTODO")):
+        t.json(u1.api("GET", f"/calendars/{cal['uuid']}"), "supported_components", wset,
+               "a refused narrowing leaves the component set as it was")
 
 
 def test_delete(t, e2e, u1):

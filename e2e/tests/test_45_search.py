@@ -190,3 +190,34 @@ def test_isolation(t, u2, sr):
         return
     t.jq(r, lambda j: all(len(j[g]["items"]) == 0 for g in ("events", "contacts", "calendars", "addressbooks")),
          "U2 must not see any of U1's data")
+
+
+def test_tasks_not_searched(t, u1, sr):
+    """tasks are never event hits (#170); calendar hits carry kind, a task list's is 'tasks'"""
+    tok = sr.token
+    try:
+        tasks = u1.mk_calendar(f"{tok} Chores", kind="tasks")
+        mixed = u1.mk_calendar(f"{tok} Mixed", kind="both")
+    except SetupFailed as e:
+        return t.fail("creating the task lists failed", e.resp)
+    for c in (tasks, mixed):
+        r = u1.api("POST", f"/calendars/{c['uuid']}/tasks", json={
+            "summary": f"{tok} dated chore", "start": f"{sr.future}-06-02T09:00:00Z",
+            "due": f"{sr.future}-06-02T10:00:00Z"})
+        if not t.status(r, 201, msg=f"a dated task in {c['name']}"):
+            return
+    r = _sr(u1, f"q={tok}")
+    if not t.status(r, 200):
+        return
+    t.jq(r, lambda j: f"{tok} dated chore" not in [i["event"]["summary"] for i in j["events"]["items"]],
+         "a dated VTODO is never an event hit, in a task list or a mixed calendar")
+    t.jq(r, lambda j: sorted(i["event"]["summary"] for i in j["events"]["items"])
+         == [f"{tok} briefing far ahead", f"{tok} debrief long past", f"{tok} weekly sync"],
+         "the event hits are exactly the events")
+    t.jq(r, lambda j: {i["name"]: i.get("kind") for i in j["calendars"]["items"]}
+         == {f"{tok} Calendar": "events", f"{tok} Chores": "tasks", f"{tok} Mixed": "both"},
+         "every calendar hit carries its kind")
+    r = _sr(u1, f"q={tok}+dated+chore&types=events")
+    if t.status(r, 200):
+        t.jq(r, lambda j: j["events"]["items"] == [] and j["events"]["count"] == 0,
+             "searching for the task's own title finds no event")

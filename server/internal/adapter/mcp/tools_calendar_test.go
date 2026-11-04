@@ -218,6 +218,66 @@ func TestSearchEventsRejectsShortQuery(t *testing.T) {
 	assert.Contains(t, result.Content[0].Text, "2 characters")
 }
 
+// TestEventTextIsPlain pins DECISIONS 9 on the MCP event tools: the title,
+// description and location a model sends are plain text, stored escaped ONCE
+// (RFC 5545 §3.3.11) and answered back exactly as sent by create_event,
+// get_events and search_events, so a value the model read can be sent back
+// unchanged without gaining a backslash.
+func TestEventTextIsPlain(t *testing.T) {
+	e := newTestEnv(t)
+	alice := e.newUser("alice@example.com")
+	cal := e.newCalendar(alice.ID, "Work")
+
+	const (
+		title       = `Buy milk, eggs; x \ y`
+		description = "Line one, a; b \\ c\nline two"
+		location    = `Room 1, floor 2; east \ wing`
+	)
+	created, isErr := e.call(alice.ID, "create_event", map[string]interface{}{
+		"calendar_id": cal.UUID,
+		"title":       title,
+		"description": description,
+		"location":    location,
+		"start":       "2026-03-06T09:00:00Z",
+		"end":         "2026-03-06T09:30:00Z",
+	})
+	require.False(t, isErr, "create_event failed: %v", created["error"])
+
+	plain := func(where string, ev map[string]interface{}) {
+		t.Helper()
+		assert.Equal(t, title, ev["title"], "%s: the title is plain text", where)
+		assert.Equal(t, description, ev["description"], "%s: the description is plain text", where)
+		assert.Equal(t, location, ev["location"], "%s: the location is plain text", where)
+	}
+	event := created["event"].(map[string]interface{})
+	plain("create_event", event)
+
+	stored, err := e.calRepo.GetCalendarObjectByUUID(e.ctx(), event["id"].(string))
+	require.NoError(t, err)
+	assert.Contains(t, stored.ICalData, `SUMMARY:Buy milk\, eggs\; x \\ y`+"\r\n",
+		"the stored iCalendar escapes the title exactly once")
+	assert.Contains(t, stored.ICalData, `DESCRIPTION:Line one\, a\; b \\ c\nline two`+"\r\n",
+		"the description's newline is stored as \\n, its specials escaped once")
+	assert.Contains(t, stored.ICalData, `LOCATION:Room 1\, floor 2\; east \\ wing`+"\r\n")
+
+	listed, isErr := e.call(alice.ID, "get_events", map[string]interface{}{
+		"calendar_id": cal.UUID,
+		"start":       "2026-03-01T00:00:00Z",
+		"end":         "2026-03-31T00:00:00Z",
+	})
+	require.False(t, isErr, "get_events failed: %v", listed["error"])
+	events := listed["events"].([]interface{})
+	require.Len(t, events, 1)
+	plain("get_events", events[0].(map[string]interface{}))
+
+	// The search matches the plain text, specials included.
+	found, isErr := e.call(alice.ID, "search_events", map[string]interface{}{"query": "milk, eggs; x"})
+	require.False(t, isErr, "search_events failed: %v", found["error"])
+	matches := found["matches"].([]interface{})
+	require.Len(t, matches, 1, "search_events must find the event by its plain title")
+	plain("search_events", matches[0].(map[string]interface{})["event"].(map[string]interface{}))
+}
+
 // mustCreate creates an event through the tool surface and fails the test if it
 // does not land.
 func mustCreate(t *testing.T, e *testEnv, userID uint, calendarUUID, title, start, end string) string {

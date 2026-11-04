@@ -165,6 +165,23 @@ describe('TaskRow — layout, type and tokens', () => {
     expect(check(wrapper).attributes('aria-label')).toBe('Complete: (No title)');
   });
 
+  // The API sends summary and description as plain text (#170 decision 9): the
+  // iCalendar escaping (\, \; \\ \n) exists only in the stored object. The row
+  // shows them exactly as sent — never escapes or unescapes them itself.
+  it('shows a title and notes with , ; and \\ exactly as the API sent them (plain text)', () => {
+    const summary = 'Buy milk, eggs; bread \\ x';
+    const description = 'Milk, 2 l; eggs \\ bread\nfrom the shop, corner; C:\\temp';
+    const wrapper = mountRow({ task: task({ summary, description }) });
+
+    expect(titleText(wrapper).element.textContent).toBe(summary);
+    expect(check(wrapper).attributes('aria-label')).toBe(`Complete: ${summary}`);
+    expect(wrapper.get('[data-test="row-menu"]').attributes('aria-label')).toBe(`Task actions: ${summary}`);
+    // One line: the newline becomes a space, nothing else changes.
+    expect(wrapper.get('[data-test="task-notes"]').text()).toBe('Milk, 2 l; eggs \\ bread from the shop, corner; C:\\temp');
+    const html = wrapper.html();
+    for (const escaped of ['\\,', '\\;', '\\\\', '\\n']) expect(html).not.toContain(escaped);
+  });
+
   it('sets the due label in 13px tabular figures that never wrap', () => {
     const wrapper = mountRow({ task: task({ due_date: '2026-11-09' }) });
 

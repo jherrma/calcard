@@ -1,6 +1,7 @@
 """CalDAV (RFC 4791) in depth: collection creation (MKCALENDAR / extended
 MKCOL), object PUT/GET/HEAD/DELETE with ETag preconditions, UID uniqueness,
-VTODO, recurrence overrides, calendar-query / calendar-multiget REPORTs,
+VTODO, the component set per calendar kind (#170), recurrence overrides,
+calendar-query (incl. the VTODO time-range) / calendar-multiget REPORTs,
 PROPPATCH, COPY/MOVE, REST <-> DAV consistency."""
 
 import re
@@ -9,9 +10,10 @@ import pytest
 
 from harness import out
 from harness.checks import known
-from harness.data import PROPFIND_COLLECTION, PROPFIND_LIST, ics_calendar, ics_event, ics_todo, ics_vevent, sync_body
+from harness.data import (PROPFIND_COLLECTION, PROPFIND_LIST, ics_calendar, ics_event, ics_todo, ics_todo_due,
+                          ics_todo_rrule, ics_vevent, sync_body)
 from harness.session import SetupFailed
-from harness.xml import el, lp, xcount, xml_text, xstr
+from harness.xml import el, evaluate, lp, xcount, xml_text, xstr
 
 DESCRIPTION = "MKCALENDAR, PUT/GET/DELETE + ETags, REPORTs, PROPPATCH, COPY/MOVE"
 
@@ -427,6 +429,74 @@ def test_query_vtodo(t, u1, st):
     if getattr(st, "uid", ""):
         t.not_contains(r, st.uid, "VEVENTs must not match a VTODO filter")
     t.not_contains(r, "BEGIN:VEVENT", "VEVENTs must not match a VTODO filter")
+
+
+PROPFIND_COMPONENTS = ('<?xml version="1.0" encoding="utf-8"?>\n<d:propfind xmlns:d="DAV:" '
+                       'xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:supported-calendar-component-set/>'
+                       "</d:prop></d:propfind>")
+
+
+def _components(t, u1, col):
+    """The component names COL advertises in supported-calendar-component-set."""
+    r = u1.dav("PROPFIND", col, depth=0, xml=PROPFIND_COMPONENTS)
+    if not t.status(r, 207, msg=f"PROPFIND {col}"):
+        return None
+    return sorted(evaluate(r, f"{lp('supported-calendar-component-set', 'comp')}/@name") or [])
+
+
+def test_component_sets(t, e2e, u1):
+    """component sets: PROPFIND per kind, 403 for a VTODO in an event calendar and a VEVENT in a task list (#170)"""
+    cols = {}
+    for kind, want in (("tasks", ["VTODO"]), ("events", ["VEVENT"]), ("both", ["VEVENT", "VTODO"])):
+        cal = u1.mk_calendar(e2e.uniq(f"comp-{kind}"), kind=kind)
+        cols[kind] = f"{u1.home_cal}{cal['path']}/"
+        t.eq(_components(t, u1, cols[kind]), want, f"a kind '{kind}' calendar advertises exactly {want}")
+    for kind, ics, what in (("events", ics_todo(e2e.uniq("comp-todo"), "A task"), "a VTODO in an event calendar"),
+                            ("tasks", ics_event(e2e.uniq("comp-event"), "An event", "20300601T100000Z",
+                                                "20300601T110000Z"), "a VEVENT in a task list")):
+        obj = f"{cols[kind]}{e2e.uniq('comp-' + kind)}.ics"
+        r = u1.dav("PUT", obj, ics=ics)
+        if t.status(r, 403, msg=what):
+            t.contains(r, "supported-calendar-component", f"{what}: names the failed precondition")
+        t.status(u1.dav("GET", obj), 404, msg=f"{what}: nothing was stored")
+    for name, ics in (("comp-both-todo", ics_todo(e2e.uniq("comp-both-todo"), "Mixed task")),
+                      ("comp-both-ev", ics_event(e2e.uniq("comp-both-ev"), "Mixed event", "20300601T100000Z",
+                                                 "20300601T110000Z"))):
+        t.status(u1.dav("PUT", f"{cols['both']}{e2e.uniq(name)}.ics", ics=ics), 201, msg=f"a mixed calendar takes {name}")
+
+    slug = e2e.uniq("dav-tasklist")
+    r = u1.dav("MKCALENDAR", f"{u1.home_cal}{slug}/", xml=(
+        '<?xml version="1.0" encoding="utf-8"?>\n<c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+        "<d:set><d:prop><d:displayname>DAV task list</d:displayname><c:supported-calendar-component-set>"
+        '<c:comp name="VTODO"/></c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>'))
+    if not t.status(r, 201, msg="MKCALENDAR with a VTODO-only component set"):
+        return
+    _cleanup_path(e2e, u1, slug)
+    cal = _rest_cal_at(u1, slug)
+    t.eq((cal.get("kind"), cal.get("supported_components")), ("tasks", "VTODO"),
+         "REST lists a VTODO-only DAV collection as a task list")
+    t.eq(_components(t, u1, f"{u1.home_cal}{slug}/"), ["VTODO"], "and DAV advertises VTODO only")
+
+
+def test_query_vtodo_timerange(t, e2e, u1, st):
+    """VTODO time-range query: due inside matches, outside not, DUE+RRULE without DTSTART matches later; VEVENT query has no task"""
+    tag = e2e.uniq("tr")
+    todos = {"in": ics_todo_due(f"{tag}-in", "Due in the window", "20320510T120000Z"),
+             "out": ics_todo_due(f"{tag}-out", "Due after the window", "20330101T120000Z"),
+             "weekly": ics_todo_rrule(f"{tag}-weekly", "Weekly since 2030", "20300107T090000Z", "FREQ=WEEKLY")}
+    for name, ics in todos.items():
+        if not t.status(u1.dav("PUT", f"{st.col}{tag}-{name}.ics", ics=ics), 201, 204, msg=f"PUT {name}"):
+            return
+    window = '<c:time-range start="20320501T000000Z" end="20320601T000000Z"/>'
+    r = _query(u1, st, f'<c:comp-filter name="VTODO">{window}</c:comp-filter>')
+    if t.status(r, 207, msg="VTODO time-range calendar-query"):
+        t.contains(r, f"UID:{tag}-in", "a task due inside the window matches")
+        t.not_contains(r, f"UID:{tag}-out", "a task due after the window does not")
+        t.contains(r, f"UID:{tag}-weekly", "a repeating task first due in 2030 (no DTSTART) matches a 2032 window")
+    r = _query(u1, st, f'<c:comp-filter name="VEVENT">{window}</c:comp-filter>')
+    if t.status(r, 207, msg="VEVENT time-range calendar-query on the same collection"):
+        for name in todos:
+            t.not_contains(r, f"{tag}-{name}", f"a VEVENT query never returns the task '{name}'")
 
 
 def test_multiget(t, e2e, u1, st):
