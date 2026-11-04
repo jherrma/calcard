@@ -23,6 +23,10 @@ type EventInstance struct {
 	IsAllDay     bool            `json:"is_all_day"`
 	RecurrenceID string          `json:"recurrence_id,omitempty"`
 	IsException  bool            `json:"is_exception"`
+	// Alarms are the occurrence's VALARMs (#169): the override's when it has
+	// one, else the master's. Not part of the JSON; the REST layer renders them
+	// as `reminders`.
+	Alarms []AlarmSpec `json:"-"`
 }
 
 // RecurrenceRule represents the recurrence rules for an event
@@ -380,6 +384,14 @@ func ToEventInstance(obj *CalendarObject, start, end time.Time, recurrenceID str
 		}
 	}
 
+	// Alarms come from the override when present, else the master: the
+	// components are already decoded, so this costs no extra parse.
+	if override != nil {
+		inst.Alarms = ParseAlarms(override.Component)
+	} else if master != nil {
+		inst.Alarms = ParseAlarms(master.Component)
+	}
+
 	// Override with exception properties
 	if override != nil {
 		if p := override.Props.Get(ical.PropSummary); p != nil {
@@ -395,4 +407,28 @@ func ToEventInstance(obj *CalendarObject, start, end time.Time, recurrenceID str
 	}
 
 	return inst
+}
+
+// EventAlarms decodes the object's iCalendar data and reads the VALARMs of its
+// master VEVENT (the first one without RECURRENCE-ID, else the first). Nil when
+// the data does not decode or holds no VEVENT. For an object that is not
+// expanded (a plain event, the single-event routes).
+func (o *CalendarObject) EventAlarms() []AlarmSpec {
+	cal, err := ical.NewDecoder(strings.NewReader(o.ICalData)).Decode()
+	if err != nil {
+		return nil
+	}
+	var first *ical.Component
+	for _, child := range cal.Children {
+		if child.Name != ical.CompEvent {
+			continue
+		}
+		if child.Props.Get(ical.PropRecurrenceID) == nil {
+			return ParseAlarms(child)
+		}
+		if first == nil {
+			first = child
+		}
+	}
+	return ParseAlarms(first)
 }

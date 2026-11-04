@@ -47,7 +47,7 @@ func TestNewTaskResponse(t *testing.T) {
 			"percent_complete": float64(40), "priority": float64(3),
 			"due": "2026-11-05T16:00:00Z", "due_date": nil, "due_all_day": false,
 			"start": "2026-11-04T07:00:00Z", "start_date": nil,
-			"is_recurring": false, "rrule": nil, "etag": "1735-ab12",
+			"is_recurring": false, "rrule": nil, "etag": "1735-ab12", "reminders": []any{},
 			"created_at": "2026-11-03T08:30:00Z", "updated_at": "2026-11-03T08:30:00Z",
 		}, got)
 	})

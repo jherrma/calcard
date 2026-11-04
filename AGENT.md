@@ -172,6 +172,7 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
 - `GET /api/v1/tasks/summary?as_of=<RFC 3339 with offset>` → `{ "open", "overdue", "due_today",
   "completed", "by_calendar": { "<calendar uuid>": { "open", "overdue", "completed" } } }`. Pass `as_of` (and the
   `due_*` bounds) through ofetch's `query` option: an interpolated `+01:00` arrives as a space and is a 400
+- `reminders` on events and tasks (#169): every event (`GET …/events`, `GET …/events/:id`, create/update answers, `/search` event hits) and every task answer carries `reminders`, an array (`[]` for none, never null) of `{ "index", "action" (lower-case, `display` when absent), "related" (`start`/`end`/null), "offset_seconds" (signed, a nominal day = 86400, null for an absolute or unreadable trigger), "at" (UTC instant of an absolute trigger, a floating one as its wall clock in UTC, else null), "editable" }`. It lists VALARMs written by DAV clients too. `editable` is true only for DISPLAY/AUDIO/absent action, no `REPEAT`, no snooze, and a relative trigger anchored at `start` (events) / `end` (tasks) or a non-floating absolute one. An expanded occurrence reports its override's alarms when it has an override, else the master's. Read side only; the request side comes later
 - A recurring task (`is_recurring`) cannot be completed over REST: complete, or PATCH `status`
   `completed`/`cancelled`/`percent_complete: 100`, answers **409**. Uncomplete resets the percentage to 0
   only when it was 100

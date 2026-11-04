@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
@@ -694,4 +695,69 @@ func TestEventHandler(t *testing.T) {
 		assert.Equal(t, 2, dayCounts["Splittable Series"], "Should have 2 instances of original summary")
 		assert.Equal(t, 3, dayCounts["Shared Future"], "Should have 3 instances of new summary")
 	})
+}
+
+// TestEventHandlerRemindersOnReads (#169 story 10): a DAV-written event with
+// three VALARMs reports them as `reminders` on Get and on the expanded and the
+// plain list; an event without VALARM reports [].
+func TestEventHandlerRemindersOnReads(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+
+	mk := func(uid, alarms string) *calendar.CalendarObject {
+		data := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\nBEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTAMP:20301101T000000Z\r\n" +
+			"DTSTART:20301104T100000Z\r\nDTEND:20301104T110000Z\r\nSUMMARY:" + uid + "\r\n" + alarms + "END:VEVENT\r\nEND:VCALENDAR\r\n"
+		obj := &calendar.CalendarObject{
+			UUID: uid + "-uuid", CalendarID: cal.ID, UID: uid, Path: uid + ".ics",
+			ComponentType: calendar.ComponentEvent, ETag: "e-" + uid, ICalData: data,
+		}
+		require.NoError(t, obj.PopulateDenormFieldsFromICal())
+		require.NoError(t, db.DB().Create(obj).Error)
+		return obj
+	}
+	three := mk("three", "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n"+
+		"BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20301104T080000Z\r\nEND:VALARM\r\n"+
+		"BEGIN:VALARM\r\nACTION:EMAIL\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n")
+	none := mk("none", "")
+
+	get := func(path string) []byte {
+		req, _ := http.NewRequest("GET", path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		require.Equal(t, fiber.StatusOK, resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		return b
+	}
+	base := "/api/v1/calendars/" + cal.UUID + "/events"
+	wantThree := `[{"index":0,"action":"display","related":"start","offset_seconds":-900,"at":null,"editable":true},
+	{"index":1,"action":"display","related":null,"offset_seconds":null,"at":"2030-11-04T08:00:00Z","editable":true},
+	{"index":2,"action":"email","related":"start","offset_seconds":-900,"at":null,"editable":false}]`
+
+	var one struct {
+		Reminders json.RawMessage `json:"reminders"`
+	}
+	require.NoError(t, json.Unmarshal(get(base+"/"+three.UUID), &one))
+	assert.JSONEq(t, wantThree, string(one.Reminders))
+	require.NoError(t, json.Unmarshal(get(base+"/"+none.UUID), &one))
+	assert.JSONEq(t, `[]`, string(one.Reminders))
+
+	rng := "start=" + url.QueryEscape("2030-11-04T00:00:00Z") + "&end=" + url.QueryEscape("2030-11-05T00:00:00Z")
+	for _, q := range []string{"?expand=true&" + rng, "?" + rng} {
+		var list struct {
+			Events []struct {
+				UID       string          `json:"uid"`
+				Reminders json.RawMessage `json:"reminders"`
+			} `json:"events"`
+		}
+		require.NoError(t, json.Unmarshal(get(base+q), &list), q)
+		require.Len(t, list.Events, 2, q)
+		for _, e := range list.Events {
+			if e.UID == "three" {
+				assert.JSONEq(t, wantThree, string(e.Reminders), q)
+			} else {
+				assert.JSONEq(t, `[]`, string(e.Reminders), q)
+			}
+		}
+	}
 }

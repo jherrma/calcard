@@ -55,6 +55,7 @@ func eventResponseFromInstance(inst calendar.EventInstance) dto.EventResponse {
 		End:          inst.End,
 		IsAllDay:     inst.IsAllDay,
 		RecurrenceID: &inst.RecurrenceID,
+		Reminders:    dto.NewReminderResponses(inst.Alarms, dto.ReminderKindEvent),
 	}
 	// Mirror the single-event Get predicate so the frontend can tell a
 	// recurring instance apart and show the recurrence scope dialog before
@@ -96,6 +97,7 @@ func eventResponseFromObject(obj *calendar.CalendarObject) dto.EventResponse {
 		Location:    obj.Location,
 		IsAllDay:    obj.IsAllDay,
 		IsRecurring: obj.RecurrenceEndTime != nil,
+		Reminders:   dto.NewReminderResponses(obj.EventAlarms(), dto.ReminderKindEvent),
 	}
 	if obj.StartTime != nil {
 		resp.Start = *obj.StartTime

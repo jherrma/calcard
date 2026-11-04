@@ -87,6 +87,8 @@ type EventResponse struct {
 	IsRecurring  bool               `json:"is_recurring"`
 	RecurrenceID *string            `json:"recurrence_id"`
 	Recurrence   *RecurrenceRuleDTO `json:"recurrence,omitempty"`
+	// Reminders are the event's VALARMs (#169); always an array.
+	Reminders []ReminderResponse `json:"reminders"`
 }
 
 type EventListResponse struct {

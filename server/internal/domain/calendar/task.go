@@ -90,6 +90,8 @@ type TaskDetails struct {
 	// Recurring reports an RRULE or RDATE on the master. A recurring task is
 	// served as one row, its master, and never expanded (spec §1c).
 	Recurring bool
+	// Alarms are the master VTODO's VALARMs (#169), in document order.
+	Alarms []AlarmSpec
 }
 
 // TaskDetails decodes the object's iCalendar data and reads the TaskDetails
@@ -117,6 +119,7 @@ func (o *CalendarObject) TaskDetails() TaskDetails {
 	// Any RRULE counts, an unparseable one too: RecurrenceEndTime treats it
 	// as an unbounded series as well.
 	details.Recurring = rule != nil || master.Props.Get(ical.PropRecurrenceDates) != nil
+	details.Alarms = ParseAlarms(master)
 	return details
 }
 

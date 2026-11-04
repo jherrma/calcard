@@ -47,9 +47,11 @@ type TaskResponse struct {
 	StartDate       *string    `json:"start_date"`
 	IsRecurring     bool       `json:"is_recurring"`
 	RRule           *string    `json:"rrule"`
-	ETag            string     `json:"etag"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	// Reminders are the task's VALARMs (#169); always an array.
+	Reminders []ReminderResponse `json:"reminders"`
+	ETag      string             `json:"etag"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
 }
 
 // CreateTaskRequest is the body of POST /calendars/:calendar_id/tasks (#170).
@@ -222,6 +224,7 @@ func NewTaskResponse(obj *calendar.CalendarObject, details calendar.TaskDetails,
 		Priority:        copyInt(obj.Priority),
 		DueAllDay:       obj.IsAllDay,
 		IsRecurring:     details.Recurring,
+		Reminders:       NewReminderResponses(details.Alarms, ReminderKindTask),
 		ETag:            obj.ETag,
 		CreatedAt:       obj.CreatedAt.UTC(),
 		UpdatedAt:       obj.UpdatedAt.UTC(),
