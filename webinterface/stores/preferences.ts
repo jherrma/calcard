@@ -8,6 +8,7 @@ export const PREF_DEFAULT_ALL_DAY = 'default_all_day';
 export const PREF_TIME_FORMAT = 'time_format';
 export const PREF_ACCENT_COLOR = 'accent_color';
 export const PREF_FIRST_DAY_OF_WEEK = 'first_day_of_week';
+export const PREF_TIMEZONE = 'timezone';
 
 export const DEFAULT_PREFERENCES: Record<string, string> = {
   [PREF_DEFAULT_EVENT_DURATION]: '60',
@@ -15,6 +16,7 @@ export const DEFAULT_PREFERENCES: Record<string, string> = {
   [PREF_TIME_FORMAT]: '24h',
   [PREF_ACCENT_COLOR]: DEFAULT_ACCENT_COLOR,
   [PREF_FIRST_DAY_OF_WEEK]: '0',
+  [PREF_TIMEZONE]: 'UTC',
 };
 
 /**
@@ -75,6 +77,11 @@ export const usePreferencesStore = defineStore('preferences', {
   }),
 
   getters: {
+    /** IANA zone of the user (#169). `UTC` until the server stored one. */
+    timezone(state: PreferencesState): string {
+      return state.preferences[PREF_TIMEZONE] || 'UTC';
+    },
+
     defaultEventDuration(state: PreferencesState): number {
       const parsed = Number.parseInt(state.preferences[PREF_DEFAULT_EVENT_DURATION] ?? '', 10);
       // Fall back rather than trust: a value written by an older build (or edited
@@ -178,6 +185,14 @@ export const usePreferencesStore = defineStore('preferences', {
       this.isLoaded = false;
       this.isLoading = false;
       this.error = null;
+    },
+
+    /**
+     * Adopt a zone the server already stored (the set-if-empty PUT answer,
+     * plugins/timezone.client.ts). Local only: no PATCH is issued.
+     */
+    setTimezone(timezone: string) {
+      this.preferences = { ...this.preferences, [PREF_TIMEZONE]: timezone };
     },
 
     async updatePreferences(prefs: Record<string, string>) {

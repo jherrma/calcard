@@ -178,7 +178,10 @@ webinterface/
 ├── plugins/
 │   ├── first-day-of-week.client.ts # Starts useDatePickerFirstDay() app-wide at boot
 │   ├── primevue-services.ts # Registers ConfirmationService (for useConfirm) and the v-tooltip directive (#170)
-│   └── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
+│   ├── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
+│   └── timezone.client.ts   # #169: one set-if-empty PUT /users/me/preferences/timezone-default per tab and signed-in period
+│                            #   (watches auth.isAuthenticated, immediate); the answer goes into preferencesStore.setTimezone (no PATCH);
+│                            #   errors only console.warn; `useNuxtApp().$timezoneReady()` = the always-resolving pending promise
 ├── assets/css/
 │   ├── tailwind.css         # Tailwind layer entry (@layer tailwind-base, primevue, …)
 │   ├── theme.css            # Unlayered: theme-switch transition + pre-paint background
@@ -525,6 +528,19 @@ The second half of theming, and the one that persists DIFFERENTLY from the theme
   on every page load.
 - **A save applies optimistically and rolls back** if the server refuses, so the screen never shows
   a colour the account does not have.
+
+### User time zone (#169)
+
+`plugins/timezone.client.ts` fills the user's `timezone` preference once per tab and signed-in period: it watches
+`auth.isAuthenticated` (immediate, so a session restored by `initAuth`, a password sign-in and the OAuth callback
+all count) and sends `PUT /api/v1/users/me/preferences/timezone-default` with the browser's zone. The server only
+stores it if none is stored ("set-if-empty"), so the *answer* is written into the store via
+`preferencesStore.setTimezone()` (no PATCH), also when it differs from the browser's zone. Errors (400, network)
+only `console.warn`: no toast, no retry. The flag re-arms when `isAuthenticated` turns false.
+`useNuxtApp().$timezoneReady()` returns the pending promise (never rejects) for callers that must wait for it.
+`PREF_TIMEZONE` (`timezone`, default `UTC`) and the `timezone` getter live in `stores/preferences.ts`;
+Settings -> Calendar has a filterable "Time zone" Select (`UTC` + `Intl.supportedValuesOf('timeZone')`) saved
+through the preferences PATCH, a 400 shows the server's text.
 
 ### Type System Gotchas
 

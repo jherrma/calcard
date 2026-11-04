@@ -11,6 +11,7 @@ import {
   PREF_DEFAULT_EVENT_DURATION,
   PREF_FIRST_DAY_OF_WEEK,
   PREF_TIME_FORMAT,
+  PREF_TIMEZONE,
 } from '~/stores/preferences';
 
 // SCOPE: the first-day-of-the-week field of Settings → Calendar — that it is
@@ -26,7 +27,7 @@ const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
 mockNuxtImport('useApi', () => () => apiMock);
 
 interface PageVm {
-  form: { duration: number; allDay: boolean; timeFormat: string; firstDayOfWeek: number };
+  form: { duration: number; allDay: boolean; timeFormat: string; firstDayOfWeek: number; timezone: string };
   isDirty: boolean;
   handleSave: () => Promise<void>;
   applyStoreValues: () => void;
@@ -127,6 +128,7 @@ describe('Settings → Calendar: first day of the week', () => {
           [PREF_DEFAULT_ALL_DAY]: 'false',
           [PREF_TIME_FORMAT]: '24h',
           [PREF_FIRST_DAY_OF_WEEK]: '6',
+          [PREF_TIMEZONE]: 'UTC',
         },
       },
     });
@@ -147,5 +149,45 @@ describe('Settings → Calendar: first day of the week', () => {
     expect(store.firstDayOfWeek).toBe(0);
     expect(vm.form.firstDayOfWeek).toBe(1);
     expect(vm.isDirty).toBe(true);
+  });
+});
+
+describe('Settings → Calendar: time zone', () => {
+  it('lists UTC and the Intl zones, and shows the stored value', async () => {
+    const { wrapper, vm } = await mountPage({ [PREF_TIMEZONE]: 'Europe/Berlin' });
+    const select = wrapper.findAllComponents({ name: 'Select' }).find((c) => c.attributes('id') === 'pref-timezone');
+    expect(select, 'the time-zone Select must be rendered').toBeDefined();
+    const options = (select!.props('options') ?? select!.vm.$attrs.options) as string[];
+
+    expect(options[0]).toBe('UTC');
+    expect(options).toContain('Europe/Berlin');
+    expect(new Set(options).size).toBe(options.length);
+    expect(vm.form.timezone).toBe('Europe/Berlin');
+    expect(vm.isDirty).toBe(false);
+  });
+
+  it('saves a change through the PATCH', async () => {
+    const { vm, store } = await mountPage();
+
+    vm.form.timezone = 'America/New_York';
+    expect(vm.isDirty).toBe(true);
+    await vm.handleSave();
+
+    const [url, opts] = apiMock.mock.calls.at(-1)!;
+    expect(url).toBe('/api/v1/users/me/preferences');
+    expect(opts.method).toBe('PATCH');
+    expect(opts.body.preferences[PREF_TIMEZONE]).toBe('America/New_York');
+    expect(store.timezone).toBe('America/New_York');
+  });
+
+  it('shows the server message when the zone is refused', async () => {
+    const { vm, store } = await mountPage();
+    apiMock.mockRejectedValueOnce({ data: { message: 'timezone must be a valid IANA time zone' } });
+
+    vm.form.timezone = 'Mars/Base';
+    await vm.handleSave();
+
+    expect(toastSpies.error).toHaveBeenCalledWith('timezone must be a valid IANA time zone');
+    expect(store.timezone).toBe('UTC');
   });
 });
