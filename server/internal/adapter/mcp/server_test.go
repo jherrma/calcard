@@ -116,10 +116,13 @@ func TestToolsListAdvertisesEveryToolWithASchema(t *testing.T) {
 		"create_contact", "update_contact", "delete_contact", "find_free_slots",
 		"create_calendar", "update_calendar", "delete_calendar",
 		"create_address_book", "update_address_book", "delete_address_book",
+		// the task tools (#170)
+		"list_tasks", "create_task", "update_task", "complete_task", "uncomplete_task",
+		"delete_task", "get_task_summary",
 	} {
 		assert.True(t, names[want], "tool %s is missing", want)
 	}
-	assert.Len(t, tools, 19)
+	assert.Len(t, tools, 26)
 }
 
 func TestToolsListIsSortedForStability(t *testing.T) {

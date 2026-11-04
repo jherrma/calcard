@@ -149,11 +149,13 @@ def test_ping(t, e2e, st):
 TOOLS = ["list_calendars", "get_events", "create_event", "update_event", "delete_event", "search_events",
          "list_address_books", "get_contacts", "search_contacts", "create_contact", "update_contact",
          "delete_contact", "find_free_slots", "create_calendar", "update_calendar", "delete_calendar",
-         "create_address_book", "update_address_book", "delete_address_book"]
+         "create_address_book", "update_address_book", "delete_address_book",
+         "list_tasks", "create_task", "update_task", "complete_task", "uncomplete_task", "delete_task",
+         "get_task_summary"]
 
 
 def test_tools_list(t, e2e, st):
-    """tools/list advertises the 19 tools with object schemas"""
+    """tools/list advertises the 26 tools with object schemas"""
     t.need(st, "mc_session")
     r = mcp_call(e2e, st, '{"jsonrpc":"2.0","id":3,"method":"tools/list"}')
     if not t.status(r, 200):

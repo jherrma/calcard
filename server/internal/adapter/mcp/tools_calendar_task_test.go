@@ -134,3 +134,93 @@ func TestEventToolsMapUseCaseNotFound(t *testing.T) {
 	}
 	assert.Equal(t, before, e.dbSnapshot(), "nothing may be written")
 }
+
+// eventTitles lists the titles of the event views in payload[key].
+func eventTitles(t *testing.T, payload map[string]interface{}, key string) []string {
+	t.Helper()
+	titles := []string{}
+	for _, raw := range payload[key].([]interface{}) {
+		view := raw.(map[string]interface{})
+		if nested, ok := view["event"].(map[string]interface{}); ok {
+			view = nested // search_events wraps each match
+		}
+		titles = append(titles, view["title"].(string))
+	}
+	return titles
+}
+
+// TestEventToolsNeverReturnTasks (#170, G8): with a task due inside the window
+// next to an event, every event read — get_events, search_events,
+// find_free_slots and the calendars://{id}/events resource — returns the event
+// only; a task list is left out of find_free_slots' default calendars and of
+// resources/list.
+func TestEventToolsNeverReturnTasks(t *testing.T) {
+	e := newTestEnv(t)
+	alice := e.newUser("alice@example.com")
+	mixed := e.newCalendarWithSet(alice.ID, "Mixed", "VEVENT,VTODO")
+	errands := e.newCalendarWithSet(alice.ID, "Errands", "VTODO")
+
+	mustCreate(t, e, alice.ID, mixed.UUID, "Dentist appointment", "2026-03-06T09:00:00Z", "2026-03-06T10:00:00Z")
+	e.storeTaskLines(mixed, "dentist-bill", "SUMMARY:Dentist bill",
+		"DTSTART:20260306T110000Z", "DUE:20260306T120000Z")
+	e.storeTaskLines(errands, "dentist-call", "SUMMARY:Dentist call",
+		"DTSTART:20260306T120000Z", "DUE:20260306T130000Z")
+	only := []string{"Dentist appointment"}
+
+	t.Run("get_events", func(t *testing.T) {
+		window := map[string]interface{}{"start": "2026-03-06T00:00:00Z", "end": "2026-03-07T00:00:00Z"}
+		window["calendar_id"] = mixed.UUID
+		got, isErr := e.call(alice.ID, "get_events", window)
+		require.False(t, isErr, "%v", got["error"])
+		assert.Equal(t, only, eventTitles(t, got, "events"))
+
+		window["calendar_id"] = errands.UUID
+		got, isErr = e.call(alice.ID, "get_events", window)
+		require.False(t, isErr, "%v", got["error"])
+		assert.Empty(t, eventTitles(t, got, "events"), "a task list has no events")
+	})
+
+	t.Run("search_events", func(t *testing.T) {
+		got, isErr := e.call(alice.ID, "search_events", map[string]interface{}{"query": "Dentist"})
+		require.False(t, isErr, "%v", got["error"])
+		assert.Equal(t, only, eventTitles(t, got, "matches"))
+	})
+
+	t.Run("find_free_slots", func(t *testing.T) {
+		args := map[string]interface{}{"start": "2026-03-06T08:00:00Z", "end": "2026-03-06T14:00:00Z", "duration_minutes": 30}
+		got, isErr := e.call(alice.ID, "find_free_slots", args)
+		require.False(t, isErr, "%v", got["error"])
+		assert.Equal(t, []interface{}{
+			map[string]interface{}{"start": "2026-03-06T08:00:00Z", "end": "2026-03-06T09:00:00Z", "minutes": 60.0},
+			map[string]interface{}{"start": "2026-03-06T10:00:00Z", "end": "2026-03-06T14:00:00Z", "minutes": 240.0},
+		}, got["free_slots"], "only the event is busy; neither task blocks time")
+		assert.Equal(t, []interface{}{"Mixed"}, got["calendars_consulted"], "a task list is not consulted by default")
+
+		// Named explicitly, a task list is consulted — and adds no busy time.
+		args["calendar_ids"] = []string{errands.UUID}
+		got, isErr = e.call(alice.ID, "find_free_slots", args)
+		require.False(t, isErr, "%v", got["error"])
+		assert.Equal(t, []interface{}{"Errands"}, got["calendars_consulted"])
+		assert.Equal(t, []interface{}{
+			map[string]interface{}{"start": "2026-03-06T08:00:00Z", "end": "2026-03-06T14:00:00Z", "minutes": 360.0},
+		}, got["free_slots"])
+	})
+
+	t.Run("calendars://{id}/events", func(t *testing.T) {
+		assert.Equal(t, only, eventTitles(t, readResourceJSON(t, e, alice.ID, calendarURIStem+mixed.UUID+eventsURISuffix), "events"))
+		// A task list's URI still reads, as an empty list.
+		assert.Empty(t, eventTitles(t, readResourceJSON(t, e, alice.ID, calendarURIStem+errands.UUID+eventsURISuffix), "events"))
+	})
+
+	t.Run("resources/list", func(t *testing.T) {
+		resp := e.rpc(alice.ID, MethodResourcesList, nil)
+		require.Nil(t, resp.Error)
+		uris := map[string]bool{}
+		for _, r := range resp.Result.(resourcesListResult).Resources {
+			uris[r.URI] = true
+		}
+		assert.True(t, uris[calendarURIStem+mixed.UUID+eventsURISuffix], "a mixed calendar has an events resource")
+		assert.False(t, uris[calendarURIStem+errands.UUID+eventsURISuffix], "a task list has none")
+		assert.True(t, uris[uriCalendarList])
+	})
+}

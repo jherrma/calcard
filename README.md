@@ -193,11 +193,13 @@ For frontend development, run the SPA separately with `cd webinterface && pnpm d
 ## MCP Server (AI assistants)
 
 The server exposes a [Model Context Protocol](https://modelcontextprotocol.io) endpoint at `/mcp`,
-so an AI assistant can read and manage calendars and contacts on your behalf: list and search
-events and contacts, create/update/delete them, find free slots across your calendars, and
-create, rename or delete the calendars and address books themselves (your own only — a collection
-shared with you stays the owner's to manage). Deleting a calendar or address book is permanent and
-takes everything in it, so assistants are told to ask you first.
+so an AI assistant can read and manage calendars, tasks and contacts on your behalf: list and
+search events and contacts, create/update/delete them, find free slots across your calendars, list
+your tasks across every task list, count what is overdue or due today, create, edit, complete,
+reopen and delete tasks, and create, rename or delete the calendars, task lists and address books
+themselves (your own only — a collection shared with you stays the owner's to manage). A repeating
+task cannot be completed over MCP, just as over the REST API. Deleting a task, a calendar or an
+address book is permanent and takes everything in it, so assistants are told to ask you first.
 
 1. Sign in to the web UI and go to **Settings → MCP Access**.
 2. Create a token. It is shown **once** — the server stores only a hash.

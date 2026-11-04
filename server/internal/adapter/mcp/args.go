@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 )
 
 // maxReportedUnknownArgs caps how many unknown argument names one error lists.
@@ -64,15 +66,43 @@ func decodeArgs(args json.RawMessage, dst interface{}) *toolCallResult {
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		var typeErr *json.UnmarshalTypeError
-		if errors.As(err, &typeErr) {
-			name, _, _ := strings.Cut(typeErr.Field, ".")
-			if f, ok := fields[name]; ok {
-				return errorResult(fmt.Sprintf("Argument %q must be %s, got %s; the tool did not run.",
-					name, jsonTypeOf(f.Type), describeJSONValue(typeErr.Value)))
-			}
+		if bad := wronglyTypedArgument(keys, reflect.TypeOf(dst)); bad != nil {
+			return bad
 		}
 		return errorResult("The arguments do not match the tool's input schema; the tool did not run.")
+	}
+	return nil
+}
+
+// wronglyTypedArgument finds the argument the decoder refused by decoding each
+// one alone into its field's type, in declaration order, and describes the
+// first that fails; nil when none does on its own.
+//
+// It does not read the field name off the decoder's UnmarshalTypeError: an
+// argument with its own UnmarshalJSON (dto.OptionalField, the nullable
+// arguments of update_task) fails inside a nested json.Unmarshal, and what
+// encoding/json then puts into Field is an implementation detail.
+func wronglyTypedArgument(keys map[string]json.RawMessage, t reflect.Type) *toolCallResult {
+	fields := argumentFields(t)
+	for _, name := range argumentNames(t) {
+		raw, ok := keys[name]
+		if !ok {
+			continue
+		}
+		f := fields[name]
+		err := json.Unmarshal(raw, reflect.New(f.Type).Interface())
+		if err == nil {
+			continue
+		}
+		got := describeJSONRaw(raw)
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) {
+			// The decoder's own word for the offending value: the element of
+			// an array ("a number" in ["a", 2]) or a fraction's literal.
+			got = describeJSONValue(typeErr.Value)
+		}
+		return errorResult(fmt.Sprintf("Argument %q must be %s, got %s; the tool did not run.",
+			name, jsonTypeOf(f.Type), got))
 	}
 	return nil
 }
@@ -167,10 +197,54 @@ func jsonTypeOf(t reflect.Type) string {
 			return "an array of strings"
 		}
 		return "an array"
-	case reflect.Map, reflect.Struct:
+	case reflect.Struct:
+		if inner, ok := optionalFieldValue(t); ok {
+			return jsonTypeOf(inner) + " or null"
+		}
+		return "an object"
+	case reflect.Map:
 		return "an object"
 	default:
 		return "of another type"
+	}
+}
+
+// optionalFieldValue reports whether t is a dto.OptionalField[T] — an argument
+// that takes a value or null (null removes, absent keeps) — and returns T. The
+// type is generic, so it is recognised by its package and name rather than
+// compared with one instantiation.
+func optionalFieldValue(t reflect.Type) (reflect.Type, bool) {
+	ref := reflect.TypeOf(dto.OptionalField[int]{})
+	if t.Kind() != reflect.Struct || t.PkgPath() != ref.PkgPath() || !strings.HasPrefix(t.Name(), "OptionalField[") {
+		return nil, false
+	}
+	value, ok := t.FieldByName("Value")
+	if !ok || value.Type.Kind() != reflect.Pointer {
+		return nil, false
+	}
+	return value.Type.Elem(), true
+}
+
+// describeJSONRaw names the JSON type of a raw value, for a refusal that has
+// no UnmarshalTypeError to take the wording from.
+func describeJSONRaw(raw json.RawMessage) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return "a value of another type"
+	}
+	switch trimmed[0] {
+	case '"':
+		return "a string"
+	case '{':
+		return "an object"
+	case '[':
+		return "an array"
+	case 't', 'f':
+		return "a boolean"
+	case 'n':
+		return "null"
+	default:
+		return string(trimmed)
 	}
 }
 

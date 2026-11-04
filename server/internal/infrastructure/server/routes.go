@@ -489,17 +489,26 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	eventGroup.Post("/:event_id/move", eventHandler.Move)
 
 	// Task Routes (Protected, #170): the VTODOs of a task list, with the event
-	// routes' access rules. Raw JSON like events.
+	// routes' access rules. Raw JSON like events. The write, cross-list and
+	// summary use cases are built once: the MCP task tools get the same
+	// instances (below).
+	taskCreateUC := taskusecase.NewCreateTaskUseCase(calendarRepo, nil)
+	taskUpdateUC := taskusecase.NewUpdateTaskUseCase(calendarRepo, nil)
+	taskDeleteUC := taskusecase.NewDeleteTaskUseCase(calendarRepo)
+	taskCompleteUC := taskusecase.NewCompleteTaskUseCase(calendarRepo, nil)
+	taskUncompleteUC := taskusecase.NewUncompleteTaskUseCase(calendarRepo, nil)
+	taskListAllUC := taskusecase.NewListAllTasksUseCase(calendarRepo)
+	taskSummaryUC := taskusecase.NewTaskSummaryUseCase(calendarRepo)
 	taskHandler := http.NewTaskHandler(
 		taskusecase.NewListTasksUseCase(calendarRepo),
 		taskusecase.NewGetTaskUseCase(calendarRepo),
-		taskusecase.NewCreateTaskUseCase(calendarRepo, nil),
-		taskusecase.NewUpdateTaskUseCase(calendarRepo, nil),
-		taskusecase.NewDeleteTaskUseCase(calendarRepo),
-		taskusecase.NewCompleteTaskUseCase(calendarRepo, nil),
-		taskusecase.NewUncompleteTaskUseCase(calendarRepo, nil),
-		taskusecase.NewListAllTasksUseCase(calendarRepo),
-		taskusecase.NewTaskSummaryUseCase(calendarRepo),
+		taskCreateUC,
+		taskUpdateUC,
+		taskDeleteUC,
+		taskCompleteUC,
+		taskUncompleteUC,
+		taskListAllUC,
+		taskSummaryUC,
 		calendarRepo,
 	)
 
@@ -540,6 +549,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 			EventCreate:       eventCreateUC,
 			EventUpdate:       eventUpdateUC,
 			EventDelete:       eventDeleteUC,
+			TaskListAll:       taskListAllUC,
+			TaskCreate:        taskCreateUC,
+			TaskUpdate:        taskUpdateUC,
+			TaskDelete:        taskDeleteUC,
+			TaskComplete:      taskCompleteUC,
+			TaskUncomplete:    taskUncompleteUC,
+			TaskSummary:       taskSummaryUC,
 			AddressBookList:   abListUC,
 			AddressBookCreate: abCreateUC,
 			AddressBookUpdate: abUpdateUC,

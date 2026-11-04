@@ -15,6 +15,7 @@ import (
 	contactuc "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventuc "github.com/jherrma/caldav-server/internal/usecase/event"
 	searchuc "github.com/jherrma/caldav-server/internal/usecase/search"
+	taskuc "github.com/jherrma/caldav-server/internal/usecase/task"
 	"github.com/jherrma/caldav-server/internal/version"
 )
 
@@ -41,6 +42,17 @@ type Deps struct {
 	EventCreate *eventuc.CreateEventUseCase
 	EventUpdate *eventuc.UpdateEventUseCase
 	EventDelete *eventuc.DeleteEventUseCase
+
+	// The task tools (#170, tools_task.go) call the use cases TaskHandler gets,
+	// so validation, the component-set check, the recurring refusal and the
+	// hard delete are decided once for both surfaces.
+	TaskListAll    *taskuc.ListAllTasksUseCase
+	TaskCreate     *taskuc.CreateTaskUseCase
+	TaskUpdate     *taskuc.UpdateTaskUseCase
+	TaskDelete     *taskuc.DeleteTaskUseCase
+	TaskComplete   *taskuc.CompleteTaskUseCase
+	TaskUncomplete *taskuc.UncompleteTaskUseCase
+	TaskSummary    *taskuc.TaskSummaryUseCase
 
 	AddressBookList   *addressbookuc.ListUseCase
 	AddressBookCreate *addressbookuc.CreateUseCase
@@ -94,6 +106,7 @@ func NewServer(deps Deps) *Server {
 	s.registerContactTools()
 	s.registerCollectionTools()
 	s.registerSchedulingTools()
+	s.registerTaskTools()
 	s.buildToolList()
 	return s
 }

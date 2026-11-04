@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	eventuc "github.com/jherrma/caldav-server/internal/usecase/event"
 )
 
@@ -39,7 +40,7 @@ func (s *Server) registerSchedulingTools() {
     "calendar_ids": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "Calendar UUIDs to consider busy. Defaults to every calendar the user can read"
+      "description": "Calendar UUIDs to consider busy. Defaults to every calendar the user can read except task lists (kind tasks)"
     },
     "include_all_day": {"type": "boolean", "description": "Treat all-day events as busy. Defaults to false"}
   },
@@ -112,6 +113,12 @@ func (s *Server) toolFindFreeSlots(cc *callContext, args json.RawMessage) (*tool
 	busy := make([]interval, 0)
 	for _, c := range cals {
 		if len(wanted) > 0 && !wanted[c.UUID] {
+			continue
+		}
+		// By default a task list (#170) is left out: it holds no events, so
+		// reading it would cost a query and add nothing but its name. One named
+		// in calendar_ids is consulted as asked.
+		if len(wanted) == 0 && c.Kind == calendar.KindTasks {
 			continue
 		}
 		considered = append(considered, c.Name)

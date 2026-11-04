@@ -23,6 +23,7 @@ import (
 	contactuc "github.com/jherrma/caldav-server/internal/usecase/contact"
 	eventuc "github.com/jherrma/caldav-server/internal/usecase/event"
 	searchuc "github.com/jherrma/caldav-server/internal/usecase/search"
+	taskuc "github.com/jherrma/caldav-server/internal/usecase/task"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -82,6 +83,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	calList := calendaruc.NewListCalendarsUseCase(calRepo, shareRepo)
 	abList := addressbookuc.NewListUseCase(abRepo, abShareRepo)
+	clock := func() time.Time { return fixedNow }
 
 	deps := Deps{
 		CalendarRepo:      calRepo,
@@ -95,6 +97,13 @@ func newTestEnv(t *testing.T) *testEnv {
 		EventCreate:       eventuc.NewCreateEventUseCase(calRepo),
 		EventUpdate:       eventuc.NewUpdateEventUseCase(calRepo),
 		EventDelete:       eventuc.NewDeleteEventUseCase(calRepo),
+		TaskListAll:       taskuc.NewListAllTasksUseCase(calRepo),
+		TaskCreate:        taskuc.NewCreateTaskUseCase(calRepo, clock),
+		TaskUpdate:        taskuc.NewUpdateTaskUseCase(calRepo, clock),
+		TaskDelete:        taskuc.NewDeleteTaskUseCase(calRepo),
+		TaskComplete:      taskuc.NewCompleteTaskUseCase(calRepo, clock),
+		TaskUncomplete:    taskuc.NewUncompleteTaskUseCase(calRepo, clock),
+		TaskSummary:       taskuc.NewTaskSummaryUseCase(calRepo),
 		AddressBookList:   abList,
 		AddressBookCreate: addressbookuc.NewCreateUseCase(abRepo),
 		AddressBookUpdate: addressbookuc.NewUpdateUseCase(abRepo),

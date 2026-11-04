@@ -39,21 +39,38 @@ func (s *Server) resolveCalendar(cc *callContext, uuid string) (uint, calendar.C
 // calendarPermission returns the caller's permission on a calendar by numeric
 // id, failing closed on repository errors.
 func (s *Server) calendarPermission(cc *callContext, calendarID uint) calendar.CalendarPermission {
+	_, perm := s.calendarAccess(cc, calendarID)
+	return perm
+}
+
+// calendarAccess is calendarPermission plus the calendar it loaded: nil and
+// PermissionNone when the caller cannot read it or a lookup fails.
+func (s *Server) calendarAccess(cc *callContext, calendarID uint) (*calendar.Calendar, calendar.CalendarPermission) {
 	perm, err := s.deps.CalendarRepo.GetUserPermission(cc.ctx, calendarID, cc.userID)
-	if err != nil {
-		return calendar.PermissionNone
-	}
-	if perm == calendar.PermissionNone {
-		return perm
+	if err != nil || perm == calendar.PermissionNone {
+		return nil, calendar.PermissionNone
 	}
 	// Same cap the REST handler applies: a subscribed calendar (story 100) is
 	// a read-only mirror of a remote feed, so an assistant may read it and may
 	// not write to it, whoever it is acting for.
 	cal, err := s.deps.CalendarRepo.GetByID(cc.ctx, calendarID)
-	if err != nil {
-		return calendar.PermissionNone
+	if err != nil || cal == nil {
+		return nil, calendar.PermissionNone
 	}
-	return calendar.EffectivePermission(cal, perm)
+	return cal, calendar.EffectivePermission(cal, perm)
+}
+
+// loadCalendar maps a calendar UUID to the calendar and the caller's effective
+// permission on it, the mirror of the REST handlers' resolveCalendar plus
+// calendarPermission: an unknown UUID, a failed lookup and a calendar the
+// caller cannot read are all (nil, PermissionNone). create_task hands the
+// calendar to the use case, which needs it whole (its component set).
+func (s *Server) loadCalendar(cc *callContext, calendarUUID string) (*calendar.Calendar, calendar.CalendarPermission) {
+	cal, err := s.deps.CalendarRepo.GetByUUID(cc.ctx, calendarUUID)
+	if err != nil || cal == nil {
+		return nil, calendar.PermissionNone
+	}
+	return s.calendarAccess(cc, cal.ID)
 }
 
 // eventPermission returns the caller's permission on the calendar holding the
@@ -69,6 +86,26 @@ func (s *Server) eventPermission(cc *callContext, eventUUID string) (*calendar.C
 		return nil, calendar.PermissionNone
 	}
 	return obj, s.calendarPermission(cc, obj.CalendarID)
+}
+
+// taskPermission is eventPermission for the task tools (#170): the task, the
+// calendar that holds it and the caller's effective permission there. An
+// object that is not a task (CalendarObject.IsTask; an event's UUID), an
+// unknown UUID and a task in a calendar the caller cannot read are all (nil,
+// nil, PermissionNone), checked before anything else, so every one of them
+// gets the same "No task with id …" answer — also on a read-only share. The
+// calendar is the task's own: the task use cases re-check that the object is
+// a task of it (taskuc's loadTask), as the REST routes do with the URL's.
+func (s *Server) taskPermission(cc *callContext, taskUUID string) (*calendar.CalendarObject, *calendar.Calendar, calendar.CalendarPermission) {
+	obj, err := s.deps.CalendarRepo.GetCalendarObjectByUUID(cc.ctx, taskUUID)
+	if err != nil || !obj.IsTask() {
+		return nil, nil, calendar.PermissionNone
+	}
+	cal, perm := s.calendarAccess(cc, obj.CalendarID)
+	if perm == calendar.PermissionNone {
+		return nil, nil, calendar.PermissionNone
+	}
+	return obj, cal, perm
 }
 
 // canWriteCalendar reports whether a calendar permission grants writes.

@@ -15,6 +15,10 @@ Draft for the GitHub release that ships #170. Paste it into the release body.
   `POST …/complete` and `…/uncomplete`, `GET /api/v1/tasks` (across all lists) and
   `GET /api/v1/tasks/summary?as_of=…`. `POST /api/v1/calendars` takes `kind` (`events`, `tasks` or `both`), and
   every calendar response has a read-only `kind`.
+- **MCP (AI assistants):** seven task tools — `list_tasks`, `create_task`, `update_task`, `complete_task`,
+  `uncomplete_task`, `delete_task` and `get_task_summary` — use the same rules as the REST API (a repeating task
+  cannot be completed, deleting a task is permanent). `create_calendar` takes `kind`, and `update_calendar` can widen
+  a calendar or task list to `both`. The event tools never return tasks.
 
 ## Upgrading: what happens to your existing calendars
 

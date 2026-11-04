@@ -33,16 +33,20 @@ const deleteConfirmation = "DELETE"
 func (s *Server) registerCollectionTools() {
 	s.register(Tool{
 		Name: "create_calendar",
-		Description: "Create a new calendar owned by the signed-in user. Returns the calendar, " +
-			"including its id (a UUID) for create_event and the other calendar tools. Without " +
-			"color a random one is picked; without timezone the calendar uses UTC.",
+		Description: "Create a new calendar or task list owned by the signed-in user. Returns it, " +
+			"including its id (a UUID) for create_event, create_task and the other tools. kind " +
+			"decides what it holds: events (the default, a calendar for create_event), tasks (a " +
+			"task list for create_task) or both. Choose it carefully: a kind can only widen later " +
+			"(update_calendar with kind both), and no tool can undo that or narrow it. Without " +
+			"color a random one is picked; without timezone it uses UTC.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
     "name": {"type": "string", "description": "Calendar name, 1 to 255 characters"},
     "description": {"type": "string", "description": "Optional, at most 1000 characters"},
     "color": {"type": "string", "description": "Hex colour #RRGGBB, e.g. #3b82f6"},
-    "timezone": {"type": "string", "description": "IANA timezone, e.g. Europe/Berlin. Events created without a timezone default to it"}
+    "timezone": {"type": "string", "description": "IANA timezone, e.g. Europe/Berlin. Events created without a timezone default to it"},
+    "kind": {"type": "string", "enum": ["events", "tasks", "both"], "description": "events (default), tasks (a task list) or both"}
   },
   "required": ["name"],
   "additionalProperties": false
@@ -51,10 +55,13 @@ func (s *Server) registerCollectionTools() {
 
 	s.register(Tool{
 		Name: "update_calendar",
-		Description: "Rename a calendar or change its description, color or timezone. Only the " +
-			"fields you pass are changed; omitted fields keep their stored value. Only the " +
-			"calendar's owner can do this: a calendar shared with the user (permission read or " +
-			"read-write in list_calendars) cannot be changed here.",
+		Description: "Rename a calendar or task list or change its description, color, timezone " +
+			"or kind. Only the fields you pass are changed; omitted fields keep their stored value. " +
+			"kind can only widen: both lets a calendar of kind events also hold tasks, or a task " +
+			"list of kind tasks also hold events. Widening cannot be undone by any tool; passing " +
+			"events or tasks for a calendar of another kind is refused, its own kind changes " +
+			"nothing. Only the calendar's owner can do this: a calendar shared with the user " +
+			"(permission read or read-write in list_calendars) cannot be changed here.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -62,7 +69,8 @@ func (s *Server) registerCollectionTools() {
     "name": {"type": "string", "description": "New name, 1 to 255 characters"},
     "description": {"type": "string", "description": "New description, at most 1000 characters; an empty string clears it"},
     "color": {"type": "string", "description": "Hex colour #RRGGBB"},
-    "timezone": {"type": "string", "description": "IANA timezone, e.g. Europe/Berlin"}
+    "timezone": {"type": "string", "description": "IANA timezone, e.g. Europe/Berlin"},
+    "kind": {"type": "string", "enum": ["events", "tasks", "both"], "description": "Only both changes anything: it widens the calendar for good"}
   },
   "required": ["calendar_id"],
   "additionalProperties": false
@@ -71,10 +79,10 @@ func (s *Server) registerCollectionTools() {
 
 	s.register(Tool{
 		Name: "delete_calendar",
-		Description: "PERMANENTLY delete a calendar the user owns together with EVERY event in " +
-			"it. This cannot be undone, and everyone the calendar is shared with loses it too. " +
-			"Always tell the user which calendar (by name) and how many events will be lost, and " +
-			"call this only after they have explicitly agreed. Calendars shared with the user " +
+		Description: "PERMANENTLY delete a calendar or task list the user owns together with EVERY " +
+			"event or task in it. This cannot be undone, and everyone the calendar is shared with " +
+			"loses it too. Always tell the user which calendar (by name) and how many events or " +
+			"tasks will be lost, and call this only after they have explicitly agreed. Calendars shared with the user " +
 			"cannot be deleted here, and the user's last remaining calendar that can hold events " +
 			"cannot be deleted (a task list always can).",
 		InputSchema: json.RawMessage(`{
@@ -204,18 +212,21 @@ func (s *Server) toolCreateCalendar(cc *callContext, args json.RawMessage) (*too
 		Description string `json:"description"`
 		Color       string `json:"color"`
 		Timezone    string `json:"timezone"`
+		Kind        string `json:"kind"`
 	}
 	if bad := decodeArgs(args, &in); bad != nil {
 		return bad, nil
 	}
 
-	// Validation (name, length limits, colour, IANA zone) and the defaults are
-	// the use case's, the same instance POST /api/v1/calendars calls.
+	// Validation (name, length limits, colour, IANA zone, kind) and the
+	// defaults (kind events) are the use case's, the same instance
+	// POST /api/v1/calendars calls.
 	cal, err := s.deps.CalendarCreate.Execute(cc.ctx, cc.userID, calendaruc.CreateCalendarRequest{
 		Name:        in.Name,
 		Description: in.Description,
 		Color:       in.Color,
 		Timezone:    in.Timezone,
+		Kind:        in.Kind,
 	})
 	if err != nil {
 		return calendarToolError("create_calendar", "", err), nil
@@ -237,6 +248,7 @@ func (s *Server) toolUpdateCalendar(cc *callContext, args json.RawMessage) (*too
 		Description *string `json:"description"`
 		Color       *string `json:"color"`
 		Timezone    *string `json:"timezone"`
+		Kind        string  `json:"kind"`
 	}
 	if bad := decodeArgs(args, &in); bad != nil {
 		return bad, nil
@@ -246,12 +258,15 @@ func (s *Server) toolUpdateCalendar(cc *callContext, args json.RawMessage) (*too
 	}
 
 	// The use case resolves ownership before it validates any field, so a
-	// calendar the caller does not own is "not owned" whatever is passed.
+	// calendar the caller does not own is "not owned" whatever is passed. The
+	// kind is widen-only there too: narrowing is calendar.ErrConflict, which
+	// calendarToolError answers with its own text (REST's 409).
 	cal, err := s.deps.CalendarUpdate.Execute(cc.ctx, cc.userID, in.CalendarID, calendaruc.UpdateCalendarRequest{
 		Name:        in.Name,
 		Description: in.Description,
 		Color:       in.Color,
 		Timezone:    in.Timezone,
+		Kind:        in.Kind,
 	})
 	if err != nil {
 		return calendarToolError("update_calendar", in.CalendarID, err), nil

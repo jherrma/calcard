@@ -63,7 +63,8 @@ func (s *Server) registerCalendarTools() {
 		Description: "List the calendars the signed-in user can see, including calendars shared " +
 			"with them. Returns each calendar's id (a UUID, required by every other calendar " +
 			"tool), name, colour, timezone, event count, kind (events, tasks for a task list " +
-			"that holds no events, or both) and the caller's permission on it.",
+			"that holds no events, or both) and the caller's permission on it. The tasks of the " +
+			"task lists (kind tasks or both) are read with list_tasks.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 	}, s.toolListCalendars)
 
@@ -71,7 +72,8 @@ func (s *Server) registerCalendarTools() {
 		Name: "get_events",
 		Description: "List events in one calendar. Recurring series are expanded into their " +
 			"individual occurrences within the window. Without start/end the whole calendar is " +
-			"returned, which can be large — pass a window whenever the question has one.",
+			"returned, which can be large — pass a window whenever the question has one. Tasks " +
+			"are never returned: a task list (kind tasks) has no events, use list_tasks.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -88,7 +90,8 @@ func (s *Server) registerCalendarTools() {
 		Name: "create_event",
 		Description: "Create an event in a calendar. Times are RFC 3339; include an offset or a " +
 			"trailing Z so the event lands in the intended zone. For an all-day event set " +
-			"all_day true and pass dates.",
+			"all_day true and pass dates. Only a calendar of kind events or both takes events: a " +
+			"task list (kind tasks) refuses events; to-dos go there with create_task.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {

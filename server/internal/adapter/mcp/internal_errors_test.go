@@ -23,6 +23,9 @@ type storageFixture struct {
 	contact   string // UUID
 	calName   string
 	otherBook string
+	taskList  string // UUID of a VTODO-only calendar
+	task      string // UUID of an open task in it
+	doneTask  string // UUID of a completed task in it
 }
 
 func newStorageFixture(t *testing.T) *storageFixture {
@@ -32,6 +35,7 @@ func newStorageFixture(t *testing.T) *storageFixture {
 	e.newCalendar(alice.ID, "Spare")
 	ab := e.newAddressBook(alice.ID, "Friends")
 	other := e.newAddressBook(alice.ID, "Spare")
+	chores := e.newCalendarWithSet(alice.ID, "Chores", "VTODO")
 	return &storageFixture{
 		e:         e,
 		userID:    alice.ID,
@@ -41,6 +45,9 @@ func newStorageFixture(t *testing.T) *storageFixture {
 		book:      ab.UUID,
 		contact:   mustCreateContact(t, e, alice.ID, ab.UUID, "Jane", "Smith"),
 		otherBook: other.UUID,
+		taskList:  chores.UUID,
+		task:      e.storeTask(chores, "fixture-task"),
+		doneTask:  e.storeTaskLines(chores, "fixture-done", "SUMMARY:Water plants", "STATUS:COMPLETED", "COMPLETED:20260301T100000Z", "PERCENT-COMPLETE:100"),
 	}
 }
 
@@ -138,6 +145,28 @@ func storageFailureCases() []storageFailureCase {
 		{tool: "delete_address_book", brk: failWritesTo("address_books"),
 			args: func(f *storageFixture) map[string]interface{} {
 				return map[string]interface{}{"address_book_id": f.otherBook, "confirmation": "DELETE"}
+			}},
+		// tasks (#170): the access checks read calendar_objects, so the writes
+		// are broken (not the table) and each call really changes something.
+		{tool: "list_tasks", brk: hide("calendar_objects"),
+			args: func(*storageFixture) map[string]interface{} { return map[string]interface{}{} }},
+		{tool: "create_task", brk: failWritesTo("calendar_objects"),
+			args: func(f *storageFixture) map[string]interface{} {
+				return map[string]interface{}{"calendar_id": f.taskList, "summary": "New"}
+			}},
+		{tool: "update_task", brk: failWritesTo("calendar_objects"),
+			args: func(f *storageFixture) map[string]interface{} {
+				return map[string]interface{}{"task_id": f.task, "summary": "Renamed"}
+			}},
+		{tool: "complete_task", brk: failWritesTo("calendar_objects"),
+			args: func(f *storageFixture) map[string]interface{} { return map[string]interface{}{"task_id": f.task} }},
+		{tool: "uncomplete_task", brk: failWritesTo("calendar_objects"),
+			args: func(f *storageFixture) map[string]interface{} { return map[string]interface{}{"task_id": f.doneTask} }},
+		{tool: "delete_task", brk: failWritesTo("calendar_objects"),
+			args: func(f *storageFixture) map[string]interface{} { return map[string]interface{}{"task_id": f.task} }},
+		{tool: "get_task_summary", brk: hide("calendar_objects"),
+			args: func(*storageFixture) map[string]interface{} {
+				return map[string]interface{}{"as_of": "2026-03-04T10:00:00+01:00"}
 			}},
 	}
 }

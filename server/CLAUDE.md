@@ -90,7 +90,7 @@ Access is the event routes' (`adapter/http/calendar_access.go`): the list and cr
 
 **Time zones (R3, a known approximation):** a floating DUE (no `Z`, no TZID) and a date-only DUE are stored and compared as UTC wall time — in the task columns, in `due_after`/`due_before`, in the summary counts and in the CalDAV VTODO time-range query — while overdue and due today are judged in `as_of`'s offset. A TZID the server cannot resolve (a non-IANA name defined only by the object's own VTIMEZONE) leaves the task's due date empty in the columns, the limit event start times already have.
 
-There are no MCP task tools yet, and `/search` has no task group: both see a task list only as a calendar with `kind: "tasks"`.
+`/search` has no task group: it sees a task list only as a calendar with `kind: "tasks"`. The MCP task tools (`list_tasks`, `create_task`, `update_task`, `complete_task`, `uncomplete_task`, `delete_task`, `get_task_summary`, see "MCP" below) call these same use cases and answer in these same shapes.
 
 ### CalDAV/CardDAV (`/dav/...`)
 
@@ -111,18 +111,33 @@ Basic auth accepts the account's primary password, so with `rate_limit.enabled` 
 ### MCP (`/mcp`)
 
 Model Context Protocol server (story 104) — JSON-RPC 2.0 over Streamable HTTP, so an AI
-assistant can read and manage the caller's calendars and contacts. `POST /mcp` carries the
+assistant can read and manage the caller's calendars, tasks and contacts. `POST /mcp` carries the
 JSON-RPC messages, `GET /mcp` returns a manifest (or opens the SSE notification stream when
 `Accept: text/event-stream`), `DELETE /mcp` terminates a session.
 
 Authentication is a bearer **MCP access token** (`calcard_mcp_…`, minted per user at
-`/api/v1/mcp-tokens`); a JWT access token is also accepted but expires in minutes. 19 tools
+`/api/v1/mcp-tokens`); a JWT access token is also accepted but expires in minutes. 26 tools
 (event and contact CRUD, creating/renaming/deleting calendars and address books, unified search,
-`find_free_slots`) and four resources are advertised. Calendar output carries the read-only
-`kind` (#170); `create_calendar` makes an event calendar (`VEVENT`, the REST default), and neither
-it nor `update_calendar` takes a `kind`. There are no task tools yet, and the event tools never see a
-task: `get_events`, `search_events` and `find_free_slots` read events only, and `update_event` /
-`delete_event` answer a task's id like an unknown event's.
+`find_free_slots`, and the seven task tools) and four resources are advertised. Calendar output
+carries the read-only `kind` (#170); `create_calendar` takes an optional `kind` (`events`, the REST
+default, `tasks` or `both`) and `update_calendar` a widen-only one (`both`; narrowing answers
+`Cannot narrow a calendar's component set`), exactly as `POST`/`PATCH /calendars`.
+
+The task tools (#170, `adapter/mcp/tools_task.go`) are `list_tasks` (REST `GET /tasks`: across every
+readable task list or, with `calendar_id`, one; `status`, `query`, `due_after`/`due_before`,
+`limit` — default **50** here — and `offset`), `create_task`, `update_task` (null removes the five
+removable fields, as the PATCH body), `complete_task`, `uncomplete_task`, `delete_task` (the hard
+delete) and `get_task_summary` (`as_of` required, RFC 3339 with the user's offset). Each calls the
+use case the REST route calls and renders with the REST DTOs, so a task reads byte-for-byte as REST
+answers it; argument names are the REST ones (`query` = `q`). Access mirrors the task routes: a task
+id the caller cannot read — unknown, an event's UUID, another user's — is
+`No task with id <id> is readable by you.`, a read share or a subscribed calendar
+`You have read-only access to the task list holding that task.`; the use cases' refusals keep their
+REST text (the recurring 409 sentence, `This calendar does not store tasks`, the field 400s). The
+event tools never see a task: `get_events`, `search_events`, `find_free_slots` and the
+`calendars://{id}/events` resource read events only, `find_free_slots` leaves task lists out of its
+default calendars, `resources/list` advertises no events resource for a task list, and
+`update_event` / `delete_event` answer a task's id like an unknown event's.
 
 **It is a facade, not a second API.** Every tool delegates to the same use case the REST
 handler calls and resolves permissions through the same `GetUserPermission` methods, so MCP can
