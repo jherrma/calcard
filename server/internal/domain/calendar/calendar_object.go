@@ -33,7 +33,7 @@ const UIDDomain = "calcard.io"
 type CalendarObject struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`
 	UUID          string     `gorm:"uniqueIndex;size:36;not null" json:"uuid"`
-	CalendarID    uint       `gorm:"index:idx_calobj_cal_comp,priority:1;not null" json:"calendar_id"`
+	CalendarID    uint       `gorm:"index:idx_calobj_cal_comp,priority:1;index:idx_calobj_cal_alarm,priority:1;not null" json:"calendar_id"`
 	Path          string     `gorm:"size:255;not null" json:"path"`
 	UID           string     `gorm:"index;size:255;not null" json:"uid"` // iCalendar UID
 	ETag          string     `gorm:"size:64;not null" json:"etag"`
@@ -51,6 +51,15 @@ type CalendarObject struct {
 	// by ListEvents so recurring events remain visible in windows past their
 	// first occurrence. Not exposed in JSON.
 	RecurrenceEndTime *time.Time `json:"-"`
+	// AlarmFirstAt / AlarmLastAt bound, in UTC, every trigger instant the object's
+	// deliverable alarms can produce (alarm_bounds.go): NULL when it has none.
+	// Maintained by PopulateDenormFieldsFromICal, never set by callers, not exposed
+	// in JSON. A coarse pre-filter for GET /alarms/upcoming; ExpandAlarms computes
+	// the exact instants. Over-including is safe, under-including is a bug.
+	// idx_calobj_cal_alarm (calendar_id, alarm_last_at) is partial: objects
+	// without a deliverable alarm are not in it.
+	AlarmFirstAt *time.Time `json:"-"`
+	AlarmLastAt  *time.Time `gorm:"index:idx_calobj_cal_alarm,priority:2,where:alarm_last_at IS NOT NULL" json:"-"`
 
 	// Task columns, derived from a VTODO by PopulateDenormFieldsFromICal
 	// (denorm_task.go) and never set by callers; empty/nil on VEVENT rows. Not

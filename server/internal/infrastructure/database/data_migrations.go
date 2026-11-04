@@ -39,6 +39,9 @@ func RunDataMigrations(db *gorm.DB) error {
 		return fmt.Errorf("backfill task fields: %w", err)
 	}
 	now := time.Now().UTC()
+	if err := backfillAlarmBounds(db, now); err != nil {
+		return fmt.Errorf("backfill alarm bounds: %w", err)
+	}
 	if err := unescapeTextColumns(db, now); err != nil {
 		return fmt.Errorf("unescape text columns: %w", err)
 	}
@@ -330,6 +333,53 @@ func backfillTaskFields(db *gorm.DB) error {
 			}
 			return nil
 		}).Error
+}
+
+// backfillAlarmBoundsMarkerKey marks backfillAlarmBounds as done. A later change
+// of the bounds rule claims .v2 to re-derive everything. After a downgrade to a
+// binary without the alarm_* columns (which leaves the bounds of the objects it
+// writes stale) and an upgrade again, delete this row to re-run the backfill.
+const backfillAlarmBoundsMarkerKey = "migration.backfill_alarm_bounds.v1"
+
+// backfillAlarmBounds fills alarm_first_at / alarm_last_at (#169) of live rows
+// stored before the columns existed and holding a VALARM. One-shot (the marker
+// is claimed in the same transaction as the writes): objects whose VALARMs are
+// all non-deliverable keep NULL bounds and would otherwise be re-decoded on every
+// boot. Like backfillTaskFields it writes the two columns only, never e_tag,
+// updated_at or i_cal_data, so no DAV client re-downloads anything. Undecodable
+// rows are skipped. Must run after backfillTaskFields: the done-task rule reads
+// the status column.
+func backfillAlarmBounds(db *gorm.DB, now time.Time) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		claimed, err := claimMarker(tx, backfillAlarmBoundsMarkerKey, now)
+		if err != nil || !claimed {
+			return err // not claimed: ran before
+		}
+		var batch []calendar.CalendarObject
+		return tx.Unscoped().
+			Where("deleted_at IS NULL AND i_cal_data LIKE ?", "%BEGIN:VALARM%").
+			FindInBatches(&batch, migrationBatchSize, func(btx *gorm.DB, _ int) error {
+				for i := range batch {
+					obj := batch[i]
+					if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+						continue
+					}
+					if obj.AlarmFirstAt == nil {
+						continue // NULL already
+					}
+					// The callback's session is fresh: Unscoped again.
+					if err := btx.Unscoped().Model(&calendar.CalendarObject{}).
+						Where("id = ?", obj.ID).
+						UpdateColumns(map[string]interface{}{
+							"alarm_first_at": obj.AlarmFirstAt,
+							"alarm_last_at":  obj.AlarmLastAt,
+						}).Error; err != nil {
+						return err
+					}
+				}
+				return nil
+			}).Error
+	})
 }
 
 // redundantCalendarIDIndex is the single-column calendar_id index of

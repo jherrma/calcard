@@ -1059,7 +1059,9 @@ func (f *narrowFixture) state() narrowState {
 	var s narrowState
 	require.NoError(f.t, f.g.Unscoped().Order("id").Find(&s.Calendars).Error)
 	require.NoError(f.t, f.g.Order("id").Find(&s.Changes).Error)
-	require.NoError(f.t, f.g.Order("key").Find(&s.Settings).Error)
+	// The alarm-bounds marker is claimed by every RunDataMigrations and is not
+	// what these tests are about.
+	require.NoError(f.t, f.g.Where("key <> ?", backfillAlarmBoundsMarkerKey).Order("key").Find(&s.Settings).Error)
 	return s
 }
 
@@ -1330,4 +1332,88 @@ func TestNarrowCalendarComponentSetsSkipsDeletedCalendars(t *testing.T) {
 	assert.Equal(t, goneBefore, f.get("gone"), "a soft-deleted calendar is untouched")
 	assert.Equal(t, goneChanges, f.changes(gone.ID))
 	f.assertNarrowed(t, liveBefore, 1, calendar.ComponentEvent)
+}
+
+// TestBackfillAlarmBounds covers rows stored before alarm_first_at/alarm_last_at
+// existed: the one-shot backfill fills live rows holding a VALARM without
+// touching e_tag, updated_at or i_cal_data, skips undecodable and soft-deleted
+// rows, leaves NULL bounds for non-deliverable alarms, and claims its marker so
+// a second run changes nothing.
+func TestBackfillAlarmBounds(t *testing.T) {
+	g := newDataMigrationTestDB(t)
+	old := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	alarm := func(trigger string) string {
+		return "BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:x\r\n" + trigger + "\r\nEND:VALARM\r\n"
+	}
+	event := func(uid string, extra string) string {
+		return wrap("BEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTART:20261101T090000Z\r\nDTEND:20261101T100000Z\r\n" + extra + "END:VEVENT")
+	}
+	seeded := map[string]string{}
+	seed := func(uuid, componentType, data string) {
+		t.Helper()
+		seeded[uuid] = data
+		require.NoError(t, g.Create(&calendar.CalendarObject{UUID: uuid, CalendarID: 1, Path: uuid + ".ics", UID: uuid,
+			ETag: "etag-" + uuid, ComponentType: componentType, ICalData: data, ContentLength: len(data),
+			CreatedAt: old, UpdatedAt: old}).Error)
+	}
+	get := func(uuid string) calendar.CalendarObject {
+		t.Helper()
+		var o calendar.CalendarObject
+		require.NoError(t, g.Unscoped().Where("uuid = ?", uuid).First(&o).Error)
+		return o
+	}
+
+	seed("ev", calendar.ComponentEvent, event("ev", alarm("TRIGGER:-PT15M")))
+	seed("ev-none", calendar.ComponentEvent, event("ev-none", "BEGIN:VALARM\r\nACTION:NONE\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n"))
+	seed("ev-plain", calendar.ComponentEvent, event("ev-plain", ""))
+	seed("ev-deleted", calendar.ComponentEvent, event("ev-deleted", alarm("TRIGGER:-PT5M")))
+	require.NoError(t, g.Where("uuid = ?", "ev-deleted").Delete(&calendar.CalendarObject{}).Error)
+	seed("ev-bad", calendar.ComponentEvent, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nBEGIN:VALARM\r\nTRIGGER:-PT5M\r\n")
+	seed("task-open", calendar.ComponentToDo, todo("UID:task-open", "DUE:20261105T090000Z", "STATUS:NEEDS-ACTION",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;RELATED=END:-PT1H", "END:VALARM"))
+	seed("task-done", calendar.ComponentToDo, todo("UID:task-done", "DUE:20261105T090000Z", "STATUS:COMPLETED",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;RELATED=END:-PT1H", "END:VALARM"))
+	const bulk = 250
+	for i := 0; i < bulk; i++ {
+		uuid := fmt.Sprintf("bulk-%03d", i)
+		seed(uuid, calendar.ComponentEvent, event(uuid, alarm("TRIGGER:-PT10M")))
+	}
+
+	require.NoError(t, RunDataMigrations(g))
+
+	want := time.Date(2026, 11, 1, 8, 45, 0, 0, time.UTC)
+	t.Run("fills live rows", func(t *testing.T) {
+		o := get("ev")
+		assert.True(t, sameTime(o.AlarmFirstAt, &want), "first = %v", o.AlarmFirstAt)
+		assert.True(t, sameTime(o.AlarmLastAt, &want), "last = %v", o.AlarmLastAt)
+		assert.Equal(t, time.UTC, o.AlarmFirstAt.Location())
+		task := get("task-open")
+		assert.True(t, sameTime(task.AlarmFirstAt, ptrTime(time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC))), "task = %v", task.AlarmFirstAt)
+		bulkLast := get(fmt.Sprintf("bulk-%03d", bulk-1))
+		assert.True(t, sameTime(bulkLast.AlarmFirstAt, ptrTime(time.Date(2026, 11, 1, 8, 50, 0, 0, time.UTC))))
+	})
+	t.Run("leaves other rows NULL", func(t *testing.T) {
+		for _, uuid := range []string{"ev-none", "ev-plain", "ev-deleted", "ev-bad", "task-done"} {
+			o := get(uuid)
+			assert.Nil(t, o.AlarmFirstAt, uuid)
+			assert.Nil(t, o.AlarmLastAt, uuid)
+		}
+	})
+	t.Run("does not touch etag, updated_at or ical", func(t *testing.T) {
+		for uuid, data := range seeded {
+			o := get(uuid)
+			assert.Equal(t, "etag-"+uuid, o.ETag, uuid)
+			assert.True(t, o.UpdatedAt.Equal(old), "%s updated_at = %v", uuid, o.UpdatedAt)
+			assert.Equal(t, data, o.ICalData, uuid)
+		}
+	})
+	t.Run("runs once per marker", func(t *testing.T) {
+		var n int64
+		require.NoError(t, g.Model(&domain.SystemSetting{}).Where("key = ?", backfillAlarmBoundsMarkerKey).Count(&n).Error)
+		assert.EqualValues(t, 1, n)
+		require.NoError(t, g.Model(&calendar.CalendarObject{}).Where("uuid = ?", "ev").
+			UpdateColumns(map[string]interface{}{"alarm_first_at": nil, "alarm_last_at": nil}).Error)
+		require.NoError(t, RunDataMigrations(g))
+		assert.Nil(t, get("ev").AlarmFirstAt, "second run is a no-op")
+	})
 }
