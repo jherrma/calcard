@@ -505,6 +505,17 @@ describe('TaskRow — states', () => {
     expect(menuModel(wrapper).map((i) => i.label)).toEqual(['Edit task', 'Delete task']);
   });
 
+  it('a completed repeating task can be reopened: the check is enabled and the menu offers "Mark as not done"', async () => {
+    const wrapper = mountRow({ task: task({ ...COMPLETED, is_recurring: true, rrule: 'FREQ=WEEKLY' }) });
+
+    expect(check(wrapper).attributes('aria-disabled')).toBeUndefined();
+    expect(wrapper.find('[data-test="check-reason"]').exists()).toBe(false);
+    expect(menuModel(wrapper).map((i) => i.label)).toEqual(['Mark as not done', 'Edit task', 'Delete task']);
+
+    await check(wrapper).trigger('click');
+    expect(wrapper.emitted('toggle')).toHaveLength(1);
+  });
+
   it('has no repeat icon on a one-off task', () => {
     expect(mountRow().find('[data-test="repeat-icon"]').exists()).toBe(false);
   });

@@ -252,7 +252,7 @@ func (u *taskUpdate) apply(cal *ical.Calendar, todo *ical.Component, stored load
 	}
 	changed = u.applyTimes(cal, todo, stored) || changed
 	if u.priority.Set {
-		changed = setIntChange(todo, ical.PropPriority, u.priority.Value) || changed
+		changed = setPriorityChange(todo, u.priority.Value) || changed
 	}
 	if u.status != "" && u.status != stored.status {
 		if u.status == calendar.TaskStatusCompleted {

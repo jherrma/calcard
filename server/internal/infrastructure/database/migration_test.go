@@ -93,8 +93,6 @@ func TestMigrations_CalendarObjectTaskColumns(t *testing.T) {
 		}
 		assert.True(t, m.HasIndex(&calendar.CalendarObject{}, "idx_calendar_objects_due_at"))
 		assert.True(t, m.HasIndex(&calendar.CalendarObject{}, "idx_calobj_cal_comp"))
-		// The single-column calendar_id index stays alongside the composite one.
-		assert.True(t, m.HasIndex(&calendar.CalendarObject{}, "idx_calendar_objects_calendar_id"))
 
 		indexes, err := m.GetIndexes(&calendar.CalendarObject{})
 		require.NoError(t, err)
@@ -111,6 +109,9 @@ func TestMigrations_CalendarObjectTaskColumns(t *testing.T) {
 		gormDB := open(t)
 		require.NoError(t, gormDB.AutoMigrate(Models()...))
 		assertTaskSchema(t, gormDB)
+		// The composite index replaces the single-column calendar_id one: a new
+		// database never gets it.
+		assert.False(t, gormDB.Migrator().HasIndex(&calendar.CalendarObject{}, redundantCalendarIDIndex))
 	})
 
 	t.Run("existing calendar_objects table", func(t *testing.T) {
@@ -140,6 +141,15 @@ func TestMigrations_CalendarObjectTaskColumns(t *testing.T) {
 
 		// A second boot migrates again without error.
 		require.NoError(t, gormDB.AutoMigrate(Models()...))
+
+		// The old single-column index is dropped by the data migrations, once
+		// and without error on every later boot; the composite one stays.
+		assert.True(t, gormDB.Migrator().HasIndex(&calendar.CalendarObject{}, redundantCalendarIDIndex))
+		for range 2 {
+			require.NoError(t, RunDataMigrations(gormDB))
+			assert.False(t, gormDB.Migrator().HasIndex(&calendar.CalendarObject{}, redundantCalendarIDIndex))
+			assertTaskSchema(t, gormDB)
+		}
 	})
 
 	t.Run("task columns round-trip", func(t *testing.T) {

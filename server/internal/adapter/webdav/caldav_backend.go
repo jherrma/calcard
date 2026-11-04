@@ -172,7 +172,7 @@ func (b *CalDAVBackend) CreateCalendar(ctx context.Context, cal *caldav.Calendar
 		Description:         cal.Description,
 		Color:               "#3788d8",
 		Timezone:            "UTC",
-		SupportedComponents: "VEVENT,VTODO",
+		SupportedComponents: calendar.ComponentSetBoth,
 	}
 	// The MKCALENDAR / extended MKCOL properties go-webdav cannot carry
 	// (validated beforehand by prepareCollectionMkcol, mkcol.go).
@@ -301,7 +301,7 @@ func (b *CalDAVBackend) PutCalendarObject(ctx context.Context, p string, icalCal
 
 	// Fix up missing required properties
 	if icalCal.Props.Get(ical.PropProductID) == nil {
-		icalCal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
+		icalCal.Props.SetText(ical.PropProductID, calendar.ProductID)
 	}
 	if icalCal.Props.Get(ical.PropVersion) == nil {
 		icalCal.Props.SetText(ical.PropVersion, "2.0")

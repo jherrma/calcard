@@ -160,6 +160,12 @@ func TestUpdateTaskRequestAbsentVsNull(t *testing.T) {
 	assert.Equal(t, OptionalField[string]{Set: true, Value: ptr("2026-11-05")}, values.Due)
 	assert.Equal(t, OptionalField[string]{Set: true, Value: ptr("2026-11-04T08:00:00Z")}, values.Start)
 	assert.Equal(t, OptionalField[int]{Set: true, Value: ptr(0)}, values.Priority, "0 is a value, not absent")
+	empty := decode(t, `{"priority":"","percent_complete":"","description":""}`)
+	assert.Equal(t, OptionalField[int]{Set: true}, empty.Priority, `"" is none, as null is`)
+	assert.Equal(t, OptionalField[int]{Set: true}, empty.PercentComplete)
+	assert.Equal(t, OptionalField[string]{Set: true, Value: ptr("")}, empty.Description, `"" stays a value for text`)
+	var req UpdateTaskRequest
+	assert.Error(t, json.Unmarshal([]byte(`{"priority":"high"}`), &req), "any other text is still a type error")
 	assert.Equal(t, OptionalField[int]{Set: true, Value: ptr(100)}, values.PercentComplete)
 	assert.Equal(t, "S", *values.Summary)
 	assert.Equal(t, "completed", *values.Status)
@@ -205,4 +211,19 @@ func TestNewTaskSummaryResponse(t *testing.T) {
 		assert.JSONEq(t, `{"open":0,"overdue":0,"due_today":0,"completed":0,"by_calendar":{}}`,
 			render(NewTaskSummaryResponse(calendar.TaskCount{}, byCalendar)))
 	}
+}
+
+// TestCreateTaskRequestNoneValues: null, absent and "" all mean no priority and
+// no percent_complete on create, as the CreateTaskRequest comment says.
+func TestCreateTaskRequestNoneValues(t *testing.T) {
+	for _, body := range []string{`{}`, `{"priority":null,"percent_complete":null}`, `{"priority":"","percent_complete":""}`} {
+		var req CreateTaskRequest
+		require.NoError(t, json.Unmarshal([]byte(body), &req), body)
+		assert.Nil(t, req.Priority.Value, body)
+		assert.Nil(t, req.PercentComplete.Value, body)
+	}
+	var req CreateTaskRequest
+	require.NoError(t, json.Unmarshal([]byte(`{"priority":0,"percent_complete":100}`), &req))
+	assert.Equal(t, ptr(0), req.Priority.Value)
+	assert.Equal(t, ptr(100), req.PercentComplete.Value)
 }

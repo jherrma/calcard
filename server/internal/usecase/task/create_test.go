@@ -97,6 +97,7 @@ func TestCreateTask_Validation(t *testing.T) {
 	}{
 		{"empty summary", func(in *CreateTaskInput) { in.Summary = "" }, "summary is required"},
 		{"blank summary", func(in *CreateTaskInput) { in.Summary = " \t\r\n " }, "summary is required"},
+		{"zero-width summary", func(in *CreateTaskInput) { in.Summary = "\u200b \u200c\u200d\ufeff" }, "summary is required"},
 		{"501 runes", func(in *CreateTaskInput) { in.Summary = strings.Repeat("ä", 501) },
 			"summary must be at most 500 characters"},
 		{"due before start", func(in *CreateTaskInput) {

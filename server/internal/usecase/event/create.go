@@ -57,7 +57,7 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 	}
 
 	eventUUID := uuid.New().String()
-	eventUID := fmt.Sprintf("%s@calcard.io", eventUUID)
+	eventUID := fmt.Sprintf("%s@%s", eventUUID, calendar.UIDDomain)
 
 	// Convert times to the named IANA timezone so go-ical produces TZID parameters
 	// (generateICal adds the matching VTIMEZONE).
@@ -101,7 +101,7 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 
 func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (string, error) {
 	cal := ical.NewCalendar()
-	cal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
+	cal.Props.SetText(ical.PropProductID, calendar.ProductID)
 	cal.Props.SetText(ical.PropVersion, "2.0")
 
 	event := ical.NewEvent()

@@ -263,8 +263,8 @@ func (h *TaskHandler) Create(c fiber.Ctx) error {
 		Due:             req.Due,
 		DueAllDay:       req.DueAllDay,
 		Start:           req.Start,
-		Priority:        req.Priority,
-		PercentComplete: req.PercentComplete,
+		Priority:        req.Priority.Value,
+		PercentComplete: req.PercentComplete.Value,
 		Status:          req.Status,
 		Timezone:        req.Timezone,
 	})

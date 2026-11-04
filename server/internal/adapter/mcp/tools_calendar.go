@@ -238,7 +238,7 @@ func (s *Server) toolGetEvents(cc *callContext, args json.RawMessage) (*toolCall
 
 	calID, perm := s.resolveCalendar(cc, in.CalendarID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No calendar with id " + in.CalendarID + " is readable by you."), nil
+		return calendarNotReadable(in.CalendarID), nil
 	}
 
 	var start, end time.Time
@@ -353,7 +353,7 @@ func (s *Server) toolCreateEvent(cc *callContext, args json.RawMessage) (*toolCa
 
 	calID, perm := s.resolveCalendar(cc, in.CalendarID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No calendar with id " + in.CalendarID + " is readable by you."), nil
+		return calendarNotReadable(in.CalendarID), nil
 	}
 	if !canWriteCalendar(perm) {
 		return errorResult("You have read-only access to that calendar, so events cannot be created in it."), nil
@@ -410,7 +410,7 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 
 	obj, perm := s.eventPermission(cc, in.EventID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+		return eventNotReadable(in.EventID), nil
 	}
 	if !canWriteCalendar(perm) {
 		return errorResult("You have read-only access to the calendar holding that event."), nil
@@ -448,7 +448,7 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		// The object became a task after eventPermission looked (a CalDAV
 		// PUT keeps the UUID): still an unknown event (#170).
 		if errors.Is(err, eventuc.ErrNotFound) {
-			return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+			return eventNotReadable(in.EventID), nil
 		}
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
@@ -475,7 +475,7 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 
 	_, perm := s.eventPermission(cc, in.EventID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+		return eventNotReadable(in.EventID), nil
 	}
 	if !canWriteCalendar(perm) {
 		return errorResult("You have read-only access to the calendar holding that event."), nil
@@ -488,7 +488,7 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 
 	if err := s.deps.EventDelete.Execute(cc.ctx, in.EventID, scope, in.RecurrenceID); err != nil {
 		if errors.Is(err, eventuc.ErrNotFound) {
-			return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+			return eventNotReadable(in.EventID), nil
 		}
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil

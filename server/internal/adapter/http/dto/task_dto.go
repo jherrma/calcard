@@ -9,9 +9,6 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 )
 
-// dateLayout is the wire form of a date without a time ("YYYY-MM-DD").
-const dateLayout = "2006-01-02"
-
 // TaskResponse is one task (a VTODO) as the task routes answer it (#170), raw
 // JSON like events. Every nullable field is always present, as null.
 //
@@ -59,19 +56,20 @@ type TaskResponse struct {
 // It is bound without a struct validator; taskuc.CreateTaskUseCase validates
 // every field. Due and Start are strings because an all-day task sends a date
 // ("YYYY-MM-DD"); a timed one sends RFC 3339. null, absent and "" all mean
-// none, for them and for Priority and PercentComplete. There is no recurrence
+// none, for them and for Priority and PercentComplete (an OptionalField, which
+// reads "" as null for a number). There is no recurrence
 // field: a repeating task cannot be created over REST, and an unknown field
 // (recurrence, rrule) is ignored like any other.
 type CreateTaskRequest struct {
-	Summary         string `json:"summary"`
-	Description     string `json:"description"`
-	Due             string `json:"due"`
-	DueAllDay       bool   `json:"due_all_day"`
-	Start           string `json:"start"`
-	Priority        *int   `json:"priority"`
-	PercentComplete *int   `json:"percent_complete"`
-	Status          string `json:"status"`
-	Timezone        string `json:"timezone"`
+	Summary         string             `json:"summary"`
+	Description     string             `json:"description"`
+	Due             string             `json:"due"`
+	DueAllDay       bool               `json:"due_all_day"`
+	Start           string             `json:"start"`
+	Priority        OptionalField[int] `json:"priority"`
+	PercentComplete OptionalField[int] `json:"percent_complete"`
+	Status          string             `json:"status"`
+	Timezone        string             `json:"timezone"`
 }
 
 // UpdateTaskRequest is the body of PATCH /calendars/:calendar_id/tasks/:task_id
@@ -106,11 +104,16 @@ type OptionalField[T any] struct {
 }
 
 // UnmarshalJSON is only called when the key is present (encoding/json calls
-// it for null too), so it always marks the field Set.
+// it for null too), so it always marks the field Set. An empty string "" for
+// a field that is not text (Priority, PercentComplete) reads as null: none.
 func (f *OptionalField[T]) UnmarshalJSON(data []byte) error {
 	f.Set = true
 	f.Value = nil
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	data = bytes.TrimSpace(data)
+	if bytes.Equal(data, []byte("null")) {
+		return nil
+	}
+	if _, isText := any(*new(T)).(string); !isText && bytes.Equal(data, []byte(`""`)) {
 		return nil
 	}
 	var v T
@@ -250,7 +253,7 @@ func instantOrDate(t *time.Time, dateOnly bool) (*time.Time, *string) {
 	}
 	utc := t.UTC()
 	if dateOnly {
-		date := utc.Format(dateLayout)
+		date := utc.Format(time.DateOnly)
 		return nil, &date
 	}
 	return &utc, nil

@@ -58,7 +58,12 @@
       >
         <template #value="{ value }">
           <span v-if="value" class="flex min-w-0 items-center gap-2">
-            <span class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: listColor(value) }" aria-hidden="true" />
+            <span
+              class="h-2 w-2 shrink-0 rounded-full"
+              :class="{ 'bg-surface-400 dark:bg-surface-500': !listColor(value) }"
+              :style="listColor(value) ? { backgroundColor: listColor(value) } : undefined"
+              aria-hidden="true"
+            />
             <span class="truncate">{{ listName(value) }}</span>
           </span>
           <span v-else class="text-surface-500 dark:text-surface-400">Choose a list</span>
@@ -245,6 +250,7 @@ import type { Calendar } from '~/types/calendar';
 import type { PriorityLevel, Task, TaskFormData, TaskStatus } from '~/types/tasks';
 import {
   TASK_SUMMARY_MAX,
+  TASK_SUMMARY_TOO_LONG,
   describeRecurrence,
   encodeTaskTime,
   isDueBeforeStart,
@@ -345,7 +351,7 @@ function listById(uuid: string): Calendar | undefined {
 const listName = (uuid: string) =>
   listById(uuid)?.name ?? (props.task?.calendar_uuid === uuid ? props.task.calendar_name ?? '' : '');
 const listColor = (uuid: string) =>
-  listById(uuid)?.color ?? (props.task?.calendar_uuid === uuid ? props.task.calendar_color : undefined) ?? '#94a3b8';
+  listById(uuid)?.color ?? (props.task?.calendar_uuid === uuid ? props.task.calendar_color : undefined);
 
 const recurrenceText = computed(() => describeRecurrence(props.task?.rrule ?? null));
 
@@ -385,7 +391,7 @@ const rules = {
   summary: {
     required: helpers.withMessage('Enter a title for the task.', required),
     maxLength: helpers.withMessage(
-      `Shorten the title to ${TASK_SUMMARY_MAX} characters or fewer.`,
+      TASK_SUMMARY_TOO_LONG,
       (value: string) => summaryLength(value) <= TASK_SUMMARY_MAX,
     ),
   },

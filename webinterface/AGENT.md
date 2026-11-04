@@ -138,9 +138,11 @@ webinterface/
 │   └── tasks.ts             # Task, TaskInput, TaskPatch, TasksSummary, TaskStatus, TaskGroupKey: the task API's raw JSON (#170);
 │                            #   TaskFormData (what TaskForm edits)
 ├── utils/                   # Auto-imported pure helpers (no Nuxt context needed)
+│   ├── apiErrors.ts         # RETRY_HINT, httpErrorStatus, clientErrorMessage (the server's sentence for a 4xx): task and task-list writes (#170)
 │   ├── agendaLayout.ts      # Lane assignment for overlapping blocks on the day timeline
 │   ├── contactAvatar.ts     # Contact initials + deterministic avatar colour
-│   ├── dashboardDates.ts    # Local-date primitives, month-range merging, week-start-aware month grid
+│   ├── dashboardDates.ts    # Local-date primitives, month-range merging, week-start-aware month grid, CLOCK_INTERVAL_MS (the minute clock)
+│   ├── dialogs.ts           # DIALOG_BREAKPOINTS / TOAST_BREAKPOINTS: the one 640px rule of the task dialogs and the undo toast (the event dialogs have no breakpoint; ShareDialog uses 95vw)
 │   ├── davUrls.ts           # davOrigin() / davHomeUrl(): the URLs DAV clients are configured with
 │   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
@@ -153,7 +155,7 @@ webinterface/
 │   │                        #   timed by instant), priorityLevel, formatDue, compareTasks (the in-group sort)
 │   ├── taskForm.ts          # Task form <-> API (#170): taskToFormData, buildTaskInput, buildTaskPatch (changed keys only; never
 │   │                        #   status/progress of a repeating task), priority 1/5/9, local-date all-day values, describeRecurrence
-│   ├── taskLists.ts         # Task lists (#170): TASK_LIST_COLORS + suggestTaskListColor (a new list's colour), taskListDeleteMessage
+│   ├── taskLists.ts         # Task lists (#170): TASK_LIST_COLORS + suggestTaskListColor (a new list's colour), taskListDeleteMessage, COLOR_FORMAT_ERROR
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
@@ -302,7 +304,11 @@ Contacts; the Tasks entry's pill is the overdue count). A task list is a calenda
   TaskEditDialog over TaskForm, AddTaskListDialog, TaskListSettingsDialog = CalendarSettingsDialog
   with `kind="tasks"`).
 - **Deletes are permanent** (a task is hard-deleted; a list goes with everything in it), so nothing
-  offers Undo after a delete: the confirm dialog is the safety net. `summary` / `description` are
+  offers Undo after a delete: the confirm dialog is the safety net. It says so ("This can't be undone.").
+- **Ticked rows.** Under Open a ticked row stays in `tasks` for the Undo but is neither shown nor counted in
+  "Showing N of total" once it has left the view. Under All it stays where it was ticked (not in the collapsed
+  Completed group) until the list is loaded again, the view changes or that group is opened. A completed
+  repeating task can be reopened (uncomplete is allowed); an open one cannot be completed. `summary` / `description` are
   plain text: shown and sent back as they are.
 - **Logout empties the store.** `clearAuth()` resets the tasks store (rows, badge counts, filters)
   through a lazy `import('~/stores/tasks')`: a static import closes the cycle

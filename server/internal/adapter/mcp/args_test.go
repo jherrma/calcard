@@ -326,8 +326,10 @@ func TestDecodeArgs(t *testing.T) {
 			`{"note": 5}`:                        `Argument "note" must be a string or null, got a number; the tool did not run.`,
 			`{"note": ["a"]}`:                    `Argument "note" must be a string or null, got an array; the tool did not run.`,
 			`{"task_id": "t", "priority": true}`: `Argument "priority" must be an integer or null, got a boolean; the tool did not run.`,
-			// Two wrong arguments: the first in declaration order is named.
-			`{"flag": "yes", "note": 1}`: `Argument "note" must be a string or null, got a number; the tool did not run.`,
+			// Two wrong arguments: the first one in the request is named, whatever
+			// the order of the tool's own fields.
+			`{"flag": "yes", "note": 1}`: `Argument "flag" must be a boolean (true or false), got a string; the tool did not run.`,
+			`{"note": 1, "flag": "yes"}`: `Argument "note" must be a string or null, got a number; the tool did not run.`,
 		} {
 			var dst nullable
 			bad := decodeArgs(json.RawMessage(raw), &dst)

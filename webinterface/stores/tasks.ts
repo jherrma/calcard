@@ -70,9 +70,8 @@ const DEFAULT_SORT_DIR: TaskSortDir = 'asc';
 const SORT_BYS: readonly TaskSortBy[] = ['due', 'priority', 'title'];
 const SORT_DIRS: readonly TaskSortDir[] = ['asc', 'desc'];
 
-const RETRY_HINT = 'Check your connection and try again.';
 const LOAD_ERROR = "Couldn't load tasks. Check your connection and try again.";
-const DELETE_MESSAGE = 'Delete this task? It is removed from every device that syncs this list.';
+const DELETE_MESSAGE = "Delete this task? It is removed from every device that syncs this list. This can't be undone.";
 
 /**
  * The stored sort, or the default. Storage access is wrapped as a whole: in
@@ -137,33 +136,6 @@ function withListInfo(fresh: Task, old?: Task): Task {
   return { ...merged, calendar_name: merged.calendar_name ?? list.name, calendar_color: merged.calendar_color ?? list.color };
 }
 
-interface FetchErrorLike {
-  status?: number;
-  statusCode?: number;
-  data?: { message?: unknown; error?: unknown } | null;
-}
-
-function errorStatus(e: unknown): number | undefined {
-  const err = e as FetchErrorLike | null;
-  return err?.statusCode ?? err?.status;
-}
-
-/**
- * What to tell the user: the server's own message for a 4xx (the 409 on a
- * repeating task, a 400 field error, a 403/404, the friendly 429 text useApi
- * puts there), else the fallback. A 5xx body is the generic
- * "Internal server error", which says neither what failed nor what to do.
- */
-function errorMessage(e: unknown, fallback: string): string {
-  const status = errorStatus(e);
-  const body = (e as FetchErrorLike | null)?.data;
-  const message = body?.message ?? body?.error;
-  if (status !== undefined && status >= 400 && status < 500 && typeof message === 'string' && message.trim()) {
-    return message;
-  }
-  return fallback;
-}
-
 /**
  * Toasts a failed write. Store actions run outside component setup, where
  * PrimeVue's inject()-based `useToast()` throws, so it runs in the app context
@@ -171,8 +143,8 @@ function errorMessage(e: unknown, fallback: string): string {
  * one toast for the burst.
  */
 function notifyError(e: unknown, title: string, fallback: string): void {
-  if (errorStatus(e) === 429) return;
-  const message = errorMessage(e, fallback);
+  if (httpErrorStatus(e) === 429) return;
+  const message = clientErrorMessage(e, fallback);
   try {
     useNuxtApp().vueApp.runWithContext(() => useAppToast().error(message, title));
   } catch {
@@ -283,7 +255,7 @@ export const useTasksStore = defineStore('tasks', {
         this.total = response.total ?? this.tasks.length;
       } catch (e: unknown) {
         if (seq !== this.tasksRequestSeq) return;
-        this.error = errorMessage(e, LOAD_ERROR);
+        this.error = clientErrorMessage(e, LOAD_ERROR);
       } finally {
         if (seq === this.tasksRequestSeq) this.isLoading = false;
       }
@@ -528,7 +500,7 @@ export const useTasksStore = defineStore('tasks', {
         this.dropTask(task.id);
         return true;
       } catch (e: unknown) {
-        if (errorStatus(e) === 404) {
+        if (httpErrorStatus(e) === 404) {
           this.dropTask(task.id);
           return true;
         }

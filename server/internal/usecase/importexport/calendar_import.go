@@ -173,7 +173,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		var buf bytes.Buffer
 		encoder := ical.NewEncoder(&buf)
 		wrapperCal := ical.NewCalendar()
-		wrapperCal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
+		wrapperCal.Props.SetText(ical.PropProductID, calendar.ProductID)
 		wrapperCal.Props.SetText(ical.PropVersion, "2.0")
 		wrapperCal.Children = append(wrapperCal.Children, referencedVTimezones(timezones, item.comps...)...)
 		wrapperCal.Children = append(wrapperCal.Children, item.comps...)

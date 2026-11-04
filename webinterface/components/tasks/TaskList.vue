@@ -89,7 +89,7 @@
         >
           <!-- Groups count the loaded rows only (R6), so say when that is not everything. -->
           <p v-if="truncated" class="text-surface-500 dark:text-surface-400" data-test="truncated">
-            Showing {{ tasksStore.tasks.length }} of {{ tasksStore.total }}
+            Showing {{ shownCount }} of {{ matchingTotal }}
           </p>
           <button
             v-if="completedLink"
@@ -191,7 +191,7 @@ function armClock() {
   clockTimer = setTimeout(() => {
     now.value = new Date();
     armClock();
-  }, 60_000 - (Date.now() % 60_000));
+  }, CLOCK_INTERVAL_MS - (Date.now() % CLOCK_INTERVAL_MS));
 }
 
 // --- Rows held in place after a tick -----------------------------------------
@@ -206,10 +206,22 @@ function hold(task: Task) {
   holdTimers.set(
     task.id,
     setTimeout(() => {
-      held.delete(task.id);
       holdTimers.delete(task.id);
+      if (!movesIntoCollapsedGroup(task.id)) held.delete(task.id);
     }, LINGER_MS),
   );
+}
+
+/**
+ * Under All a ticked row would leave for the collapsed Completed (or
+ * Cancelled) group, where the Undo of the toast has nothing to point at: it
+ * stays where it was ticked, struck through, until the list is loaded again,
+ * the view changes or its target group is opened.
+ */
+function movesIntoCollapsedGroup(taskId: string): boolean {
+  if (tasksStore.statusFilter !== 'all') return false;
+  const status = tasksStore.tasks.find((t: Task) => t.id === taskId)?.status;
+  return status !== undefined && isCollapsible(status) && !expanded.value.has(status);
 }
 
 function releaseAll() {
@@ -218,10 +230,17 @@ function releaseAll() {
   held.clear();
 }
 
-// Another list, filter or search: the held rows belong to the old view.
+// Another list, filter or search: the held rows belong to the old view. So do
+// they when the list is loaded again (a re-render of the whole list).
 watch(
   () => [tasksStore.selectedListId, tasksStore.statusFilter, tasksStore.searchQuery],
   releaseAll,
+);
+watch(
+  () => tasksStore.isLoading,
+  (loading: boolean) => {
+    if (loading) releaseAll();
+  },
 );
 
 // --- Groups ------------------------------------------------------------------
@@ -247,6 +266,15 @@ function toggleGroup(key: TaskGroupKey) {
   if (next.has(key)) next.delete(key);
   else next.add(key);
   expanded.value = next;
+  // Opening a group lets the rows held back for it move in.
+  if (next.has(key)) releaseSettled();
+}
+
+/** Drops the held rows whose linger is over (no timer is running for them). */
+function releaseSettled() {
+  for (const id of [...held.keys()]) {
+    if (!holdTimers.has(id)) held.delete(id);
+  }
 }
 
 /**
@@ -314,8 +342,16 @@ const emptyVariant = computed<TaskEmptyVariant | null>(() => {
   return 'empty';
 });
 
+/**
+ * The loaded rows that belong to the view, and how many tasks match it: a row
+ * ticked away under Open stays in `tasks` for the Undo, but is neither shown
+ * nor counted any more, and the server's `total` still counts it.
+ */
+const shownCount = computed(() => tasksStore.visibleTasks.length);
+const matchingTotal = computed(() => tasksStore.total - (tasksStore.tasks.length - shownCount.value));
+
 /** More tasks match than were loaded (R6): the group counts are of the loaded rows. */
-const truncated = computed(() => tasksStore.total > tasksStore.tasks.length);
+const truncated = computed(() => matchingTotal.value > shownCount.value);
 
 /**
  * "Show N completed" under Open (N = the done tasks of the selected list, or of
@@ -335,7 +371,9 @@ function showCompleted() {
 
 // --- Actions -----------------------------------------------------------------
 function canToggle(task: Task): boolean {
-  return isWritable(task) && !task.is_recurring && !tasksStore.isSaving.has(task.id);
+  // An open repeating task cannot be completed over REST; a completed one can be reopened.
+  const repeatingOpen = task.is_recurring && !task.completed;
+  return isWritable(task) && !repeatingOpen && !tasksStore.isSaving.has(task.id);
 }
 
 // --- Announcements (spec §8) -------------------------------------------------

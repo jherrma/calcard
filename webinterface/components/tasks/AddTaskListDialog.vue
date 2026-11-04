@@ -4,7 +4,7 @@
     header="Create task list"
     :modal="true"
     :style="{ width: '28rem' }"
-    :breakpoints="{ '640px': 'calc(100vw - 2rem)' }"
+    :breakpoints="DIALOG_BREAKPOINTS"
     @update:visible="emit('update:visible', $event)"
     @after-hide="emit('after-hide')"
   >
@@ -42,7 +42,7 @@
           class="mt-1 text-sm text-red-600 dark:text-red-400"
           data-test="color-error"
         >
-          Enter the colour as a hex value, for example 3788d8.
+          {{ COLOR_FORMAT_ERROR }}
         </p>
       </div>
     </div>

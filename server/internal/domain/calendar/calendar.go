@@ -206,7 +206,7 @@ func SupportedComponentsForKind(kind string) (string, error) {
 	case KindTasks:
 		return ComponentToDo, nil
 	case KindBoth:
-		return ComponentEvent + "," + ComponentToDo, nil
+		return ComponentSetBoth, nil
 	}
 	return "", Invalidf(`kind must be "events", "tasks" or "both"`)
 }

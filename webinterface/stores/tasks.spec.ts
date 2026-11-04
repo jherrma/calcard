@@ -970,7 +970,7 @@ describe('create, update and delete mutate the state', () => {
       expect(confirmMock.require).toHaveBeenCalledTimes(1);
       expect(confirmation()).toMatchObject({
         header: 'Delete task',
-        message: 'Delete this task? It is removed from every device that syncs this list.',
+        message: 'Delete this task? It is removed from every device that syncs this list. This can\'t be undone.',
         acceptLabel: 'Delete task',
       });
       expect(requests().some((r) => r.startsWith('DELETE'))).toBe(false); // not before the answer

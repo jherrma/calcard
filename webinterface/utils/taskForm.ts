@@ -31,6 +31,9 @@ export const TASK_PRIORITY_VALUES: Record<PriorityLevel, number | null> = {
 /** The server's limit on a title, in characters (Unicode code points) after trimming. */
 export const TASK_SUMMARY_MAX = 500;
 
+/** What a title longer than TASK_SUMMARY_MAX is told, in the edit form and the quick-add. */
+export const TASK_SUMMARY_TOO_LONG = `Shorten the title to ${TASK_SUMMARY_MAX} characters or fewer.`;
+
 /** A wire due/start pair (`due` + `due_date`, `start` + `start_date`) as a Date: local midnight for a date. */
 function wireTime(instant: string | null, date: string | null): Date | null {
   if (date) return parseDateOnly(date);

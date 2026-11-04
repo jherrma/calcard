@@ -46,9 +46,6 @@ const emit = defineEmits<{
   created: [task: Task];
 }>();
 
-/** Full width (less the 16px gutters) on small screens, as the share dialog does. */
-const DIALOG_BREAKPOINTS = { '640px': 'calc(100vw - 2rem)' };
-
 const tasksStore = useTasksStore();
 const isSubmitting = ref(false);
 

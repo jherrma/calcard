@@ -22,17 +22,13 @@ import (
 // already says what the request asks, so an unchanged field keeps its stored
 // form and an update that changes nothing is detected (errUnchanged).
 
-// productID is the PRODID of the iCalendar objects the REST routes write
-// (events use the same).
-const productID = "-//CalCard//EN"
-
 // newTaskCalendar returns a VCALENDAR (PRODID, VERSION) holding one new VTODO
 // with its identity and bookkeeping properties: UID, DTSTAMP, CREATED and
 // LAST-MODIFIED (all now, in UTC) and SEQUENCE:0. The caller adds the task's
 // fields to the returned VTODO.
 func newTaskCalendar(uid string, now time.Time) (*ical.Calendar, *ical.Component) {
 	cal := ical.NewCalendar()
-	cal.Props.SetText(ical.PropProductID, productID)
+	cal.Props.SetText(ical.PropProductID, calendar.ProductID)
 	cal.Props.SetText(ical.PropVersion, "2.0")
 
 	now = now.UTC()
@@ -214,6 +210,18 @@ func setIntChange(comp *ical.Component, name string, n *int) bool {
 	}
 	setIntProp(comp, name, *n)
 	return true
+}
+
+// setPriorityChange is setIntChange for PRIORITY, comparing what the API
+// shows: PRIORITY 0 ("undefined", RFC 5545 §3.8.1.9) or no PRIORITY at all is
+// a null priority, so a request for none (null or 0) on such a task changes
+// nothing, where a literal compare would write a property (or remove PRIORITY:0)
+// and bump SEQUENCE and the ETag.
+func setPriorityChange(comp *ical.Component, n *int) bool {
+	if (n == nil || *n == 0) && calendar.TaskPriority(comp) == nil {
+		return false
+	}
+	return setIntChange(comp, ical.PropPriority, n)
 }
 
 // delProps removes the named properties and reports whether any was there.

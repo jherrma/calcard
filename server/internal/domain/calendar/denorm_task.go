@@ -33,7 +33,7 @@ func (o *CalendarObject) populateTaskFields(c *ical.Component) {
 		o.CompletedAt = utcDateTime(p)
 	}
 	o.PercentComplete = taskPercentComplete(c)
-	o.Priority = taskPriority(c)
+	o.Priority = TaskPriority(c)
 	o.IsAllDay = taskAllDay(c)
 }
 
@@ -110,9 +110,9 @@ func taskPercentComplete(c *ical.Component) *int {
 	return &v
 }
 
-// taskPriority is PRIORITY 1..9. 0 means "undefined" in RFC 5545 §3.8.1.9 and
+// TaskPriority is PRIORITY 1..9. 0 means "undefined" in RFC 5545 §3.8.1.9 and
 // is stored as nil, like an absent, non-integer or out-of-range value.
-func taskPriority(c *ical.Component) *int {
+func TaskPriority(c *ical.Component) *int {
 	v, ok := intPropValue(c, ical.PropPriority)
 	if !ok || v < 1 || v > 9 {
 		return nil

@@ -394,6 +394,19 @@ func TestVTODOTimeRangeRecurring(t *testing.T) {
 		})
 	})
 
+	t.Run("an all-day series counts its DTSTART..DUE length once", func(t *testing.T) {
+		// COUNT=2 weekly from 2020-03-01, due the next day: the last occurrence
+		// is 03-08..03-09. Denorm stores 03-09 (the last DTSTART plus go-ical's
+		// one day for a DATE start); adding the whole length again would end the
+		// series on 03-10.
+		series := vtodo("allday@test", "DTSTART;VALUE=DATE:20200301", "DUE;VALUE=DATE:20200302", "RRULE:FREQ=WEEKLY;COUNT=2")
+		runWindows(t, candidate(t, "allday", utcPtr(t, "20200309T000000Z"), series), []window{
+			{"20200309T000000Z", "20200310T000000Z", true, "starts at the last DUE"},
+			{"20200309T000001Z", "20200310T000000Z", false, "after the last DUE"},
+			{"20200310T000000Z", "20200311T000000Z", false, "the day after"},
+		})
+	})
+
 	t.Run("a bounded series without DTSTART is anchored on DUE", func(t *testing.T) {
 		series := vtodo("due-count@test", "DUE:20200101T100000Z", "RRULE:FREQ=DAILY;COUNT=5")
 		runWindows(t, candidate(t, "due-count", utcPtr(t, "20200105T100000Z"), series), []window{

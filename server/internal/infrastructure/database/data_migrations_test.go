@@ -734,6 +734,44 @@ func TestBackfillTaskFields(t *testing.T) {
 	})
 }
 
+// TestUnescapeTextColumnsIsOneShot: the repair claims its marker in the same
+// transaction as its writes. A row that needs repairing after the marker exists
+// is not read, a failure leaves no marker, and an install that ran the earlier
+// unmarked version runs it once more without touching e_tag or updated_at.
+func TestUnescapeTextColumnsIsOneShot(t *testing.T) {
+	g := newDataMigrationTestDB(t)
+	old := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	ical := wrap("BEGIN:VEVENT\r\nUID:one\r\nDTSTART:20261101T090000Z\r\nSUMMARY:Buy milk\\, eggs\r\nEND:VEVENT")
+	require.NoError(t, g.Create(&calendar.CalendarObject{UUID: "one", CalendarID: 1, Path: "one.ics", UID: "one",
+		ETag: "etag-one", ComponentType: calendar.ComponentEvent, ICalData: ical, ContentLength: len(ical),
+		Summary: `Buy milk\, eggs`, CreatedAt: old, UpdatedAt: old}).Error)
+	column := func() string {
+		var o calendar.CalendarObject
+		require.NoError(t, g.Where("uuid = ?", "one").First(&o).Error)
+		return o.Summary
+	}
+	markers := func() int64 {
+		var n int64
+		require.NoError(t, g.Model(&domain.SystemSetting{}).Where("key = ?", unescapeTextColumnsMarkerKey).Count(&n).Error)
+		return n
+	}
+
+	require.NoError(t, unescapeTextColumns(g, time.Now().UTC()))
+	assert.Equal(t, "Buy milk, eggs", column())
+	assert.EqualValues(t, 1, markers(), "the marker is written with the repair")
+
+	// Marked: a row that still has the old shape is left alone.
+	require.NoError(t, g.Model(&calendar.CalendarObject{}).Where("uuid = ?", "one").UpdateColumn("summary", `Buy milk\, eggs`).Error)
+	require.NoError(t, unescapeTextColumns(g, time.Now().UTC()))
+	assert.Equal(t, `Buy milk\, eggs`, column(), "once marked, the step reads nothing")
+	assert.EqualValues(t, 1, markers())
+
+	var o calendar.CalendarObject
+	require.NoError(t, g.Where("uuid = ?", "one").First(&o).Error)
+	assert.Equal(t, "etag-one", o.ETag)
+	assert.True(t, o.UpdatedAt.Equal(old), "updated_at must not change")
+}
+
 // TestUnescapeTextColumns covers objects stored while the summary, description
 // and location columns kept the iCalendar's TEXT escaping (`Buy milk\, eggs`):
 // the boot step re-derives them as plain text from the stored iCalendar
@@ -930,6 +968,8 @@ func newNarrowFixture(t *testing.T, cutoff string) *narrowFixture {
 	if cutoff != "" {
 		require.NoError(t, g.Create(&domain.SystemSetting{Key: taskKindIntroducedAtKey, Value: cutoff}).Error)
 	}
+	// The narrowing tests are about the narrowing: the text repair has run.
+	require.NoError(t, g.Create(&domain.SystemSetting{Key: unescapeTextColumnsMarkerKey, Value: "2025-01-01T00:00:00Z"}).Error)
 	return &narrowFixture{t: t, g: g}
 }
 

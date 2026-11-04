@@ -645,3 +645,17 @@ func TestTaskToolDescriptions(t *testing.T) {
 		assert.Contains(t, instructions, fact)
 	}
 }
+
+// TestTaskToolTextsNameTheRealLimits: the tool descriptions are prose in
+// JSON-schema literals, so the numbers they state are checked against the
+// constants that enforce them.
+func TestTaskToolTextsNameTheRealLimits(t *testing.T) {
+	limits := fmt.Sprintf("default %d, max %d", defaultTaskLimit, taskuc.MaxLimit)
+	assert.Contains(t, listTasksTool.Description, "(default 50, max 1000)", "the description's wording")
+	assert.Contains(t, listTasksTool.Description, "("+limits+")")
+	assert.Contains(t, string(listTasksTool.InputSchema), limits)
+
+	title := fmt.Sprintf("at most %d characters", taskuc.MaxSummaryRunes)
+	assert.Contains(t, string(createTaskTool.InputSchema), title)
+	assert.Contains(t, string(updateTaskTool.InputSchema), title)
+}

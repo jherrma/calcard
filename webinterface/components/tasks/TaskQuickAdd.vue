@@ -101,6 +101,7 @@ const input = ref<HTMLInputElement | null>(null);
 const text = ref('');
 const saving = ref(false);
 const targetId = useId();
+const toast = useAppToast();
 
 const targetList = computed<Calendar | null>(() => {
   const id = tasksStore.newTaskListId;
@@ -117,6 +118,10 @@ async function onEnter(event: KeyboardEvent) {
   const list = targetList.value;
   const summary = text.value.trim();
   if (saving.value || !list || summary === '') return;
+  if (summaryLength(summary) > TASK_SUMMARY_MAX) {
+    toast.error(TASK_SUMMARY_TOO_LONG, "Couldn't add the task");
+    return;
+  }
 
   saving.value = true;
   try {

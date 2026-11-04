@@ -308,7 +308,7 @@ func mkcolComponentSet(p mkcolProp) (string, bool) {
 	}
 	switch {
 	case hasEvent && hasTodo:
-		return "VEVENT,VTODO", true
+		return calendar.ComponentSetBoth, true
 	case hasEvent:
 		return "VEVENT", true
 	case hasTodo:

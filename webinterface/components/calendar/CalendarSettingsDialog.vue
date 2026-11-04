@@ -4,7 +4,7 @@
     :header="copy.header"
     :modal="true"
     :style="{ width: '600px' }"
-    :breakpoints="isTaskList ? TASK_LIST_BREAKPOINTS : undefined"
+    :breakpoints="isTaskList ? DIALOG_BREAKPOINTS : undefined"
     @update:visible="$emit('update:visible', $event)"
   >
     <Tabs :value="activeTab" @update:value="activeTab = $event as string">
@@ -42,7 +42,7 @@
                 class="mt-1 text-sm text-red-600 dark:text-red-400"
                 data-test="color-error"
               >
-                {{ COLOR_ERROR }}
+                {{ COLOR_FORMAT_ERROR }}
               </p>
             </div>
 
@@ -164,9 +164,6 @@ const calendarStore = useCalendarStore();
 const authStore = useAuthStore();
 const config = useRuntimeConfig();
 
-const TASK_LIST_BREAKPOINTS = { '640px': 'calc(100vw - 2rem)' };
-const COLOR_ERROR = 'Enter the colour as a hex value, for example 3788d8.';
-const RETRY_HINT = 'Check your connection and try again.';
 
 const nameId = useId();
 const colorId = useId();
@@ -256,13 +253,7 @@ const caldavUrl = computed(() => {
  */
 function taskListErrorMessage(e: unknown): string | null {
   if (isRateLimitError(e)) return null;
-  const err = e as { status?: number; statusCode?: number; data?: { message?: unknown; error?: unknown } | null } | null;
-  const status = err?.statusCode ?? err?.status;
-  const message = err?.data?.message ?? err?.data?.error;
-  if (status !== undefined && status >= 400 && status < 500 && typeof message === 'string' && message.trim()) {
-    return message;
-  }
-  return RETRY_HINT;
+  return clientErrorMessage(e, RETRY_HINT);
 }
 
 function showError(e: unknown, title: string) {

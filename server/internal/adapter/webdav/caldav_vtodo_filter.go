@@ -158,15 +158,29 @@ func vtodoInWindow(comp *ical.Component, window timeWindow, recurrenceEnd *time.
 			}
 			last := *recurrenceEnd
 			if times.dtstart != nil && times.due != nil && times.due.After(*times.dtstart) {
-				// RecurrenceEndTime is the last occurrence's DTSTART (go-ical's
-				// end of a task ignores DUE); its due date comes this much later.
-				last = last.Add(times.due.Sub(*times.dtstart))
+				// RecurrenceEndTime is the last occurrence's DTSTART plus
+				// go-ical's length of the task, which ignores DUE: nothing for a
+				// DATE-TIME DTSTART, one day for a DATE one. The last due date
+				// comes DUE-DTSTART after that DTSTART, so take the day out
+				// again and add the real length.
+				last = last.Add(times.due.Sub(*times.dtstart) - dateOnlyLength(comp))
 			}
 			return window.endGE(*first) && window.startLE(last)
 		}
 		// Neither DTSTART nor DUE: the series has no anchor; use the table.
 	}
 	return window.overlapsVTODO(times)
+}
+
+// dateOnlyLength is the one day go-ical adds to the end of a component whose
+// DTSTART is a DATE and that has no DTEND or DURATION (Event.DateTimeEnd), which
+// RecurrenceEndTime includes; zero otherwise.
+func dateOnlyLength(comp *ical.Component) time.Duration {
+	start := comp.Props.Get(ical.PropDateTimeStart)
+	if start == nil || start.ValueType() != ical.ValueDate || comp.Props.Get(ical.PropDuration) != nil || comp.Props.Get(ical.PropDateTimeEnd) != nil {
+		return 0
+	}
+	return 24 * time.Hour
 }
 
 // vtodoTimes are the properties the RFC 4791 §9.9 VTODO table looks at, as UTC

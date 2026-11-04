@@ -31,6 +31,9 @@ export function suggestTaskListColor(usedColors: readonly (string | undefined)[]
   return free ?? TASK_LIST_COLORS[usedColors.length % TASK_LIST_COLORS.length]!;
 }
 
+/** The error under a colour field that is not a hex value (the field takes it without the #). */
+export const COLOR_FORMAT_ERROR = 'Enter the colour as a hex value, for example 3788d8.';
+
 /**
  * The question before a task list is deleted. A delete is permanent on the
  * server: every task in it, and every share of it, go with it, and the change

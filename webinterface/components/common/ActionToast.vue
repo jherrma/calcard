@@ -2,7 +2,7 @@
   <Toast
     :group="ACTION_TOAST_GROUP"
     position="bottom-center"
-    :breakpoints="{ '640px': { width: 'calc(100vw - 2rem)' } }"
+    :breakpoints="TOAST_BREAKPOINTS"
     @mouse-enter="keepOpen"
     @mouse-leave="keepOpen"
   >

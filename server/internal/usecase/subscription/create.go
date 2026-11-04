@@ -126,7 +126,7 @@ func (uc *CreateUseCase) Execute(ctx context.Context, userID uint, input CreateI
 		Description:         firstNonEmpty(input.Description, feed.Description),
 		Color:               firstNonEmpty(input.Color, calendar.GenerateRandomColor()),
 		Timezone:            feedTimezone(feed.Timezone),
-		SupportedComponents: "VEVENT,VTODO",
+		SupportedComponents: calendar.ComponentSetBoth,
 		Subscribed:          true,
 	}
 	cal.Path = cal.UUID + ".ics"

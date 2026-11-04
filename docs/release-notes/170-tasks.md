@@ -70,6 +70,15 @@ Before this release, every calendar accepted both events and tasks (`VEVENT,VTOD
 - **Repeating tasks cannot be completed in the web UI or over REST yet.** You get **409** `Repeating tasks cannot be
   completed here yet. Complete it in your task app.` You can still edit their title, notes, priority and due
   date, and the repeat rule is kept.
+- **VTODOs imported into an event-only calendar are skipped.** This includes the default "Personal" calendar of a
+  new account. The import counts them under `skipped` and names them in `errors`; import them into a task list
+  instead.
+- **The "last calendar" guard is per kind.** `cannot delete your last calendar` now protects the last calendar that
+  can hold events. With "Personal" and "Tasks" you can no longer delete "Personal" (the previous version allowed
+  it); a task list can always be deleted.
+- **Event text over REST and MCP is plain text.** A summary, description or location is returned and accepted as
+  written (`Buy milk, eggs`); the previous version returned the iCalendar escapes (`Buy milk\, eggs`, `\;`, `\n`).
+  A client that works around the escapes should stop doing so.
 - Event endpoints and the MCP event tools treat a task's UUID as unknown (the REST event routes answer 404).
   Event searches and event counts include events only.
 

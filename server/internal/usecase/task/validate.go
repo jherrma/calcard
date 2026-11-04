@@ -3,6 +3,7 @@ package task
 import (
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
@@ -12,24 +13,31 @@ import (
 // ErrInvalidInput whose message is the 400 body; create and update share
 // them (update adds the checks against the stored times, update.go).
 
-// maxSummaryRunes bounds a task's title, counted in runes after trimming.
-const maxSummaryRunes = 500
+// MaxSummaryRunes bounds a task's title, counted in runes after trimming.
+const MaxSummaryRunes = 500
 
-// taskSummary validates a title: required, not blank, at most maxSummaryRunes
+// taskSummary validates a title: required, not blank, at most MaxSummaryRunes
 // runes. It returns the title without surrounding white space, the form that
 // is stored.
 func taskSummary(summary string) (string, error) {
 	s := strings.TrimSpace(summary)
-	if s == "" {
+	if isBlank(s) {
 		return "", invalidInputf("summary is required")
 	}
-	if utf8.RuneCountInString(s) > maxSummaryRunes {
-		return "", invalidInputf("summary must be at most %d characters", maxSummaryRunes)
+	if utf8.RuneCountInString(s) > MaxSummaryRunes {
+		return "", invalidInputf("summary must be at most %d characters", MaxSummaryRunes)
 	}
 	if hasControlChar(s) {
 		return "", invalidInputf("summary must not contain control characters")
 	}
 	return s, nil
+}
+
+// isBlank reports a title with nothing visible in it: empty, or only white
+// space and format characters (zero-width space, joiners, BOM; Unicode category
+// Cf), which strings.TrimSpace keeps.
+func isBlank(s string) bool {
+	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) }) == ""
 }
 
 // taskDescription validates a description: any text without control

@@ -19,8 +19,8 @@ import (
 
 // RunDataMigrations applies idempotent data fix-ups that schema AutoMigrate
 // cannot express. Safe to run on every boot — each step is a no-op once its
-// rows are already fixed, and narrowCalendarComponentSets runs only once ever
-// (its system_settings marker). Must run AFTER db.Migrate (it relies on the
+// rows are already fixed, and narrowCalendarComponentSets and unescapeTextColumns
+// run only once ever (their system_settings markers). Must run AFTER db.Migrate (it relies on the
 // recurrence_end_time and task columns existing).
 func RunDataMigrations(db *gorm.DB) error {
 	if err := stripETagQuotes(db); err != nil {
@@ -32,13 +32,16 @@ func RunDataMigrations(db *gorm.DB) error {
 	if err := backfillRecurrenceEnd(db); err != nil {
 		return fmt.Errorf("backfill recurrence_end_time: %w", err)
 	}
+	if err := dropRedundantCalendarIDIndex(db); err != nil {
+		return fmt.Errorf("drop redundant calendar_id index: %w", err)
+	}
 	if err := backfillTaskFields(db); err != nil {
 		return fmt.Errorf("backfill task fields: %w", err)
 	}
-	if err := unescapeTextColumns(db); err != nil {
+	now := time.Now().UTC()
+	if err := unescapeTextColumns(db, now); err != nil {
 		return fmt.Errorf("unescape text columns: %w", err)
 	}
-	now := time.Now().UTC()
 	if err := recordTaskKindCutoff(db, now); err != nil {
 		return fmt.Errorf("record %s: %w", taskKindIntroducedAtKey, err)
 	}
@@ -231,7 +234,7 @@ func wrapBareICalObjects(db *gorm.DB) error {
 	var batch []calendar.CalendarObject
 	return db.Unscoped().
 		Where("i_cal_data NOT LIKE 'BEGIN:VCALENDAR%'").
-		FindInBatches(&batch, 200, func(tx *gorm.DB, _ int) error {
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
 			for i := range batch {
 				wrapped := calendar.EnsureVCalendarWrapper(batch[i].ICalData)
 				if err := tx.Model(&calendar.CalendarObject{}).
@@ -255,7 +258,7 @@ func backfillRecurrenceEnd(db *gorm.DB) error {
 	var batch []calendar.CalendarObject
 	return db.Unscoped().
 		Where("recurrence_end_time IS NULL AND i_cal_data LIKE '%RRULE%'").
-		FindInBatches(&batch, 200, func(tx *gorm.DB, _ int) error {
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
 			for i := range batch {
 				obj := batch[i]
 				if err := obj.PopulateDenormFieldsFromICal(); err != nil {
@@ -296,7 +299,7 @@ func backfillTaskFields(db *gorm.DB) error {
 	var batch []calendar.CalendarObject
 	return db.Unscoped().
 		Where("component_type = ? AND (status IS NULL OR status = '')", calendar.ComponentToDo).
-		FindInBatches(&batch, 200, func(tx *gorm.DB, _ int) error {
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
 			for i := range batch {
 				obj := batch[i]
 				if err := obj.PopulateDenormFieldsFromICal(); err != nil {
@@ -329,6 +332,33 @@ func backfillTaskFields(db *gorm.DB) error {
 		}).Error
 }
 
+// redundantCalendarIDIndex is the single-column calendar_id index of
+// calendar_objects that GORM created before idx_calobj_cal_comp
+// (calendar_id, component_type) existed. The composite index serves every
+// lookup it did, and AutoMigrate never drops an index.
+const redundantCalendarIDIndex = "idx_calendar_objects_calendar_id"
+
+// dropRedundantCalendarIDIndex drops redundantCalendarIDIndex when an older
+// database still has it (an index holds no data; DROP INDEX is safe on SQLite
+// and PostgreSQL), and does nothing on a fresh one. It runs only when the
+// composite index exists, so calendar_id is never left without any index.
+func dropRedundantCalendarIDIndex(db *gorm.DB) error {
+	m := db.Migrator()
+	obj := &calendar.CalendarObject{}
+	if !m.HasIndex(obj, "idx_calobj_cal_comp") || !m.HasIndex(obj, redundantCalendarIDIndex) {
+		return nil
+	}
+	return m.DropIndex(obj, redundantCalendarIDIndex)
+}
+
+// migrationBatchSize is how many rows the backfill steps read and rewrite per
+// FindInBatches round.
+const migrationBatchSize = 200
+
+// unescapeTextColumnsMarkerKey is the system_settings key that records that
+// unescapeTextColumns has run (value: when, RFC 3339 UTC).
+const unescapeTextColumnsMarkerKey = "migration.unescape_text_columns.v1"
+
 // unescapeTextColumns re-derives the summary, description and location columns
 // of objects stored while PopulateDenormFieldsFromICal copied the iCalendar's
 // escaped TEXT value into them (`Buy milk\, eggs`, a newline as `\n`). The API
@@ -336,21 +366,40 @@ func backfillTaskFields(db *gorm.DB) error {
 // it escaped again on every save. Soft-deleted rows are included (Unscoped),
 // like the other backfills.
 //
+// ONE-SHOT, like narrowCalendarComponentSets: the repair is only needed for
+// rows stored before the fix, and every write path now stores plain text, so
+// scanning three columns with LIKE on every boot would be a full table scan for
+// nothing. The step claims unescapeTextColumnsMarkerKey (INSERT … ON CONFLICT
+// DO NOTHING) in the same transaction as its writes and does nothing once the
+// marker exists; a failure rolls both back and the next boot tries again. An
+// install that ran an earlier, unmarked version simply runs it once more: the
+// pass is idempotent and writes only rows whose columns change.
+//
 // Only rows with a backslash in one of the three columns can be affected, so
 // only those are read; each is re-derived from its ICalData and written back
 // with UpdateColumns of the three columns alone — never e_tag or updated_at:
 // the iCalendar is unchanged, and a new ETag would make every DAV client
 // re-download it. Idempotent: a re-derived value is what the column already
-// holds, and such a row is not written again. A row whose plain text really
-// contains a backslash stays selected and is re-read on every boot (rare and
-// harmless); undecodable rows are skipped the same way.
-func unescapeTextColumns(db *gorm.DB) error {
+// holds, and such a row is not written again. Undecodable rows are skipped.
+func unescapeTextColumns(db *gorm.DB, now time.Time) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		claimed, err := claimMarker(tx, unescapeTextColumnsMarkerKey, now)
+		if err != nil || !claimed {
+			return err // not claimed: ran before
+		}
+		return rederiveTextColumns(tx)
+	})
+}
+
+// rederiveTextColumns is the body of unescapeTextColumns, run inside its
+// transaction.
+func rederiveTextColumns(db *gorm.DB) error {
 	const hasBackslash = `%\\%` // LIKE … ESCAPE '\': a literal backslash anywhere
 	var batch []calendar.CalendarObject
 	return db.Unscoped().
 		Where(`summary LIKE ? ESCAPE '\' OR description LIKE ? ESCAPE '\' OR location LIKE ? ESCAPE '\'`,
 			hasBackslash, hasBackslash, hasBackslash).
-		FindInBatches(&batch, 200, func(tx *gorm.DB, _ int) error {
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
 			for i := range batch {
 				stored := batch[i]
 				obj := stored
@@ -404,7 +453,7 @@ const narrowComponentSetsMarkerKey = "migration.narrow_component_sets.v1"
 
 // legacyComponentSet is the component set every calendar was created with
 // before #170, whether its owner wanted events, tasks or both.
-const legacyComponentSet = "VEVENT,VTODO"
+const legacyComponentSet = calendar.ComponentSetBoth
 
 // narrowCalendarComponentSets gives each legacy calendar the component set its
 // contents show it is used for (#170), so task apps stop listing every calendar
@@ -471,8 +520,15 @@ func narrowCalendarComponentSets(db *gorm.DB, now time.Time) error {
 // 3339 UTC) unless it exists (INSERT … ON CONFLICT DO NOTHING). It reports
 // whether this call wrote it; false means the narrowing ran before.
 func claimNarrowingMarker(tx *gorm.DB, now time.Time) (bool, error) {
+	return claimMarker(tx, narrowComponentSetsMarkerKey, now)
+}
+
+// claimMarker inserts the system_settings marker key (value: now, RFC 3339
+// UTC) unless it exists (INSERT … ON CONFLICT DO NOTHING). It reports whether
+// this call wrote it; false means the one-shot step ran before.
+func claimMarker(tx *gorm.DB, key string, now time.Time) (bool, error) {
 	claim := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&domain.SystemSetting{
-		Key:   narrowComponentSetsMarkerKey,
+		Key:   key,
 		Value: now.UTC().Format(time.RFC3339Nano),
 	})
 	if claim.Error != nil {

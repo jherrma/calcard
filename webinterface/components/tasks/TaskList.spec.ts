@@ -463,6 +463,25 @@ describe('TaskList — "Show N completed" and truncation', () => {
     expect(wrapper.get('[data-test="truncated"]').text()).toBe('Showing 5 of 750');
   });
 
+  it('does not count a row ticked away under Open (kept for Undo) in "Showing N of total"', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(local(2026, 11, 3, 9, 30));
+    const { wrapper, store } = mountList({
+      filter: 'open',
+      tasks: [task('a'), task('b'), task('c')],
+      total: 10,
+    });
+    expect(wrapper.get('[data-test="truncated"]').text()).toBe('Showing 3 of 10');
+
+    await row(wrapper, 'a').get('[data-test="task-check"]').trigger('click');
+    await flushPromises();
+    vi.advanceTimersByTime(600);
+    await nextTick();
+
+    expect(store.tasks).toHaveLength(3); // still held for the Undo
+    expect(wrapper.get('[data-test="truncated"]').text()).toBe('Showing 2 of 9');
+  });
+
   it('shows no such note when everything is loaded', () => {
     const { wrapper } = mountList();
 
@@ -570,20 +589,54 @@ describe('TaskList — inline completion', () => {
     expect(requests().filter((r) => r.startsWith('POST'))).toEqual([]);
   });
 
-  it('under All the ticked row moves into Completed after 600 ms', async () => {
-    const { wrapper } = mountList({ filter: 'all' });
+  it('under All the ticked row stays where it was ticked, not in the collapsed Completed group', async () => {
+    const { wrapper, store } = mountList({ filter: 'all' });
 
     await row(wrapper, 'Send invoice').get('[data-test="task-check"]').trigger('click');
     await flushPromises();
     expect(rowIds(wrapper, 'needs-action')).toContain('Send invoice');
     expect(header(wrapper, 'completed').text()).toBe('Completed, 1 task');
 
+    // Past the linger it is still in view, ticked, so the Undo has a row to point at.
     vi.advanceTimersByTime(600);
+    await nextTick();
+    expect(rowIds(wrapper, 'needs-action')).toContain('Send invoice');
+    expect(row(wrapper, 'Send invoice').get('[data-test="task-check"]').attributes('aria-checked')).toBe('true');
+    expect(header(wrapper, 'completed').text()).toBe('Completed, 1 task');
+
+    // Opening Completed lets it move in.
+    await header(wrapper, 'completed').get('button').trigger('click');
+    expect(rowIds(wrapper, 'needs-action')).not.toContain('Send invoice');
+    expect(rowIds(wrapper, 'completed')).toContain('Send invoice');
+    expect(store.tasks.find((t) => t.id === 'Send invoice')?.completed).toBe(true);
+  });
+
+  it('under All the ticked row moves into Completed when the list is loaded again', async () => {
+    const { wrapper, store } = mountList({ filter: 'all' });
+
+    await row(wrapper, 'Send invoice').get('[data-test="task-check"]').trigger('click');
+    await flushPromises();
+    vi.advanceTimersByTime(600);
+    await nextTick();
+    expect(rowIds(wrapper, 'needs-action')).toContain('Send invoice');
+
+    store.isLoading = true;
+    await nextTick();
+    store.isLoading = false;
     await nextTick();
     expect(rowIds(wrapper, 'needs-action')).not.toContain('Send invoice');
     expect(header(wrapper, 'completed').text()).toBe('Completed, 2 tasks');
+  });
+
+  it('under All an unticked row, which moves into an open group, does not stay held', async () => {
+    const { wrapper } = mountList({ filter: 'all', tasks: [task('done', DONE)] });
     await header(wrapper, 'completed').get('button').trigger('click');
-    expect(rowIds(wrapper, 'completed')).toContain('Send invoice');
+
+    await row(wrapper, 'done').get('[data-test="task-check"]').trigger('click');
+    await flushPromises();
+    vi.advanceTimersByTime(600);
+    await nextTick();
+    expect(rowIds(wrapper, 'needs-action')).toEqual(['done']);
   });
 
   it('under Done a ticked cancelled task moves from Cancelled into the open Completed group', async () => {
@@ -619,6 +672,18 @@ describe('TaskList — inline completion', () => {
 
     expect(count('POST /api/v1/calendars/errands/tasks/done/uncomplete')).toBe(1);
     expect(toastMock.action).not.toHaveBeenCalled();
+  });
+
+  it('a completed repeating task can be reopened (the server allows uncomplete)', async () => {
+    const { wrapper } = mountList({
+      filter: 'completed',
+      tasks: [task('weekly', { ...DONE, is_recurring: true, rrule: 'FREQ=WEEKLY' })],
+    });
+
+    await row(wrapper, 'weekly').get('[data-test="task-check"]').trigger('click');
+    await flushPromises();
+
+    expect(count('POST /api/v1/calendars/errands/tasks/weekly/uncomplete')).toBe(1);
   });
 
   it('a failed tick shows no Undo and the row stays', async () => {

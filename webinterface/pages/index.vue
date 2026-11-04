@@ -148,8 +148,6 @@ definePageMeta({
   layout: 'default',
 });
 
-/** How often the clock (Today/Tomorrow labels, now-marker) is refreshed. */
-const CLOCK_INTERVAL_MS = 60 * 1000;
 /** How often dashboard data is silently revalidated (story: default 5 minutes). */
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 

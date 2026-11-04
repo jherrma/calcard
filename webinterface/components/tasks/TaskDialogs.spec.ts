@@ -371,7 +371,7 @@ describe('TaskEditDialog', () => {
     expect(confirmMock.require).toHaveBeenCalledTimes(1);
     const ask = confirmMock.require.mock.calls[0]![0] as { header: string; message: string; acceptLabel: string; accept: () => void };
     expect(ask.header).toBe('Delete task');
-    expect(ask.message).toBe('Delete this task? It is removed from every device that syncs this list.');
+    expect(ask.message).toBe('Delete this task? It is removed from every device that syncs this list. This can\'t be undone.');
     expect(ask.acceptLabel).toBe('Delete task');
     expect(writes()).toEqual([]);
 

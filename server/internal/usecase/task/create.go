@@ -74,7 +74,7 @@ func (uc *CreateTaskUseCase) Execute(ctx context.Context, input CreateTaskInput)
 	}
 
 	taskUUID := uuid.New().String()
-	uid := taskUUID + "@calcard.io"
+	uid := taskUUID + "@" + calendar.UIDDomain
 	now := uc.now().UTC()
 	cal, todo := newTaskCalendar(uid, now)
 	create.writeTo(todo, now)

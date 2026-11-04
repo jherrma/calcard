@@ -250,9 +250,15 @@ const dueTone = computed(() => {
   return QUIET;
 });
 
+/**
+ * A repeating task cannot be completed over REST (409), but a completed one
+ * can be reopened, so only an open repeating task has its check disabled.
+ */
+const cannotComplete = computed(() => props.task.is_recurring && !props.task.completed);
+
 const disabledReason = computed(() => {
   if (props.readOnly) return READ_ONLY_REASON;
-  if (props.task.is_recurring) return RECURRING_REASON;
+  if (cannotComplete.value) return RECURRING_REASON;
   return null;
 });
 
@@ -284,10 +290,11 @@ function onToggle() {
   emit('toggle', props.task);
 }
 
-// A repeating task cannot be ticked here, so its menu offers no "Complete"
-// either; editing and deleting it are allowed.
+// An open repeating task cannot be ticked here, so its menu offers no
+// "Complete" either (a completed one offers "Mark as not done"); editing and
+// deleting it are allowed.
 const menuItems = computed<MenuItem[]>(() => [
-  ...(props.task.is_recurring
+  ...(cannotComplete.value
     ? []
     : [
         {

@@ -232,6 +232,9 @@ func TestUpdateTask_NoOp(t *testing.T) {
 		}},
 		{"status needs-action without STATUS", []string{}, UpdateTaskInput{Status: strPtr("needs-action")}},
 		{"lower-case STATUS", []string{"STATUS:in-process"}, UpdateTaskInput{Status: strPtr("in-process")}},
+		{"priority null on PRIORITY:0", []string{"PRIORITY:0"}, UpdateTaskInput{Priority: cleared[int]()}},
+		{"priority 0 on PRIORITY:0", []string{"PRIORITY:0"}, UpdateTaskInput{Priority: change(0)}},
+		{"priority 0 without PRIORITY", []string{}, UpdateTaskInput{Priority: change(0)}},
 		{"padded integers", []string{"PRIORITY: 3", "PERCENT-COMPLETE:070"}, UpdateTaskInput{Priority: change(3), PercentComplete: change(70)}},
 		{"all-day dates as stored", []string{"DTSTART;VALUE=DATE:20261104", "DUE;VALUE=DATE:20261105"}, UpdateTaskInput{
 			Start: change("2026-11-04"), Due: change("2026-11-05"), DueAllDay: boolPtr(true),
@@ -743,6 +746,7 @@ func TestUpdateTask_Validation(t *testing.T) {
 	}{
 		{"empty summary", nil, UpdateTaskInput{Summary: strPtr("")}, "summary is required"},
 		{"blank summary", nil, UpdateTaskInput{Summary: strPtr(" \t ")}, "summary is required"},
+		{"zero-width summary", nil, UpdateTaskInput{Summary: strPtr("\u200b\ufeff")}, "summary is required"},
 		{"501 runes", nil, UpdateTaskInput{Summary: strPtr(strings.Repeat("ä", 501))}, "summary must be at most 500 characters"},
 		{"unknown status", nil, UpdateTaskInput{Status: strPtr("done")}, statusMsg},
 		{"upper-case status", nil, UpdateTaskInput{Status: strPtr("COMPLETED")}, statusMsg},

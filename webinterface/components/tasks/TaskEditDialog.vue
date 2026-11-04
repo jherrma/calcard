@@ -61,8 +61,6 @@ const emit = defineEmits<{
   deleted: [task: Task];
 }>();
 
-const DIALOG_BREAKPOINTS = { '640px': 'calc(100vw - 2rem)' };
-
 const tasksStore = useTasksStore();
 const toast = useAppToast();
 const isSubmitting = ref(false);

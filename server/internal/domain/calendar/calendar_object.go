@@ -11,16 +11,29 @@ import (
 const (
 	ComponentEvent = "VEVENT"
 	ComponentToDo  = "VTODO"
+	// ComponentSetBoth is the SupportedComponents value of a calendar that
+	// stores both (kind "both"; the set every calendar had before #170).
+	ComponentSetBoth = ComponentEvent + "," + ComponentToDo
 )
+
+// ProductID is the PRODID of the iCalendar objects this server writes.
+const ProductID = "-//CalCard//EN"
+
+// UIDDomain is the domain part of the UIDs the REST routes generate
+// ("<uuid>@calcard.io").
+const UIDDomain = "calcard.io"
 
 // CalendarObject represents an event or todo in a calendar.
 //
 // CalendarID and ComponentType form the composite index idx_calobj_cal_comp:
-// the task list query always filters by both.
+// the task list query always filters by both, and it also serves every
+// lookup by CalendarID alone (its leading column), so there is no separate
+// calendar_id index; dropRedundantCalendarIDIndex removes the one older
+// databases still carry.
 type CalendarObject struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`
 	UUID          string     `gorm:"uniqueIndex;size:36;not null" json:"uuid"`
-	CalendarID    uint       `gorm:"index;index:idx_calobj_cal_comp,priority:1;not null" json:"calendar_id"`
+	CalendarID    uint       `gorm:"index:idx_calobj_cal_comp,priority:1;not null" json:"calendar_id"`
 	Path          string     `gorm:"size:255;not null" json:"path"`
 	UID           string     `gorm:"index;size:255;not null" json:"uid"` // iCalendar UID
 	ETag          string     `gorm:"size:64;not null" json:"etag"`

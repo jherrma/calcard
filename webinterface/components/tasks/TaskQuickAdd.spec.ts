@@ -248,6 +248,28 @@ describe('TaskQuickAdd — Enter', () => {
     expect(posts()).toHaveLength(2);
   });
 
+  it('refuses a title over 500 characters without a request, with the edit form\'s sentence, and keeps the text', async () => {
+    serve((url, options) => created(options.body!.summary, 'errands'));
+    const { wrapper } = mountQuickAdd({ listId: 'errands' });
+    const long = 'x'.repeat(501);
+
+    await typeAndEnter(wrapper, long);
+    await flushPromises();
+
+    expect(posts()).toHaveLength(0);
+    expect(toastMock.error).toHaveBeenCalledWith(
+      'Shorten the title to 500 characters or fewer.',
+      "Couldn't add the task",
+    );
+    expect(input(wrapper).element.value).toBe(long);
+
+    // 500 characters (counted as code points) is fine.
+    await input(wrapper).setValue('😀'.repeat(500));
+    await input(wrapper).trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(posts()).toHaveLength(1);
+  });
+
   it('sends once while a create is in flight (a second Enter does nothing) and shows it is busy', async () => {
     const answer = deferred<Task>();
     serve(() => answer.promise);

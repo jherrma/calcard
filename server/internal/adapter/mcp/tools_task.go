@@ -52,10 +52,16 @@ func taskNotReadable(id string) *toolCallResult {
 	return errorResult("No task with id " + id + " is readable by you.")
 }
 
-// calendarNotReadable is get_events' answer for a calendar id the caller
-// cannot read, which list_tasks and create_task give too.
+// calendarNotReadable is the answer for a calendar id the caller cannot read
+// (get_events, create_event, update_calendar, list_tasks, create_task, ...).
 func calendarNotReadable(id string) *toolCallResult {
 	return errorResult("No calendar with id " + id + " is readable by you.")
+}
+
+// eventNotReadable is the answer for an event id the caller cannot read (or
+// that does not exist: the two are not told apart).
+func eventNotReadable(id string) *toolCallResult {
+	return errorResult("No event with id " + id + " is readable by you.")
 }
 
 // taskToolError maps a task use-case error the way the REST task handler
