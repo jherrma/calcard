@@ -148,8 +148,11 @@ const props = withDefaults(defineProps<{
   resourceUuid: string;
   /** Owner-only: pass false for a resource that was shared WITH the user (#53). */
   canManage?: boolean;
+  /** What the copy calls the resource, when its type says too little ("task list" for a VTODO-only calendar, #170). */
+  resourceNoun?: string;
 }>(), {
   canManage: true,
+  resourceNoun: undefined,
 });
 
 const emit = defineEmits<{
@@ -165,7 +168,7 @@ const identifier = ref('');
 const invitePermission = ref<SharePermission>('read');
 const permissionOptions = PERMISSION_OPTIONS;
 
-const noun = computed(() => (props.resourceType === 'calendar' ? 'calendar' : 'address book'));
+const noun = computed(() => props.resourceNoun ?? (props.resourceType === 'calendar' ? 'calendar' : 'address book'));
 
 // Refetch on mount AND whenever the panel is pointed at another resource — the
 // store holds exactly one resource's shares, so a stale list would be wrong,

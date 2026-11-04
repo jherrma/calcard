@@ -139,10 +139,10 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, email, password, display
 		}
 	}
 
-	// Create default calendar
-	if err := uc.createDefaultCalendar(ctx, u.ID); err != nil {
+	// Create the default calendar and task list
+	if err := uc.createDefaultCalendars(ctx, u.ID); err != nil {
 		// Log error but don't fail registration
-		fmt.Printf("failed to create default calendar: %v\n", err)
+		fmt.Printf("failed to create default calendars: %v\n", err)
 	}
 
 	// Create default address book
@@ -237,25 +237,47 @@ If it wasn't you, you can safely ignore this email.
 	}
 }
 
-// createDefaultCalendar creates a default "Personal" calendar for a new user
-func (uc *RegisterUseCase) createDefaultCalendar(ctx context.Context, userID uint) error {
-	calUUID := uuid.New().String()
-	path := fmt.Sprintf("%s.ics", calUUID)
+// defaultCalendars are the collections every account made by registration or
+// first-admin setup starts with (#170), in creation order: an event calendar
+// and a task list, so the Tasks section is not empty with no way in and Apple
+// Reminders finds a task list on the first sync, while calendar apps no longer
+// see the calendar as a task list. Accounts created by OAuth sign-up get none.
+var defaultCalendars = []struct{ name, kind, color string }{
+	{"Personal", calendar.KindEvents, "#3788d8"}, // blue, stores VEVENT
+	{"Tasks", calendar.KindTasks, "#28a745"},     // green, stores VTODO
+}
 
-	defaultCal := &calendar.Calendar{
+// createDefaultCalendars creates the defaultCalendars for a new user. Each is
+// created on its own: a failure is reported (joined) but does not stop the
+// next one, and the caller only logs it, as registration must not fail for it.
+func (uc *RegisterUseCase) createDefaultCalendars(ctx context.Context, userID uint) error {
+	var errs []error
+	for _, defaultCal := range defaultCalendars {
+		if err := uc.createDefaultCalendar(ctx, userID, defaultCal.name, defaultCal.kind, defaultCal.color); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", defaultCal.name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// createDefaultCalendar creates one calendar of the given kind
+// (calendar.SupportedComponentsForKind), at the "<uuid>.ics" path REST-created
+// calendars use. The repository mints its sync token and ctag.
+func (uc *RegisterUseCase) createDefaultCalendar(ctx context.Context, userID uint, name, kind, color string) error {
+	components, err := calendar.SupportedComponentsForKind(kind)
+	if err != nil {
+		return err
+	}
+	calUUID := uuid.New().String()
+	return uc.calendarRepo.Create(ctx, &calendar.Calendar{
 		UUID:                calUUID,
 		UserID:              userID,
-		Path:                path,
-		Name:                "Personal",
-		Description:         "",
-		Color:               "#3788d8", // Blue
+		Path:                calUUID + ".ics",
+		Name:                name,
+		Color:               color,
 		Timezone:            "UTC",
-		SupportedComponents: "VEVENT,VTODO",
-		SyncToken:           calendar.GenerateSyncToken(),
-		CTag:                calendar.GenerateCTag(),
-	}
-
-	return uc.calendarRepo.Create(ctx, defaultCal)
+		SupportedComponents: components,
+	})
 }
 
 func (uc *RegisterUseCase) createDefaultAddressBook(ctx context.Context, userID uint) error {

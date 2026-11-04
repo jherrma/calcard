@@ -6,7 +6,7 @@
 // Auto-imported by Nuxt (files under `utils/`), but the .vue sources import these
 // explicitly, matching the sibling components.
 
-import type { CalendarEvent } from '~/types/calendar';
+import type { Calendar, CalendarEvent } from '~/types/calendar';
 import type { ContactHit } from '~/types/search';
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
@@ -70,6 +70,22 @@ export function searchAvatarColor(seed: string): string {
 export function toLocalDateParam(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The Tasks section, narrowed to one task list. */
+export interface TaskListRoute {
+  path: '/tasks';
+  query: { list: string };
+}
+
+/**
+ * Where a calendars-group hit opens when it is a task list (`kind: 'tasks'`,
+ * #170): `/tasks?list=<uuid>`. The Calendar section never shows a task list, so
+ * sending one there would land on a page without it. Null for every other hit
+ * (`events`, mixed `both`, or no `kind`): those keep opening the Calendar section.
+ */
+export function taskListRoute(cal: Pick<Calendar, 'kind' | 'uuid'>): TaskListRoute | null {
+  return cal.kind === 'tasks' ? { path: '/tasks', query: { list: cal.uuid } } : null;
 }
 
 /** "Acme · alice@example.com · Work" — organization, primary email, address book. */

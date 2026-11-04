@@ -12,7 +12,8 @@ import (
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 )
 
-func (s *stubCalendarRepo) CreateCalendarObject(_ context.Context, _ *calendar.CalendarObject) error {
+func (s *stubCalendarRepo) CreateCalendarObject(_ context.Context, obj *calendar.CalendarObject) error {
+	s.created = obj
 	return nil
 }
 

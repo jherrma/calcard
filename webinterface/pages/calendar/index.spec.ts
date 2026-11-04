@@ -7,7 +7,8 @@ import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import CalendarPage from './index.vue';
 import { useCalendarStore } from '~/stores/calendars';
 import { usePreferencesStore, PREF_FIRST_DAY_OF_WEEK, PREF_TIME_FORMAT } from '~/stores/preferences';
-import type { CalendarEvent } from '~/types/calendar';
+import CalendarSidebar from '~/components/calendar/CalendarSidebar.vue';
+import type { Calendar, CalendarEvent } from '~/types/calendar';
 
 // SCOPE: the changeView() guard on the calendar page (#26). The view SelectButton
 // can deselect and emit `null`; before the fix changeView passed that straight to
@@ -232,6 +233,25 @@ describe('global search deep link (story 044)', () => {
     expect(store.getEvent).not.toHaveBeenCalled();
   });
 
+  // #170 (story 28): the search page links a calendars-group hit as /calendar?cal=<id>.
+  // There is nothing to jump to or open, but the param must not stay in the URL.
+  it('consumes a lone ?cal= from a calendar search hit without jumping or opening anything', async () => {
+    routeStub.query = { cal: '7', view: 'timeGridWeek' };
+    const { vm, api, store } = await mountForDeepLink();
+
+    await vm.applyDeepLink();
+
+    expect(api.gotoDate).not.toHaveBeenCalled();
+    expect(store.setCurrentDate).not.toHaveBeenCalled();
+    expect(store.getEvent).not.toHaveBeenCalled();
+    expect(store.fetchEventOccurrence).not.toHaveBeenCalled();
+    expect(vm.showDetailDialog).toBe(false);
+    expect(navigateToMock).toHaveBeenCalledWith(
+      { path: '/calendar', query: { view: 'timeGridWeek' } },
+      { replace: true }
+    );
+  });
+
   it('keeps unrelated query params when consuming the deep link', async () => {
     routeStub.query = { date: '2026-06-16', view: 'timeGridWeek' };
     const { vm } = await mountForDeepLink();
@@ -329,5 +349,46 @@ describe('calendar first day of the week preference', () => {
     await nextTick();
 
     expect(vm.calendarOptions.firstDay).toBe(expected);
+  });
+});
+
+// SCOPE (#170): task lists (`kind: 'tasks'`) arrive in the calendar store next
+// to the calendars. The page hands the sidebar `calendarOptions`, which is built
+// on eventCalendars, so the Calendar section never lists a task list; a mixed
+// (`both`) calendar stays, it holds events too.
+describe('calendar sidebar never lists a task list (#170)', () => {
+  function cal(id: number, extra: Partial<Calendar>): Calendar {
+    return {
+      id: String(id),
+      uuid: `cal-uuid-${id}`,
+      path: `${id}.ics`,
+      name: `Cal ${id}`,
+      color: '#123456',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      ...extra,
+    };
+  }
+
+  it('hands the sidebar event, mixed, shared and subscribed calendars but no task list', async () => {
+    const pinia = createTestingPinia({ stubActions: true });
+    const store = useCalendarStore();
+    store.calendars = [
+      cal(1, { name: 'Personal', kind: 'events' }),
+      cal(2, { name: 'Tasks', kind: 'tasks' }),
+      cal(3, { name: 'Old mixed', kind: 'both' }),
+      cal(4, { name: 'Team tasks', kind: 'tasks', shared: true, permission: 'read-write' }),
+      cal(5, { name: 'Team', kind: 'events', shared: true, permission: 'read-only' }),
+      cal(6, { name: 'Holidays', kind: 'both', subscribed: true }),
+    ];
+    store.visibleCalendarIds = new Set(['1', '2', '3', '4', '5', '6']);
+
+    const wrapper = mount(CalendarPage, { shallow: true, global: { plugins: [pinia] } });
+    await nextTick();
+
+    const listed = wrapper.findComponent(CalendarSidebar).props('calendars') as Calendar[];
+    // REVERT PROOF: with calendarOptions built on `calendars`, "Tasks" and
+    // "Team tasks" show up in the sidebar.
+    expect(listed.map((c) => c.name)).toEqual(['Personal', 'Old mixed', 'Team', 'Holidays']);
   });
 });

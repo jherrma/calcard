@@ -1,21 +1,27 @@
 package database
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
+	"github.com/jherrma/caldav-server/internal/domain"
 	"github.com/jherrma/caldav-server/internal/domain/addressbook"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // RunDataMigrations applies idempotent data fix-ups that schema AutoMigrate
 // cannot express. Safe to run on every boot — each step is a no-op once its
-// rows are already fixed. Must run AFTER db.Migrate (it relies on the
-// recurrence_end_time column existing).
+// rows are already fixed, and narrowCalendarComponentSets and unescapeTextColumns
+// run only once ever (their system_settings markers). Must run AFTER db.Migrate (it relies on the
+// recurrence_end_time and task columns existing).
 func RunDataMigrations(db *gorm.DB) error {
 	if err := stripETagQuotes(db); err != nil {
 		return fmt.Errorf("strip etag quotes: %w", err)
@@ -25,6 +31,22 @@ func RunDataMigrations(db *gorm.DB) error {
 	}
 	if err := backfillRecurrenceEnd(db); err != nil {
 		return fmt.Errorf("backfill recurrence_end_time: %w", err)
+	}
+	if err := dropRedundantCalendarIDIndex(db); err != nil {
+		return fmt.Errorf("drop redundant calendar_id index: %w", err)
+	}
+	if err := backfillTaskFields(db); err != nil {
+		return fmt.Errorf("backfill task fields: %w", err)
+	}
+	now := time.Now().UTC()
+	if err := unescapeTextColumns(db, now); err != nil {
+		return fmt.Errorf("unescape text columns: %w", err)
+	}
+	if err := recordTaskKindCutoff(db, now); err != nil {
+		return fmt.Errorf("record %s: %w", taskKindIntroducedAtKey, err)
+	}
+	if err := narrowCalendarComponentSets(db, now); err != nil {
+		return fmt.Errorf("narrow calendar component sets: %w", err)
 	}
 	if err := backfillCollectionAnchors(db); err != nil {
 		return fmt.Errorf("backfill collection anchors: %w", err)
@@ -212,7 +234,7 @@ func wrapBareICalObjects(db *gorm.DB) error {
 	var batch []calendar.CalendarObject
 	return db.Unscoped().
 		Where("i_cal_data NOT LIKE 'BEGIN:VCALENDAR%'").
-		FindInBatches(&batch, 200, func(tx *gorm.DB, _ int) error {
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
 			for i := range batch {
 				wrapped := calendar.EnsureVCalendarWrapper(batch[i].ICalData)
 				if err := tx.Model(&calendar.CalendarObject{}).
@@ -236,7 +258,7 @@ func backfillRecurrenceEnd(db *gorm.DB) error {
 	var batch []calendar.CalendarObject
 	return db.Unscoped().
 		Where("recurrence_end_time IS NULL AND i_cal_data LIKE '%RRULE%'").
-		FindInBatches(&batch, 200, func(tx *gorm.DB, _ int) error {
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
 			for i := range batch {
 				obj := batch[i]
 				if err := obj.PopulateDenormFieldsFromICal(); err != nil {
@@ -256,6 +278,379 @@ func backfillRecurrenceEnd(db *gorm.DB) error {
 			}
 			return nil
 		}).Error
+}
+
+// backfillTaskFields fills the task columns (#170: status, due_at,
+// completed_at, percent_complete, priority) of VTODOs stored before
+// PopulateDenormFieldsFromICal derived them, so tasks synced before the upgrade
+// list correctly. Soft-deleted rows are included (Unscoped), like the other
+// backfills.
+//
+// The write-back is UpdateColumns of the derived columns only — never e_tag or
+// updated_at: the object's content is unchanged, and a new ETag would make every
+// DAV client re-download its tasks. is_all_day, start_time and end_time are
+// rewritten too, because for a VTODO IsAllDay now follows DUE (else DTSTART).
+//
+// Idempotent: a VTODO always gets a non-empty status, so a filled row no longer
+// matches. Undecodable rows (and rows whose stored component_type disagrees
+// with their iCalendar) keep an empty status, are skipped and are harmlessly
+// re-read on the next boot.
+func backfillTaskFields(db *gorm.DB) error {
+	var batch []calendar.CalendarObject
+	return db.Unscoped().
+		Where("component_type = ? AND (status IS NULL OR status = '')", calendar.ComponentToDo).
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
+			for i := range batch {
+				obj := batch[i]
+				if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+					// Skip undecodable rows; don't abort the whole migration.
+					continue
+				}
+				if obj.Status == "" {
+					// The iCalendar's primary component is not a VTODO.
+					continue
+				}
+				// FindInBatches hands the callback a fresh session: the
+				// query's Unscoped does not carry over, and without it the
+				// UPDATE would skip soft-deleted rows.
+				if err := tx.Unscoped().Model(&calendar.CalendarObject{}).
+					Where("id = ?", obj.ID).
+					UpdateColumns(map[string]interface{}{
+						"status":           obj.Status,
+						"due_at":           obj.DueAt,
+						"completed_at":     obj.CompletedAt,
+						"percent_complete": obj.PercentComplete,
+						"priority":         obj.Priority,
+						"is_all_day":       obj.IsAllDay,
+						"start_time":       obj.StartTime,
+						"end_time":         obj.EndTime,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}).Error
+}
+
+// redundantCalendarIDIndex is the single-column calendar_id index of
+// calendar_objects that GORM created before idx_calobj_cal_comp
+// (calendar_id, component_type) existed. The composite index serves every
+// lookup it did, and AutoMigrate never drops an index.
+const redundantCalendarIDIndex = "idx_calendar_objects_calendar_id"
+
+// dropRedundantCalendarIDIndex drops redundantCalendarIDIndex when an older
+// database still has it (an index holds no data; DROP INDEX is safe on SQLite
+// and PostgreSQL), and does nothing on a fresh one. It runs only when the
+// composite index exists, so calendar_id is never left without any index.
+func dropRedundantCalendarIDIndex(db *gorm.DB) error {
+	m := db.Migrator()
+	obj := &calendar.CalendarObject{}
+	if !m.HasIndex(obj, "idx_calobj_cal_comp") || !m.HasIndex(obj, redundantCalendarIDIndex) {
+		return nil
+	}
+	return m.DropIndex(obj, redundantCalendarIDIndex)
+}
+
+// migrationBatchSize is how many rows the backfill steps read and rewrite per
+// FindInBatches round.
+const migrationBatchSize = 200
+
+// unescapeTextColumnsMarkerKey is the system_settings key that records that
+// unescapeTextColumns has run (value: when, RFC 3339 UTC).
+const unescapeTextColumnsMarkerKey = "migration.unescape_text_columns.v1"
+
+// unescapeTextColumns re-derives the summary, description and location columns
+// of objects stored while PopulateDenormFieldsFromICal copied the iCalendar's
+// escaped TEXT value into them (`Buy milk\, eggs`, a newline as `\n`). The API
+// showed those backslashes, and a client that sent the text back unchanged had
+// it escaped again on every save. Soft-deleted rows are included (Unscoped),
+// like the other backfills.
+//
+// ONE-SHOT, like narrowCalendarComponentSets: the repair is only needed for
+// rows stored before the fix, and every write path now stores plain text, so
+// scanning three columns with LIKE on every boot would be a full table scan for
+// nothing. The step claims unescapeTextColumnsMarkerKey (INSERT … ON CONFLICT
+// DO NOTHING) in the same transaction as its writes and does nothing once the
+// marker exists; a failure rolls both back and the next boot tries again. An
+// install that ran an earlier, unmarked version simply runs it once more: the
+// pass is idempotent and writes only rows whose columns change.
+//
+// Only rows with a backslash in one of the three columns can be affected, so
+// only those are read; each is re-derived from its ICalData and written back
+// with UpdateColumns of the three columns alone — never e_tag or updated_at:
+// the iCalendar is unchanged, and a new ETag would make every DAV client
+// re-download it. Idempotent: a re-derived value is what the column already
+// holds, and such a row is not written again. Undecodable rows are skipped.
+func unescapeTextColumns(db *gorm.DB, now time.Time) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		claimed, err := claimMarker(tx, unescapeTextColumnsMarkerKey, now)
+		if err != nil || !claimed {
+			return err // not claimed: ran before
+		}
+		return rederiveTextColumns(tx)
+	})
+}
+
+// rederiveTextColumns is the body of unescapeTextColumns, run inside its
+// transaction.
+func rederiveTextColumns(db *gorm.DB) error {
+	const hasBackslash = `%\\%` // LIKE … ESCAPE '\': a literal backslash anywhere
+	var batch []calendar.CalendarObject
+	return db.Unscoped().
+		Where(`summary LIKE ? ESCAPE '\' OR description LIKE ? ESCAPE '\' OR location LIKE ? ESCAPE '\'`,
+			hasBackslash, hasBackslash, hasBackslash).
+		FindInBatches(&batch, migrationBatchSize, func(tx *gorm.DB, _ int) error {
+			for i := range batch {
+				stored := batch[i]
+				obj := stored
+				if err := obj.PopulateDenormFieldsFromICal(); err != nil {
+					// Skip undecodable rows; don't abort the whole migration.
+					continue
+				}
+				if obj.Summary == stored.Summary && obj.Description == stored.Description && obj.Location == stored.Location {
+					continue
+				}
+				// FindInBatches hands the callback a fresh session: Unscoped
+				// again, or the UPDATE skips soft-deleted rows.
+				if err := tx.Unscoped().Model(&calendar.CalendarObject{}).
+					Where("id = ?", obj.ID).
+					UpdateColumns(map[string]interface{}{
+						"summary":     obj.Summary,
+						"description": obj.Description,
+						"location":    obj.Location,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}).Error
+}
+
+// taskKindIntroducedAtKey is the system_settings key holding the moment the
+// calendar `kind` concept (#170) reached this database: RFC 3339 with
+// nanoseconds, UTC (time.RFC3339Nano). Calendars created before it predate
+// `kind` and may hold a legacy "VEVENT,VTODO" component set nobody chose;
+// everything created after it was a deliberate choice. The one-shot
+// component-set narrowing migration only considers calendars created before
+// it.
+const taskKindIntroducedAtKey = "tasks.kind_introduced_at"
+
+// recordTaskKindCutoff writes taskKindIntroducedAtKey = now if absent. It runs
+// on every boot, but only the first one writes: an existing value is never
+// overwritten (INSERT … ON CONFLICT DO NOTHING, so two instances booting at
+// once cannot race either).
+func recordTaskKindCutoff(db *gorm.DB, now time.Time) error {
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&domain.SystemSetting{
+		Key:   taskKindIntroducedAtKey,
+		Value: now.UTC().Format(time.RFC3339Nano),
+	}).Error
+}
+
+// narrowComponentSetsMarkerKey is the system_settings key that records that
+// narrowCalendarComponentSets has run (value: when, RFC 3339 UTC). Its presence
+// alone makes the step a no-op.
+const narrowComponentSetsMarkerKey = "migration.narrow_component_sets.v1"
+
+// legacyComponentSet is the component set every calendar was created with
+// before #170, whether its owner wanted events, tasks or both.
+const legacyComponentSet = calendar.ComponentSetBoth
+
+// narrowCalendarComponentSets gives each legacy calendar the component set its
+// contents show it is used for (#170), so task apps stop listing every calendar
+// as a task list and calendar apps every task list as a calendar. A candidate
+// is a live calendar created before the tasks.kind_introduced_at cutoff whose
+// set is exactly "VEVENT,VTODO" and that is not a subscription (a feed mirror
+// stays mixed: feed sync stores both components). Counting its live objects
+// (soft-deleted ones do not count):
+//
+//   - only VEVENTs: set "VEVENT";
+//   - only VTODOs: set "VTODO", even for the user's first calendar;
+//   - both, or none: left "VEVENT,VTODO" (mixed, or intent unknown);
+//   - any object of another component type: left alone, so nothing is ever
+//     narrowed out from under an object.
+//
+// Legacy "" rows (also both components) are not candidates.
+//
+// ONE-SHOT, unlike every other step: since #170 "VEVENT,VTODO" is also a
+// deliberate value (kind "both", a widening PATCH, a MKCALENDAR naming both or
+// no components), so re-running it would undo the widening of a narrowed
+// calendar at the next boot. The step first claims narrowComponentSetsMarkerKey
+// (INSERT … ON CONFLICT DO NOTHING) and does nothing when the row already
+// exists; the claim, the reads and every narrowing are one transaction, so the
+// marker is never written without the narrowings and a failure leaves both
+// undone (the next boot tries again). A second instance booting at the same
+// time waits on the claim and then finds the marker.
+//
+// The cutoff must already be recorded (recordTaskKindCutoff runs first); a
+// missing or unreadable one is an error, never "every calendar is legacy".
+// created_at is compared with it in Go, not in SQL: on SQLite created_at is
+// TEXT in the host's local offset, and a text comparison with a UTC cutoff
+// would be off by that offset.
+//
+// Each narrowing goes through CalendarRepository.UpdateSupportedComponents (a
+// savepoint inside this transaction): it advances the ctag and sync token and
+// writes a "collection" change-log anchor, so DAV clients see the collection
+// changed. They re-read supported-calendar-component-set only on a home-set
+// PROPFIND or a collection refresh, though (DAVx5: "Refresh collection list").
+func narrowCalendarComponentSets(db *gorm.DB, now time.Time) error {
+	var toEvents, toTasks int
+	err := db.Transaction(func(tx *gorm.DB) error {
+		claimed, err := claimNarrowingMarker(tx, now)
+		if err != nil || !claimed {
+			return err // not claimed: ran before
+		}
+		cutoff, err := readTaskKindCutoff(tx)
+		if err != nil {
+			return err
+		}
+		toEvents, toTasks, err = narrowLegacyCalendars(tx, cutoff)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if toEvents+toTasks > 0 {
+		slog.Info("data migration: narrowed the component set of legacy calendars to what they hold (#170)",
+			"event_calendars", toEvents, "task_lists", toTasks)
+	}
+	return nil
+}
+
+// claimNarrowingMarker inserts narrowComponentSetsMarkerKey (value: now, RFC
+// 3339 UTC) unless it exists (INSERT … ON CONFLICT DO NOTHING). It reports
+// whether this call wrote it; false means the narrowing ran before.
+func claimNarrowingMarker(tx *gorm.DB, now time.Time) (bool, error) {
+	return claimMarker(tx, narrowComponentSetsMarkerKey, now)
+}
+
+// claimMarker inserts the system_settings marker key (value: now, RFC 3339
+// UTC) unless it exists (INSERT … ON CONFLICT DO NOTHING). It reports whether
+// this call wrote it; false means the one-shot step ran before.
+func claimMarker(tx *gorm.DB, key string, now time.Time) (bool, error) {
+	claim := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&domain.SystemSetting{
+		Key:   key,
+		Value: now.UTC().Format(time.RFC3339Nano),
+	})
+	if claim.Error != nil {
+		return false, claim.Error
+	}
+	return claim.RowsAffected > 0, nil
+}
+
+// readTaskKindCutoff reads the recorded taskKindIntroducedAtKey. A missing or
+// unparseable value is an error, never "every calendar is legacy".
+func readTaskKindCutoff(tx *gorm.DB) (time.Time, error) {
+	var setting domain.SystemSetting
+	if err := tx.Where("key = ?", taskKindIntroducedAtKey).Take(&setting).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return time.Time{}, fmt.Errorf("%s is not recorded", taskKindIntroducedAtKey)
+		}
+		return time.Time{}, err
+	}
+	cutoff, err := time.Parse(time.RFC3339Nano, setting.Value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s: %w", taskKindIntroducedAtKey, err)
+	}
+	return cutoff, nil
+}
+
+// narrowLegacyCalendars narrows every candidate created before cutoff whose
+// contents allow it (narrowedComponentSet), through
+// CalendarRepository.UpdateSupportedComponents inside tx, in id order. It
+// returns how many became event calendars and how many task lists.
+func narrowLegacyCalendars(tx *gorm.DB, cutoff time.Time) (toEvents, toTasks int, err error) {
+	// A fresh chain per use: a stored *gorm.DB would accumulate conditions.
+	legacy := func() *gorm.DB {
+		return tx.Model(&calendar.Calendar{}).
+			Where("supported_components = ? AND subscribed = ?", legacyComponentSet, false)
+	}
+	var cals []calendar.Calendar
+	if err := legacy().Select("id", "created_at").Order("id").Find(&cals).Error; err != nil {
+		return 0, 0, err
+	}
+	if len(cals) == 0 {
+		return 0, 0, nil
+	}
+	held, err := countLegacyContents(tx, legacy().Select("id"))
+	if err != nil {
+		return 0, 0, err
+	}
+
+	repo := repository.NewCalendarRepository(tx)
+	for _, cal := range cals {
+		if !cal.CreatedAt.Before(cutoff) {
+			continue // created with a deliberate kind
+		}
+		set := narrowedComponentSet(held[cal.ID])
+		if set == "" {
+			continue
+		}
+		if err := repo.UpdateSupportedComponents(context.Background(), cal.ID, set); err != nil {
+			return toEvents, toTasks, fmt.Errorf("calendar %d: %w", cal.ID, err)
+		}
+		if set == calendar.ComponentEvent {
+			toEvents++
+		} else {
+			toTasks++
+		}
+	}
+	return toEvents, toTasks, nil
+}
+
+// legacyContents counts a calendar's live objects by component type.
+type legacyContents struct{ events, tasks, other int64 }
+
+// countLegacyContents counts the live objects of the calendars calendarIDs
+// selects (a subquery), per calendar and component type, in one query.
+// Soft-deleted objects do not count; a calendar without objects has no entry.
+func countLegacyContents(tx *gorm.DB, calendarIDs *gorm.DB) (map[uint]*legacyContents, error) {
+	var rows []struct {
+		CalendarID    uint
+		ComponentType string
+		Objects       int64
+	}
+	if err := tx.Model(&calendar.CalendarObject{}).
+		Select("calendar_id, component_type, COUNT(*) AS objects").
+		Where("calendar_id IN (?)", calendarIDs).
+		Group("calendar_id, component_type").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	held := make(map[uint]*legacyContents)
+	for _, row := range rows {
+		contents := held[row.CalendarID]
+		if contents == nil {
+			contents = &legacyContents{}
+			held[row.CalendarID] = contents
+		}
+		switch row.ComponentType {
+		case calendar.ComponentEvent:
+			contents.events += row.Objects
+		case calendar.ComponentToDo:
+			contents.tasks += row.Objects
+		default:
+			contents.other += row.Objects
+		}
+	}
+	return held, nil
+}
+
+// narrowedComponentSet is the set a legacy calendar holding contents gets: a
+// one-component set is the component's name, "VEVENT" for events only and
+// "VTODO" for tasks only. "" keeps "VEVENT,VTODO": no objects (intent
+// unknown), both kinds (mixed), or any other component type (nothing is ever
+// narrowed out from under an object).
+func narrowedComponentSet(contents *legacyContents) string {
+	if contents == nil || contents.other > 0 {
+		return ""
+	}
+	switch {
+	case contents.events > 0 && contents.tasks == 0:
+		return calendar.ComponentEvent
+	case contents.tasks > 0 && contents.events == 0:
+		return calendar.ComponentToDo
+	}
+	return ""
 }
 
 // releaseRevokedCredentialUsernames frees the usernames of CalDAV/CardDAV

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/sharing"
@@ -48,6 +49,16 @@ func (r *CalendarRepository) Create(ctx context.Context, cal *calendar.Calendar)
 // notFoundAsDomain marks a missing calendar row as calendar.ErrNotFound, so the
 // use cases can tell "no such calendar" (404) from a storage failure (500).
 // gorm.ErrRecordNotFound stays in the chain for callers that test for it.
+// unstorableUUID is the answer for a lookup key PostgreSQL cannot store as
+// text: invalid UTF-8 or a NUL byte (a percent-encoded %00 in a URL). It is
+// not a row, so it is a miss, not a storage failure (a 500 on PostgreSQL).
+func unstorableUUID(uuid string) error {
+	if utf8.ValidString(uuid) && !strings.ContainsRune(uuid, 0) {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", calendar.ErrNotFound, gorm.ErrRecordNotFound)
+}
+
 func notFoundAsDomain(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("%w: %w", calendar.ErrNotFound, err)
@@ -68,6 +79,9 @@ func (r *CalendarRepository) GetByID(ctx context.Context, id uint) (*calendar.Ca
 // GetByUUID retrieves a calendar by its UUID. A missing row is
 // calendar.ErrNotFound.
 func (r *CalendarRepository) GetByUUID(ctx context.Context, uuid string) (*calendar.Calendar, error) {
+	if err := unstorableUUID(uuid); err != nil {
+		return nil, err
+	}
 	var cal calendar.Calendar
 	err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&cal).Error
 	if err != nil {
@@ -84,6 +98,29 @@ func (r *CalendarRepository) ListByUserID(ctx context.Context, userID uint) ([]*
 		Order("created_at ASC").
 		Find(&calendars).Error
 	return calendars, err
+}
+
+// ListReadableCalendarIDs returns the calendars userID can read (#170) in one
+// SELECT: owned ones (a subscribed mirror is owned too) and those named by a
+// live share row (calendar_shares.deleted_at IS NULL, the same rows
+// GetUserPermission accepts), ordered by id. Soft-deleted calendars are
+// skipped by the model's scope. Only the ReadableCalendar columns are read.
+func (r *CalendarRepository) ListReadableCalendarIDs(ctx context.Context, userID uint) ([]calendar.ReadableCalendar, error) {
+	shared := r.db.WithContext(ctx).
+		Model(&sharing.CalendarShare{}).
+		Select("calendar_id").
+		Where("shared_with_id = ?", userID)
+	readable := []calendar.ReadableCalendar{}
+	err := r.db.WithContext(ctx).
+		Model(&calendar.Calendar{}).
+		Select("id", "uuid", "name", "color", "supported_components").
+		Where("user_id = ? OR id IN (?)", userID, shared).
+		Order("id").
+		Find(&readable).Error
+	if err != nil {
+		return nil, err
+	}
+	return readable, nil
 }
 
 // Update updates an existing calendar
@@ -106,6 +143,30 @@ func (r *CalendarRepository) UpdateMetadata(ctx context.Context, cal *calendar.C
 			return err
 		}
 		return r.recordChange(tx, cal.ID, "", "", "collection")
+	})
+}
+
+// UpdateSupportedComponents stores a calendar's component set (#170) and
+// records the collection change (ctag, sync token, "collection" change-log
+// anchor) in the same transaction, so a client that sees the new ctag also
+// finds the new supported-calendar-component-set. Like UpdateMetadata it writes
+// only its own column (plus updated_at), never the sync_token/ctag of a struct
+// the caller loaded earlier. The widen-only PATCH and the one-shot narrowing
+// migration both write the set through it. A calendar that does not exist (or
+// is soft-deleted) is calendar.ErrNotFound and nothing is written, not even a
+// change-log row.
+func (r *CalendarRepository) UpdateSupportedComponents(ctx context.Context, id uint, set string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updated := tx.Model(&calendar.Calendar{}).
+			Where("id = ?", id).
+			Update("supported_components", set)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected == 0 {
+			return calendar.ErrNotFound
+		}
+		return r.recordChange(tx, id, "", "", "collection")
 	})
 }
 
@@ -135,12 +196,15 @@ func (r *CalendarRepository) CountByUserID(ctx context.Context, userID uint) (in
 	return count, err
 }
 
-// GetEventCount returns the number of events in a calendar
+// GetEventCount returns the number of events (ComponentEvent objects) in a
+// calendar. Tasks (VTODO) are not counted (#170): the count is the
+// `event_count` of the calendar list, /search, MCP list_calendars and the
+// subscription views, and a task list must not report its tasks as events.
 func (r *CalendarRepository) GetEventCount(ctx context.Context, calendarID uint) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
 		Model(&calendar.CalendarObject{}).
-		Where("calendar_id = ?", calendarID).
+		Where("calendar_id = ? AND component_type = ?", calendarID, calendar.ComponentEvent).
 		Count(&count).Error
 	return count, err
 }
@@ -195,6 +259,46 @@ func (r *CalendarRepository) UpdateCalendarObject(ctx context.Context, obj *cale
 	})
 }
 
+// UpdateCalendarObjectIfETag writes obj (every column but the identity ones,
+// UpdatedAt as the caller's clock says) over the live row with obj.ID only
+// while that row still carries loadedETag, the ETag obj was loaded with (obj
+// itself holds the new one), and records the "modified" change in the same
+// transaction. It is one conditional UPDATE with explicit columns, never
+// Save, whose fall-back to an INSERT brings a row that a concurrent DELETE
+// removed back to life (#170). Nothing written is calendar.ErrNotFound when no
+// live row is left (deleted meanwhile, which records nothing) and
+// calendar.ErrETagMismatch when another writer changed the row first.
+func (r *CalendarRepository) UpdateCalendarObjectIfETag(ctx context.Context, obj *calendar.CalendarObject, loadedETag string) error {
+	obj.UpdatedAt = time.Now()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&calendar.CalendarObject{}).
+			Where("id = ? AND e_tag = ?", obj.ID, loadedETag).
+			Select("*").
+			Omit("id", "uuid", "calendar_id", "created_at", "deleted_at").
+			UpdateColumns(obj)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return noRowWritten(tx, obj.ID)
+		}
+		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "modified")
+	})
+}
+
+// noRowWritten tells a conditional write that matched nothing why: no live
+// row any more (ErrNotFound) or a row with another ETag (ErrETagMismatch).
+func noRowWritten(tx *gorm.DB, id uint) error {
+	var live int64
+	if err := tx.Model(&calendar.CalendarObject{}).Where("id = ?", id).Count(&live).Error; err != nil {
+		return err
+	}
+	if live == 0 {
+		return calendar.ErrNotFound
+	}
+	return calendar.ErrETagMismatch
+}
+
 // MoveCalendarObject reassigns an object to a new calendar and records both the
 // target "modified" change and the source "deleted" change in a single
 // transaction. obj.CalendarID must already point at the target calendar.
@@ -215,11 +319,33 @@ func (r *CalendarRepository) MoveCalendarObject(ctx context.Context, obj *calend
 	})
 }
 
-// DeleteCalendarObject deletes a calendar object
+// DeleteCalendarObject soft-deletes a calendar object (GORM's deleted_at) and
+// records the "deleted" change. The row goes for good with its calendar.
 func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&calendar.CalendarObject{}, obj.ID).Error; err != nil {
 			return err
+		}
+		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "deleted")
+	})
+}
+
+// HardDeleteCalendarObject removes the object's row for good (an Unscoped
+// DELETE, no tombstone) and records the "deleted" change in the same
+// transaction. The change-log row keeps the path and UID, which is all a
+// sync-collection REPORT needs to answer the href with a 404, so nothing else
+// has to survive. Nothing deleted (the row is already gone, e.g. a concurrent
+// delete won, or it only survives as a soft-deleted tombstone) is
+// calendar.ErrNotFound with nothing recorded, so the loser of a race does not
+// log a second removal.
+func (r *CalendarRepository) HardDeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		deleted := tx.Unscoped().Where("deleted_at IS NULL").Delete(&calendar.CalendarObject{}, obj.ID)
+		if deleted.Error != nil {
+			return deleted.Error
+		}
+		if deleted.RowsAffected == 0 {
+			return calendar.ErrNotFound
 		}
 		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "deleted")
 	})
@@ -279,6 +405,9 @@ func (r *CalendarRepository) GetChangesSinceToken(ctx context.Context, calendarI
 
 // GetCalendarObjectByUUID retrieves a calendar object by UUID
 func (r *CalendarRepository) GetCalendarObjectByUUID(ctx context.Context, uuid string) (*calendar.CalendarObject, error) {
+	if err := unstorableUUID(uuid); err != nil {
+		return nil, err
+	}
 	var obj calendar.CalendarObject
 	err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&obj).Error
 	if err != nil {
@@ -420,6 +549,169 @@ func (r *CalendarRepository) SearchEvents(ctx context.Context, q calendar.EventS
 		return nil, nil
 	}
 	return results[q.Offset:], nil
+}
+
+// taskOrder is the stable server order of every task list (#170): due date
+// ascending with undated tasks last, then priority ascending with
+// unprioritised tasks last, then created_at, then id as the final tie-breaker
+// so equal rows cannot shuffle between pages. NULLS LAST is spelled out as
+// "(col IS NULL), col" because SQLite and PostgreSQL disagree on where NULLs
+// sort by default (SQLite first, PostgreSQL last).
+const taskOrder = "(due_at IS NULL), due_at, (priority IS NULL), priority, created_at, id"
+
+// ListTasks implements the task list behind GET /api/v1/calendars/:id/tasks
+// (and the cross-list GET /api/v1/tasks): the VTODO objects of q.CalendarIDs,
+// filtered by status, text and due date in SQL on the denormalized task
+// columns, one page plus the total.
+//
+// The total is the page length whenever the page itself proves it (a page
+// shorter than the limit that is not empty, or the first page coming back
+// empty), so the usual small list costs one query; otherwise it is a COUNT.
+func (r *CalendarRepository) ListTasks(ctx context.Context, q calendar.TaskQuery) ([]*calendar.CalendarObject, int64, error) {
+	statusWhere, statusArgs, err := taskStatusCondition(q.Status)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(q.CalendarIDs) == 0 {
+		return nil, 0, nil
+	}
+	offset := max(q.Offset, 0)
+
+	var tasks []*calendar.CalendarObject
+	if q.Limit > 0 {
+		page := r.matchingTasks(ctx, q, statusWhere, statusArgs).Order(taskOrder).Limit(q.Limit).Offset(offset)
+		if err := page.Find(&tasks).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+
+	// A short page ends the result, so it tells the total, unless it is empty
+	// because the offset lies past the end (then only a COUNT knows).
+	if q.Limit > 0 && len(tasks) < q.Limit && (len(tasks) > 0 || offset == 0) {
+		return tasks, int64(offset + len(tasks)), nil
+	}
+	var total int64
+	if err := r.matchingTasks(ctx, q, statusWhere, statusArgs).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	return tasks, total, nil
+}
+
+// taskStatusCondition is the SQL condition of a task status filter (empty for
+// TaskFilterAll); an unknown filter is an error.
+func taskStatusCondition(filter string) (string, []interface{}, error) {
+	switch filter {
+	case calendar.TaskFilterOpen:
+		// Not done. NULL/"" can only be a row the backfill could not decode;
+		// the API reports it as needs-action, so it is open here too.
+		return "(status IS NULL OR status NOT IN ?)", []interface{}{calendar.TaskDoneStatuses()}, nil
+	case calendar.TaskFilterCompleted:
+		return "status IN ?", []interface{}{calendar.TaskDoneStatuses()}, nil
+	case calendar.TaskFilterAll:
+		return "", nil, nil
+	}
+	return "", nil, fmt.Errorf("unknown task status filter %q", filter)
+}
+
+// matchingTasks starts a fresh query of the VTODO objects q selects: its
+// calendars, the status condition, the text and the due bounds, without
+// paging or order. Fresh per call: a reused *gorm.DB would accumulate
+// conditions.
+func (r *CalendarRepository) matchingTasks(ctx context.Context, q calendar.TaskQuery, statusWhere string, statusArgs []interface{}) *gorm.DB {
+	db := r.db.WithContext(ctx).
+		Model(&calendar.CalendarObject{}).
+		Where("calendar_id IN ?", q.CalendarIDs).
+		Where("component_type = ?", calendar.ComponentToDo)
+	if statusWhere != "" {
+		db = db.Where(statusWhere, statusArgs...)
+	}
+	if q.Text != "" {
+		textWhere, textArgs := foldedLike(q.Text, "summary", "description")
+		db = db.Where(textWhere, textArgs...)
+	}
+	// UTC-normalised like SearchEvents: under SQLite these are TEXT
+	// columns compared lexicographically, so a bound with a non-UTC
+	// offset would shift the range by that offset.
+	if q.DueAfter != nil {
+		db = db.Where("due_at >= ?", q.DueAfter.UTC())
+	}
+	if q.DueBefore != nil {
+		db = db.Where("due_at < ?", q.DueBefore.UTC())
+	}
+	return db
+}
+
+// taskCountsSelect is the conditional aggregation behind CountTasks, one row
+// per calendar. "Open" is the ListTasks open predicate (not done, a NULL or ""
+// status included), "completed" its completed one, so the counts agree with
+// the list filters. An all-day task (is_all_day true) compares its due date,
+// stored as midnight UTC, with as_of's date; any other task (false, or NULL in
+// a row no write path produced) is timed and compares instants. A NULL due_at
+// makes every due comparison NULL, so an undated task is never overdue or due
+// today. Placeholders, in order: done statuses (completed), done (open), done,
+// true, Date, false, Now (overdue), done, true, Date, NextDate, false, Start,
+// End (due today).
+const taskCountsSelect = `calendar_id,
+	SUM(CASE WHEN status IN ? THEN 1 ELSE 0 END) AS completed_count,
+	SUM(CASE WHEN status IS NULL OR status NOT IN ? THEN 1 ELSE 0 END) AS open_count,
+	SUM(CASE WHEN (status IS NULL OR status NOT IN ?) AND (
+		(is_all_day = ? AND due_at < ?) OR
+		((is_all_day IS NULL OR is_all_day = ?) AND due_at < ?)
+	) THEN 1 ELSE 0 END) AS overdue_count,
+	SUM(CASE WHEN (status IS NULL OR status NOT IN ?) AND (
+		(is_all_day = ? AND due_at >= ? AND due_at < ?) OR
+		((is_all_day IS NULL OR is_all_day = ?) AND due_at >= ? AND due_at < ?)
+	) THEN 1 ELSE 0 END) AS due_today_count`
+
+// CountTasks implements the counts behind GET /api/v1/tasks/summary (#170):
+// one grouped query over the denormalized task columns of calendarIDs, so the
+// numbers do not depend on how many tasks a list page returns. "Today" is
+// calendar.TaskDayOf(asOf); every bound is UTC, like ListTasks (under SQLite
+// these are TEXT columns compared lexicographically).
+func (r *CalendarRepository) CountTasks(ctx context.Context, calendarIDs []uint, asOf time.Time) (calendar.TaskCounts, error) {
+	counts := calendar.TaskCounts{ByCalendar: map[uint]calendar.TaskCount{}}
+	if len(calendarIDs) == 0 {
+		return counts, nil
+	}
+	day := calendar.TaskDayOf(asOf)
+	done := calendar.TaskDoneStatuses()
+
+	var rows []struct {
+		CalendarID     uint
+		OpenCount      int64
+		OverdueCount   int64
+		DueTodayCount  int64
+		CompletedCount int64
+	}
+	err := r.db.WithContext(ctx).
+		Model(&calendar.CalendarObject{}).
+		Select(taskCountsSelect,
+			done,
+			done,
+			done, true, day.Date, false, day.Now,
+			done, true, day.Date, day.NextDate, false, day.Start, day.End,
+		).
+		Where("calendar_id IN ?", calendarIDs).
+		Where("component_type = ?", calendar.ComponentToDo).
+		Group("calendar_id").
+		Scan(&rows).Error
+	if err != nil {
+		return calendar.TaskCounts{}, err
+	}
+	for _, row := range rows {
+		count := calendar.TaskCount{
+			Open:      row.OpenCount,
+			Overdue:   row.OverdueCount,
+			DueToday:  row.DueTodayCount,
+			Completed: row.CompletedCount,
+		}
+		counts.ByCalendar[row.CalendarID] = count
+		counts.Total.Open += count.Open
+		counts.Total.Overdue += count.Overdue
+		counts.Total.DueToday += count.DueToday
+		counts.Total.Completed += count.Completed
+	}
+	return counts, nil
 }
 
 // RecordChange advances the calendar's sync token and writes a matching

@@ -43,14 +43,8 @@ func (uc *DeleteCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		return calendar.Invalidf("please type DELETE to confirm calendar deletion")
 	}
 
-	// Check if this is the last calendar
-	count, err := uc.repo.CountByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("failed to count calendars: %w", err)
-	}
-
-	if count <= 1 {
-		return calendar.Invalidf("cannot delete your last calendar")
+	if err := uc.guardLastEventCalendar(ctx, userID, cal); err != nil {
+		return err
 	}
 
 	// One transaction removes the calendar and everything in it: events,
@@ -60,4 +54,34 @@ func (uc *DeleteCalendarUseCase) Execute(ctx context.Context, userID uint, calen
 		return fmt.Errorf("failed to delete calendar: %w", err)
 	}
 	return nil
+}
+
+// guardLastEventCalendar is the last-calendar guard, per kind (#170): it
+// refuses to delete the user's last OWNED calendar that can hold events
+// (calendar.SupportsComponent with VEVENT, so a mixed VEVENT,VTODO calendar and
+// a legacy "" one count), so the user always keeps somewhere to put events. A
+// calendar that cannot hold events, i.e. a VTODO-only task list, is never
+// protected, the user's last one included (the Tasks page has an empty state
+// for a user without one), and does not count as a calendar that remains.
+//
+// Only calendars the user owns count (ListByUserID returns owner rows only, and
+// the UserID test keeps it so); one shared with them can be taken away by its
+// owner at any time. A subscribed calendar is owned and stores VEVENT, so it
+// counts, as it did when the guard counted every calendar.
+func (uc *DeleteCalendarUseCase) guardLastEventCalendar(ctx context.Context, userID uint, target *calendar.Calendar) error {
+	if !calendar.SupportsComponent(target, calendar.ComponentEvent) {
+		return nil
+	}
+
+	owned, err := uc.repo.ListByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to list calendars: %w", err)
+	}
+	for _, other := range owned {
+		if other != nil && other.UserID == userID && other.ID != target.ID &&
+			calendar.SupportsComponent(other, calendar.ComponentEvent) {
+			return nil
+		}
+	}
+	return calendar.Invalidf("cannot delete your last calendar")
 }

@@ -17,7 +17,14 @@ var farFuture = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
 // CalendarObject from its ICalData. It is the single source of truth used by
 // all write paths (REST create/update, DAV PUT, import) so the denormalized
 // fields never drift between paths. It does NOT touch ETag — callers bump that
-// explicitly via NewETag().
+// explicitly via NewETag(). For a VTODO it also fills the task columns
+// (Status, DueAt, CompletedAt, PercentComplete, Priority); a malformed
+// optional task property leaves its column nil rather than failing.
+//
+// Summary, Description and Location hold the master's plain text: the RFC 5545
+// TEXT escaping is undone (UnescapeText), so a value the API returns can be
+// written back as is. The boot data migration unescapeTextColumns re-derives
+// rows stored before.
 //
 // Returns an error when ICalData is not a decodable VCALENDAR containing at
 // least one VEVENT/VTODO component.
@@ -54,9 +61,13 @@ func (o *CalendarObject) PopulateDenormFieldsFromICal() error {
 	}
 
 	primary := masters[0]
-	o.Summary = propValue(primary, ical.PropSummary)
-	o.Description = propValue(primary, ical.PropDescription)
-	o.Location = propValue(primary, ical.PropLocation)
+	// Plain text, not the iCalendar's escaped TEXT form (text.go): these
+	// columns are what the REST API, MCP and search show and match.
+	o.Summary = TextPropValue(primary, ical.PropSummary)
+	o.Description = TextPropValue(primary, ical.PropDescription)
+	o.Location = TextPropValue(primary, ical.PropLocation)
+	// The UID stays exactly as stored: it is an identifier compared with
+	// other raw UIDs (DAV no-uid-conflict, the change log), not shown text.
 	if o.UID == "" {
 		o.UID = propValue(primary, ical.PropUID)
 	}
@@ -87,6 +98,15 @@ func (o *CalendarObject) PopulateDenormFieldsFromICal() error {
 		if p.Params.Get(ical.ParamValue) == string(ical.ValueDate) {
 			o.IsAllDay = true
 		}
+	}
+
+	// Task columns (denorm_task.go): derived from a VTODO primary, which also
+	// re-derives IsAllDay from DUE (else DTSTART); cleared otherwise, so a PUT
+	// that turns a task into an event keeps no stale task values.
+	if primary.Name == ical.CompToDo {
+		o.populateTaskFields(primary)
+	} else {
+		o.clearTaskFields()
 	}
 
 	o.RecurrenceEndTime = recurrenceEndTime(masters)

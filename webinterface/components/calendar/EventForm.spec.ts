@@ -272,3 +272,45 @@ describe('EventForm weekday chips follow first_day_of_week', () => {
     expect(submittedRecurrence(wrapper)?.by_day).toEqual(['MO', 'SA']);
   });
 });
+
+// SCOPE (#170): task lists (`kind: 'tasks'`) arrive in the calendar store next
+// to the calendars. The calendar select reads writableCalendars, which is built
+// on eventCalendars, so it never offers a task list — and the default target of
+// a new event is never one (the server would answer 400 "This calendar does not
+// store events").
+describe('EventForm calendar select never offers a task list', () => {
+  function mountWithCalendars(calendars: Array<Record<string, unknown>>) {
+    const store = useCalendarStore();
+    store.calendars = calendars.map((c) => ({
+      path: `/c/${c.id}`,
+      color: '#3b82f6',
+      created_at: '',
+      updated_at: '',
+      ...c,
+    })) as never;
+    const wrapper = mount(EventForm, { props: {}, shallow: true, global: { plugins: [pinia] } });
+    return wrapper.vm as unknown as FormVm & { calendarSelectOptions: { id: string; name: string }[] };
+  }
+
+  it('lists event and mixed calendars only and defaults to the first of them', () => {
+    const vm = mountWithCalendars([
+      { id: 1, uuid: 'u1', name: 'Tasks', kind: 'tasks' }, // first in the list
+      { id: 2, uuid: 'u2', name: 'Personal', kind: 'events' },
+      { id: 3, uuid: 'u3', name: 'Team tasks', kind: 'tasks', shared: true, permission: 'read-write' },
+      { id: 4, uuid: 'u4', name: 'Old mixed', kind: 'both' },
+    ]);
+
+    // REVERT PROOF: without the kind filter "Tasks" is listed AND preselected.
+    expect(vm.calendarSelectOptions.map((c) => c.name)).toEqual(['Personal', 'Old mixed']);
+    expect(vm.form.calendar_id).toBe('2');
+  });
+
+  it('offers nothing (and preselects nothing) when the user only has task lists', () => {
+    const vm = mountWithCalendars([
+      { id: 1, uuid: 'u1', name: 'Tasks', kind: 'tasks' },
+    ]);
+
+    expect(vm.calendarSelectOptions).toEqual([]);
+    expect(vm.form.calendar_id).toBe('');
+  });
+});

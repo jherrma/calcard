@@ -1,3 +1,12 @@
+/**
+ * What a calendar stores (#170), as the server reports it on every calendar
+ * response: `events` (VEVENT only), `tasks` (VTODO only: a task list) or
+ * `both` (the legacy mixed set, also every subscription). `POST /calendars`
+ * takes it (absent = `events`); `PATCH /calendars/:id` can only widen it to
+ * `both` (409 on narrowing).
+ */
+export type CalendarKind = 'events' | 'tasks' | 'both';
+
 export interface Calendar {
   id: string;
   uuid: string;
@@ -8,6 +17,15 @@ export interface Calendar {
   timezone?: string;
   shared?: boolean;
   permission?: string;
+  /**
+   * `tasks` = a task list: never shown in the Calendar section and never asked
+   * for events. Read it through `calendarStore.eventCalendars`, not by hand.
+   * The server always sends it; absent (an older server or fixture) counts as
+   * an event calendar.
+   */
+  kind?: CalendarKind;
+  /** The stored component set, e.g. `VEVENT`, `VTODO`, `VEVENT,VTODO`. Informational; `kind` is what the UI reads. */
+  supported_components?: string;
   /**
    * True when this calendar mirrors a remote iCalendar feed (story 100). The
    * server refuses every write to it — from its owner as much as from a

@@ -59,6 +59,7 @@ async function mountPanel(props: {
   resourceType?: ShareResourceType;
   resourceUuid?: string;
   canManage?: boolean;
+  resourceNoun?: string;
 } = {}) {
   const pinia = createTestingPinia({ stubActions: true });
   const wrapper = mount(SharePanel, {
@@ -66,6 +67,7 @@ async function mountPanel(props: {
       resourceType: props.resourceType ?? 'calendar',
       resourceUuid: props.resourceUuid ?? 'cal-uuid-1',
       ...(props.canManage === undefined ? {} : { canManage: props.canManage }),
+      ...(props.resourceNoun === undefined ? {} : { resourceNoun: props.resourceNoun }),
     },
     shallow: true,
     // Stubs would otherwise swallow the copy we assert on (it sits in the
@@ -258,5 +260,32 @@ describe('bulk revoke', () => {
     // REVERT PROOF: dropping `reason` leaves "1 share could not be removed",
     // with a row still on screen and no explanation for it.
     expect(toastSpies.error).toHaveBeenCalledWith('1 share could not be removed: share not found');
+  });
+});
+
+describe('resource noun (#170 story 27)', () => {
+  it('calls a task list a "task list" (it is a calendar to the API)', async () => {
+    const { wrapper, store } = await mountPanel({ resourceNoun: 'task list' });
+    store.sharesError = null;
+    store.shares = [];
+    await nextTick();
+
+    expect(store.fetchShares).toHaveBeenCalledWith('calendar', 'cal-uuid-1');
+    expect(wrapper.text()).toContain('This task list is private');
+    expect(wrapper.text()).not.toContain('calendar');
+
+    store.shares = [share('s1', 'a@example.com')];
+    await nextTick();
+    (wrapper.vm as unknown as PanelVm).confirmRemove(store.shares[0]!);
+    expect(lastConfirm().message).toBe("Remove User s1's access? This was the only share, so the task list becomes private again.");
+  });
+
+  it('keeps "calendar" and "address book" without it', async () => {
+    const { wrapper, store } = await mountPanel({ resourceType: 'addressbook' });
+    store.sharesError = null;
+    store.shares = [];
+    await nextTick();
+
+    expect(wrapper.text()).toContain('This address book is private');
   });
 });

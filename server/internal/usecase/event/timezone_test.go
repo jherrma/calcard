@@ -148,7 +148,7 @@ func TestUpdateEvent_AddsMissingVTimezone(t *testing.T) {
 	const legacy = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//CalCard//EN\r\nBEGIN:VEVENT\r\n" +
 		"UID:legacy\r\nDTSTAMP:20260101T000000Z\r\nDTSTART;TZID=Europe/Berlin:20300601T100000\r\n" +
 		"DTEND;TZID=Europe/Berlin:20300601T110000\r\nSUMMARY:old\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
-	repo := &stubCalendarRepo{obj: &calendar.CalendarObject{UUID: "legacy", UID: "legacy", ICalData: legacy}}
+	repo := &stubCalendarRepo{obj: &calendar.CalendarObject{UUID: "legacy", UID: "legacy", ComponentType: calendar.ComponentEvent, ICalData: legacy}}
 	summary := "new"
 	got, err := NewUpdateEventUseCase(repo).Execute(context.Background(), UpdateEventInput{UUID: "legacy", Summary: &summary, Scope: "all"})
 	if err != nil {

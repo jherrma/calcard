@@ -14,6 +14,8 @@ func NewGetEventUseCase(calendarRepo calendar.CalendarRepository) *GetEventUseCa
 	return &GetEventUseCase{calendarRepo: calendarRepo}
 }
 
+// Execute returns the event with the given UUID; a task under that UUID is
+// ErrNotFound (#170).
 func (uc *GetEventUseCase) Execute(ctx context.Context, uuid string) (*calendar.CalendarObject, error) {
-	return uc.calendarRepo.GetCalendarObjectByUUID(ctx, uuid)
+	return loadEvent(ctx, uc.calendarRepo, uuid)
 }

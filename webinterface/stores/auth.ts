@@ -48,6 +48,18 @@ interface AuthState {
   refreshTimer: ReturnType<typeof setTimeout> | null;
 }
 
+// The tasks store (#170) caches the previous user's rows, badge counts and
+// filters too. It is reached through a lazy import: a static one closes the
+// cycle useApi -> auth -> tasks -> calendars -> useApi, after which
+// `mockNuxtImport('useApi')` no longer reaches the calendars store in specs.
+// The module is already in the bundle (the tasks page imports it), so the
+// import settles within a microtask or two, well before another user can sign in.
+function resetTasksStore() {
+  void import("~/stores/tasks")
+    .then(({ useTasksStore }) => useTasksStore().reset())
+    .catch((e: unknown) => console.warn("Could not reset the tasks store", e));
+}
+
 export const useAuthStore = defineStore("auth", {
   state: (): AuthState => ({
     user: null,
@@ -250,6 +262,7 @@ export const useAuthStore = defineStore("auth", {
       // client-side (no page reload), so Pinia survives and the next user in this
       // tab would otherwise inherit the previous user's preferences (story 103).
       usePreferencesStore().reset();
+      resetTasksStore();
     },
 
     async initAuth() {

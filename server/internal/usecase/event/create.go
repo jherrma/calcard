@@ -33,6 +33,11 @@ func NewCreateEventUseCase(calendarRepo calendar.CalendarRepository) *CreateEven
 }
 
 func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInput) (*calendar.CalendarObject, error) {
+	// A task list (supported_components "VTODO") does not take events (#170).
+	// Checked first: no other correction to the request would make it succeed.
+	if err := requireEventCalendar(ctx, uc.calendarRepo, input.CalendarID); err != nil {
+		return nil, err
+	}
 	// A missing (or JSON null) start/end arrives as the zero time. Without this
 	// check two zero times pass the ordering test below and the event is stored
 	// at 0001-01-01 (F13).
@@ -52,7 +57,7 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 	}
 
 	eventUUID := uuid.New().String()
-	eventUID := fmt.Sprintf("%s@calcard.io", eventUUID)
+	eventUID := fmt.Sprintf("%s@%s", eventUUID, calendar.UIDDomain)
 
 	// Convert times to the named IANA timezone so go-ical produces TZID parameters
 	// (generateICal adds the matching VTIMEZONE).
@@ -96,7 +101,7 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 
 func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (string, error) {
 	cal := ical.NewCalendar()
-	cal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
+	cal.Props.SetText(ical.PropProductID, calendar.ProductID)
 	cal.Props.SetText(ical.PropVersion, "2.0")
 
 	event := ical.NewEvent()
@@ -104,7 +109,8 @@ func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (
 	// DTSTAMP must be UTC (RFC 5545 §3.8.7.2). go-ical writes the "Z" form only
 	// for time.UTC; a time.Now() in time.Local becomes DTSTAMP;TZID=Local:… (F04).
 	event.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
-	event.Props.SetText(ical.PropSummary, input.Summary)
+	// Text is escaped once, by calendar.NewTextProp (RFC 5545 §3.3.11).
+	event.Props.Set(calendar.NewTextProp(ical.PropSummary, input.Summary))
 
 	if input.IsAllDay {
 		event.Props.SetDate(ical.PropDateTimeStart, input.Start)
@@ -115,10 +121,10 @@ func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (
 	}
 
 	if input.Description != "" {
-		event.Props.SetText(ical.PropDescription, input.Description)
+		event.Props.Set(calendar.NewTextProp(ical.PropDescription, input.Description))
 	}
 	if input.Location != "" {
-		event.Props.SetText(ical.PropLocation, input.Location)
+		event.Props.Set(calendar.NewTextProp(ical.PropLocation, input.Location))
 	}
 	if input.RRule != "" {
 		event.Props.Set(&ical.Prop{

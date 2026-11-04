@@ -65,6 +65,12 @@ func (m *mockCalendarRepo) DeleteCalendarObject(_ context.Context, obj *calendar
 	return nil
 }
 
+// HardDeleteCalendarObject is never called by the import (its replace mode
+// uses DeleteCalendarObject); it only completes the interface.
+func (m *mockCalendarRepo) HardDeleteCalendarObject(context.Context, *calendar.CalendarObject) error {
+	panic("the calendar import does not hard-delete objects")
+}
+
 // Unused interface methods — stubs to satisfy calendar.CalendarRepository.
 func (m *mockCalendarRepo) Create(context.Context, *calendar.Calendar) error { return nil }
 func (m *mockCalendarRepo) GetByID(context.Context, uint) (*calendar.Calendar, error) {
@@ -81,10 +87,16 @@ func (m *mockCalendarRepo) GetEventCount(context.Context, uint) (int64, error)  
 func (m *mockCalendarRepo) GetByPath(context.Context, uint, string) (*calendar.Calendar, error) {
 	return nil, nil
 }
+func (m *mockCalendarRepo) UpdateSupportedComponents(context.Context, uint, string) error {
+	return nil
+}
 func (m *mockCalendarRepo) GetCalendarObjectByPath(context.Context, uint, string) (*calendar.CalendarObject, error) {
 	return nil, nil
 }
 func (m *mockCalendarRepo) UpdateCalendarObject(context.Context, *calendar.CalendarObject) error {
+	return nil
+}
+func (m *mockCalendarRepo) UpdateCalendarObjectIfETag(context.Context, *calendar.CalendarObject, string) error {
 	return nil
 }
 func (m *mockCalendarRepo) MoveCalendarObject(context.Context, *calendar.CalendarObject, uint) error {
@@ -98,6 +110,15 @@ func (m *mockCalendarRepo) RecordChange(context.Context, uint, string, string, s
 }
 func (m *mockCalendarRepo) ListEvents(context.Context, uint, time.Time, time.Time) ([]*calendar.CalendarObject, error) {
 	return nil, nil
+}
+func (m *mockCalendarRepo) ListTasks(context.Context, calendar.TaskQuery) ([]*calendar.CalendarObject, int64, error) {
+	return nil, 0, nil
+}
+func (m *mockCalendarRepo) ListReadableCalendarIDs(context.Context, uint) ([]calendar.ReadableCalendar, error) {
+	return nil, nil
+}
+func (m *mockCalendarRepo) CountTasks(context.Context, []uint, time.Time) (calendar.TaskCounts, error) {
+	return calendar.TaskCounts{}, nil
 }
 func (m *mockCalendarRepo) SearchEvents(context.Context, calendar.EventSearchQuery) ([]*calendar.CalendarObject, error) {
 	return nil, nil

@@ -13,6 +13,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
 ├── README.md                # Quick start, deployment, API doc pointers
 ├── CONFIGURATION.md         # Every YAML key and CALDAV_* environment variable
 ├── STORIES.md               # Implementation tracker + the consolidated remaining-work list
+├── docs/                    # README screenshots; release-notes/ = drafts for the GitHub release body
 ├── docker-compose/          # Example compose files (SQLite, PostgreSQL) using herrj/calcard
 ├── stories/                 # User stories for implementation
 │   ├── backend/             # Backend stories (Go server)
@@ -34,22 +35,26 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
     │   ├── auth/            # Login, register, setup, forgot/reset password, OAuth callback, verify
     │   ├── calendar/        # Calendar view with FullCalendar
     │   ├── contacts/        # Contact list with search, grouping, detail panel
+    │   ├── tasks/           # Tasks section (#170): list sidebar, toolbar, quick-add, grouped list; ?list=<calendar uuid>
     │   ├── search.vue       # Full global-search results page (?q=…)
     │   └── settings/        # Profile, appearance (theme + accent), calendar, credentials, MCP access, sharing, admin, …
     ├── components/
     │   ├── auth/            # PasswordStrength
     │   ├── calendar/        # CalendarSidebar, CalendarToolbar, EventForm, Event*Dialog, RecurrenceScopeDialog
     │   ├── contacts/        # ContactsSidebar, ContactListItem, AlphabetNavigation
+    │   ├── tasks/           # TasksSidebar, TaskToolbar, TaskQuickAdd, TaskList, TaskGroupHeader, TaskRow, TaskCheck,
+    │   │                    #   TaskEmptyState, TaskForm, Task*Dialog, AddTaskListDialog, TaskListSettingsDialog (#170)
     │   ├── dashboard/       # WidgetCard, TodayAgendaCard, UpcomingEventsCard, MiniCalendarCard, RecentContacts*, QuickStatsCard
     │   ├── settings/        # DavCredentialManager, DavUrlBox (copyable /dav/<username>/… URLs)
     │   ├── sharing/         # SharePanel, PublicLinkPanel, ShareDialog (calendars + address books)
-    │   └── common/          # AppHeader, AppSidebar, GlobalSearch, Search*, HighlightText, ThemeToggle, LoadingSpinner, SkeletonList
-    ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard, preferences, search, sharing
+    │   └── common/          # AppHeader, AppSidebar (Tasks entry + overdue badge), GlobalSearch, Search*, HighlightText, ThemeToggle,
+    │                        #   LoadingSpinner, SkeletonList, ActionToast ("Task completed" + Undo)
+    ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard, preferences, search, sharing, tasks
     ├── composables/         # useApi, useAppToast, useTheme (light/dark/system), useAccentColor — both singletons
-    ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, theme, accent, …
+    ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, theme, accent, tasks, taskForm, taskLists, …
     ├── middleware/           # auth (requires login), guest (redirects if logged in)
     ├── layouts/             # default (sidebar + header), auth (centered card)
-    ├── types/               # TypeScript interfaces: auth, calendar, contacts, search, api
+    ├── types/               # TypeScript interfaces: auth, calendar, contacts, search, api, tasks
     └── plugins/             # PrimeVue service registration, theme boot (story 046)
 ```
 
@@ -128,7 +133,7 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
 
 - `useApi()` composable wraps `$fetch.create()` with auth headers and response unwrapping
 - Two response shapes. Only `/auth/*` (setup, register, login, refresh, logout, verify, forgot/reset password, OAuth link), `/system/*`, `/users/me` (+ password, preferences), `/app-passwords`, `/about/open-source` and `GET /health` wrap their payload in `{ "status": "ok", "data": ... }` (`SuccessResponse`); the `onResponse` handler in `useApi` unwraps `.data` automatically
-- **Everything else returns raw JSON**, which comes through as-is: calendars (incl. shares, public access), events, address books (incl. shares), contacts, `/contacts/search`, `/search`, CalDAV/CardDAV credentials, import, `/mcp-tokens`, `/calendar-subscriptions`, `GET /auth/oauth/providers` and `GET /ready`. Check the handler before assuming a shape
+- **Everything else returns raw JSON**, which comes through as-is: calendars (incl. shares, public access), events, tasks (`/calendars/:calendar_id/tasks`, `/tasks`, `/tasks/summary`), address books (incl. shares), contacts, `/contacts/search`, `/search`, CalDAV/CardDAV credentials, import, `/mcp-tokens`, `/calendar-subscriptions`, `GET /auth/oauth/providers` and `GET /ready`. Check the handler before assuming a shape
 - Errors are usually `{ "status": "error", "message": ... }` (`ErrorResponse`), but some raw-JSON handlers answer `{ "error": ... }`
 - `POST /api/v1/auth/register` answers **200**, not 201, although it creates an account; kept as is so existing clients don't break
 - Backend uses `expires_at` (Unix timestamp) for JWT expiry, NOT `expires_in`
@@ -151,6 +156,31 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
   caller on `GET`/`PATCH`/`DELETE`/`export` — these are owner-only, and a foreign book answers
   byte-for-byte like an unknown one, checked before the body is parsed
 
+### API Response Shapes (Calendars/Tasks, #170)
+
+- `GET /api/v1/calendars` → `{ "calendars": [...] }`. Every calendar answer (list, get, create, update,
+  `/search` calendar hits) carries a read-only `kind` — `events` (`VEVENT`), `tasks` (a task list,
+  `VTODO`) or `both` (`VEVENT,VTODO`, also a legacy `""`) — next to `supported_components`. `POST`
+  takes an optional `kind` (default `events`); `PATCH` accepts only `"kind": "both"` (widening) or the calendar's own kind (a no-op 200); any
+  narrowing is a **409**). `event_count` counts events only
+- `GET /api/v1/calendars/:calendar_id/tasks` → `{ "tasks": [...], "count", "total" }` (lowercase).
+  `status` = `open` (default) | `completed` (completed **and** cancelled) | `all`; `limit` default 500,
+  max 1000. Task `due` is UTC (`Z`); an all-day task has `due: null` and `due_date: "YYYY-MM-DD"`
+- `GET /api/v1/tasks` → the same shape across every readable task list, each task plus
+  `calendar_name`/`calendar_color`; `calendar_uuid` narrows (unreadable = **404**), `due_after`/`due_before`
+  bound the due date
+- `GET /api/v1/tasks/summary?as_of=<RFC 3339 with offset>` → `{ "open", "overdue", "due_today",
+  "completed", "by_calendar": { "<calendar uuid>": { "open", "overdue", "completed" } } }`. Pass `as_of` (and the
+  `due_*` bounds) through ofetch's `query` option: an interpolated `+01:00` arrives as a space and is a 400
+- A recurring task (`is_recurring`) cannot be completed over REST: complete, or PATCH `status`
+  `completed`/`cancelled`/`percent_complete: 100`, answers **409**. Uncomplete resets the percentage to 0
+  only when it was 100
+- `DELETE /api/v1/calendars/:calendar_id/tasks/:task_id` is **permanent** (a hard delete; nothing to
+  restore, so an "Undo" must re-create the task, not un-delete it); 204, then 404 `Task not found`
+- Event and task `summary`, `description` and `location` are **plain text** (the server undoes and
+  redoes the iCalendar escaping): show them as they are and send them back unchanged, never escape or
+  unescape `,` `;` `\` or newlines in the SPA
+
 ### Patterns
 
 - **Stores**: Use `useApi()` inside actions, follow `stores/calendars.ts` and `stores/contacts.ts` as reference
@@ -168,8 +198,19 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
 - `GET /api/v1/about/open-source` — Authenticated: Go dependency attribution list (embedded, generated by `server/tools/genlicenses`)
 - `GET`/`POST /api/v1/mcp-tokens`, `DELETE /api/v1/mcp-tokens/:id` — MCP access tokens (#104). Raw JSON, no `{status,data}` envelope. `POST` is the ONLY time the secret exists: it is stored as a SHA-256 and can never be shown again
 - `GET`/`POST /api/v1/calendar-subscriptions`, `GET`/`PATCH`/`DELETE /:id`, `POST /:id/refresh` — remote calendar subscriptions (story 100). Raw JSON. A subscription mirrors an iCalendar feed into a **read-only** calendar (`Calendar.subscribed`); a failed refresh answers **200** with `status: "error"`, because the request succeeded and the third-party feed is what failed
+- `GET`/`POST /api/v1/calendars/:calendar_id/tasks`, `GET`/`PATCH`/`DELETE /:task_id`, `POST /:task_id/complete`, `POST /:task_id/uncomplete` — the tasks (VTODOs) of one task list (#170). Raw JSON. A task list is a calendar with `kind: "tasks"`; every miss on a task route (unknown or unreadable calendar, unknown task, an event's UUID) is the same 404 `Task not found`, except the list and create routes, which answer an unknown or unreadable calendar with 404 `Calendar not found`
+- `GET /api/v1/tasks` — tasks across every task list the caller can read, one query (#170). Raw JSON
+- `GET /api/v1/tasks/summary?as_of=` — open/overdue/due-today/completed counts, overall and per list (`by_calendar`), counted in the database; `as_of` is required and its UTC offset decides which date is today (#170). Raw JSON. Full rules for every task route: `server/CLAUDE.md`, "Tasks (#170)"
 - `POST /mcp` — Model Context Protocol endpoint (#104). Outside `/api/v1` on purpose: MCP addresses one URL that clients are configured with directly. `GET` returns a manifest, `DELETE` ends a session
 - Auth pages: login, register, setup (first admin), forgot-password, reset-password, verify, OAuth callback
+
+## Working Agreements
+
+1. **Follow the stories**: implementation details are in `stories/backend/`, `stories/frontend/` and `stories/continuation/`. Check `/STORIES.md` for what is already implemented.
+2. **Check existing patterns**: review existing code in a similar area before adding a feature. The calendar and contacts implementations share many patterns.
+3. **Propose alternatives**: if a story's proposed approach has a problem, propose a different one rather than implementing a known-bad design.
+4. **Write tests**: write unit and integration tests for every implementation.
+5. **Check the CLAUDE.md / AGENT.md files**: read the relevant file before working in a sub-area of the codebase.
 
 ## Story Tracking
 

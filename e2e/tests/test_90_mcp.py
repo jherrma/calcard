@@ -1,16 +1,19 @@
 """MCP (story 104): access-token CRUD and the JSON-RPC endpoint at /mcp —
 handshake, sessions, tools (cross-checked through REST, including the
-calendar / address-book collection tools), resources, protocol errors,
-isolation between users, revocation."""
+calendar / address-book collection tools, the calendar kind and the task
+tools of #170), resources, protocol errors, isolation between users,
+revocation."""
 
 import json
 import random
 import uuid
 from types import SimpleNamespace
+from urllib.parse import urlencode
 
 import pytest
 
 from harness.checks import jpath
+from harness.data import ics_todo_rrule
 from harness.http import NOT_JSON
 
 DESCRIPTION = "MCP tokens + POST /mcp: handshake, tools, resources, sessions, isolation"
@@ -149,11 +152,13 @@ def test_ping(t, e2e, st):
 TOOLS = ["list_calendars", "get_events", "create_event", "update_event", "delete_event", "search_events",
          "list_address_books", "get_contacts", "search_contacts", "create_contact", "update_contact",
          "delete_contact", "find_free_slots", "create_calendar", "update_calendar", "delete_calendar",
-         "create_address_book", "update_address_book", "delete_address_book"]
+         "create_address_book", "update_address_book", "delete_address_book",
+         "list_tasks", "create_task", "update_task", "complete_task", "uncomplete_task", "delete_task",
+         "get_task_summary"]
 
 
 def test_tools_list(t, e2e, st):
-    """tools/list advertises the 19 tools with object schemas"""
+    """tools/list advertises the 26 tools with object schemas"""
     t.need(st, "mc_session")
     r = mcp_call(e2e, st, '{"jsonrpc":"2.0","id":3,"method":"tools/list"}')
     if not t.status(r, 200):
@@ -363,6 +368,130 @@ def test_address_book_collection(t, e2e, u1, st):
     t.status(u1.api("GET", f"/addressbooks/{ab}/contacts/{cid}"), 404, msg="its contact went with it")
 
 
+NARROWING = "Cannot narrow a calendar's component set"
+RECURRING = "Repeating tasks cannot be completed here yet. Complete it in your task app."
+
+
+def _same_task(t, want, got, msg):
+    """A task as one surface answers it equals the other's; created_at and
+    updated_at are compared as instants (PostgreSQL keeps microseconds)."""
+    def strip(d):
+        return {k: v for k, v in (d or {}).items() if k not in ("created_at", "updated_at")}
+
+    def micro(v):
+        head, _, frac = (v or "").rstrip("Z").partition(".")
+        return head, (frac + "000000")[:6]
+    t.eq(strip(got), strip(want), msg)
+    for key in ("created_at", "updated_at"):
+        t.eq(micro((got or {}).get(key)), micro((want or {}).get(key)), f"{msg}: {key}")
+
+
+def test_calendar_kind(t, e2e, u1, st, mc):
+    """calendar kind over MCP: list_calendars reports it; create_calendar tasks; update_calendar both; no narrowing"""
+    t.need(st, "mc_session")
+    _, err, payload = mcp_tool(e2e, st, "list_calendars", {})
+    cals = pj(payload, "calendars") or []
+    t.eq(next((c.get("kind") for c in cals if c.get("id") == mc.cal), None), "events",
+         f"list_calendars reports the kind: {payload[:300]}")
+    t.true(cals and all(c.get("kind") in ("events", "tasks", "both") for c in cals), "every calendar carries a kind")
+
+    made = {}
+    for kind in ("tasks", None):
+        name = e2e.uniq(f"mcp-kind-{kind or 'default'}")
+        args = {"name": name, **({"kind": kind} if kind else {})}
+        _, err, payload = mcp_tool(e2e, st, "create_calendar", args)
+        if not t.eq(err, False, f"create_calendar {args}: {payload[:200]}"):
+            return
+        cid = pj(payload, "calendar.id")
+        e2e.defer(f"delete calendar '{name}'", e2e.cleanup_api, u1, "DELETE", f"/calendars/{cid}",
+                  json={"confirmation": "DELETE"})
+        made[kind] = cid
+        want = ("tasks", "VTODO") if kind else ("events", "VEVENT")
+        t.eq(pj(payload, "calendar.kind"), want[0], f"create_calendar {args} answers the kind")
+        r = u1.api("GET", f"/calendars/{cid}")
+        t.eq((r.jdict().get("kind"), r.jdict().get("supported_components")), want, f"REST sees create_calendar {args}")
+
+    _, err, payload = mcp_tool(e2e, st, "update_calendar", {"calendar_id": made[None], "kind": "both"})
+    if t.eq(err, False, f"update_calendar kind both: {payload[:200]}"):
+        r = u1.api("GET", f"/calendars/{made[None]}")
+        t.eq((r.jdict().get("kind"), r.jdict().get("supported_components")), ("both", "VEVENT,VTODO"),
+             "REST sees the widening")
+    _, err, payload = mcp_tool(e2e, st, "update_calendar", {"calendar_id": made["tasks"], "kind": "events"})
+    t.eq(err, True, "narrowing a task list must be refused")
+    t.eq(payload, NARROWING, "the REST 409 text")
+    t.json(u1.api("GET", f"/calendars/{made['tasks']}"), "supported_components", "VTODO", "nothing changed")
+
+
+def test_task_tools(t, e2e, u1, st):
+    """task tools cross-checked over REST: create, list, update, complete twice, uncomplete, delete, summary"""
+    t.need(st, "mc_session")
+    tl = u1.mk_calendar(e2e.uniq("mcp-tasks"), kind="tasks")
+    st.mc_tasklist = tl
+
+    def rest(tid):
+        return u1.api("GET", f"/calendars/{tl['uuid']}/tasks/{tid}")
+
+    _, err, payload = mcp_tool(e2e, st, "create_task", {"calendar_id": tl["uuid"], "summary": "MCP chore",
+                                                         "due": "2030-06-20T09:00:00+02:00", "priority": 1})
+    if not t.eq(err, False, f"create_task: {payload[:200]}"):
+        return
+    t.eq(pj(payload, "created"), True)
+    task = pj(payload, "task") or {}
+    tid = task.get("id")
+    t.eq(task.get("due"), "2030-06-20T07:00:00Z", "create_task answers the due in UTC, like REST")
+    r = rest(tid)
+    if t.status(r, 200, msg="the task created over MCP exists in REST"):
+        _same_task(t, task, r.jdict(), "create_task answers what REST GET answers")
+
+    for args, query in (({"calendar_id": tl["uuid"]}, {"calendar_uuid": tl["uuid"], "limit": 50}),
+                        ({"calendar_id": tl["uuid"], "status": "all", "query": "chore"},
+                         {"calendar_uuid": tl["uuid"], "status": "all", "q": "chore", "limit": 50})):
+        _, err, payload = mcp_tool(e2e, st, "list_tasks", args)
+        r = u1.api("GET", "/tasks?" + urlencode(query))
+        if t.eq(err, False, f"list_tasks {args}: {payload[:200]}") and t.status(r, 200):
+            mcp_body, rest_body = json.loads(payload), r.jdict()
+            t.eq((mcp_body.get("count"), mcp_body.get("total")), (rest_body.get("count"), rest_body.get("total")),
+                 f"list_tasks {args}: count/total as REST")
+            for m, g in zip(mcp_body.get("tasks") or [], rest_body.get("tasks") or []):
+                _same_task(t, g, m, f"list_tasks {args} equals GET /tasks")
+
+    _, err, payload = mcp_tool(e2e, st, "update_task", {"task_id": tid, "summary": "MCP chore (edited)",
+                                                         "priority": None})
+    if t.eq(err, False, f"update_task: {payload[:200]}"):
+        t.eq(pj(payload, "updated"), True)
+        t.eq((pj(payload, "task.summary"), pj(payload, "task.priority")), ("MCP chore (edited)", None),
+             "update_task renames and null removes the priority")
+        _same_task(t, pj(payload, "task"), rest(tid).jdict(), "update_task answers what REST GET answers")
+
+    _, err, payload = mcp_tool(e2e, st, "complete_task", {"task_id": tid})
+    if t.eq(err, False, f"complete_task: {payload[:200]}"):
+        done = pj(payload, "task") or {}
+        t.eq((done.get("completed"), done.get("percent_complete")), (True, 100))
+        t.eq(rest(tid).jdict().get("status"), "completed", "REST sees the completion")
+        _, err, payload = mcp_tool(e2e, st, "complete_task", {"task_id": tid})
+        t.eq(pj(payload, "task.etag"), done.get("etag"), "a second complete_task writes nothing (same ETag)")
+    _, err, payload = mcp_tool(e2e, st, "uncomplete_task", {"task_id": tid})
+    if t.eq(err, False, f"uncomplete_task: {payload[:200]}"):
+        t.eq((pj(payload, "task.completed"), pj(payload, "task.status")), (False, "needs-action"))
+        t.eq(rest(tid).jdict().get("completed"), False, "REST sees the task reopened")
+
+    as_of = "2030-06-20T12:00:00+02:00"
+    _, err, payload = mcp_tool(e2e, st, "get_task_summary", {"as_of": as_of})
+    r = u1.api("GET", "/tasks/summary?" + urlencode({"as_of": as_of}))
+    if t.eq(err, False, f"get_task_summary: {payload[:200]}") and t.status(r, 200):
+        t.eq(json.loads(payload), r.json(), "get_task_summary equals GET /tasks/summary for the same as_of")
+        t.eq(pj(payload, f"by_calendar.{tl['uuid']}"), {"open": 1, "overdue": 1}, "the reopened task is overdue")
+
+    _, err, payload = mcp_tool(e2e, st, "delete_task", {"task_id": tid})
+    if t.eq(err, False, f"delete_task: {payload[:200]}"):
+        t.eq((pj(payload, "deleted"), pj(payload, "task_id")), (True, tid))
+        r = rest(tid)
+        if t.status(r, 404, msg="the task deleted over MCP is gone from REST"):
+            t.eq(r.jmsg(), "Task not found")
+        _, err, payload = mcp_tool(e2e, st, "delete_task", {"task_id": tid})
+        t.eq((err, payload), (True, f"No task with id {tid} is readable by you."), "a second delete_task")
+
+
 def test_resources(t, e2e, st, mc):
     """resources/list and resources/read"""
     t.need(st, "mc_session")
@@ -537,6 +666,75 @@ def test_collection_isolation(t, e2e, u1, u2, st, mc):
         r = u1.api("GET", path)
         if t.status(r, 200, msg=f"{path} must survive U2's attempts"):
             t.jq(r, lambda j: j["Name"] != "hijacked", f"{path} must not be renamed")
+
+
+def test_task_tool_refusals(t, e2e, u1, u2, st, mc):
+    """task tools refuse what REST refuses: repeating tasks, a read share, the wrong kind of id, an event calendar"""
+    t.need(st, "mc_session", "mc_u2_token", "mc_tasklist")
+    tl = st.mc_tasklist
+    if not u1.ensure_dav():
+        return t.fail("no DAV app password for U1 (needed to write a repeating task)")
+    uid = e2e.uniq("mcp-weekly")
+    href = f"{u1.home_cal}{tl['path']}/{uid}.ics"
+    if not t.status(u1.dav("PUT", href, ics=ics_todo_rrule(uid, "MCP weekly", "20300610T090000Z", "FREQ=WEEKLY",
+                                                         "DTSTART:20300610T080000Z")), 201, msg="DAV PUT"):
+        return
+    weekly = next((x for x in u1.api("GET", f"/calendars/{tl['uuid']}/tasks").jdict().get("tasks") or []
+                   if x.get("uid") == uid), {})
+    if not t.true(weekly, "REST lists the repeating task"):
+        return
+    before = u1.dav("GET", href).text
+    for tool, args in (("complete_task", {"task_id": weekly["id"]}),
+                       ("update_task", {"task_id": weekly["id"], "status": "completed"})):
+        _, err, payload = mcp_tool(e2e, st, tool, args)
+        t.eq((err, payload), (True, RECURRING), f"{tool} on a repeating task: the REST 409 sentence")
+    t.eq(u1.dav("GET", href).text, before, "the refused calls changed nothing")
+
+    # A read share: U2 reads the task list, and every write is refused.
+    chore = u1.api("POST", f"/calendars/{tl['uuid']}/tasks", json={"summary": "Shared MCP chore"}).jdict()
+    shared_events = u1.mk_calendar(e2e.uniq("mcp-read-events"))
+    event = u1.mk_event(shared_events["uuid"], f"MCP shared event {e2e.run_id}", "2030-06-11T09:00:00Z",
+                        "2030-06-11T10:00:00Z")
+    for cal in (tl, shared_events):
+        t.status(u1.api("POST", f"/calendars/{cal['uuid']}/shares",
+                        json={"user_identifier": u2.email, "permission": "read"}), 201, msg=f"share {cal['name']}")
+    tok = st.mc_u2_token
+    _, err, payload = mcp_tool(e2e, st, "list_tasks", {"calendar_id": tl["uuid"]}, tok=tok, sess="")
+    t.true(err is False and chore.get("id", "?") in payload, f"control: U2 lists the shared task: {payload[:200]}")
+    for tool, args in (("update_task", {"task_id": chore.get("id"), "summary": "hijacked"}),
+                       ("complete_task", {"task_id": chore.get("id")}),
+                       ("uncomplete_task", {"task_id": chore.get("id")}),
+                       ("delete_task", {"task_id": chore.get("id")})):
+        _, err, payload = mcp_tool(e2e, st, tool, args, tok=tok, sess="")
+        t.eq((err, payload), (True, "You have read-only access to the task list holding that task."),
+             f"read share: U2 {tool}")
+    _, err, payload = mcp_tool(e2e, st, "create_task", {"calendar_id": tl["uuid"], "summary": "planted"},
+                               tok=tok, sess="")
+    t.eq((err, payload), (True, "You have read-only access to that calendar, so tasks cannot be created in it."),
+         "read share: U2 create_task")
+    r = u1.api("GET", f"/calendars/{tl['uuid']}/tasks/{chore.get('id')}")
+    t.eq((r.jdict().get("summary"), r.jdict().get("etag")), ("Shared MCP chore", chore.get("etag")),
+         "the refused writes changed nothing")
+    t.not_contains(u1.api("GET", f"/calendars/{tl['uuid']}/tasks?status=all"), "planted", "nothing was planted")
+
+    # The wrong kind of id: an event's UUID is an unknown task (also to a read
+    # sharee, before the read-only check), a task's UUID an unknown event.
+    for who, token in (("U1", st.mc_token), ("U2 (read share)", tok)):
+        for tool in ("complete_task", "update_task", "delete_task"):
+            args = {"task_id": event["id"], **({"summary": "x"} if tool == "update_task" else {})}
+            _, err, payload = mcp_tool(e2e, st, tool, args, tok=token, sess="")
+            t.eq((err, payload), (True, f"No task with id {event['id']} is readable by you."),
+                 f"{who}: {tool} with an event's UUID")
+    for tool, args in (("update_event", {"event_id": chore.get("id"), "title": "x"}),
+                       ("delete_event", {"event_id": chore.get("id")})):
+        _, err, payload = mcp_tool(e2e, st, tool, args)
+        t.eq((err, payload), (True, f"No event with id {chore.get('id')} is readable by you."),
+             f"{tool} with a task's UUID")
+    t.status(u1.api("GET", f"/calendars/{tl['uuid']}/tasks/{chore.get('id')}"), 200, msg="the task survived")
+    t.status(u1.api("GET", f"/calendars/{shared_events['uuid']}/events/{event['id']}"), 200, msg="the event survived")
+
+    _, err, payload = mcp_tool(e2e, st, "create_task", {"calendar_id": mc.cal, "summary": "Not here"})
+    t.eq((err, payload), (True, "This calendar does not store tasks"), "create_task in an event calendar")
 
 
 def test_session_binding(t, e2e, st):

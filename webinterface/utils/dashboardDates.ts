@@ -13,6 +13,9 @@
  * Auto-imported by Nuxt (files under `utils/`) — call these without an import.
  */
 
+/** How often a clock (Today/Tomorrow labels, now-marker, overdue marks) is refreshed: a minute. */
+export const CLOCK_INTERVAL_MS = 60 * 1000;
+
 /** A half-open time interval in epoch milliseconds: `[start, end)`. */
 export interface TimeInterval {
   start: number;

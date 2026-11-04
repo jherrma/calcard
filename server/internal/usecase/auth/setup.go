@@ -40,7 +40,7 @@ var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
 // process on a shared Postgres can still win the race.
 type SetupUseCase struct {
 	repo     user.UserRepository
-	register *RegisterUseCase // reused for the default calendar / address book
+	register *RegisterUseCase // reused for the default calendars / address book
 	token    string           // CALDAV_SETUP_TOKEN; empty = no token required
 	mu       sync.Mutex       // serialises the count-then-create check in this process
 }
@@ -119,8 +119,8 @@ func (uc *SetupUseCase) Execute(ctx context.Context, username, email, password, 
 		return nil, err
 	}
 
-	if err := uc.register.createDefaultCalendar(ctx, u.ID); err != nil {
-		fmt.Printf("failed to create default calendar: %v\n", err)
+	if err := uc.register.createDefaultCalendars(ctx, u.ID); err != nil {
+		fmt.Printf("failed to create default calendars: %v\n", err)
 	}
 	if err := uc.register.createDefaultAddressBook(ctx, u.ID); err != nil {
 		fmt.Printf("failed to create default address book: %v\n", err)
