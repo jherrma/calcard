@@ -21,7 +21,8 @@ Pages (route-level views)
 ```
 webinterface/
 ├── pages/                   # File-based routing (each .vue → a route)
-│   ├── index.vue            # Root redirect
+│   ├── index.vue            # Dashboard: landing page after login (story 042) — NOT a redirect; asks for the task
+│   │                        #   summary itself on mount, Refresh and the 5-minute timer ("Open tasks", #170)
 │   ├── auth/                # Authentication flows
 │   │   ├── login.vue        # Email/password + OAuth login
 │   │   ├── register.vue     # New account registration
@@ -40,9 +41,10 @@ webinterface/
 │   │                        #   ?list=<calendar uuid> selects a list and stays in the URL (a new list is selected, a deleted one leaves it)
 │   ├── search.vue           # Full global-search results page (?q=…), uncapped; a task-list hit opens /tasks?list=<uuid>,
 │   │                        #   other calendar hits /calendar?cal=<id> (#170)
-│   └── settings/        # …
-│       └── appearance.vue   # Theme + accent colour picker (story 046)            # Profile, password, credentials, connections, import/export, admin, danger
-│       └── about.vue        # Open Source Attribution (story 101)
+│   └── settings/            # Profile, password, credentials, MCP access, subscriptions, connections, import/export, admin, danger
+│       ├── about-app.vue    # About CalCard: server version (from GET /system/settings) + link to /settings/about
+│       ├── about.vue        # Open Source Attribution (story 101)
+│       └── appearance.vue   # Theme + accent colour picker (story 046)
 ├── components/              # Auto-imported by Nuxt (directory prefix = component name)
 │   ├── about/
 │   │   └── OpenSourceList.vue     # → <AboutOpenSourceList>: filtered, incrementally rendered package list
@@ -87,9 +89,23 @@ webinterface/
 │   │   │                          #   "Task list created", stays open on failure. AddCalendarDialog is NOT used for task lists
 │   │   └── TaskListSettingsDialog.vue # CalendarSettingsDialog with kind="tasks": rename, recolour, share, "Delete task list" (permanent);
 │   │                              #   confirmDelete(list) is the sidebar's delete; relays updated / deleted(list)
+│   ├── dashboard/                 # Dashboard widgets (story 042) → <DashboardWidgetCard> etc.
+│   │   ├── WidgetCard.vue         # Shared card shell (title, icon, badge, actions, footer)
+│   │   ├── TodayAgendaCard.vue    # Day timeline with lane-split overlapping events
+│   │   ├── UpcomingEventsCard.vue # Next 5-7 events with Today/Tomorrow labels
+│   │   ├── MiniCalendarCard.vue   # 6x7 month grid with event dots + month navigation
+│   │   ├── RecentContactsCard.vue # Most recently updated contacts
+│   │   ├── RecentContactRow.vue   # Single row of the above
+│   │   └── QuickStatsCard.vue     # Calendars / events this month / open tasks / address books / contacts; open tasks =
+│   │                              #   summary.open (#170), null = pulse while asked for, else "—" (never 0)
 │   ├── settings/
 │   │   ├── DavCredentialManager.vue # → <SettingsDavCredentialManager>  CalDAV / CardDAV credential pages
 │   │   └── DavUrlBox.vue          # → <SettingsDavUrlBox>  copyable DAV URLs + which login to use
+│   ├── sharing/                   # Resource-agnostic sharing UI (story 043)
+│   │   ├── SharePanel.vue         # → <SharingSharePanel>  list/invite/change/revoke, BOTH resource kinds;
+│   │   │                          #   resourceNoun overrides the copy's noun ("task list", #170)
+│   │   ├── PublicLinkPanel.vue    # → <SharingPublicLinkPanel>  calendar public link (calendars only)
+│   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
 │       ├── ActionToast.vue        # Host of useAppToast().action() toasts ("Task completed" + Undo), bottom centre; default layout only
 │       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
@@ -109,7 +125,8 @@ webinterface/
 │   ├── dashboard.ts         # Dashboard event window (loadedMonths), recent contacts, clock
 │   ├── preferences.ts       # User preferences (event duration, all-day, time format, accent colour, first day of week)
 │   ├── search.ts            # Global search fan-out (events/contacts/collections), cache, recents
-│   ├── sharing.ts           # Share CRUD for calendars AND address books, calendar public link
+│   ├── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
+│   │                        #   `sharedWithMe` derived from the two list endpoints (story 043)
 │   └── tasks.ts             # Tasks (#170): task lists (kind tasks/both, read from the calendars store), one GET /tasks,
 │                            #   summary (badge), status groups, optimistic toggleComplete; mutations toast their own errors;
 │                            #   newTaskListId = where a new task goes (selected writable list / first writable / null);
@@ -182,8 +199,8 @@ webinterface/
 3. Access tokens are stored in Pinia state (memory only — not localStorage). Refresh tokens are stored in a cookie (7-day expiry).
 4. `scheduleTokenRefresh()` sets a `setTimeout` to refresh the access token 1 minute before it expires (using `expires_at` Unix timestamp from the backend).
 5. The `useApi()` composable automatically attaches `Authorization: Bearer <token>` to every request.
-6. On 401 response, `useApi`'s `onResponseError` attempts a token refresh. An explicit refresh rejection (401/403) clears auth and redirects to login.
-7. Network failures, server errors and 429 keep the session and refresh cookie. A live session retries after `Retry-After` (30 seconds by default); failed initialization keeps the cookie for the next page load. Temporary refresh errors propagate through `useApi` so it cannot replay the original request with an expired token. Timer callbacks catch these errors; `initAuth` always finishes loading. Profile-fetch failures only clear auth on 401/403.
+6. On 401 response, `useApi`'s `onResponseError` attempts a token refresh. On failure, auth state is cleared and user is redirected to login.
+7. A 429 (rate limit) is NOT a failed refresh: the session and the refresh cookie are kept (see Rate limiting below).
 
 ### Store Pattern
 
@@ -351,6 +368,41 @@ Accessibility and phones (spec §8, story 29):
   Calendar section ("Create task list" shows only in the no-lists state). Dialogs use
   `:breakpoints="{ '640px': 'calc(100vw - 2rem)' }"`.
 
+### Sharing (story 043)
+
+`stores/sharing.ts` is the single entry point; the three `components/sharing/*` components are thin
+views over it. Constraints that shaped it — all imposed by the API:
+
+- **One store, both resource kinds.** `/api/v1/calendars/:uuid/shares` and
+  `/api/v1/addressbooks/:uuid/shares` are byte-for-byte identical in request and response, so
+  `shareCollectionUrl(type, uuid)` is the only thing that differs. Both are keyed on the resource
+  **UUID** (#52) — a numeric id gives a 404.
+- **These endpoints return raw JSON**, not the `{ status, data }` envelope: `GET` → `{ shares: [...] }`,
+  `POST`/`PATCH` → the bare share object, `DELETE` → 204.
+- **Errors carry `{ "error": "..." }`, not `{ "message": ... }`** like the auth handlers. Use
+  `shareErrorMessage()`; reading `Error.message` yields ofetch's useless `[POST] …: 400 Bad Request`.
+- **There is no user-search endpoint.** Invite by `user_identifier`, which the backend resolves as an
+  email *or* a username. Nothing to autocomplete against.
+- **There is no `/shared-with-me` endpoint.** `GET /calendars` and `GET /addressbooks` already return
+  shared resources carrying `shared` / `permission` / `owner` (#53); `sharedWithMe` derives from those.
+- **Share management is owner-only** — a sharee gets 404 from every share endpoint. Never render it
+  for a resource with `shared === true`; pass `:can-manage="!resource.shared"`.
+- **Public links are calendars-only and have no DELETE route.** `POST …/public` with
+  `{ enabled: false }` is how you disable (it also clears the token, so re-enabling mints a new URL).
+  `GET …/public` is the *only* source of the public URL — the token is `json:"-"` on the domain model.
+- **A failed read must never render as a fact.** Read actions swallow their failure into
+  `sharesError` / `publicError` (two fields, because both panels are mounted at once). Any view of
+  `shares` / `publicAccess` MUST render those errors, because an empty list after a failed load is
+  indistinguishable from "nothing is shared" — and "this calendar is private" is then a false
+  statement the owner will act on. Same rule on `pages/settings/sharing.vue`, which has to read
+  `calendarStore.error` / `contactsStore.error` back after the load, since neither list action rejects.
+- **The store holds exactly ONE resource at a time**, so `fetchShares` / `fetchPublicAccess` carry a
+  sequence token and discard superseded responses; mutations bump it too. `useApi`'s
+  retry-once-on-401 spends a whole refresh round-trip before re-issuing, so responses really do
+  arrive out of order.
+- **Refetching a list must not reset the user's view.** `changed` fires on every share mutation and
+  the pages refetch on it, so `fetchCalendars` / `fetchAddressBooks` preserve `visibleCalendarIds` /
+  `selectedAddressBookIds` for already-known resources (first load still selects everything).
 ### Global Search (story 044)
 
 `components/common/GlobalSearch.vue` lives in `AppHeader` and owns both the trigger and
@@ -542,6 +594,56 @@ strings come from `utils/davUrls.ts`.
 - **409 = username taken** (unique across all accounts, `user.ErrCredentialUsernameTaken`). A
   generated name is replaced and the user asked to press Create again — no automatic retry, they
   may already have copied it; the password is kept. A typed name is kept, with an inline message.
+
+### MCP Access (story 104)
+
+`pages/settings/mcp.vue` mints and revokes the bearer tokens an AI assistant uses against the
+server's `/mcp` endpoint. It has no Pinia store — three `useApi()` calls are the whole surface:
+
+- `GET /api/v1/mcp-tokens` → `{ tokens: MCPToken[] }` (raw JSON, no `{status,data}` envelope).
+- `POST /api/v1/mcp-tokens` → `MCPTokenCreateResponse`. **The `token` field is the only time the
+  secret exists**: the server stores a SHA-256 and cannot reproduce it. The post-create panel is
+  therefore not a nicety — losing it strands the user with an unusable token.
+- `DELETE /api/v1/mcp-tokens/:id` → 204.
+
+Three things that look cosmetic but are not:
+
+- **The intro says what a token may do, deletions included.** Since the collection tools, an
+  assistant can create, rename and delete the user's own calendars and address books (everything
+  in them goes too). The sentence saying so is the only place the user learns it before minting a
+  token, so `mcp.spec.ts` pins it.
+- **The endpoint shown to the user is `${apiBaseUrl || window.location.origin}/mcp`** — NOT under
+  `/api/v1`. MCP addresses one URL that clients are configured with directly. A wrong URL here
+  makes every client fail with no diagnosis, which is why `mcp.spec.ts` pins it.
+- **A failed load renders an error with a Retry, never the empty state.** "No MCP tokens yet" on a
+  failed request is a false statement about the account and hides the very token the user may have
+  come to revoke — the same rule `pages/settings/sharing.vue` follows.
+
+### Calendar Subscriptions (story 100)
+
+`pages/settings/subscriptions.vue` manages remote iCalendar feeds mirrored into read-only
+calendars. Like the MCP page it has no Pinia store of its own — `useApi()` against
+`/api/v1/calendar-subscriptions` (raw JSON, no `{status,data}` envelope) is the whole surface.
+
+Three things that look cosmetic but are not:
+
+- **A subscribed calendar is read-only, and the UI must not offer a write.** `Calendar.subscribed`
+  drives that. `stores/calendars.ts` excludes subscribed calendars from `writableCalendars` — the
+  single getter the event form and the dashboard quick-add read — and `pages/calendar/index.vue`
+  sets `editable` **per event** rather than globally, so one read-only calendar among several does
+  not freeze the whole grid. (That per-event flag also fixed the same gap for read-only *shares*,
+  which were draggable and failed server-side.) `CalendarSidebar.vue` lists them in their own
+  section without the edit/share/delete menu.
+- **A failed refresh answers HTTP 200.** The request succeeded; the third-party feed is what
+  failed, and the response carries the reason on the subscription. The page keys its toast on
+  `result.synced`, not on the request resolving — treating 200 as success would show "refreshed"
+  over a row that is about to render an error.
+- **Every mutation refreshes the calendar store too.** A subscription IS a calendar: adding,
+  renaming, recolouring, refreshing or removing one changes `GET /calendars`, and without the
+  extra call the sidebar keeps showing the old state until a full page reload.
+
+A failed *load* renders an error with a Retry rather than the empty state, for the same reason as
+the MCP page.
 
 ## Nuxt Configuration
 

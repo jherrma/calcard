@@ -81,6 +81,16 @@ Before this release, every calendar accepted both events and tasks (`VEVENT,VTOD
   A client that works around the escapes should stop doing so.
 - Event endpoints and the MCP event tools treat a task's UUID as unknown (the REST event routes answer 404).
   Event searches and event counts include events only.
+- **Racing edits never bring a deleted task back.** A PATCH, complete or uncomplete that races a DELETE answers
+  **404** `Task not found`. With `If-Match`, two writers holding the same ETag get one 200 and one **412**.
+- **Control characters are rejected.** A task summary or description containing a control character other than tab
+  (NUL, BEL, ESC and so on), or a summary made only of white space or zero-width characters, is **400**.
+- **A repeating task's start type cannot change while it has overrides.** Changing DTSTART from a date to a date-time
+  (or back) on a repeating task that has RECURRENCE-ID overrides is **400**; the overrides would otherwise be orphaned.
+- **A CalDAV time-range query matches repeating all-day tasks more exactly.** The series no longer matches one day past
+  its last occurrence.
+- **A storage failure during an access check is a 500.** Event and task routes answer **500** with the cause in the
+  log, where they used to answer 404.
 
 ## Client compatibility (interop pass, 2026-11-03)
 

@@ -8,6 +8,7 @@ The Go backend implements the CalDAV/CardDAV server, REST API, and protocol hand
 server/
 ├── cmd/server/          # Application entrypoint (main.go)
 ├── configs/             # Configuration examples (config.yaml.example)
+├── integration/         # End-to-end integration tests (build-tag `integration`) — see integration/CLAUDE.md
 ├── internal/            # Core application code (see AGENT.md files below)
 │   ├── config/          # Configuration loading (env vars + YAML)
 │   ├── domain/          # Domain models, repository interfaces (zero dependencies)
@@ -165,14 +166,16 @@ Each `internal/` subdirectory has its own AGENT.md with detailed file listings:
 - `internal/usecase/auth/AGENT.md` — Authentication use cases (local, OAuth)
 - `internal/adapter/AGENT.md` — HTTP handlers, repositories, auth implementations, WebDAV
 - `internal/infrastructure/AGENT.md` — Database, server, email, logging
+- `integration/CLAUDE.md` — End-to-end integration test suite: how it boots the real server in-process, what each test file covers, and how to add new tests
 
 ## Development
 
 ```bash
-go build ./...              # Build
-go test ./...               # Run all tests
-go run ./cmd/server         # Run dev server
-./scripts/build.sh          # Build binary to bin/server
+go build ./...                                # Build
+go test ./...                                 # Unit and handler tests (fast, default)
+go test -tags=integration ./integration/...   # End-to-end suite — boots the real server on a random port
+go run ./cmd/server                           # Run dev server
+./scripts/build.sh                            # Build binary to bin/server
 go run ./tools/genlicenses                    # Regenerate the open-source attribution manifest (#101)
 ```
 
@@ -181,9 +184,11 @@ no `swag`, no `docs/` package, no `/api/docs` route. Each handler carries a
 `// METHOD /api/v1/...` doc comment instead; keep it in sync when a route changes, and
 document endpoint areas in the API Surface table above.
 
+Integration tests are gated behind the `integration` build tag so they're excluded from the default run. They cover the first-boot flow, REST CRUD, the export/re-import roundtrip, and CalDAV/CardDAV protocol endpoints. See `integration/CLAUDE.md` for details.
+
 ## Key Conventions
 
-- **Configuration**: Loaded from environment variables (`CALDAV_*`) and/or `config.yaml`. See `configs/config.yaml.example`.
+- **Configuration**: Loaded from environment variables (`CALDAV_*`) and/or `config.yaml`. See `configs/config.yaml.example`. Every env-bound field of `config.Config` (and every `CALDAV_*` that `cmd/server` reads directly) must have a row in `/CONFIGURATION.md` naming its YAML key and env var — `internal/config/config_doc_test.go` fails otherwise.
 - **Database**: SQLite by default (zero config), PostgreSQL when `CALDAV_DB_HOST` is set.
 - **Migrations**: GORM `AutoMigrate` — all models registered in `infrastructure/database/migrations.go`.
 - **Auth**: JWT for REST API, HTTP Basic Auth for DAV endpoints. Backend uses `expires_at` (Unix timestamp) for JWT expiry.

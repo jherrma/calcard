@@ -204,6 +204,14 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
 - `POST /mcp` — Model Context Protocol endpoint (#104). Outside `/api/v1` on purpose: MCP addresses one URL that clients are configured with directly. `GET` returns a manifest, `DELETE` ends a session
 - Auth pages: login, register, setup (first admin), forgot-password, reset-password, verify, OAuth callback
 
+## Working Agreements
+
+1. **Follow the stories**: implementation details are in `stories/backend/`, `stories/frontend/` and `stories/continuation/`. Check `/STORIES.md` for what is already implemented.
+2. **Check existing patterns**: review existing code in a similar area before adding a feature. The calendar and contacts implementations share many patterns.
+3. **Propose alternatives**: if a story's proposed approach has a problem, propose a different one rather than implementing a known-bad design.
+4. **Write tests**: write unit and integration tests for every implementation.
+5. **Check the CLAUDE.md / AGENT.md files**: read the relevant file before working in a sub-area of the codebase.
+
 ## Story Tracking
 
 After implementing a story, update `/STORIES.md` to mark it as **Done**. This file tracks the implementation status of all stories (backend, frontend, and continuation).
