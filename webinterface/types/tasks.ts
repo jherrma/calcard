@@ -137,6 +137,8 @@ export interface TaskPatch {
 export interface TaskListCounts {
   open: number;
   overdue: number;
+  /** The list's done tasks, completed AND cancelled (like `TasksSummary.completed`). */
+  completed: number;
 }
 
 /**

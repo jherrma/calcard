@@ -165,6 +165,13 @@ type CalendarRepository interface {
 	// UpdateCalendarObject updates an existing calendar object
 	UpdateCalendarObject(ctx context.Context, obj *CalendarObject) error
 
+	// UpdateCalendarObjectIfETag is UpdateCalendarObject made conditional: obj
+	// (holding the new ETag) is written only while the live row still has
+	// loadedETag, and a row deleted meanwhile is never brought back. No live
+	// row is ErrNotFound, a row with another ETag ErrETagMismatch; neither
+	// records a change. Used by the task edits (#170).
+	UpdateCalendarObjectIfETag(ctx context.Context, obj *CalendarObject, loadedETag string) error
+
 	// MoveCalendarObject reassigns an object to a new calendar (obj.CalendarID
 	// must already be set to the target) and, atomically in a single
 	// transaction, records a "modified" change on the target calendar and a

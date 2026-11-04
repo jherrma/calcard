@@ -262,6 +262,36 @@ describe('CalendarSettingsDialog — a calendar (no kind): exactly as before', (
     expect(wrapper.emitted('update:visible')).toEqual([[false]]);
   });
 
+  it('a mixed (`both`) calendar says its tasks go too, and refetches the task counts after the delete (MN15, MN11)', async () => {
+    const MIXED = calendar('mixed', { name: 'Mixed', kind: 'both' });
+    serve({
+      'DELETE /api/v1/calendars/mixed': () => undefined,
+      'GET /api/v1/tasks/summary': () => ({ open: 0, overdue: 0, due_today: 0, completed: 0, by_calendar: {} }),
+    });
+    const { wrapper, store } = mountDialog({ calendar: MIXED });
+    store.calendars = [WORK, MIXED];
+
+    await button(wrapper, 'Delete Calendar').trigger('click');
+    const options = lastConfirm();
+    expect(options.message).toBe('Are you sure you want to delete this calendar? All events and tasks will be permanently deleted.');
+    expect(options.header).toBe('Delete Calendar');
+
+    await options.accept();
+    await flushPromises();
+    expect(requests().map((r) => r.key)).toEqual(['DELETE /api/v1/calendars/mixed', 'GET /api/v1/tasks/summary']);
+  });
+
+  it('an events calendar still says only events and asks for no task counts', async () => {
+    serve({ 'DELETE /api/v1/calendars/work': () => undefined });
+    const { wrapper } = mountDialog();
+
+    await button(wrapper, 'Delete Calendar').trigger('click');
+    expect(lastConfirm().message).toBe('Are you sure you want to delete this calendar? All events will be permanently deleted.');
+    await lastConfirm().accept();
+    await flushPromises();
+    expect(requests().map((r) => r.key)).toEqual(['DELETE /api/v1/calendars/work']);
+  });
+
   it('a failed delete shows the old error and keeps the dialog', async () => {
     serve({ 'DELETE /api/v1/calendars/work': () => { throw new Error('Cannot delete your last calendar'); } });
     const { wrapper } = mountDialog();

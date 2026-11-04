@@ -80,7 +80,7 @@ const SUMMARY: TasksSummary = {
   overdue: 3,
   due_today: 2,
   completed: 5,
-  by_calendar: { errands: { open: 9, overdue: 2 }, mixed: { open: 1, overdue: 0 }, team: { open: 4, overdue: 1 } },
+  by_calendar: { errands: { open: 9, overdue: 2, completed: 0 }, mixed: { open: 1, overdue: 0, completed: 0 }, team: { open: 4, overdue: 1, completed: 0 } },
 };
 
 function task(id: string, calendarUuid: string): Task {

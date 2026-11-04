@@ -176,10 +176,12 @@ type TaskSummaryResponse struct {
 }
 
 // TaskListCountsResponse is one task list's entry in
-// TaskSummaryResponse.ByCalendar: its open and overdue tasks.
+// TaskSummaryResponse.ByCalendar: its open and overdue tasks and its done
+// ones (Completed, completed AND cancelled, like the top-level count).
 type TaskListCountsResponse struct {
-	Open    int64 `json:"open"`
-	Overdue int64 `json:"overdue"`
+	Open      int64 `json:"open"`
+	Overdue   int64 `json:"overdue"`
+	Completed int64 `json:"completed"`
 }
 
 // NewTaskSummaryResponse renders the counts: total across every list, and
@@ -194,7 +196,7 @@ func NewTaskSummaryResponse(total calendar.TaskCount, byCalendar map[string]cale
 		ByCalendar: make(map[string]TaskListCountsResponse, len(byCalendar)),
 	}
 	for uuid, c := range byCalendar {
-		resp.ByCalendar[uuid] = TaskListCountsResponse{Open: c.Open, Overdue: c.Overdue}
+		resp.ByCalendar[uuid] = TaskListCountsResponse{Open: c.Open, Overdue: c.Overdue, Completed: c.Completed}
 	}
 	return resp
 }

@@ -34,7 +34,7 @@ const SUMMARY: TasksSummary = {
   overdue: 2,
   due_today: 1,
   completed: 3,
-  by_calendar: { 'list-a': { open: 3, overdue: 2 }, 'list-b': { open: 1, overdue: 0 } },
+  by_calendar: { 'list-a': { open: 3, overdue: 2, completed: 2 }, 'list-b': { open: 1, overdue: 0, completed: 1 } },
 };
 
 /**
@@ -755,6 +755,100 @@ describe('toggleComplete', () => {
 
     expect(result).toMatchObject({ id: row.id, status: 'completed' });
     expect(store.tasks).toEqual([]);
+  });
+});
+
+describe('undoComplete (MN9, MN10)', () => {
+  /** The server's answer to the undo PATCH: the row with the patch applied. */
+  const patched = (row: Task, o: ApiOptions): Task => {
+    const body = o.body as { status: Task['status']; percent_complete: number | null };
+    return writeAnswer(row, { status: body.status, completed: false, completed_at: null, percent_complete: body.percent_complete });
+  };
+
+  it('PATCHes the status and percent the task had before the tick, never the plain uncomplete', async () => {
+    seedLists();
+    const before = listed({ status: 'in-process', percent_complete: 40 });
+    const ticked = listed({ ...before, status: 'completed', completed: true, percent_complete: 100 });
+    serve({ [`PATCH /api/v1/calendars/list-a/tasks/${before.id}`]: (o) => patched(ticked, o) });
+    const store = useTasksStore();
+    store.statusFilter = 'all';
+    store.tasks = [ticked];
+
+    const result = await store.undoComplete(before);
+
+    expect(optionsOf(`PATCH /api/v1/calendars/list-a/tasks/${before.id}`)).toEqual({
+      method: 'PATCH',
+      body: { status: 'in-process', percent_complete: 40 },
+    });
+    expect(requests().some((r) => r.endsWith('/uncomplete'))).toBe(false);
+    expect(result).toMatchObject({ status: 'in-process', percent_complete: 40 });
+    expect(store.tasks[0]).toMatchObject({ status: 'in-process', percent_complete: 40, calendar_name: 'Errands' });
+  });
+
+  it('sends null for a percentage the task never had, and the cancelled status of a cancelled one', async () => {
+    const before = listed({ status: 'cancelled' });
+    serve({ [`PATCH /api/v1/calendars/list-a/tasks/${before.id}`]: (o) => patched(before, o) });
+    const store = useTasksStore();
+    store.tasks = [];
+
+    await store.undoComplete(before);
+
+    expect(optionsOf(`PATCH /api/v1/calendars/list-a/tasks/${before.id}`).body).toEqual({
+      status: 'cancelled',
+      percent_complete: null,
+    });
+  });
+
+  it('puts the server row back into the list when it matches the view, although the view was reloaded since the tick', async () => {
+    seedLists();
+    const before = listed();
+    serve({ [`PATCH /api/v1/calendars/list-a/tasks/${before.id}`]: (o) => patched(before, o) });
+    const store = useTasksStore();
+    store.statusFilter = 'open';
+    store.selectedListId = 'list-a';
+    store.tasks = [listed({ summary: 'another' })];
+    store.total = 1;
+
+    await store.undoComplete(before);
+
+    expect(store.visibleTasks.map((t) => t.id)).toContain(before.id);
+    expect(store.total).toBe(2);
+  });
+
+  it('leaves the row out when it does not match the view (another list, a search that does not hit it)', async () => {
+    seedLists();
+    const before = listed({ summary: 'Buy milk' });
+    serve({ [`PATCH /api/v1/calendars/list-a/tasks/${before.id}`]: (o) => patched(before, o) });
+    const store = useTasksStore();
+    store.statusFilter = 'open';
+
+    store.selectedListId = 'list-b';
+    await store.undoComplete(before);
+    expect(store.tasks).toEqual([]);
+
+    store.selectedListId = null;
+    store.searchQuery = 'bread';
+    await store.undoComplete(before);
+    expect(store.tasks).toEqual([]);
+
+    store.searchQuery = 'MILK';
+    await store.undoComplete(before);
+    expect(store.tasks.map((t) => t.id)).toEqual([before.id]);
+  });
+
+  it('does not add a row twice, and a failed PATCH changes nothing and toasts', async () => {
+    seedLists();
+    const before = listed();
+    serve({ [`PATCH /api/v1/calendars/list-a/tasks/${before.id}`]: () => { throw httpError(409, 'No'); } });
+    const store = useTasksStore();
+    store.tasks = [before];
+
+    expect(await store.undoComplete(before)).toBeNull();
+    expect(store.tasks).toEqual([before]);
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+
+    store.restoreRow(before);
+    expect(store.tasks).toHaveLength(1);
   });
 });
 

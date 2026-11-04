@@ -96,6 +96,9 @@ func (m *mockCalendarRepo) GetCalendarObjectByPath(context.Context, uint, string
 func (m *mockCalendarRepo) UpdateCalendarObject(context.Context, *calendar.CalendarObject) error {
 	return nil
 }
+func (m *mockCalendarRepo) UpdateCalendarObjectIfETag(context.Context, *calendar.CalendarObject, string) error {
+	return nil
+}
 func (m *mockCalendarRepo) MoveCalendarObject(context.Context, *calendar.CalendarObject, uint) error {
 	return nil
 }

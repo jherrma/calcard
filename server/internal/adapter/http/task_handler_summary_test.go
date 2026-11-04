@@ -140,8 +140,10 @@ func TestTaskHandlerSummaryCounts(t *testing.T) {
 	outsiderList := f.mkTaskCalendar(t, f.outsider, "11111111-0000-4000-8000-000000000009", "Mine", "#000000", "VTODO")
 	f.todo(t, outsiderList, "h1", "outsider's, overdue", "DUE:20301101T090000Z")
 
-	type counts struct{ open, overdue int }
-	entry := func(c counts) string { return fmt.Sprintf(`{"open":%d,"overdue":%d}`, c.open, c.overdue) }
+	type counts struct{ open, overdue, completed int }
+	entry := func(c counts) string {
+		return fmt.Sprintf(`{"open":%d,"overdue":%d,"completed":%d}`, c.open, c.overdue, c.completed)
+	}
 	for _, tc := range []struct {
 		name                              string
 		token                             string
@@ -149,12 +151,12 @@ func TestTaskHandlerSummaryCounts(t *testing.T) {
 		byCalendar                        map[*calendar.Calendar]counts
 	}{
 		{"owner", f.ownerToken, 8, 4, 3, 3, map[*calendar.Calendar]counts{
-			f.taskList: {5, 2}, f.otherList: {1, 1}, f.subbed: {1, 0}, f.sharedRead: {1, 1}, f.sharedRW: {0, 0}, legacy: {0, 0},
+			f.taskList: {5, 2, 2}, f.otherList: {1, 1, 0}, f.subbed: {1, 0, 0}, f.sharedRead: {1, 1, 0}, f.sharedRW: {0, 0, 1}, legacy: {0, 0, 0},
 		}},
 		{"sharee", f.shareeToken, 2, 1, 1, 1, map[*calendar.Calendar]counts{
-			f.sharedRead: {1, 1}, f.sharedRW: {0, 0}, f.shareeOwnTaskList: {1, 0},
+			f.sharedRead: {1, 1, 0}, f.sharedRW: {0, 0, 1}, f.shareeOwnTaskList: {1, 0, 0},
 		}},
-		{"outsider", f.outsiderToken, 1, 1, 0, 0, map[*calendar.Calendar]counts{outsiderList: {1, 1}}},
+		{"outsider", f.outsiderToken, 1, 1, 0, 0, map[*calendar.Calendar]counts{outsiderList: {1, 1, 0}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			byCalendar := map[string]json.RawMessage{}
@@ -188,31 +190,30 @@ func TestTaskHandlerSummaryCounts(t *testing.T) {
 }
 
 // TestTaskHandlerSummaryCancelledIsDone pins the cancelled rule: a cancelled
-// task counts as completed (done) and never as open, overdue, due today or in
-// by_calendar — whatever its due date — so summary.completed always equals
+// task counts as completed (done) and never as open, overdue or due today — whatever its due date — so summary.completed always equals
 // the total of ?status=completed.
 func TestTaskHandlerSummaryCancelledIsDone(t *testing.T) {
 	f := setupTaskHandlerTest(t)
 	task := f.todo(t, f.taskList, "a", "overdue and due today", "DUE:20301105T090000Z")
 	f.todo(t, f.taskList, "b", "all-day yesterday", "DUE;VALUE=DATE:20301104")
-	byCalendar := func(open, overdue int64) map[string]dto.TaskListCountsResponse {
+	byCalendar := func(open, overdue, completed int64) map[string]dto.TaskListCountsResponse {
 		return map[string]dto.TaskListCountsResponse{
-			f.taskList.UUID: {Open: open, Overdue: overdue}, f.otherList.UUID: {}, f.subbed.UUID: {},
+			f.taskList.UUID: {Open: open, Overdue: overdue, Completed: completed}, f.otherList.UUID: {}, f.subbed.UUID: {},
 			f.sharedRead.UUID: {}, f.sharedRW.UUID: {},
 		}
 	}
 
-	assert.Equal(t, dto.TaskSummaryResponse{Open: 2, Overdue: 2, DueToday: 1, Completed: 0, ByCalendar: byCalendar(2, 2)},
+	assert.Equal(t, dto.TaskSummaryResponse{Open: 2, Overdue: 2, DueToday: 1, Completed: 0, ByCalendar: byCalendar(2, 2, 0)},
 		f.summary(t, f.ownerToken, summaryAsOf))
 
 	for _, step := range []struct {
 		body string
 		want dto.TaskSummaryResponse
 	}{
-		{`{"status":"cancelled"}`, dto.TaskSummaryResponse{Open: 1, Overdue: 1, DueToday: 0, Completed: 1, ByCalendar: byCalendar(1, 1)}},
-		{`{"status":"in-process"}`, dto.TaskSummaryResponse{Open: 2, Overdue: 2, DueToday: 1, Completed: 0, ByCalendar: byCalendar(2, 2)}},
-		{`{"status":"completed"}`, dto.TaskSummaryResponse{Open: 1, Overdue: 1, DueToday: 0, Completed: 1, ByCalendar: byCalendar(1, 1)}},
-		{`{"status":"needs-action"}`, dto.TaskSummaryResponse{Open: 2, Overdue: 2, DueToday: 1, Completed: 0, ByCalendar: byCalendar(2, 2)}},
+		{`{"status":"cancelled"}`, dto.TaskSummaryResponse{Open: 1, Overdue: 1, DueToday: 0, Completed: 1, ByCalendar: byCalendar(1, 1, 1)}},
+		{`{"status":"in-process"}`, dto.TaskSummaryResponse{Open: 2, Overdue: 2, DueToday: 1, Completed: 0, ByCalendar: byCalendar(2, 2, 0)}},
+		{`{"status":"completed"}`, dto.TaskSummaryResponse{Open: 1, Overdue: 1, DueToday: 0, Completed: 1, ByCalendar: byCalendar(1, 1, 1)}},
+		{`{"status":"needs-action"}`, dto.TaskSummaryResponse{Open: 2, Overdue: 2, DueToday: 1, Completed: 0, ByCalendar: byCalendar(2, 2, 0)}},
 	} {
 		code, body := f.patch(t, f.ownerToken, taskPath(f.taskList, task), step.body, nil)
 		require.Equal(t, fiber.StatusOK, code, body)

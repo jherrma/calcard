@@ -116,6 +116,14 @@ function matchesView(task: Task, selectedListId: string | null, statusFilter: Ta
   return true;
 }
 
+/** Whether a task's summary or notes contain the search text (the server's `q`: case-insensitive substring). */
+function matchesSearch(task: Task, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  return (
+    task.summary.toLowerCase().includes(needle) || (task.description ?? '').toLowerCase().includes(needle)
+  );
+}
+
 /**
  * A write answer carries no `calendar_name`/`calendar_color` (only `GET /tasks`
  * items do): keep the old row's, else take them from the calendars store, so
@@ -240,7 +248,13 @@ export const useTasksStore = defineStore('tasks', {
       return state.summary?.overdue ?? 0;
     },
 
-    /** `isOverdue(task, now)` of `utils/tasks.ts`: the server's overdue rule, so a red row is a row the badge counts. */
+    /**
+     * `isOverdue(task, now)` of `utils/tasks.ts`: the server's overdue rule, so
+     * a row that is red is a row the badge counts once the summary is fetched
+     * again. The sidebar does that at local midnight, at the next timed due
+     * instant of a loaded task, when the tab becomes visible again, and the
+     * store after each task mutation (rows can turn red between those moments).
+     */
     isOverdue(): (task: Pick<Task, 'status' | 'due' | 'due_date'>, now: Date) => boolean {
       return (task, now) => isTaskOverdue(task, now);
     },
@@ -438,6 +452,32 @@ export const useTasksStore = defineStore('tasks', {
     },
 
     /**
+     * Undo of a tick: puts the task back as it was before it, a PATCH of the
+     * status and percent the row had (the server's own uncomplete would make it
+     * needs-action at 0 %, losing "in progress at 40 %" or "cancelled"). The
+     * server row goes back into the visible list when it matches the view,
+     * also after the view changed since the tick (another list, filter or
+     * search), as `createTask` does. Resolves to the task, or null after a toast.
+     */
+    async undoComplete(before: Task): Promise<Task | null> {
+      const fresh = await this.updateTask(before, {
+        status: before.status,
+        percent_complete: before.percent_complete,
+      });
+      if (fresh) this.restoreRow(fresh);
+      return fresh;
+    },
+
+    /** Adds a server row to the loaded page when it belongs to the view and is not there yet. */
+    restoreRow(task: Task): void {
+      if (this.tasks.some((t: Task) => t.id === task.id)) return;
+      if (!matchesView(task, this.selectedListId, this.statusFilter)) return;
+      if (this.searchQuery.trim() !== '' && !matchesSearch(task, this.searchQuery)) return;
+      this.tasks.push(task);
+      this.total += 1;
+    },
+
+    /**
      * Asks "Delete this task?" (PrimeVue `useConfirm()`, the layout's
      * ConfirmDialog) and deletes on accept. Resolves true once deleted, false
      * when the user cancels or the delete fails (toasted).
@@ -564,11 +604,9 @@ export const useTasksStore = defineStore('tasks', {
     /**
      * Drops every per-user value and invalidates in-flight loads, for a logout
      * (Pinia outlives the session in the tab). The sort preference is the
-     * device's and stays. NOT called from `authStore.clearAuth()` yet: a static
-     * import of this store in `stores/auth.ts` closes the cycle
-     * useApi -> auth -> tasks -> calendars -> useApi, and then
-     * `mockNuxtImport('useApi')` no longer reaches the calendars store in
-     * specs (stores/dashboard.spec.ts fails).
+     * device's and stays. `authStore.clearAuth()` calls it through a lazy
+     * import (a static import there would close the cycle
+     * useApi -> auth -> tasks -> calendars -> useApi).
      */
     reset(): void {
       this.tasksRequestSeq++;

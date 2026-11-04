@@ -10,7 +10,7 @@ import {
   type TaskStatus,
   type TasksSummary,
 } from '~/types/tasks';
-import { compareTasks, dueBucket, formatDue, isOverdue, isTaskDone, priorityLevel } from './tasks';
+import { compareTasks, dueBucket, formatDue, isOverdue, isTaskDone, nextTimedDueMs, priorityLevel } from './tasks';
 
 // The helpers work in the browser's LOCAL timezone, so the specs pin one: each
 // describe below sets `process.env.TZ` (Node re-reads it on assignment) and
@@ -98,8 +98,8 @@ describe('wire shapes', () => {
     const summary = {
       open: 14, overdue: 3, due_today: 2, completed: 41,
       by_calendar: {
-        '9a0e0000-0000-4000-8000-000000000001': { open: 5, overdue: 1 },
-        '9a0e0000-0000-4000-8000-000000000003': { open: 0, overdue: 0 },
+        '9a0e0000-0000-4000-8000-000000000001': { open: 5, overdue: 1, completed: 40 },
+        '9a0e0000-0000-4000-8000-000000000003': { open: 0, overdue: 0, completed: 0 },
       },
     } satisfies TasksSummary;
 
@@ -113,7 +113,7 @@ describe('wire shapes', () => {
 
     expect(Object.keys(timedTask)).toHaveLength(21);
     expect(page.tasks[0]!.calendar_name).toBe('Errands');
-    expect(summary.by_calendar['9a0e0000-0000-4000-8000-000000000003']).toEqual({ open: 0, overdue: 0 });
+    expect(summary.by_calendar['9a0e0000-0000-4000-8000-000000000003']).toEqual({ open: 0, overdue: 0, completed: 0 });
     expect(input.summary).toBe('Renew passport');
     expect(patch.status).toBe('completed');
   });
@@ -146,6 +146,33 @@ describe('isTaskDone', () => {
     expect(isTaskDone({ status: 'cancelled' })).toBe(true);
     expect(isTaskDone({ status: 'needs-action' })).toBe(false);
     expect(isTaskDone({ status: 'in-process' })).toBe(false);
+  });
+});
+
+describe('nextTimedDueMs', () => {
+  const now = new Date('2026-11-03T10:00:00Z');
+  const at = (iso: string) => Date.parse(iso);
+
+  it('is the soonest timed due instant still ahead of now', () => {
+    const tasks = [
+      task({ due: '2026-11-03T17:00:00Z' }),
+      task({ due: '2026-11-03T12:00:00Z' }),
+      task({ due: '2026-11-04T08:00:00Z' }),
+    ];
+    expect(nextTimedDueMs(tasks, now)).toBe(at('2026-11-03T12:00:00Z'));
+  });
+
+  it('skips what is already overdue, due exactly now, done, all-day and undated', () => {
+    const tasks = [
+      task({ due: '2026-11-03T09:00:00Z' }),
+      task({ due: '2026-11-03T10:00:00Z' }),
+      task({ due: '2026-11-03T11:00:00Z', status: 'completed', completed: true }),
+      task({ due: '2026-11-03T11:30:00Z', status: 'cancelled' }),
+      task({ due: null, due_date: '2026-11-05', due_all_day: true }),
+      task(),
+    ];
+    expect(nextTimedDueMs(tasks, now)).toBeNull();
+    expect(nextTimedDueMs([], now)).toBeNull();
   });
 });
 

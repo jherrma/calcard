@@ -41,7 +41,7 @@ const SUMMARY: TasksSummary = {
   overdue: 3,
   due_today: 2,
   completed: 5,
-  by_calendar: { errands: { open: 14, overdue: 3 } },
+  by_calendar: { errands: { open: 14, overdue: 3, completed: 0 } },
 };
 
 /** Answers by `METHOD url`; anything else fails loudly. */
@@ -359,6 +359,93 @@ describe('AppSidebar — midnight refresh (Europe/Berlin)', () => {
     await vi.advanceTimersByTimeAsync(2 * HOUR);
     await flushPromises();
 
+    expect(summaryAsOf()).toHaveLength(1);
+  });
+});
+
+describe('AppSidebar — refresh when a loaded task turns overdue, and when the tab returns (MN11, Europe/Berlin)', () => {
+  let previousTz: string | undefined;
+  beforeAll(() => {
+    previousTz = process.env.TZ;
+    process.env.TZ = 'Europe/Berlin';
+  });
+  afterAll(() => {
+    if (previousTz === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTz;
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const local = (month: number, day: number, h: number, m = 0, s = 0) => new Date(2026, month - 1, day, h, m, s);
+  const MINUTE = 60_000;
+
+  /** A timed task due at `iso` (UTC). */
+  const dueAt = (id: string, iso: string): Task => ({ ...task(id), due: iso });
+
+  it('refetches the summary one second after the next timed due instant of a loaded task', async () => {
+    vi.setSystemTime(local(11, 3, 16, 0)); // 15:00Z
+    const { tasksStore } = await mountSidebar();
+    expect(summaryAsOf()).toHaveLength(1);
+
+    tasksStore.tasks = [dueAt('a', '2026-11-03T16:00:00Z'), dueAt('later', '2026-11-03T18:00:00Z')]; // 17:00 and 19:00 local
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(60 * MINUTE + 999);
+    await flushPromises();
+    expect(summaryAsOf()).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await flushPromises();
+    expect(summaryAsOf()).toEqual(['2026-11-03T16:00:00+01:00', '2026-11-03T17:00:01+01:00']);
+
+    // Armed again for the next one.
+    await vi.advanceTimersByTimeAsync(2 * 60 * MINUTE);
+    await flushPromises();
+    expect(summaryAsOf().at(-1)).toBe('2026-11-03T19:00:01+01:00');
+  });
+
+  it('re-arms when a task that is due sooner is added later', async () => {
+    vi.setSystemTime(local(11, 3, 9, 0));
+    const { tasksStore } = await mountSidebar();
+    tasksStore.tasks = [dueAt('far', '2026-11-03T20:00:00Z')];
+    await flushPromises();
+    tasksStore.tasks = [...tasksStore.tasks, dueAt('soon', '2026-11-03T08:30:00Z')]; // 09:30 local
+
+    await vi.advanceTimersByTimeAsync(30 * MINUTE + 1000);
+    await flushPromises();
+    expect(summaryAsOf().at(-1)).toBe('2026-11-03T09:30:01+01:00');
+  });
+
+  it('refetches when the tab becomes visible again, and not while it is hidden', async () => {
+    vi.setSystemTime(local(11, 3, 12, 0));
+    await mountSidebar();
+    expect(summaryAsOf()).toHaveLength(1);
+
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
+    expect(summaryAsOf()).toHaveLength(1);
+
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
+    expect(summaryAsOf()).toHaveLength(2);
+    visibility.mockRestore();
+  });
+
+  it('stops listening and clears its timer when the sidebar goes away', async () => {
+    vi.setSystemTime(local(11, 3, 12, 0));
+    const { wrapper } = await mountSidebar();
+    wrapper.unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
     expect(summaryAsOf()).toHaveLength(1);
   });
 });

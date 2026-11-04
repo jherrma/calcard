@@ -245,6 +245,46 @@ func (r *CalendarRepository) UpdateCalendarObject(ctx context.Context, obj *cale
 	})
 }
 
+// UpdateCalendarObjectIfETag writes obj (every column but the identity ones,
+// UpdatedAt as the caller's clock says) over the live row with obj.ID only
+// while that row still carries loadedETag, the ETag obj was loaded with (obj
+// itself holds the new one), and records the "modified" change in the same
+// transaction. It is one conditional UPDATE with explicit columns, never
+// Save, whose fall-back to an INSERT brings a row that a concurrent DELETE
+// removed back to life (#170). Nothing written is calendar.ErrNotFound when no
+// live row is left (deleted meanwhile, which records nothing) and
+// calendar.ErrETagMismatch when another writer changed the row first.
+func (r *CalendarRepository) UpdateCalendarObjectIfETag(ctx context.Context, obj *calendar.CalendarObject, loadedETag string) error {
+	obj.UpdatedAt = time.Now()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&calendar.CalendarObject{}).
+			Where("id = ? AND e_tag = ?", obj.ID, loadedETag).
+			Select("*").
+			Omit("id", "uuid", "calendar_id", "created_at", "deleted_at").
+			UpdateColumns(obj)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return noRowWritten(tx, obj.ID)
+		}
+		return r.recordChange(tx, obj.CalendarID, obj.Path, obj.UID, "modified")
+	})
+}
+
+// noRowWritten tells a conditional write that matched nothing why: no live
+// row any more (ErrNotFound) or a row with another ETag (ErrETagMismatch).
+func noRowWritten(tx *gorm.DB, id uint) error {
+	var live int64
+	if err := tx.Model(&calendar.CalendarObject{}).Where("id = ?", id).Count(&live).Error; err != nil {
+		return err
+	}
+	if live == 0 {
+		return calendar.ErrNotFound
+	}
+	return calendar.ErrETagMismatch
+}
+
 // MoveCalendarObject reassigns an object to a new calendar and records both the
 // target "modified" change and the source "deleted" change in a single
 // transaction. obj.CalendarID must already point at the target calendar.
@@ -281,11 +321,12 @@ func (r *CalendarRepository) DeleteCalendarObject(ctx context.Context, obj *cale
 // transaction. The change-log row keeps the path and UID, which is all a
 // sync-collection REPORT needs to answer the href with a 404, so nothing else
 // has to survive. Nothing deleted (the row is already gone, e.g. a concurrent
-// delete won) is calendar.ErrNotFound with nothing recorded, so the loser of a
-// race does not log a second removal.
+// delete won, or it only survives as a soft-deleted tombstone) is
+// calendar.ErrNotFound with nothing recorded, so the loser of a race does not
+// log a second removal.
 func (r *CalendarRepository) HardDeleteCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		deleted := tx.Unscoped().Delete(&calendar.CalendarObject{}, obj.ID)
+		deleted := tx.Unscoped().Where("deleted_at IS NULL").Delete(&calendar.CalendarObject{}, obj.ID)
 		if deleted.Error != nil {
 			return deleted.Error
 		}

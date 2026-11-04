@@ -70,6 +70,8 @@ func taskToolError(tool, id string, err error) *toolCallResult {
 	switch {
 	case errors.Is(err, taskuc.ErrNotFound):
 		return taskNotReadable(id)
+	case errors.Is(err, taskuc.ErrPreconditionFailed):
+		return errorResult("The task was changed by someone else while you were editing it. Read it again and retry.")
 	case errors.Is(err, taskuc.ErrRecurringNotSupported):
 		return errorResult(err.Error())
 	case errors.Is(err, taskuc.ErrInvalidInput):
@@ -489,7 +491,7 @@ var getTaskSummaryTool = Tool{
 	Name: "get_task_summary",
 	Description: "Count the user's tasks across every task list they can read: open " +
 		"(needs-action and in-process), overdue, due_today and completed (completed AND " +
-		"cancelled), plus open and overdue per list in by_calendar, keyed by the list's UUID " +
+		"cancelled), plus open, overdue and completed per list in by_calendar, keyed by the list's UUID " +
 		"(every list, zeros included). as_of is the user's current time with their UTC offset; " +
 		"that offset decides which date is \"today\". A timed task is overdue once its due time " +
 		"has passed, an all-day task only from the day after its date. overdue and due_today " +

@@ -292,21 +292,25 @@ const showSkeleton = computed(
   () => !noLists.value && (props.listsLoading || tasksStore.isLoading) && rows.value.length === 0,
 );
 
+/**
+ * The done tasks of the selected list, or of every list under All tasks, from
+ * the summary (it ignores the search and the status filter). 0 while the
+ * summary is not loaded.
+ */
+const completedCount = computed(() => {
+  const summary = tasksStore.summary;
+  if (!summary) return 0;
+  const listId = tasksStore.selectedListId;
+  return listId === null ? summary.completed : (summary.by_calendar[listId]?.completed ?? 0);
+});
+
 const emptyVariant = computed<TaskEmptyVariant | null>(() => {
   if (noLists.value) return 'no-lists';
   // A failed load is never shown as "nothing here": that would be a false
   // statement about the user's tasks.
   if (errorMessage.value || showSkeleton.value || rows.value.length > 0) return null;
   if (searchActive.value || tasksStore.statusFilter === 'completed') return 'no-match';
-  // summary.completed counts every list, so "All caught up" is only claimed
-  // for All tasks; an empty single list says "Nothing to do here".
-  if (
-    tasksStore.statusFilter === 'open' &&
-    tasksStore.selectedListId === null &&
-    (tasksStore.summary?.completed ?? 0) > 0
-  ) {
-    return 'all-done';
-  }
+  if (tasksStore.statusFilter === 'open' && completedCount.value > 0) return 'all-done';
   return 'empty';
 });
 
@@ -314,15 +318,15 @@ const emptyVariant = computed<TaskEmptyVariant | null>(() => {
 const truncated = computed(() => tasksStore.total > tasksStore.tasks.length);
 
 /**
- * "Show N completed" under Open (N = summary.completed). The summary counts
- * every list and ignores the search, so a single list or a search shows the
- * link without a number.
+ * "Show N completed" under Open (N = the done tasks of the selected list, or of
+ * every list under All tasks), only when there are some. The summary ignores
+ * the search, so a search shows the link without a number.
  */
 const completedLink = computed(() => {
   if (tasksStore.statusFilter !== 'open') return null;
-  const completed = tasksStore.summary?.completed ?? 0;
+  const completed = completedCount.value;
   if (completed <= 0) return null;
-  return tasksStore.selectedListId === null && !searchActive.value ? `Show ${completed} completed` : 'Show completed';
+  return !searchActive.value ? `Show ${completed} completed` : 'Show completed';
 });
 
 function showCompleted() {
@@ -364,17 +368,21 @@ async function toggle(task: Task) {
   const result = await tasksStore.toggleComplete(task);
   if (!result) return;
   if (completing && result.completed) {
-    toast.action('Task completed', 'Undo', () => undo(result));
+    toast.action('Task completed', 'Undo', () => undo(result, task));
   } else if (!completing && !result.completed) {
     announce(UNCOMPLETED_MESSAGE);
   }
 }
 
-/** Undo = untick (announced like one), unless the task was unticked some other way meanwhile. */
-function undo(completed: Task) {
+/**
+ * Undo puts the task back as it was before the tick (`before`: its status and
+ * percent, e.g. "in progress, 40 %" or "cancelled"), announced like an untick,
+ * unless the task was changed some other way meanwhile.
+ */
+function undo(completed: Task, before: Task) {
   const current = tasksStore.tasks.find((t: Task) => t.id === completed.id) ?? completed;
   if (!current.completed) return;
-  void tasksStore.toggleComplete(current).then((result: Task | null) => {
+  void tasksStore.undoComplete(before).then((result: Task | null) => {
     if (result && !result.completed) announce(UNCOMPLETED_MESSAGE);
   });
 }

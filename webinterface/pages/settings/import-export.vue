@@ -413,6 +413,10 @@ async function executeCalendarImport() {
     showResults.value = true;
     calFile.value = null;
     await calendarStore.fetchCalendars();
+    // The import may have added tasks (VTODOs), which the overdue badge counts.
+    if (selectedCalendar.value?.kind === 'tasks' || selectedCalendar.value?.kind === 'both') {
+      void useTasksStore().fetchSummary();
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to import calendar';
     toast.error(message);

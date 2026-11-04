@@ -78,6 +78,98 @@ describe('useAppToast().action + ActionToast', () => {
     expect(toasts()).toHaveLength(0);
   });
 
+  // MN14: the countdown stops while the pointer is over the toast OR the focus is
+  // inside it, and runs on once both are gone, for what was left of the 5 s.
+  describe('pausing the countdown', () => {
+    const message = () => document.querySelector<HTMLElement>('.p-toast-message')!;
+    const button = () => document.querySelector<HTMLButtonElement>('[data-test="action-toast-button"]')!;
+    const focusIn = () => button().dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    const focusOut = (relatedTarget: Element | null = null) =>
+      button().dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget }));
+
+    async function openToast() {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const { appToast } = mountHarness();
+      appToast.action('Task completed', 'Undo', () => {});
+      await nextTick();
+      return appToast;
+    }
+
+    it('stays open while the focus is in the toast, then closes after what was left', async () => {
+      await openToast();
+      vi.advanceTimersByTime(2000);
+
+      focusIn();
+      vi.advanceTimersByTime(60_000);
+      await nextTick();
+      expect(toasts()).toHaveLength(1);
+
+      focusOut();
+      vi.advanceTimersByTime(2999);
+      await nextTick();
+      expect(toasts()).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      await nextTick();
+      expect(toasts()).toHaveLength(0);
+    });
+
+    it('stays open while the pointer is over it, then closes after what was left', async () => {
+      await openToast();
+      vi.advanceTimersByTime(1000);
+
+      message().dispatchEvent(new MouseEvent('mouseenter'));
+      vi.advanceTimersByTime(60_000);
+      await nextTick();
+      expect(toasts()).toHaveLength(1);
+
+      message().dispatchEvent(new MouseEvent('mouseleave'));
+      vi.advanceTimersByTime(3999);
+      await nextTick();
+      expect(toasts()).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      await nextTick();
+      expect(toasts()).toHaveLength(0);
+    });
+
+    it('focus moving between the toast\'s own controls neither pauses twice nor resumes', async () => {
+      await openToast();
+      vi.advanceTimersByTime(1000);
+
+      focusIn();
+      focusIn(); // a second focusin pauses nothing more
+      focusOut(button()); // moving within the toast resumes nothing
+      vi.advanceTimersByTime(60_000);
+      await nextTick();
+      expect(toasts()).toHaveLength(1);
+
+      focusOut();
+      vi.advanceTimersByTime(4000);
+      await nextTick();
+      expect(toasts()).toHaveLength(0);
+    });
+
+    it('a status toast keeps its own 3 s lifetime while the action toast is held by the focus', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const Layout = defineComponent({
+        setup(_, { expose }) {
+          expose({ appToast: useAppToast() });
+          return () => [h(Toast, { position: 'top-right' }), h(ActionToast)];
+        },
+      });
+      const wrapper = mount(Layout, { attachTo: document.body, global: { plugins: [PrimeVue, ToastService] } });
+      const appToast = (wrapper.vm as unknown as { appToast: ReturnType<typeof useAppToast> }).appToast;
+      appToast.action('Task completed', 'Undo', () => {});
+      appToast.success('Task deleted');
+      await nextTick();
+      focusIn();
+
+      vi.advanceTimersByTime(3000);
+      await nextTick();
+      expect(document.body.textContent).not.toContain('Task deleted');
+      expect(toasts()).toHaveLength(1);
+    });
+  });
+
   it('a new action toast replaces the previous one', async () => {
     const { appToast } = mountHarness();
     const first = vi.fn();

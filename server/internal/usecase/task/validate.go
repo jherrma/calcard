@@ -26,7 +26,31 @@ func taskSummary(summary string) (string, error) {
 	if utf8.RuneCountInString(s) > maxSummaryRunes {
 		return "", invalidInputf("summary must be at most %d characters", maxSummaryRunes)
 	}
+	if hasControlChar(s) {
+		return "", invalidInputf("summary must not contain control characters")
+	}
 	return s, nil
+}
+
+// taskDescription validates a description: any text without control
+// characters (a line break is fine).
+func taskDescription(description string) error {
+	if hasControlChar(description) {
+		return invalidInputf("description must not contain control characters")
+	}
+	return nil
+}
+
+// hasControlChar reports a C0 control character other than TAB, CR and LF.
+// RFC 5545 §3.3.11 keeps them out of TEXT, and a NUL makes PostgreSQL refuse
+// the row. CR and LF are line breaks, stored as the iCalendar \n escape.
+func hasControlChar(s string) bool {
+	for _, r := range s {
+		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
+			return true
+		}
+	}
+	return false
 }
 
 // taskStatuses are the STATUS values a task can be given, in the order the

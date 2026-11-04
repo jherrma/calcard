@@ -111,7 +111,7 @@ type taskCreate struct {
 }
 
 // newTaskCreate validates input.Calendar's component set, then the fields in
-// this order: summary, status, priority, percent, due, start, due not before
+// this order: summary, description, status, priority, percent, due, start, due not before
 // start. The first refusal is returned.
 func newTaskCreate(input CreateTaskInput) (*taskCreate, error) {
 	if err := calendar.RequireComponent(input.Calendar, calendar.ComponentToDo); err != nil {
@@ -119,6 +119,9 @@ func newTaskCreate(input CreateTaskInput) (*taskCreate, error) {
 	}
 	summary, err := taskSummary(input.Summary)
 	if err != nil {
+		return nil, err
+	}
+	if err := taskDescription(input.Description); err != nil {
 		return nil, err
 	}
 	status, err := taskStatus(input.Status)

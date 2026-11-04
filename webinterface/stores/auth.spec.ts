@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import { createTestingPinia } from '@pinia/testing';
 import { useAuthStore } from './auth';
+import { useTasksStore } from './tasks';
+import { flushPromises } from '@vue/test-utils';
 import {
   usePreferencesStore,
   DEFAULT_PREFERENCES,
@@ -180,6 +182,38 @@ describe('logout drops per-user cached state (story 103)', () => {
     expect(prefs.preferences).toEqual(DEFAULT_PREFERENCES);
     expect(prefs.timeFormat).toBe('24h');
     expect(prefs.defaultEventDuration).toBe(60);
+  });
+
+  it('logout() empties the tasks store too: rows, badge counts and filters of user A never reach user B (MN12)', async () => {
+    apiMock.mockResolvedValue({});
+    const tasks = useTasksStore();
+    tasks.tasks = [{ id: 't1' } as never];
+    tasks.summary = { open: 1, overdue: 1, due_today: 0, completed: 0, by_calendar: {} };
+    tasks.searchQuery = 'milk';
+    tasks.statusFilter = 'all';
+    tasks.selectedListId = 'list-a';
+
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+    await store.logout();
+    await flushPromises();
+
+    expect(tasks.tasks).toEqual([]);
+    expect(tasks.summary).toBeNull();
+    expect(tasks.overdueCount).toBe(0);
+    expect(tasks.searchQuery).toBe('');
+    expect(tasks.statusFilter).toBe('open');
+    expect(tasks.selectedListId).toBeNull();
+  });
+
+  it('a failed refresh (clearAuth directly) resets the tasks store as well', async () => {
+    const tasks = useTasksStore();
+    tasks.tasks = [{ id: 't1' } as never];
+
+    useAuthStore().clearAuth();
+    await flushPromises();
+
+    expect(tasks.tasks).toEqual([]);
   });
 });
 

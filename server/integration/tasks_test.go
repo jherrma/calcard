@@ -65,8 +65,9 @@ type taskSummaryJSON struct {
 	DueToday   int64 `json:"due_today"`
 	Completed  int64 `json:"completed"`
 	ByCalendar map[string]struct {
-		Open    int64 `json:"open"`
-		Overdue int64 `json:"overdue"`
+		Open      int64 `json:"open"`
+		Overdue   int64 `json:"overdue"`
+		Completed int64 `json:"completed"`
 	} `json:"by_calendar"`
 }
 
@@ -750,6 +751,7 @@ func (s *taskFlowState) crossListAndSummary(t *testing.T) {
 	if assert.Contains(t, sum.ByCalendar, s.list.UUID) {
 		assert.EqualValues(t, 4, sum.ByCalendar[s.list.UUID].Open)
 		assert.EqualValues(t, 3, sum.ByCalendar[s.list.UUID].Overdue)
+		assert.EqualValues(t, 1, sum.ByCalendar[s.list.UUID].Completed, "the cancelled attic is done, per list too (MN13)")
 	}
 	assert.NotContains(t, sum.ByCalendar, s.work.UUID, "an event calendar is not a task list")
 	assert.EqualValues(t, sum.Open, taskPage(t, s.token, "/tasks").Total, "open agrees with the list")
@@ -1538,4 +1540,58 @@ func mustEventUID(t *testing.T, token, calUUID, eventID string) string {
 	}
 	require.Equal(t, http.StatusOK, doJSONRaw(t, http.MethodGet, "/calendars/"+calUUID+"/events/"+eventID, token, nil, &ev))
 	return ev.UID
+}
+
+// TestTaskTextRefusesControlCharacters (MN6): a NUL or another C0 control
+// character in a task's summary or description is a 400 on create and PATCH on
+// either database (PostgreSQL refuses a NUL, which used to be a 500), while a
+// TAB and line breaks are stored.
+func TestTaskTextRefusesControlCharacters(t *testing.T) {
+	token := registerAndLogin(t, "tasks-ctrl@example.test", "tasksSecret!123", "Tasks control")
+	list := createTaskCalendar(t, token, "Errands", "tasks")
+
+	for _, body := range []map[string]any{
+		{"summary": "a\u0000b"},
+		{"summary": "a\u0007b"},
+		{"summary": "ok", "description": "a\u0000b"},
+	} {
+		status, raw := restCall(t, http.MethodPost, tasksURL(list.UUID), token, body)
+		assert.Equalf(t, http.StatusBadRequest, status, "%v: %s", body, string(raw))
+	}
+
+	task := createTask(t, token, list.UUID, map[string]any{"summary": "a\tb", "description": "one\r\ntwo"})
+	assert.Equal(t, "a\tb", task.Summary)
+	assert.Equal(t, "one\ntwo", task.Description)
+	status, raw := restCall(t, http.MethodPatch, taskURL(list.UUID, task.ID), token, map[string]any{"description": "x\u001fy"})
+	assert.Equalf(t, http.StatusBadRequest, status, "patch: %s", string(raw))
+	assert.Equal(t, task.ETag, getTask(t, token, list.UUID, task.ID).ETag, "nothing written")
+}
+
+// TestTaskWriteAfterDeleteStaysDeleted (MJ1): a PATCH, complete or uncomplete
+// of a task that was deleted is a 404 and never brings the task back.
+func TestTaskWriteAfterDeleteStaysDeleted(t *testing.T) {
+	token := registerAndLogin(t, "tasks-gone@example.test", "tasksSecret!123", "Tasks gone")
+	list := createTaskCalendar(t, token, "Errands", "tasks")
+	task := createTask(t, token, list.UUID, map[string]any{"summary": "Renew passport"})
+
+	status, raw := restCall(t, http.MethodDelete, taskURL(list.UUID, task.ID), token, nil)
+	require.Equalf(t, http.StatusNoContent, status, "delete: %s", string(raw))
+
+	for name, call := range map[string]func() (int, []byte){
+		"patch": func() (int, []byte) {
+			return restCall(t, http.MethodPatch, taskURL(list.UUID, task.ID), token, map[string]any{"summary": "late"})
+		},
+		"complete": func() (int, []byte) {
+			return restCall(t, http.MethodPost, taskURL(list.UUID, task.ID)+"/complete", token, nil)
+		},
+		"uncomplete": func() (int, []byte) {
+			return restCall(t, http.MethodPost, taskURL(list.UUID, task.ID)+"/uncomplete", token, nil)
+		},
+	} {
+		status, raw := call()
+		assert.Equalf(t, http.StatusNotFound, status, "%s: %s", name, string(raw))
+	}
+	status, _ = restCall(t, http.MethodGet, taskURL(list.UUID, task.ID), token, nil)
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Empty(t, taskPage(t, token, tasksURL(list.UUID)+"?status=all").Tasks)
 }

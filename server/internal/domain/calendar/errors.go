@@ -46,6 +46,11 @@ type conflictError struct{ err error }
 func (e *conflictError) Error() string   { return e.err.Error() }
 func (e *conflictError) Unwrap() []error { return []error{ErrConflict, e.err} }
 
+// ErrETagMismatch is returned by a conditional object write
+// (UpdateCalendarObjectIfETag) when the row still exists but another writer
+// changed it since it was loaded: the caller's edit was made on stale data.
+var ErrETagMismatch = errors.New("calendar object changed since it was loaded")
+
 // ErrComponentNotStored marks a write refused because the target calendar does
 // not store the object's component (#170): an event into a task list, a task
 // into an event calendar. RequireComponent returns it; the error is also an

@@ -51,6 +51,10 @@ type UpdateTaskInput struct {
 	// in (TZID plus a VTIMEZONE); without a usable one they go out in UTC, as
 	// for create. It does not move a time the request does not send.
 	Timezone string
+	// IfMatch is the ETag the caller's If-Match matched ("" when it sent
+	// none): the write happens only on a task that still has it, else
+	// ErrPreconditionFailed.
+	IfMatch string
 }
 
 type UpdateTaskUseCase struct {
@@ -75,7 +79,7 @@ func NewUpdateTaskUseCase(calendarRepo calendar.CalendarRepository, now func() t
 // keeps its stored form (a SUMMARY's LANGUAGE, a DUE's TZID). A timed due or
 // start written with a TZID gets its VTIMEZONE when the object has none.
 // SEQUENCE, LAST-MODIFIED, the ETag and the calendar's sync token advance
-// (UpdateCalendarObject); an update that changes nothing writes nothing and
+// (UpdateCalendarObjectIfETag); an update that changes nothing writes nothing and
 // keeps the ETag.
 //
 // Status on a task that does not repeat: completed is what complete does
@@ -94,10 +98,18 @@ func NewUpdateTaskUseCase(calendarRepo calendar.CalendarRepository, now func() t
 // ErrInvalidInput; then ErrRecurringNotSupported. Nothing is written on a
 // refusal.
 func (uc *UpdateTaskUseCase) Execute(ctx context.Context, input UpdateTaskInput) (*Task, error) {
+	return writeTask(input.IfMatch, func() (*Task, error) { return uc.attempt(ctx, input) })
+}
+
+func (uc *UpdateTaskUseCase) attempt(ctx context.Context, input UpdateTaskInput) (*Task, error) {
 	obj, err := loadWritableTask(ctx, uc.calendarRepo, input.Calendar, input.UUID)
 	if err != nil {
 		return nil, err
 	}
+	if err := checkIfMatch(obj, input.IfMatch); err != nil {
+		return nil, err
+	}
+	loadedETag := obj.ETag
 	update, err := newTaskUpdate(input, obj.IsAllDay)
 	if err != nil {
 		return nil, err
@@ -114,7 +126,7 @@ func (uc *UpdateTaskUseCase) Execute(ctx context.Context, input UpdateTaskInput)
 	if err != nil {
 		return nil, err
 	}
-	if err := uc.calendarRepo.UpdateCalendarObject(ctx, obj); err != nil {
+	if err := storeTask(ctx, uc.calendarRepo, obj, loadedETag); err != nil {
 		return nil, err
 	}
 	return newTask(obj), nil
@@ -166,6 +178,11 @@ func newTaskUpdate(in UpdateTaskInput, storedAllDay bool) (*taskUpdate, error) {
 		}
 		u.summary = &summary
 	}
+	if u.description.Value != nil {
+		if err := taskDescription(*u.description.Value); err != nil {
+			return nil, err
+		}
+	}
 	if in.Status != nil {
 		status, err := taskStatus(*in.Status)
 		if err != nil {
@@ -213,6 +230,9 @@ func (u *taskUpdate) completes() bool {
 // errUnchanged when no property changed.
 func (u *taskUpdate) apply(cal *ical.Calendar, todo *ical.Component, stored loadedTask, now time.Time) error {
 	if err := u.checkTimes(todo, stored); err != nil {
+		return err
+	}
+	if err := u.checkOverrides(cal, todo); err != nil {
 		return err
 	}
 	if stored.details.Recurring && u.completes() {
@@ -304,6 +324,23 @@ func (u *taskUpdate) checkTimes(todo *ical.Component, stored loadedTask) error {
 		start = &taskTime{t: *stored.details.Start}
 	}
 	return checkDueAfterStart(due, start)
+}
+
+// checkOverrides refuses turning the DTSTART of a repeating master that has
+// RECURRENCE-ID overrides from a date into a date-time or back: RFC 5545
+// §3.8.4.4 gives a RECURRENCE-ID the value type of the master's DTSTART, so
+// the overrides would be orphaned and clients drop them.
+func (u *taskUpdate) checkOverrides(cal *ical.Calendar, todo *ical.Component) error {
+	startProp := todo.Props.Get(ical.PropDateTimeStart)
+	if !u.start.set || u.start.v == nil || startProp == nil || isDateProp(startProp) == u.start.v.allDay {
+		return nil
+	}
+	for _, child := range cal.Children {
+		if child != todo && child.Name == ical.CompToDo && child.Props.Get(ical.PropRecurrenceID) != nil {
+			return invalidInputf("start cannot change between a date and a date-time while the repeating task has changed occurrences")
+		}
+	}
+	return nil
 }
 
 // applyTimes writes the due and start of the request and reports whether it

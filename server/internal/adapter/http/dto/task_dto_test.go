@@ -197,9 +197,9 @@ func TestNewTaskSummaryResponse(t *testing.T) {
 			"9a0e0000-0000-4000-8000-000000000003": {},
 		})
 	assert.JSONEq(t, `{"open":14,"overdue":3,"due_today":2,"completed":41,"by_calendar":{
-		"9a0e0000-0000-4000-8000-000000000001":{"open":5,"overdue":1},
-		"9a0e0000-0000-4000-8000-000000000002":{"open":9,"overdue":2},
-		"9a0e0000-0000-4000-8000-000000000003":{"open":0,"overdue":0}}}`, render(resp))
+		"9a0e0000-0000-4000-8000-000000000001":{"open":5,"overdue":1,"completed":40},
+		"9a0e0000-0000-4000-8000-000000000002":{"open":9,"overdue":2,"completed":1},
+		"9a0e0000-0000-4000-8000-000000000003":{"open":0,"overdue":0,"completed":0}}}`, render(resp))
 
 	for _, byCalendar := range []map[string]calendar.TaskCount{nil, {}} {
 		assert.JSONEq(t, `{"open":0,"overdue":0,"due_today":0,"completed":0,"by_calendar":{}}`,

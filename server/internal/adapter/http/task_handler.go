@@ -72,8 +72,22 @@ func NewTaskHandler(
 // taskPermission returns the user's permission on the task's calendar and
 // that calendar: the shared objectPermission with IsTask as the kind test, so
 // an event's UUID is an unknown task.
-func (h *TaskHandler) taskPermission(c fiber.Ctx, taskUUID string) (calendar.CalendarPermission, *calendar.Calendar) {
+func (h *TaskHandler) taskPermission(c fiber.Ctx, taskUUID string) (calendar.CalendarPermission, *calendar.Calendar, error) {
 	return objectPermission(c, h.calendarRepo, taskUUID, (*calendar.CalendarObject).IsTask)
+}
+
+// calendarAccess resolves the URL's :calendar_id and the caller's permission
+// on it, for the routes that address a task list: PermissionNone (and a nil
+// calendar) for an unknown or unreadable one, which the caller answers with
+// 404 "Calendar not found". The error is a storage failure, to be answered
+// with accessError.
+func (h *TaskHandler) calendarAccess(c fiber.Ctx) (*calendar.Calendar, calendar.CalendarPermission, error) {
+	cal, err := resolveCalendar(c, h.calendarRepo)
+	if err != nil || cal == nil {
+		return nil, calendar.PermissionNone, err
+	}
+	perm, err := calendarPermission(c, h.calendarRepo, cal.ID)
+	return cal, perm, err
 }
 
 // taskResponse renders a task of cal.
@@ -101,18 +115,25 @@ func taskServerError(c fiber.Ctx, err error) error {
 // when sent, must match the task's ETag (else 412 "ETag precondition
 // failed"). It returns the calendar and true to go on, or false and the
 // response the handler must return.
-func (h *TaskHandler) writableTask(c fiber.Ctx, taskID string) (*calendar.Calendar, bool, error) {
-	perm, cal := h.taskPermission(c, taskID)
+//
+// The returned ifMatch is the ETag a given If-Match matched ("" without one);
+// the use case re-checks it atomically with its write.
+func (h *TaskHandler) writableTask(c fiber.Ctx, taskID string) (cal *calendar.Calendar, ifMatch string, ok bool, resp error) {
+	perm, cal, err := h.taskPermission(c, taskID)
+	if err != nil {
+		return nil, "", false, accessError(c, err)
+	}
 	if perm == calendar.PermissionNone {
-		return nil, false, ErrorResponse(c, fiber.StatusNotFound, taskNotFoundMessage)
+		return nil, "", false, ErrorResponse(c, fiber.StatusNotFound, taskNotFoundMessage)
 	}
 	if !canWrite(perm) {
-		return nil, false, ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
+		return nil, "", false, ErrorResponse(c, fiber.StatusForbidden, "You have read-only access to this calendar")
 	}
-	if ok, resp := ifMatchOK(c, h.calendarRepo, taskID); !ok {
-		return nil, false, resp
+	ifMatch, ok, resp = ifMatchETag(c, h.calendarRepo, taskID)
+	if !ok {
+		return nil, "", false, resp
 	}
-	return cal, true, nil
+	return cal, ifMatch, true, nil
 }
 
 // taskWriteError answers a task write the use case refused: an object that is
@@ -124,6 +145,8 @@ func taskWriteError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, taskuc.ErrNotFound):
 		return ErrorResponse(c, fiber.StatusNotFound, taskNotFoundMessage)
+	case errors.Is(err, taskuc.ErrPreconditionFailed):
+		return ErrorResponse(c, fiber.StatusPreconditionFailed, "ETag precondition failed")
 	case errors.Is(err, taskuc.ErrRecurringNotSupported):
 		return ConflictResponse(c, err.Error())
 	case errors.Is(err, taskuc.ErrInvalidInput):
@@ -148,8 +171,11 @@ func taskWriteError(c fiber.Ctx, err error) error {
 // creation. A recurring task is one row. A calendar that does not store tasks
 // (e.g. a VEVENT-only calendar) answers 200 with no tasks.
 func (h *TaskHandler) List(c fiber.Ctx) error {
-	cal, ok := resolveCalendar(c, h.calendarRepo)
-	if !ok || calendarPermission(c, h.calendarRepo, cal.ID) == calendar.PermissionNone {
+	cal, perm, err := h.calendarAccess(c)
+	if err != nil {
+		return accessError(c, err)
+	}
+	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, calendarNotFoundMessage)
 	}
 	limit, offset, ok, resp := pageQuery(c)
@@ -185,7 +211,10 @@ func (h *TaskHandler) List(c fiber.Ctx) error {
 // event's UUID alike.
 func (h *TaskHandler) Get(c fiber.Ctx) error {
 	taskID := c.Params("task_id")
-	perm, cal := h.taskPermission(c, taskID)
+	perm, cal, err := h.taskPermission(c, taskID)
+	if err != nil {
+		return accessError(c, err)
+	}
 	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, taskNotFoundMessage)
 	}
@@ -212,11 +241,10 @@ func (h *TaskHandler) Get(c fiber.Ctx) error {
 // calendar does not store tasks") and for every field the use case refuses,
 // with its message. There is no recurrence field.
 func (h *TaskHandler) Create(c fiber.Ctx) error {
-	cal, ok := resolveCalendar(c, h.calendarRepo)
-	if !ok {
-		return ErrorResponse(c, fiber.StatusNotFound, calendarNotFoundMessage)
+	cal, perm, err := h.calendarAccess(c)
+	if err != nil {
+		return accessError(c, err)
 	}
-	perm := calendarPermission(c, h.calendarRepo, cal.ID)
 	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, calendarNotFoundMessage)
 	}
@@ -267,7 +295,7 @@ func (h *TaskHandler) Create(c fiber.Ctx) error {
 // recurrence field and no list change.
 func (h *TaskHandler) Update(c fiber.Ctx) error {
 	taskID := c.Params("task_id")
-	cal, ok, resp := h.writableTask(c, taskID)
+	cal, ifMatch, ok, resp := h.writableTask(c, taskID)
 	if !ok {
 		return resp
 	}
@@ -287,6 +315,7 @@ func (h *TaskHandler) Update(c fiber.Ctx) error {
 		PercentComplete: taskuc.Change[int](req.PercentComplete),
 		Status:          req.Status,
 		Timezone:        req.Timezone,
+		IfMatch:         ifMatch,
 	})
 	if err != nil {
 		return taskWriteError(c, err)
@@ -304,7 +333,7 @@ func (h *TaskHandler) Update(c fiber.Ctx) error {
 // failed" when an If-Match header does not match the task's ETag.
 func (h *TaskHandler) Delete(c fiber.Ctx) error {
 	taskID := c.Params("task_id")
-	cal, ok, resp := h.writableTask(c, taskID)
+	cal, _, ok, resp := h.writableTask(c, taskID)
 	if !ok {
 		return resp
 	}
@@ -326,11 +355,11 @@ func (h *TaskHandler) Delete(c fiber.Ctx) error {
 // 403 and 412 rules of DELETE.
 func (h *TaskHandler) Complete(c fiber.Ctx) error {
 	taskID := c.Params("task_id")
-	cal, ok, resp := h.writableTask(c, taskID)
+	cal, ifMatch, ok, resp := h.writableTask(c, taskID)
 	if !ok {
 		return resp
 	}
-	task, err := h.completeUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
+	task, err := h.completeUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID, IfMatch: ifMatch})
 	if err != nil {
 		return taskWriteError(c, err)
 	}
@@ -347,11 +376,11 @@ func (h *TaskHandler) Complete(c fiber.Ctx) error {
 // complete.
 func (h *TaskHandler) Uncomplete(c fiber.Ctx) error {
 	taskID := c.Params("task_id")
-	cal, ok, resp := h.writableTask(c, taskID)
+	cal, ifMatch, ok, resp := h.writableTask(c, taskID)
 	if !ok {
 		return resp
 	}
-	task, err := h.uncompleteUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID})
+	task, err := h.uncompleteUC.Execute(c.Context(), taskuc.CompleteTaskInput{Calendar: cal, UUID: taskID, IfMatch: ifMatch})
 	if err != nil {
 		return taskWriteError(c, err)
 	}
@@ -438,7 +467,7 @@ func (h *TaskHandler) ListAll(c fiber.Ctx) error {
 // "Invalid 'as_of' value".
 //
 // Answers 200 {"open":n,"overdue":n,"due_today":n,"completed":n,
-// "by_calendar":{"<calendar uuid>":{"open":n,"overdue":n}}}:
+// "by_calendar":{"<calendar uuid>":{"open":n,"overdue":n,"completed":n}}}:
 //   - open: needs-action and in-process tasks.
 //   - overdue: open tasks due before as_of (timed; instants compared), or,
 //     for an all-day task, due on a date before as_of's date in its offset
@@ -447,9 +476,10 @@ func (h *TaskHandler) ListAll(c fiber.Ctx) error {
 //     due earlier today is overdue AND due today.
 //   - completed: done tasks, completed and cancelled, so it equals the total
 //     of GET /api/v1/tasks?status=completed. A cancelled task never counts as
-//     open, overdue or due today, nor in by_calendar.
-//   - by_calendar: open and overdue per task list, keyed by calendar UUID,
-//     with an entry (zeros included) for every readable task list.
+//     open, overdue or due today.
+//   - by_calendar: open, overdue and completed (done, as above) per task
+//     list, keyed by calendar UUID, with an entry (zeros included) for every
+//     readable task list.
 //
 // A floating due time (no Z, no TZID) is compared as UTC wall time.
 func (h *TaskHandler) Summary(c fiber.Ctx) error {

@@ -76,9 +76,9 @@ func eventResponseFromInstance(inst calendar.EventInstance) dto.EventResponse {
 // 404 "Event not found", before any permission, If-Match or body check.
 // Without the kind test a PATCH of a task reached the update use case and
 // ended in a 500 ("no VEVENT found").
-func (h *EventHandler) eventPermission(c fiber.Ctx, eventUUID string) calendar.CalendarPermission {
-	perm, _ := objectPermission(c, h.calendarRepo, eventUUID, (*calendar.CalendarObject).IsEvent)
-	return perm
+func (h *EventHandler) eventPermission(c fiber.Ctx, eventUUID string) (calendar.CalendarPermission, error) {
+	perm, _, err := objectPermission(c, h.calendarRepo, eventUUID, (*calendar.CalendarObject).IsEvent)
+	return perm, err
 }
 
 // eventResponseFromObject builds an EventResponse from a stored calendar
@@ -108,8 +108,16 @@ func eventResponseFromObject(obj *calendar.CalendarObject) dto.EventResponse {
 
 // GET /api/v1/calendars/:calendar_id/events
 func (h *EventHandler) List(c fiber.Ctx) error {
-	cal, ok := resolveCalendar(c, h.calendarRepo)
-	if !ok || calendarPermission(c, h.calendarRepo, cal.ID) == calendar.PermissionNone {
+	cal, err := resolveCalendar(c, h.calendarRepo)
+	if err != nil {
+		return accessError(c, err)
+	}
+	if cal == nil {
+		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
+	}
+	if perm, err := calendarPermission(c, h.calendarRepo, cal.ID); err != nil {
+		return accessError(c, err)
+	} else if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
 	calendarID := cal.ID
@@ -151,7 +159,9 @@ func (h *EventHandler) List(c fiber.Ctx) error {
 // GET /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Get(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	if h.eventPermission(c, eventID) == calendar.PermissionNone {
+	if perm, err := h.eventPermission(c, eventID); err != nil {
+		return accessError(c, err)
+	} else if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
 	obj, err := h.getUC.Execute(c.Context(), eventID)
@@ -164,12 +174,18 @@ func (h *EventHandler) Get(c fiber.Ctx) error {
 
 // POST /api/v1/calendars/:calendar_id/events
 func (h *EventHandler) Create(c fiber.Ctx) error {
-	cal, ok := resolveCalendar(c, h.calendarRepo)
-	if !ok {
+	cal, err := resolveCalendar(c, h.calendarRepo)
+	if err != nil {
+		return accessError(c, err)
+	}
+	if cal == nil {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
 	calendarID := cal.ID
-	perm := calendarPermission(c, h.calendarRepo, calendarID)
+	perm, err := calendarPermission(c, h.calendarRepo, calendarID)
+	if err != nil {
+		return accessError(c, err)
+	}
 	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
@@ -224,7 +240,10 @@ func eventWriteError(c fiber.Ctx, err error, failure string) error {
 // PATCH /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Update(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	perm := h.eventPermission(c, eventID)
+	perm, err := h.eventPermission(c, eventID)
+	if err != nil {
+		return accessError(c, err)
+	}
 	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
@@ -272,7 +291,10 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 // DELETE /api/v1/calendars/:calendar_id/events/:event_id
 func (h *EventHandler) Delete(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	perm := h.eventPermission(c, eventID)
+	perm, err := h.eventPermission(c, eventID)
+	if err != nil {
+		return accessError(c, err)
+	}
 	if perm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
@@ -295,7 +317,10 @@ func (h *EventHandler) Delete(c fiber.Ctx) error {
 // POST /api/v1/calendars/:calendar_id/events/:event_id/move
 func (h *EventHandler) Move(c fiber.Ctx) error {
 	eventID := c.Params("event_id")
-	srcPerm := h.eventPermission(c, eventID)
+	srcPerm, err := h.eventPermission(c, eventID)
+	if err != nil {
+		return accessError(c, err)
+	}
 	if srcPerm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Event not found")
 	}
@@ -313,7 +338,10 @@ func (h *EventHandler) Move(c fiber.Ctx) error {
 	if err != nil || targetCal == nil {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}
-	targetPerm := calendarPermission(c, h.calendarRepo, targetCal.ID)
+	targetPerm, err := calendarPermission(c, h.calendarRepo, targetCal.ID)
+	if err != nil {
+		return accessError(c, err)
+	}
 	if targetPerm == calendar.PermissionNone {
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	}

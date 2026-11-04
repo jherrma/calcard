@@ -99,6 +99,9 @@ func (m *mockCalendarRepo) CreateCalendarObject(ctx context.Context, obj *calend
 func (m *mockCalendarRepo) UpdateCalendarObject(ctx context.Context, obj *calendar.CalendarObject) error {
 	return nil
 }
+func (m *mockCalendarRepo) UpdateCalendarObjectIfETag(ctx context.Context, obj *calendar.CalendarObject, loadedETag string) error {
+	return nil
+}
 func (m *mockCalendarRepo) MoveCalendarObject(ctx context.Context, obj *calendar.CalendarObject, sourceCalendarID uint) error {
 	return nil
 }

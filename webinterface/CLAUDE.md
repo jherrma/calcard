@@ -110,7 +110,7 @@ webinterface/
 │       ├── ActionToast.vue        # Host of useAppToast().action() toasts ("Task completed" + Undo), bottom centre; default layout only
 │       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
 │       ├── AppSidebar.vue         # Main navigation sidebar (Dashboard, Calendar, Tasks, Contacts, Settings); the Tasks badge is
-│       │                          #   tasksStore.overdueCount, summary fetched on mount and again at each local midnight (#170)
+│       │                          #   tasksStore.overdueCount, summary fetched on mount, at each local midnight, at the next timed due instant of a loaded task, and when the tab becomes visible again (#170)
 │       ├── GlobalSearch.vue       # Cmd/Ctrl+K search palette (trigger + dialog); a task-list hit opens /tasks?list=<uuid> (#170)
 │       ├── SearchSectionHeader.vue # Category header + count for a search result group
 │       ├── SearchViewAll.vue      # "View all N …" link into /search
@@ -313,13 +313,21 @@ Contacts; the Tasks entry's pill is the overdue count). A task list is a calenda
   refetch the summary (badge and counts). Open / Done / All is a server query; the sort runs in the
   browser, within the status groups.
 - **Who owns what.** TaskToolbar, TasksSidebar, TaskRow and TaskCheck only emit. TaskList owns the
-  tick (optimistic, 600 ms in place, then the "Task completed" action toast with Undo), the
+  tick (optimistic, 600 ms in place, then the "Task completed" action toast with Undo, which PATCHes the
+  status and percent the row had before the tick via `tasksStore.undoComplete`, not the server's uncomplete, and re-inserts the row when it matches the view), the
   minute clock, the keyboard and the focus. The page owns the dialogs (TaskCreateDialog and
   TaskEditDialog over TaskForm, AddTaskListDialog, TaskListSettingsDialog = CalendarSettingsDialog
   with `kind="tasks"`).
 - **Deletes are permanent** (a task is hard-deleted; a list goes with everything in it), so nothing
   offers Undo after a delete: the confirm dialog is the safety net. `summary` / `description` are
   plain text: shown and sent back as they are.
+- **Logout empties the store.** `clearAuth()` resets the tasks store (rows, badge counts, filters)
+  through a lazy `import('~/stores/tasks')`: a static import closes the cycle
+  useApi -> auth -> tasks -> calendars -> useApi and breaks `mockNuxtImport('useApi')` in specs.
+- **Summary freshness.** The sidebar refetches the summary on mount, at local midnight, at the next
+  timed due instant of a loaded task, on `visibilitychange`; the calendar delete (mixed calendars) and
+  a calendar import into a task-bearing calendar refetch it too. `by_calendar[uuid].completed` is the
+  list's done count (the empty state's "All caught up" and the "Show N completed" link read it).
 
 Accessibility and phones (spec §8, story 29):
 
@@ -709,7 +717,7 @@ toast.action('Task completed', 'Undo', () => undo()); // one button, 5 s, bottom
 
 `action()` toasts render in `components/common/ActionToast.vue` (group `ACTION_TOAST_GROUP`), which only
 the **default** layout mounts, so they do not show on settings or auth pages. One at a time: a new one
-replaces the previous. The button runs the callback once and closes the toast.
+replaces the previous. The button runs the callback once and closes the toast. The 5 s countdown pauses while the pointer is over the toast or the focus is inside it (PrimeVue pauses on hover only when `onMouseEnter` is passed; the focus pause raises the same synthetic mouseenter/mouseleave).
 
 ### Confirmation Dialogs
 ```typescript

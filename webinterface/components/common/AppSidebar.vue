@@ -129,34 +129,64 @@ function nextLocalMidnight(now: Date): number {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
 }
 
-let midnightTimer: ReturnType<typeof setTimeout> | null = null;
+/** Slack after a due instant, so the server's "due before as_of" has surely passed when we ask. */
+const DUE_SLACK_MS = 1000;
+
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * "Overdue" is relative to the local day, so the badge must roll over at
- * midnight even when nothing else asks for the summary: one timer, armed for
- * the next local midnight, refetches and arms itself for the one after.
+ * When the overdue count can next change on its own: the sooner of the next
+ * local midnight (all-day tasks) and the next timed due instant of a task the
+ * tasks store has loaded (a row turns red then, so the badge must follow).
+ * Tasks the store has not loaded are covered by the other triggers (midnight,
+ * the tab becoming visible, every mutation, the dashboard's refresh).
  */
-function armMidnightRefresh() {
-  const midnight = nextLocalMidnight(new Date());
-  midnightTimer = setTimeout(() => {
-    // A timer can fire while the wall clock still says yesterday (the clock was
-    // set back after arming). Asking then would count against yesterday again,
-    // so it only re-arms for the same midnight.
-    if (Date.now() >= midnight) void tasksStore.fetchSummary();
-    armMidnightRefresh();
-  }, midnight - Date.now());
+function nextRefreshAt(now: Date): number {
+  const midnight = nextLocalMidnight(now);
+  const due = nextTimedDueMs(tasksStore.tasks, now);
+  return due === null ? midnight : Math.min(midnight, due + DUE_SLACK_MS);
+}
+
+/**
+ * "Overdue" is relative to the clock, so the badge must follow it even when
+ * nothing else asks for the summary: one timer, armed for the next refresh
+ * moment, refetches and arms itself for the one after.
+ */
+function armRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const at = nextRefreshAt(new Date());
+  refreshTimer = setTimeout(() => {
+    // A timer can fire while the wall clock still says earlier (the clock was
+    // set back after arming). Asking then would count against the old time
+    // again, so it only re-arms.
+    if (Date.now() >= at) void tasksStore.fetchSummary();
+    armRefresh();
+  }, Math.max(at - Date.now(), 0));
+}
+
+/** Back in the tab: timers sleep or run late in the background, so ask now and re-arm. */
+function onVisibilityChange() {
+  if (document.visibilityState !== 'visible') return;
+  void tasksStore.fetchSummary();
+  armRefresh();
 }
 
 // The sidebar is part of every signed-in layout, so this is the one place that
 // keeps the badge current on every page. Task mutations refetch the summary in
-// the store; this covers the first paint and the day rolling over.
+// the store; this covers the first paint, the day rolling over, a loaded task
+// reaching its due time and the tab coming back.
 onMounted(() => {
   void tasksStore.fetchSummary();
-  armMidnightRefresh();
+  armRefresh();
+  document.addEventListener('visibilitychange', onVisibilityChange);
 });
 
+// A task loaded, added, edited or removed can move the next due instant.
+watch(() => nextRefreshAt(new Date()), armRefresh);
+
 onBeforeUnmount(() => {
-  if (midnightTimer) clearTimeout(midnightTimer);
-  midnightTimer = null;
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
 });
 </script>

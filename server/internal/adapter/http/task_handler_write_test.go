@@ -437,7 +437,7 @@ type failingWriteRepo struct {
 	err error
 }
 
-func (r failingWriteRepo) UpdateCalendarObject(context.Context, *calendar.CalendarObject) error {
+func (r failingWriteRepo) UpdateCalendarObjectIfETag(context.Context, *calendar.CalendarObject, string) error {
 	return r.err
 }
 

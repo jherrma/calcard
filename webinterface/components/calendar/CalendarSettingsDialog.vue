@@ -130,6 +130,7 @@ import { useConfirm } from 'primevue/useconfirm';
 import type { Calendar, CalendarKind } from '~/types/calendar';
 import { useCalendarStore } from '~/stores/calendars';
 import { useAuthStore } from '~/stores/auth';
+import { useTasksStore } from '~/stores/tasks';
 
 /**
  * Settings of one calendar: General (name, colour, timezone, description),
@@ -335,7 +336,9 @@ const confirmDelete = (target: Calendar | null = props.calendar) => {
     return;
   }
   confirm.require({
-    message: 'Are you sure you want to delete this calendar? All events will be permanently deleted.',
+    message: `Are you sure you want to delete this calendar? All ${
+      target.kind === 'both' ? 'events and tasks' : 'events'
+    } will be permanently deleted.`,
     header: 'Delete Calendar',
     icon: 'pi pi-exclamation-triangle',
     acceptClass: 'p-button-danger',
@@ -346,6 +349,8 @@ const confirmDelete = (target: Calendar | null = props.calendar) => {
 const deleteCalendar = async (target: Calendar) => {
   try {
     await calendarStore.deleteCalendar(target.uuid);
+    // A mixed calendar takes its tasks with it: the overdue badge and counts follow.
+    if (target.kind === 'both') void useTasksStore().fetchSummary();
     toast.success(copy.value.deleted);
     emit('deleted', target);
     emit('update:visible', false);

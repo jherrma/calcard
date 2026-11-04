@@ -15,6 +15,10 @@ import (
 type CompleteTaskInput struct {
 	Calendar *calendar.Calendar
 	UUID     string
+	// IfMatch is the ETag the caller's If-Match matched ("" when it sent
+	// none): the write happens only on a task that still has it, else
+	// ErrPreconditionFailed.
+	IfMatch string
 }
 
 // CompleteTaskUseCase ticks a task off (POST …/tasks/:task_id/complete).
@@ -36,7 +40,7 @@ func NewCompleteTaskUseCase(calendarRepo calendar.CalendarRepository, now func()
 // Execute completes the task: STATUS:COMPLETED, COMPLETED at now (UTC) and
 // PERCENT-COMPLETE:100, written into the stored VTODO in place (editTask), so
 // nothing else a client stored on it changes; SEQUENCE, LAST-MODIFIED, the
-// ETag and the calendar's sync token advance (UpdateCalendarObject).
+// ETag and the calendar's sync token advance (UpdateCalendarObjectIfETag).
 //
 // In this order: anything but a task of input.Calendar is ErrNotFound; a
 // calendar that does not store tasks is ErrInvalidInput "This calendar does
@@ -45,10 +49,18 @@ func NewCompleteTaskUseCase(calendarRepo calendar.CalendarRepository, now func()
 // task that is already completed comes back unchanged with nothing written,
 // so its ETag stays the same: completing is idempotent.
 func (uc *CompleteTaskUseCase) Execute(ctx context.Context, input CompleteTaskInput) (*Task, error) {
+	return writeTask(input.IfMatch, func() (*Task, error) { return uc.attempt(ctx, input) })
+}
+
+func (uc *CompleteTaskUseCase) attempt(ctx context.Context, input CompleteTaskInput) (*Task, error) {
 	obj, err := loadWritableTask(ctx, uc.calendarRepo, input.Calendar, input.UUID)
 	if err != nil {
 		return nil, err
 	}
+	if err := checkIfMatch(obj, input.IfMatch); err != nil {
+		return nil, err
+	}
+	loadedETag := obj.ETag
 	task := newTask(obj)
 	if task.Details.Recurring {
 		return nil, ErrRecurringNotSupported
@@ -64,7 +76,7 @@ func (uc *CompleteTaskUseCase) Execute(ctx context.Context, input CompleteTaskIn
 	}); err != nil {
 		return nil, err
 	}
-	if err := uc.calendarRepo.UpdateCalendarObject(ctx, obj); err != nil {
+	if err := storeTask(ctx, uc.calendarRepo, obj, loadedETag); err != nil {
 		return nil, err
 	}
 	return newTask(obj), nil
@@ -97,10 +109,18 @@ func NewUncompleteTaskUseCase(calendarRepo calendar.CalendarRepository, now func
 // reopening only undoes a completion some client wrote on the master. The
 // not-found and component-set rules are the ones of complete.
 func (uc *UncompleteTaskUseCase) Execute(ctx context.Context, input CompleteTaskInput) (*Task, error) {
+	return writeTask(input.IfMatch, func() (*Task, error) { return uc.attempt(ctx, input) })
+}
+
+func (uc *UncompleteTaskUseCase) attempt(ctx context.Context, input CompleteTaskInput) (*Task, error) {
 	obj, err := loadWritableTask(ctx, uc.calendarRepo, input.Calendar, input.UUID)
 	if err != nil {
 		return nil, err
 	}
+	if err := checkIfMatch(obj, input.IfMatch); err != nil {
+		return nil, err
+	}
+	loadedETag := obj.ETag
 	if obj.Status != calendar.TaskStatusCompleted {
 		return newTask(obj), nil
 	}
@@ -111,7 +131,7 @@ func (uc *UncompleteTaskUseCase) Execute(ctx context.Context, input CompleteTask
 	}); err != nil {
 		return nil, err
 	}
-	if err := uc.calendarRepo.UpdateCalendarObject(ctx, obj); err != nil {
+	if err := storeTask(ctx, uc.calendarRepo, obj, loadedETag); err != nil {
 		return nil, err
 	}
 	return newTask(obj), nil

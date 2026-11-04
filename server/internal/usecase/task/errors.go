@@ -18,6 +18,12 @@ var ErrInvalidInput = errors.New("invalid task input")
 // the URL cannot be used to probe what an object is or where it lives.
 var ErrNotFound = errors.New("task not found")
 
+// ErrPreconditionFailed is returned by a write that had to be refused because
+// the task is no longer in the state the caller's If-Match named (or, without
+// one, because other writers kept changing it under every retry). Handlers
+// answer it with 412 "ETag precondition failed".
+var ErrPreconditionFailed = errors.New("task precondition failed")
+
 // ErrCalendarNotFound is returned when the cross-list query is narrowed to a
 // calendar the user cannot read: an unknown UUID and a calendar neither owned
 // by nor shared with the user are the same error, so the answer (404

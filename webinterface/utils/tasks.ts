@@ -87,6 +87,23 @@ export function isOverdue(task: Pick<Task, 'status' | 'due' | 'due_date'>, now: 
 }
 
 /**
+ * The earliest instant, as epoch ms, after `now` at which an open task with a
+ * timed due date turns overdue: the soonest timed due instant still ahead,
+ * or null when none is. All-day tasks turn overdue at local midnight, which
+ * the caller knows on its own.
+ */
+export function nextTimedDueMs(tasks: readonly Pick<Task, 'status' | 'due' | 'due_date'>[], now: Date): number | null {
+  let next: number | null = null;
+  for (const task of tasks) {
+    const due = isTaskDone(task) ? null : taskDue(task);
+    if (!due || due.allDay) continue;
+    const ms = due.date.getTime();
+    if (ms > now.getTime() && (next === null || ms < next)) next = ms;
+  }
+  return next;
+}
+
+/**
  * Where the task's due date falls at `now`, for the overdue styling:
  *   - `overdue`: exactly when `isOverdue` (open tasks only);
  *   - `today`: due on `now`'s local date and not overdue (a timed task later

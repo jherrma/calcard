@@ -38,14 +38,27 @@ type stubRepo struct {
 
 	// updated and deleted record copies of the objects as they were stored, so
 	// a later change of the caller's object cannot hide what was written.
-	updated   []calendar.CalendarObject
-	updateErr error
-	deleted   []calendar.CalendarObject
-	deleteErr error
+	updated     []calendar.CalendarObject
+	updateErr   error
+	updateErrs  []error
+	loadedETags []string
+	deleted     []calendar.CalendarObject
+	deleteErr   error
 }
 
-func (r *stubRepo) UpdateCalendarObject(_ context.Context, obj *calendar.CalendarObject) error {
-	if r.updateErr != nil {
+// UpdateCalendarObjectIfETag records the write, like the repository after its
+// conditional UPDATE matched; updateErr stands for a refused one (ErrNotFound,
+// ErrETagMismatch, a storage error) and updateErrs, when set, is consumed one
+// error per call before updateErr applies. loadedETags records the condition.
+func (r *stubRepo) UpdateCalendarObjectIfETag(_ context.Context, obj *calendar.CalendarObject, loadedETag string) error {
+	r.loadedETags = append(r.loadedETags, loadedETag)
+	if len(r.updateErrs) > 0 {
+		err := r.updateErrs[0]
+		r.updateErrs = r.updateErrs[1:]
+		if err != nil {
+			return err
+		}
+	} else if r.updateErr != nil {
 		return r.updateErr
 	}
 	r.updated = append(r.updated, *obj)

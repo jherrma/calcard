@@ -477,13 +477,17 @@ const openCalendarSharing = (calendar: Calendar) => {
 
 const handleDeleteCalendar = (calendar: Calendar) => {
   confirm.require({
-    message: `Are you sure you want to delete "${calendar.name}"? All events will be permanently deleted.`,
+    message: `Are you sure you want to delete "${calendar.name}"? All ${
+      calendar.kind === 'both' ? 'events and tasks' : 'events'
+    } will be permanently deleted.`,
     header: 'Delete Calendar',
     icon: 'pi pi-exclamation-triangle',
     acceptClass: 'p-button-danger',
     accept: async () => {
       try {
         await calendarStore.deleteCalendar(calendar.uuid);
+        // A mixed calendar takes its tasks with it: the overdue badge and counts follow.
+        if (calendar.kind === 'both') void useTasksStore().fetchSummary();
         toast.success('Calendar deleted');
       } catch (e: unknown) {
         toast.error((e as Error).message || 'Failed to delete calendar');

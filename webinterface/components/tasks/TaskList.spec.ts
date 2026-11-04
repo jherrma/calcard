@@ -69,6 +69,7 @@ const ButtonStub = defineComponent({
 interface ApiOptions {
   method?: string;
   query?: Record<string, string>;
+  body?: Record<string, unknown>;
 }
 type Handler = (options: ApiOptions) => unknown;
 
@@ -98,7 +99,11 @@ const SUMMARY: TasksSummary = {
   overdue: 1,
   due_today: 1,
   completed: 5,
-  by_calendar: { errands: { open: 4, overdue: 1 }, home: { open: 1, overdue: 0 }, team: { open: 1, overdue: 0 } },
+  by_calendar: {
+    errands: { open: 4, overdue: 1, completed: 4 },
+    home: { open: 1, overdue: 0, completed: 1 },
+    team: { open: 1, overdue: 0, completed: 0 },
+  },
 };
 
 function task(id: string, overrides: Partial<Task> = {}): Task {
@@ -159,6 +164,15 @@ function serve(handlers: Record<string, Handler> = {}) {
     if (handler) return handler(options);
     if (key === 'GET /api/v1/tasks/summary') return SUMMARY;
     if (key === 'GET /api/v1/tasks') return { tasks: [], count: 0, total: 0 };
+    // The undo of a tick is a PATCH of the status and percent the row had.
+    const patch = /^PATCH \/api\/v1\/calendars\/[^/]+\/tasks\/([^/]+)$/.exec(key);
+    if (patch) {
+      const row = useTasksStore().tasks.find((t) => t.id === decodeURIComponent(patch[1]!));
+      const status = options.body?.status as Task['status'];
+      if (row) {
+        return { ...row, status, completed: status === 'completed', completed_at: null, percent_complete: options.body?.percent_complete };
+      }
+    }
     const write = /^(POST|DELETE) \/api\/v1\/calendars\/[^/]+\/tasks\/([^/]+)(?:\/(complete|uncomplete))?$/.exec(key);
     if (write) {
       const row = useTasksStore().tasks.find((t) => t.id === decodeURIComponent(write[2]!));
@@ -416,14 +430,20 @@ describe('TaskList — "Show N completed" and truncation', () => {
     expect(taskQueries()).toEqual([{ status: 'completed' }]);
   });
 
-  it('says "Show completed" without a number in a single list or a search (the count is of every list)', async () => {
+  it('counts the selected list\'s done tasks in a single list, and drops the number for a search (the summary ignores it)', async () => {
     const { wrapper, store } = mountList({ filter: 'open', listId: 'errands' });
-    expect(wrapper.get('[data-test="show-completed"]').text()).toBe('Show completed');
+    expect(wrapper.get('[data-test="show-completed"]').text()).toBe('Show 4 completed');
 
     store.selectedListId = null;
     store.searchQuery = 'invoice';
     await nextTick();
     expect(wrapper.get('[data-test="show-completed"]').text()).toBe('Show completed');
+  });
+
+  it('offers no link in a list that has nothing completed, although other lists do (MN13)', () => {
+    const { wrapper } = mountList({ filter: 'open', listId: 'team' });
+
+    expect(wrapper.find('[data-test="show-completed"]').exists()).toBe(false);
   });
 
   it('offers no link when nothing is completed, before the summary, or outside Open', async () => {
@@ -495,9 +515,45 @@ describe('TaskList — inline completion', () => {
 
     (undo as () => void)();
     await flushPromises();
-    expect(count('POST /api/v1/calendars/errands/tasks/Send invoice/uncomplete')).toBe(1);
+    expect(count('PATCH /api/v1/calendars/errands/tasks/Send invoice')).toBe(1);
+    expect(count('POST /api/v1/calendars/errands/tasks/Send invoice/uncomplete')).toBe(0);
     expect(hasRow(wrapper, 'Send invoice')).toBe(true);
     expect(row(wrapper, 'Send invoice').get('[data-test="task-check"]').attributes('aria-checked')).toBe('false');
+  });
+
+  it.each([
+    ['an in-progress task at 40 %', { status: 'in-process', percent_complete: 40 }, { status: 'in-process', percent_complete: 40 }],
+    ['a needs-action task without a percentage', {}, { status: 'needs-action', percent_complete: null }],
+  ] as const)('Undo restores the status and percent %s had before the tick (MN9)', async (_name, before, patch) => {
+    const { wrapper } = mountList({ filter: 'open', tasks: [task('Send invoice', before as Partial<Task>)] });
+    await row(wrapper, 'Send invoice').get('[data-test="task-check"]').trigger('click');
+    await flushPromises();
+    const undo = toastMock.action.mock.calls[0]![2] as () => void;
+    apiMock.mockClear();
+
+    undo();
+    await flushPromises();
+
+    const calls = apiMock.mock.calls.filter(([, o]) => (o as ApiOptions | undefined)?.method === 'PATCH');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0]).toBe('/api/v1/calendars/errands/tasks/Send invoice');
+    expect((calls[0]![1] as ApiOptions).body).toEqual(patch);
+    expect(requests().some((r) => r.endsWith('/uncomplete'))).toBe(false);
+  });
+
+  it('Undo puts a cancelled task back as cancelled (MN9)', async () => {
+    const { wrapper } = mountList({ filter: 'completed', tasks: [task('Send invoice', { status: 'cancelled' })] });
+    await header(wrapper, 'cancelled').get('button').trigger('click');
+    await row(wrapper, 'Send invoice').get('[data-test="task-check"]').trigger('click');
+    await flushPromises();
+    const undo = toastMock.action.mock.calls[0]![2] as () => void;
+    apiMock.mockClear();
+
+    undo();
+    await flushPromises();
+
+    const calls = apiMock.mock.calls.filter(([, o]) => (o as ApiOptions | undefined)?.method === 'PATCH');
+    expect(calls.map(([, o]) => (o as ApiOptions).body)).toEqual([{ status: 'cancelled', percent_complete: null }]);
   });
 
   it('Undo does nothing when the task was already unticked another way', async () => {
@@ -675,7 +731,7 @@ describe('TaskList — announcements', () => {
     vi.advanceTimersByTime(100);
     await nextTick();
 
-    expect(count('POST /api/v1/calendars/errands/tasks/Send invoice/uncomplete')).toBe(1);
+    expect(count('PATCH /api/v1/calendars/errands/tasks/Send invoice')).toBe(1);
     expect(announcer(wrapper).text()).toBe('Task marked as not done');
   });
 
@@ -790,13 +846,25 @@ describe('TaskList — states', () => {
     expect(wrapper.emitted('retry')).toHaveLength(1);
   });
 
-  it('an empty list: "Nothing to do here" (a single list never claims "All caught up")', () => {
-    const { wrapper } = mountList({ tasks: [], filter: 'open', listId: 'errands' });
+  it('an empty list with nothing completed: "Nothing to do here", and no "Show completed" (MN13)', () => {
+    const { wrapper } = mountList({ tasks: [], filter: 'open', listId: 'team' });
     const state = emptyState(wrapper);
 
     expect(state.attributes('data-variant')).toBe('empty');
     expect(state.get('[data-test="empty-heading"]').text()).toBe('Nothing to do here');
     expect(state.find('[data-test="empty-action"]').exists()).toBe(false);
+  });
+
+  it('a single list with only completed tasks: "All caught up" and "Show completed" (spec §7.5, MN13)', async () => {
+    const { wrapper, store } = mountList({ tasks: [], filter: 'open', listId: 'errands' });
+    const state = emptyState(wrapper);
+
+    expect(state.attributes('data-variant')).toBe('all-done');
+    expect(state.get('[data-test="empty-heading"]').text()).toBe('All caught up');
+    await state.get('[data-test="empty-action"]').trigger('click');
+    await flushPromises();
+    expect(store.statusFilter).toBe('completed');
+    expect(taskQueries()).toEqual([{ status: 'completed', calendar_uuid: 'errands' }]);
   });
 
   it('All with no rows and no search is an empty list too', () => {
@@ -1217,10 +1285,10 @@ describe('TaskList — opening, deleting, empty state, focus (story 26)', () => 
   });
 
   it('tells the page which empty state it shows', async () => {
-    const { wrapper, store } = mountList({ tasks: [], filter: 'open', listId: 'errands' });
+    const { wrapper, store } = mountList({ tasks: [], filter: 'open', listId: 'team' });
     expect(wrapper.emitted('empty-state')).toEqual([['empty']]);
 
-    store.tasks = [task('New one')];
+    store.tasks = [task('New one', { calendar_uuid: 'team' })];
     await nextTick();
     expect(wrapper.emitted('empty-state')!.at(-1)).toEqual([null]);
 

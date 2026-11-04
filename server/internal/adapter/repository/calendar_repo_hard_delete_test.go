@@ -84,7 +84,18 @@ func TestHardDeleteCalendarObject(t *testing.T) {
 	t.Run("unlike DeleteCalendarObject, which keeps a tombstone", func(t *testing.T) {
 		require.NoError(t, repo.DeleteCalendarObject(ctx, soft))
 		assert.EqualValues(t, 1, countRows(soft), "the soft delete leaves the row with deleted_at")
-		require.NoError(t, repo.HardDeleteCalendarObject(ctx, soft), "a soft-deleted row can still be removed for good")
-		assert.Zero(t, countRows(soft))
+
+		// MN2: a tombstone is "already gone". Removing it would answer success
+		// for a task nobody can see and log a second removal.
+		changesAfterSoft := countChanges()
+		tokenAfterSoft, err := repo.GetByID(ctx, cal.ID)
+		require.NoError(t, err)
+		err = repo.HardDeleteCalendarObject(ctx, soft)
+		assert.ErrorIs(t, err, calendar.ErrNotFound, "a soft-deleted tombstone is not removed by a hard delete")
+		assert.EqualValues(t, 1, countRows(soft), "the tombstone stays")
+		assert.Equal(t, changesAfterSoft, countChanges(), "no second change-log row")
+		unchanged, err := repo.GetByID(ctx, cal.ID)
+		require.NoError(t, err)
+		assert.Equal(t, tokenAfterSoft.SyncToken, unchanged.SyncToken, "no new token")
 	})
 }

@@ -42,11 +42,11 @@ const SUMMARY: TasksSummary = {
   due_today: 2,
   completed: 5,
   by_calendar: {
-    errands: { open: 9, overdue: 2 },
-    team: { open: 4, overdue: 1 },
-    home: { open: 0, overdue: 0 },
-    feed: { open: 0, overdue: 0 },
-    family: { open: 1, overdue: 0 },
+    errands: { open: 9, overdue: 2, completed: 0 },
+    team: { open: 4, overdue: 1, completed: 0 },
+    home: { open: 0, overdue: 0, completed: 0 },
+    feed: { open: 0, overdue: 0, completed: 0 },
+    family: { open: 1, overdue: 0, completed: 0 },
   },
 };
 

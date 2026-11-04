@@ -170,7 +170,7 @@ cd docker-compose && docker compose -f docker-compose.postgres.yml up     # Post
   `calendar_name`/`calendar_color`; `calendar_uuid` narrows (unreadable = **404**), `due_after`/`due_before`
   bound the due date
 - `GET /api/v1/tasks/summary?as_of=<RFC 3339 with offset>` → `{ "open", "overdue", "due_today",
-  "completed", "by_calendar": { "<calendar uuid>": { "open", "overdue" } } }`. Pass `as_of` (and the
+  "completed", "by_calendar": { "<calendar uuid>": { "open", "overdue", "completed" } } }`. Pass `as_of` (and the
   `due_*` bounds) through ofetch's `query` option: an interpolated `+01:00` arrives as a space and is a 400
 - A recurring task (`is_recurring`) cannot be completed over REST: complete, or PATCH `status`
   `completed`/`cancelled`/`percent_complete: 100`, answers **409**. Uncomplete resets the percentage to 0
