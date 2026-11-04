@@ -659,3 +659,45 @@ func TestTaskToolTextsNameTheRealLimits(t *testing.T) {
 	assert.Contains(t, string(createTaskTool.InputSchema), title)
 	assert.Contains(t, string(updateTaskTool.InputSchema), title)
 }
+
+// TestUpdateTaskEmptyString pins the answer to "" for each update_task field
+// (the review's open question): "" is never stored as a value. Text and time
+// fields read "" as null and remove the property, as REST's PATCH does; a
+// summary cannot be removed and is refused; the numbers read "" as null too.
+func TestUpdateTaskEmptyString(t *testing.T) {
+	e := newTestEnv(t)
+	alice := e.newUser("alice@example.com")
+	chores := e.newCalendarWithSet(alice.ID, "Chores", "VTODO")
+	full := func() map[string]interface{} {
+		return e.mustTask(alice.ID, "create_task", map[string]interface{}{
+			"calendar_id": chores.UUID, "summary": "Full", "description": "Notes",
+			"due": "2026-03-10T17:00:00Z", "start": "2026-03-09T09:00:00Z", "priority": 5, "percent_complete": 40,
+		})
+	}
+
+	t.Run("summary is refused and nothing is written", func(t *testing.T) {
+		id := full()["id"].(string)
+		before := e.dbSnapshot()
+		assert.Equal(t, "summary is required", e.refusal(alice.ID, "update_task", map[string]interface{}{"task_id": id, "summary": ""}))
+		assert.Equal(t, before, e.dbSnapshot())
+	})
+
+	for _, tc := range []struct {
+		arg  string
+		prop string
+	}{
+		{"description", "DESCRIPTION"},
+		{"due", "DUE"},
+		{"start", "DTSTART"},
+		{"priority", "PRIORITY"},
+		{"percent_complete", "PERCENT-COMPLETE"},
+	} {
+		t.Run(tc.arg+": \"\" removes it, like null", func(t *testing.T) {
+			id := full()["id"].(string)
+			require.Contains(t, e.storedICal(id), "\r\n"+tc.prop)
+			after := e.mustTask(alice.ID, "update_task", map[string]interface{}{"task_id": id, tc.arg: ""})
+			assert.NotContains(t, e.storedICal(id), "\r\n"+tc.prop, "%s must be removed", tc.prop)
+			assert.JSONEq(t, e.storedTaskJSON(id), asJSON(t, after))
+		})
+	}
+}

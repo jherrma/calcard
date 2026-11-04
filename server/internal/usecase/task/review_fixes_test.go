@@ -130,7 +130,7 @@ func TestTaskWritesAreConditional(t *testing.T) {
 // (and the line breaks, which become \n) are a 400 in summary and
 // description, on create and update.
 func TestTaskTextControlCharacters(t *testing.T) {
-	for _, bad := range []string{"a\x00b", "a\x07b", "a\x1bb", "a\x0bb"} {
+	for _, bad := range []string{"a\x00b", "a\x07b", "a\x1bb", "a\x0bb", "a\x7fb", "a\u0085b", "a\u009fb"} {
 		_, _, err := runCreate(CreateTaskInput{Calendar: taskListCalendar(), Summary: bad})
 		assert.ErrorIs(t, err, ErrInvalidInput, "summary %q", bad)
 		assert.Contains(t, err.Error(), "summary must not contain control characters")

@@ -92,8 +92,7 @@ All backend stories are implemented.
 
 #170 (tasks and task lists) is Done: the REST API, the DAV component sets, the one-shot narrowing migration, the
 VTODO time-range matcher and the Tasks section are covered by the unit, integration and Vitest suites. The manual
-client matrix below is only partly done. Its Apple and DAVx⁵ rows stay open under **#68**. Release notes:
-`docs/release-notes/170-tasks.md`.
+client matrix below is only partly done. Its Apple and DAVx⁵ rows stay open under **#68**.
 
 How Thunderbird was tested: Thunderbird 156.0.1 (flatpak, build 20260922151802) ran headless on Linux against a
 local CalCard built from this branch (SQLite). It was driven over Marionette through its own CalDAV provider and

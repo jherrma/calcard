@@ -327,7 +327,9 @@ var updateTaskTool = Tool{
 	Name: "update_task",
 	Description: "Change a task. Only the fields you pass change; omitted fields keep their " +
 		"stored value. Pass null to remove description, due, start, priority or " +
-		"percent_complete; summary, status and due_all_day cannot be removed. The stored task " +
+		"percent_complete (an empty string does the same for description, due and start; for " +
+		"priority and percent_complete it is null too); summary, status and due_all_day cannot " +
+		"be removed, and an empty summary is refused. The stored task " +
 		"keeps everything else a task app wrote on it, including its alarms, subtask links and " +
 		"repeat rule. status completed works like complete_task, another status on a " +
 		"completed task like uncomplete_task; a repeating task (is_recurring) refuses status " +

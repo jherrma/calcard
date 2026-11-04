@@ -13,7 +13,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
 ├── README.md                # Quick start, deployment, API doc pointers
 ├── CONFIGURATION.md         # Every YAML key and CALDAV_* environment variable
 ├── STORIES.md               # Implementation tracker + the consolidated remaining-work list
-├── docs/                    # README screenshots; release-notes/ = drafts for the GitHub release body (e.g. 170-tasks.md)
+├── docs/                    # README screenshots; release-notes/ = drafts for the GitHub release body
 ├── docker-compose/          # Example compose files (SQLite, PostgreSQL) using herrj/calcard
 ├── stories/                 # User stories for implementation
 │   ├── backend/             # Backend stories (Go server)

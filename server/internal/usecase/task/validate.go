@@ -49,12 +49,14 @@ func taskDescription(description string) error {
 	return nil
 }
 
-// hasControlChar reports a C0 control character other than TAB, CR and LF.
-// RFC 5545 §3.3.11 keeps them out of TEXT, and a NUL makes PostgreSQL refuse
-// the row. CR and LF are line breaks, stored as the iCalendar \n escape.
+// hasControlChar reports a control character other than TAB, CR and LF:
+// every C0 control, DEL (U+007F) and the C1 range (U+0080..U+009F), all
+// category Cc. RFC 5545 §3.3.11 keeps them out of TEXT, and a NUL makes
+// PostgreSQL refuse the row. CR and LF are line breaks, stored as the
+// iCalendar \n escape.
 func hasControlChar(s string) bool {
 	for _, r := range s {
-		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
+		if unicode.IsControl(r) && r != '\t' && r != '\n' && r != '\r' {
 			return true
 		}
 	}

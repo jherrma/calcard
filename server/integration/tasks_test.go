@@ -1553,7 +1553,10 @@ func TestTaskTextRefusesControlCharacters(t *testing.T) {
 	for _, body := range []map[string]any{
 		{"summary": "a\u0000b"},
 		{"summary": "a\u0007b"},
+		{"summary": "a\u007fb"},
+		{"summary": "a\u0085b"},
 		{"summary": "ok", "description": "a\u0000b"},
+		{"summary": "ok", "description": "a\u007fb"},
 	} {
 		status, raw := restCall(t, http.MethodPost, tasksURL(list.UUID), token, body)
 		assert.Equalf(t, http.StatusBadRequest, status, "%v: %s", body, string(raw))
@@ -1594,4 +1597,43 @@ func TestTaskWriteAfterDeleteStaysDeleted(t *testing.T) {
 	status, _ = restCall(t, http.MethodGet, taskURL(list.UUID, task.ID), token, nil)
 	assert.Equal(t, http.StatusNotFound, status)
 	assert.Empty(t, taskPage(t, token, tasksURL(list.UUID)+"?status=all").Tasks)
+}
+
+// TestTaskPathKeysPostgreSQLCannotStore: a calendar or task UUID that is not
+// valid UTF-8 or holds a NUL (percent-encoded in the URL) is an ordinary 404
+// on every route. PostgreSQL refuses such text as a query parameter, which
+// used to be a 500.
+func TestTaskPathKeysPostgreSQLCannotStore(t *testing.T) {
+	token := registerAndLogin(t, "tasks-badpath@example.test", "tasksSecret!123", "Tasks badpath")
+	list := createTaskCalendar(t, token, "Errands", "tasks")
+	task := createTask(t, token, list.UUID, map[string]any{"summary": "Renew passport"})
+
+	for _, key := range []string{"%FF%FE", "abc%00def", "%C3"} {
+		for _, path := range []string{
+			"/calendars/" + key + "/tasks",
+			"/calendars/" + key + "/tasks/" + task.ID,
+			"/calendars/" + list.UUID + "/tasks/" + key,
+		} {
+			status, raw := restCall(t, http.MethodGet, path, token, nil)
+			assert.Equalf(t, http.StatusNotFound, status, "GET %s: %s", path, string(raw))
+		}
+	}
+}
+
+// TestUpdateTaskEmptyStringOverREST: "" removes description, due and start
+// as null does, and a summary of "" is refused without writing.
+func TestUpdateTaskEmptyStringOverREST(t *testing.T) {
+	token := registerAndLogin(t, "tasks-empty@example.test", "tasksSecret!123", "Tasks empty")
+	list := createTaskCalendar(t, token, "Errands", "tasks")
+	task := createTask(t, token, list.UUID, map[string]any{"summary": "Renew", "description": "Notes", "due": "2026-03-10T17:00:00Z"})
+
+	status, raw := restCall(t, http.MethodPatch, taskURL(list.UUID, task.ID), token, map[string]any{"summary": ""})
+	assert.Equalf(t, http.StatusBadRequest, status, "summary: %s", string(raw))
+	assert.Equal(t, task.ETag, getTask(t, token, list.UUID, task.ID).ETag, "nothing written")
+
+	status, raw = restCall(t, http.MethodPatch, taskURL(list.UUID, task.ID), token, map[string]any{"description": "", "due": ""})
+	require.Equalf(t, http.StatusOK, status, "%s", string(raw))
+	got := getTask(t, token, list.UUID, task.ID)
+	assert.Equal(t, "", got.Description)
+	assert.Nil(t, got.Due)
 }

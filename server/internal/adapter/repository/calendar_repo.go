@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/jherrma/caldav-server/internal/domain/sharing"
@@ -48,6 +49,16 @@ func (r *CalendarRepository) Create(ctx context.Context, cal *calendar.Calendar)
 // notFoundAsDomain marks a missing calendar row as calendar.ErrNotFound, so the
 // use cases can tell "no such calendar" (404) from a storage failure (500).
 // gorm.ErrRecordNotFound stays in the chain for callers that test for it.
+// unstorableUUID is the answer for a lookup key PostgreSQL cannot store as
+// text: invalid UTF-8 or a NUL byte (a percent-encoded %00 in a URL). It is
+// not a row, so it is a miss, not a storage failure (a 500 on PostgreSQL).
+func unstorableUUID(uuid string) error {
+	if utf8.ValidString(uuid) && !strings.ContainsRune(uuid, 0) {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", calendar.ErrNotFound, gorm.ErrRecordNotFound)
+}
+
 func notFoundAsDomain(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("%w: %w", calendar.ErrNotFound, err)
@@ -68,6 +79,9 @@ func (r *CalendarRepository) GetByID(ctx context.Context, id uint) (*calendar.Ca
 // GetByUUID retrieves a calendar by its UUID. A missing row is
 // calendar.ErrNotFound.
 func (r *CalendarRepository) GetByUUID(ctx context.Context, uuid string) (*calendar.Calendar, error) {
+	if err := unstorableUUID(uuid); err != nil {
+		return nil, err
+	}
 	var cal calendar.Calendar
 	err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&cal).Error
 	if err != nil {
@@ -391,6 +405,9 @@ func (r *CalendarRepository) GetChangesSinceToken(ctx context.Context, calendarI
 
 // GetCalendarObjectByUUID retrieves a calendar object by UUID
 func (r *CalendarRepository) GetCalendarObjectByUUID(ctx context.Context, uuid string) (*calendar.CalendarObject, error) {
+	if err := unstorableUUID(uuid); err != nil {
+		return nil, err
+	}
 	var obj calendar.CalendarObject
 	err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&obj).Error
 	if err != nil {
