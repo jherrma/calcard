@@ -145,6 +145,7 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 				event.Props.SetDateTime(ical.PropDateTimeStart, occStart)
 				event.Props.SetDateTime(ical.PropDateTimeEnd, occStart.Add(occDuration))
 			}
+			copyRelativeAlarms(master.Component, event.Component)
 			cal.Children = append(cal.Children, event.Component)
 			targetEvent = event
 		}
@@ -248,6 +249,7 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			})
 		}
 
+		copyRelativeAlarms(master.Component, newMaster.Component)
 		cal.Children = append(cal.Children, newMaster.Component)
 		targetEvent = newMaster
 
@@ -481,4 +483,53 @@ func seriesLocation(events []ical.Event) *time.Location {
 		break
 	}
 	return time.UTC
+}
+
+// copyRelativeAlarms deep-copies the relative VALARMs of from into to, in
+// document order (#169, spec Q2/§7.5). An override uses only its own VALARMs,
+// so a freshly built override or split master would otherwise lose the series'
+// reminders. Absolute triggers stay with the master (they fire once for the
+// series) and an unparseable trigger delivers nothing either way. Copies share
+// no maps or slices with the source.
+func copyRelativeAlarms(from, to *ical.Component) {
+	if from == nil || to == nil {
+		return
+	}
+	specs := calendar.ParseAlarms(from)
+	idx := 0
+	for _, child := range from.Children {
+		if child == nil || child.Name != ical.CompAlarm {
+			continue
+		}
+		if idx < len(specs) && specs[idx].Relative {
+			to.Children = append(to.Children, cloneComponent(child))
+		}
+		idx++
+	}
+}
+
+func cloneComponent(c *ical.Component) *ical.Component {
+	out := &ical.Component{Name: c.Name}
+	if c.Props != nil {
+		out.Props = make(ical.Props, len(c.Props))
+		for k, list := range c.Props {
+			cp := make([]ical.Prop, len(list))
+			for i, p := range list {
+				cp[i] = ical.Prop{Name: p.Name, Value: p.Value}
+				if p.Params != nil {
+					cp[i].Params = make(ical.Params, len(p.Params))
+					for pk, pv := range p.Params {
+						cp[i].Params[pk] = append([]string(nil), pv...)
+					}
+				}
+			}
+			out.Props[k] = cp
+		}
+	}
+	for _, ch := range c.Children {
+		if ch != nil {
+			out.Children = append(out.Children, cloneComponent(ch))
+		}
+	}
+	return out
 }
