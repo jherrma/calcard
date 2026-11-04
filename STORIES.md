@@ -74,16 +74,17 @@ All backend stories are implemented.
 | 101 | Open Source Attribution                    | Done    |
 | 103 | Event Default Settings                     | Done    |
 | 104 | MCP Server Integration                     | Done    |
+| 169 | Web-app Reminders (VALARM)                 | Partial |
 | 170 | Tasks (VTODO) and Task Lists               | Done    |
 
 ## Summary
 
-- **Done**: 48 / 52
-- **Partial**: 3 / 52 — 045 Error Handling, 047 Accessibility, 049 Responsive
-- **Pending**: 1 / 52 — 050 PWA & Push
+- **Done**: 48 / 53
+- **Partial**: 4 / 53 — 045 Error Handling, 047 Accessibility, 049 Responsive, 169 Web-app Reminders
+- **Pending**: 1 / 53 — 050 PWA & Push
 
-<!-- Counts are of the rows in the three tables above (28 backend + 17 frontend + 7
-     continuation = 52; 170 added 2026-11-03). The denominator used to read 57, which never matched the
+<!-- Counts are of the rows in the three tables above (28 backend + 17 frontend + 8
+     continuation = 53; 170 added 2026-11-03, 169 added 2026-11-04). The denominator used to read 57, which never matched the
      tables — it kept counting stories that are not listed here (there is no 012,
      and 048/102 were dropped). It read 52 until story 030 (API Documentation)
      was removed. Recount from the tables when you change a status. -->

@@ -96,6 +96,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
 	getPreferencesUC := userusecase.NewGetPreferencesUseCase(userRepo, userPrefRepo)
 	updatePreferencesUC := userusecase.NewUpdatePreferencesUseCase(userRepo, userPrefRepo)
+	setDefaultTimezoneUC := userusecase.NewSetDefaultTimezoneUseCase(userRepo, userPrefRepo)
 
 	// App Password Use Cases
 	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo, securityLogger)
@@ -141,7 +142,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	systemHandler := http.NewSystemHandler(cfg, userRepo, oauthManager)
-	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC, getPreferencesUC, updatePreferencesUC, calendarRepo, addressBookRepo, appPwdRepo)
+	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC, getPreferencesUC, updatePreferencesUC, setDefaultTimezoneUC, calendarRepo, addressBookRepo, appPwdRepo)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
@@ -261,6 +262,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// Event/display defaults for the web UI (story 103).
 	userGroup.Get("/me/preferences", userHandler.GetPreferences)
 	userGroup.Patch("/me/preferences", userHandler.UpdatePreferences)
+	userGroup.Put("/me/preferences/timezone-default", userHandler.SetDefaultTimezone)
 
 	// Import/Export Use Cases
 	calendarImportUC := importexport.NewCalendarImportUseCase(calendarRepo)

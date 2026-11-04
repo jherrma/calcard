@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"gorm.io/gorm"
@@ -55,4 +56,20 @@ func (r *gormUserPreferenceRepo) Delete(ctx context.Context, userID uint, key st
 	return r.db.WithContext(ctx).
 		Where("user_id = ? AND key = ?", userID, key).
 		Delete(&user.UserPreference{}).Error
+}
+
+// InsertIfAbsent shares Upsert's conflict target (idx_user_pref_key) but leaves
+// an existing row untouched.
+func (r *gormUserPreferenceRepo) InsertIfAbsent(ctx context.Context, pref *user.UserPreference) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "key"}},
+		DoNothing: true,
+	}).Create(pref).Error
+}
+
+func (r *gormUserPreferenceRepo) ReplaceValueIf(ctx context.Context, userID uint, key, oldValue, newValue string) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&user.UserPreference{}).
+		Where("user_id = ? AND key = ? AND value = ?", userID, key, oldValue).
+		Updates(map[string]any{"value": newValue, "updated_at": time.Now()})
+	return res.RowsAffected > 0, res.Error
 }

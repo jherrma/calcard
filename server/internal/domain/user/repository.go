@@ -92,6 +92,12 @@ type UserPreferenceRepository interface {
 	// concurrent PATCHes race into a unique-index violation.
 	Upsert(ctx context.Context, pref *UserPreference) error
 	Delete(ctx context.Context, userID uint, key string) error
+	// InsertIfAbsent inserts the preference and does nothing when (user_id, key)
+	// already exists (one INSERT ... ON CONFLICT DO NOTHING statement).
+	InsertIfAbsent(ctx context.Context, pref *UserPreference) error
+	// ReplaceValueIf sets the value only while it still equals oldValue and
+	// reports whether a row changed.
+	ReplaceValueIf(ctx context.Context, userID uint, key, oldValue, newValue string) (bool, error)
 }
 
 type CardDAVCredentialRepository interface {
