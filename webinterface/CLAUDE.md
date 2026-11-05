@@ -108,6 +108,7 @@ webinterface/
 │   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
 │       ├── ActionToast.vue        # Host of useAppToast().action() toasts ("Task completed" + Undo), bottom centre; default layout only
+│       ├── ReminderField.vue      # #169: reminder chips + "Add reminder" (presets, Custom…), v-model = Reminder[]; props allDay, readOnly; used by EventForm
 │       ├── ReminderToast.vue      # #169: sticky reminder toasts (group app-reminder) for the alarms store's queue; default + settings layouts
 │       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
 │       ├── AppSidebar.vue         # Main navigation sidebar (Dashboard, Calendar, Tasks, Contacts, Settings); the Tasks badge is
@@ -169,6 +170,7 @@ webinterface/
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page; taskListRoute (#170)
 │   ├── alarmRefresh.ts      # #169: refreshAlarmsSoon() (lazy import of the alarms store's refreshSoon), called after event/task mutations and a time-zone change
 │   ├── alarmToast.ts        # #169: toast wording (alarmDetail, summaryLines, MAX_SINGLE_TOASTS)
+│   ├── reminders.ts         # #169: presets, all-day offset formulas, describeReminder, remindersChanged, toReminderInputs, mapReminderMode
 │   ├── reminderChannel.ts   # #169: BroadcastChannel('calcard-reminders') claim between tabs (§10.7)
 │   ├── alarmSchedule.ts     # #169 pure helpers: delayMs (cap 2^31-1, skew), mergePoll (§10.3), alarmLink (Open targets)
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
@@ -615,6 +617,24 @@ through the preferences PATCH, a 400 shows the server's text.
   changes, moves or deletes an event or task over the API (the reminder fields of the forms, stories 17 and 18) goes
   through those store actions and needs no call of its own; a new direct `api()` write must call
   `refreshAlarmsSoon()` itself.
+
+#### Reminder field in the event form (story 17)
+
+- **`components/common/ReminderField.vue`** (`<CommonReminderField v-model allDay readOnly>`) + **`utils/reminders.ts`**. The v-model is
+  the item's full `Reminder[]` as the API answers it; `EventForm` holds it as `reminders` and sends
+  `EventFormData.reminders` (`ReminderInput[]`: `{ offset_seconds }` or `{ at }`) ONLY when `remindersChanged(initial, current)`
+  says the editable set changed. A title or date change alone sends no `reminders` key (relative ones move with the date, the server
+  shifts absolute all-day ones); `updateEventTime` (drag and drop) never sends them. A PATCH `reminders` list REPLACES the editable
+  ones, so the form sends every editable reminder it shows (absolute ones as the `at` the server returned); read-only ones
+  (`editable: false`: END-related, EMAIL, REPEAT, ...) show as "Set in another app" and are never sent or removed.
+- **All-day reminders are relative too (D23)**: "On the day at 09:00" = `32400`, "N days before at hh:mm" = `-N*86400 + hh*3600 + mm*60`
+  (`-54000`, `-140400`, `-572400`; custom 2 days before at 07:30 = `-145800`). No browser zone is involved; only an absolute chip
+  ("At 4 Nov, 09:00") is shown in the browser's zone. Back: `daysBefore = -floor(offset/86400)`.
+- **Switching all-day <-> timed** maps editable relative reminders to the other mode's preset with the same days before
+  (`mapReminderMode`); absolute and read-only ones stay. At most 5 editable reminders, duplicates merge, ordered by trigger.
+- **Ownership (Q9)**: the block is hidden (and nothing sent) unless the selected calendar is in `calendarStore.ownedCalendars`: a shared
+  event's VALARMs alert the owner and every sharee. New events start with none (Q13).
+- Story 18 (task form) reuses the field and the helpers; `ReminderField` knows only event wording today (start-related, "At start").
 
 ### Type System Gotchas
 

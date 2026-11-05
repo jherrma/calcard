@@ -190,6 +190,9 @@ export const useCalendarStore = defineStore('calendars', {
       if (data.recurrence) {
         body.recurrence = data.recurrence;
       }
+      if (data.reminders) {
+        body.reminders = data.reminders;
+      }
 
       const response = await api<CalendarEvent>(`/api/v1/calendars/${this.calendarUuid(calendarId)}/events`, {
         method: 'POST',
@@ -253,6 +256,9 @@ export const useCalendarStore = defineStore('calendars', {
       };
       if (data.recurrence) {
         body.recurrence = data.recurrence;
+      }
+      if (data.reminders) {
+        body.reminders = data.reminders;
       }
 
       let url = `/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`;

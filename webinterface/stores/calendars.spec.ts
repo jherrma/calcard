@@ -441,3 +441,36 @@ describe('reminder refresh hook (#169)', () => {
     expect(refreshMock).not.toHaveBeenCalled();
   });
 });
+
+describe('reminders in the event body (#169 story 17)', () => {
+  const data = (extra: Record<string, unknown> = {}) => ({
+    summary: 'x', description: '', location: '', calendar_id: '1', all_day: false,
+    start: new Date(2026, 1, 9, 11), end: new Date(2026, 1, 9, 12), timezone: 'Europe/Berlin', ...extra,
+  }) as unknown as Parameters<ReturnType<typeof useCalendarStore>['createEvent']>[1];
+  const bodyOf = () => (apiMock.mock.calls[0]![1] as { body: Record<string, unknown> }).body;
+
+  it('createEvent sends reminders only when set', async () => {
+    apiMock.mockResolvedValue({ id: 'e' });
+    await useCalendarStore().createEvent('1', data());
+    expect(bodyOf()).not.toHaveProperty('reminders');
+    apiMock.mockClear();
+    await useCalendarStore().createEvent('1', data({ reminders: [{ offset_seconds: -900 }] }));
+    expect(bodyOf().reminders).toEqual([{ offset_seconds: -900 }]);
+  });
+
+  it('updateEvent sends reminders only when set, an empty list included', async () => {
+    apiMock.mockResolvedValue({ id: 'e' });
+    await useCalendarStore().updateEvent('1', 'e', data());
+    expect(bodyOf()).not.toHaveProperty('reminders');
+    apiMock.mockClear();
+    await useCalendarStore().updateEvent('1', 'e', data({ reminders: [] }));
+    expect(bodyOf().reminders).toEqual([]);
+    expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it('updateEventTime never sends reminders', async () => {
+    apiMock.mockResolvedValue(undefined);
+    await useCalendarStore().updateEventTime('e', '1', new Date(2026, 1, 9, 11), new Date(2026, 1, 9, 12));
+    expect(Object.keys(bodyOf()).sort()).toEqual(['end', 'start', 'timezone']);
+  });
+});
