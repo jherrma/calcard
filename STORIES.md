@@ -89,6 +89,17 @@ All backend stories are implemented.
      and 048/102 were dropped). It read 52 until story 030 (API Documentation)
      was removed. Recount from the tables when you change a status. -->
 
+## #169 web-app reminders: status (2026-11-05)
+
+#169 stays **Partial**. Stories 01-18 (server: VALARM parsing, expansion, `GET /alarms/upcoming`,
+`POST /alarms/acknowledge`, cleanup job, `reminders` on events and tasks, the all-day date shift; web app:
+alarms store, toasts, reminder fields in the event and task forms) are implemented and covered by the unit,
+integration (SQLite and PostgreSQL) and Vitest suites. Still open before it can be Done: the manual browser
+checks (laptop sleep, hidden tab, two windows, all-day reminder across a DST change, logout/login on one tab)
+and the real-client DAV interop under **#68** (Thunderbird, Apple, DAVx5/Tasks.org: all NOT VERIFIED). Also open
+for the user: whether the "050 PWA & Push Notifications" rows should point at #169 (in-app reminders) and #171
+(installability).
+
 ## #170 real-client interop (Phase 4 matrix, 2026-11-03)
 
 #170 (tasks and task lists) is Done: the REST API, the DAV component sets, the one-shot narrowing migration, the
