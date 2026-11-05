@@ -13,15 +13,16 @@ import (
 )
 
 type UserHandler struct {
-	changePasswordUC    *authusecase.ChangePasswordUseCase
-	getProfileUC        *userusecase.GetProfileUseCase
-	updateProfileUC     *userusecase.UpdateProfileUseCase
-	deleteAccountUC     *userusecase.DeleteAccountUseCase
-	getPreferencesUC    *userusecase.GetPreferencesUseCase
-	updatePreferencesUC *userusecase.UpdatePreferencesUseCase
-	calendarRepo        calendar.CalendarRepository
-	addressBookRepo     addressbook.Repository
-	appPasswordRepo     user.AppPasswordRepository
+	changePasswordUC     *authusecase.ChangePasswordUseCase
+	getProfileUC         *userusecase.GetProfileUseCase
+	updateProfileUC      *userusecase.UpdateProfileUseCase
+	deleteAccountUC      *userusecase.DeleteAccountUseCase
+	getPreferencesUC     *userusecase.GetPreferencesUseCase
+	updatePreferencesUC  *userusecase.UpdatePreferencesUseCase
+	setDefaultTimezoneUC *userusecase.SetDefaultTimezoneUseCase
+	calendarRepo         calendar.CalendarRepository
+	addressBookRepo      addressbook.Repository
+	appPasswordRepo      user.AppPasswordRepository
 }
 
 func NewUserHandler(
@@ -31,20 +32,22 @@ func NewUserHandler(
 	deleteAccountUC *userusecase.DeleteAccountUseCase,
 	getPreferencesUC *userusecase.GetPreferencesUseCase,
 	updatePreferencesUC *userusecase.UpdatePreferencesUseCase,
+	setDefaultTimezoneUC *userusecase.SetDefaultTimezoneUseCase,
 	calendarRepo calendar.CalendarRepository,
 	addressBookRepo addressbook.Repository,
 	appPasswordRepo user.AppPasswordRepository,
 ) *UserHandler {
 	return &UserHandler{
-		changePasswordUC:    changePasswordUC,
-		getProfileUC:        getProfileUC,
-		updateProfileUC:     updateProfileUC,
-		deleteAccountUC:     deleteAccountUC,
-		getPreferencesUC:    getPreferencesUC,
-		updatePreferencesUC: updatePreferencesUC,
-		calendarRepo:        calendarRepo,
-		addressBookRepo:     addressBookRepo,
-		appPasswordRepo:     appPasswordRepo,
+		changePasswordUC:     changePasswordUC,
+		getProfileUC:         getProfileUC,
+		updateProfileUC:      updateProfileUC,
+		deleteAccountUC:      deleteAccountUC,
+		getPreferencesUC:     getPreferencesUC,
+		updatePreferencesUC:  updatePreferencesUC,
+		setDefaultTimezoneUC: setDefaultTimezoneUC,
+		calendarRepo:         calendarRepo,
+		addressBookRepo:      addressBookRepo,
+		appPasswordRepo:      appPasswordRepo,
 	}
 }
 
@@ -255,4 +258,34 @@ func (h *UserHandler) UpdatePreferences(c fiber.Ctx) error {
 	}
 
 	return SuccessResponse(c, dto.PreferencesResponse{Preferences: prefs})
+}
+
+// PUT /api/v1/users/me/preferences/timezone-default
+//
+// Set-if-empty: stores the browser's zone only when the user has none, and
+// always answers the zone that is stored afterwards, so a later browser never
+// overwrites an explicit choice. Body `{ "timezone": string }`.
+func (h *UserHandler) SetDefaultTimezone(c fiber.Ctx) error {
+	var req dto.SetDefaultTimezoneRequest
+	if err := c.Bind().JSON(&req); err != nil || req.Timezone == nil {
+		return BadRequestResponse(c, "Invalid request body")
+	}
+
+	userUUID, ok := c.Locals("user_uuid").(string)
+	if !ok {
+		return UnauthorizedResponse(c, "Unauthorized")
+	}
+
+	zone, err := h.setDefaultTimezoneUC.Execute(c.Context(), userUUID, *req.Timezone)
+	if err != nil {
+		if errors.Is(err, userusecase.ErrInvalidPreferenceValue) {
+			return BadRequestResponse(c, err.Error())
+		}
+		if errors.Is(err, userusecase.ErrUserNotFound) {
+			return ErrorResponse(c, fiber.StatusNotFound, "User not found")
+		}
+		return ErrorResponse(c, fiber.StatusInternalServerError, "Failed to update preferences")
+	}
+
+	return SuccessResponse(c, dto.TimezoneDefaultResponse{Timezone: zone})
 }

@@ -29,6 +29,10 @@ type calendarView struct {
 	// pointer so the collection tools can leave it out: update_calendar's use
 	// case does not count events, and reporting 0 there would be false.
 	EventCount *int64 `json:"event_count,omitempty"`
+	// Kind is "events" (a calendar), "tasks" (a task list, which stores no
+	// events) or "both" — the same derived value the REST calendar list
+	// reports (#170). Without it a task list reads like an empty calendar.
+	Kind string `json:"kind"`
 	// Permission is "owner", "read" or "read-write". The model needs it to
 	// know a write will be refused before attempting it.
 	Permission string `json:"permission"`
@@ -58,7 +62,9 @@ func (s *Server) registerCalendarTools() {
 		Name: "list_calendars",
 		Description: "List the calendars the signed-in user can see, including calendars shared " +
 			"with them. Returns each calendar's id (a UUID, required by every other calendar " +
-			"tool), name, colour, timezone, event count and the caller's permission on it.",
+			"tool), name, colour, timezone, event count, kind (events, tasks for a task list " +
+			"that holds no events, or both) and the caller's permission on it. The tasks of the " +
+			"task lists (kind tasks or both) are read with list_tasks.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 	}, s.toolListCalendars)
 
@@ -66,7 +72,8 @@ func (s *Server) registerCalendarTools() {
 		Name: "get_events",
 		Description: "List events in one calendar. Recurring series are expanded into their " +
 			"individual occurrences within the window. Without start/end the whole calendar is " +
-			"returned, which can be large — pass a window whenever the question has one.",
+			"returned, which can be large — pass a window whenever the question has one. Tasks " +
+			"are never returned: a task list (kind tasks) has no events, use list_tasks.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -83,7 +90,8 @@ func (s *Server) registerCalendarTools() {
 		Name: "create_event",
 		Description: "Create an event in a calendar. Times are RFC 3339; include an offset or a " +
 			"trailing Z so the event lands in the intended zone. For an all-day event set " +
-			"all_day true and pass dates.",
+			"all_day true and pass dates. Only a calendar of kind events or both takes events: a " +
+			"task list (kind tasks) refuses events; to-dos go there with create_task.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -206,6 +214,7 @@ func (s *Server) calendarListing(cc *callContext) (map[string]interface{}, error
 			Color:       c.Color,
 			Timezone:    c.Timezone,
 			EventCount:  &count,
+			Kind:        c.Kind,
 			Permission:  c.Permission,
 			Shared:      c.Shared,
 		}
@@ -229,7 +238,7 @@ func (s *Server) toolGetEvents(cc *callContext, args json.RawMessage) (*toolCall
 
 	calID, perm := s.resolveCalendar(cc, in.CalendarID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No calendar with id " + in.CalendarID + " is readable by you."), nil
+		return calendarNotReadable(in.CalendarID), nil
 	}
 
 	var start, end time.Time
@@ -344,7 +353,7 @@ func (s *Server) toolCreateEvent(cc *callContext, args json.RawMessage) (*toolCa
 
 	calID, perm := s.resolveCalendar(cc, in.CalendarID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No calendar with id " + in.CalendarID + " is readable by you."), nil
+		return calendarNotReadable(in.CalendarID), nil
 	}
 	if !canWriteCalendar(perm) {
 		return errorResult("You have read-only access to that calendar, so events cannot be created in it."), nil
@@ -401,7 +410,7 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 
 	obj, perm := s.eventPermission(cc, in.EventID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+		return eventNotReadable(in.EventID), nil
 	}
 	if !canWriteCalendar(perm) {
 		return errorResult("You have read-only access to the calendar holding that event."), nil
@@ -436,6 +445,11 @@ func (s *Server) toolUpdateEvent(cc *callContext, args json.RawMessage) (*toolCa
 		Scope:        scope,
 	})
 	if err != nil {
+		// The object became a task after eventPermission looked (a CalDAV
+		// PUT keeps the UUID): still an unknown event (#170).
+		if errors.Is(err, eventuc.ErrNotFound) {
+			return eventNotReadable(in.EventID), nil
+		}
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
 		}
@@ -461,7 +475,7 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 
 	_, perm := s.eventPermission(cc, in.EventID)
 	if perm == calendar.PermissionNone {
-		return errorResult("No event with id " + in.EventID + " is readable by you."), nil
+		return eventNotReadable(in.EventID), nil
 	}
 	if !canWriteCalendar(perm) {
 		return errorResult("You have read-only access to the calendar holding that event."), nil
@@ -473,6 +487,9 @@ func (s *Server) toolDeleteEvent(cc *callContext, args json.RawMessage) (*toolCa
 	}
 
 	if err := s.deps.EventDelete.Execute(cc.ctx, in.EventID, scope, in.RecurrenceID); err != nil {
+		if errors.Is(err, eventuc.ErrNotFound) {
+			return eventNotReadable(in.EventID), nil
+		}
 		if errors.Is(err, eventuc.ErrInvalidInput) {
 			return errorResult(err.Error()), nil
 		}

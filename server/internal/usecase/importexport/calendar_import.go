@@ -108,6 +108,23 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		// Get Summary for error reporting
 		summary := item.summary()
 
+		// One component-set rule on every write path (#170): an item the
+		// calendar does not store (VEVENTs into a task list, VTODOs into an
+		// event calendar) is skipped and listed with the reason, e.g. "This
+		// calendar does not store events". Checked before the duplicate
+		// handling, so "replace" never deletes an object for an item that
+		// cannot take its place.
+		if err := calendar.RequireComponent(cal, item.compName); err != nil {
+			result.Skipped++
+			result.Errors = append(result.Errors, ImportError{
+				Index:   result.Total - 1,
+				UID:     uid,
+				Summary: summary,
+				Error:   err.Error(),
+			})
+			continue
+		}
+
 		// Check for existing event by UID (indexed once, above the loop)
 		existing := byUID[uid]
 		// A replaced object keeps its path, so DAV clients see an update.
@@ -156,7 +173,7 @@ func (uc *CalendarImportUseCase) Execute(ctx context.Context, userID uint, calen
 		var buf bytes.Buffer
 		encoder := ical.NewEncoder(&buf)
 		wrapperCal := ical.NewCalendar()
-		wrapperCal.Props.SetText(ical.PropProductID, "-//CalCard//EN")
+		wrapperCal.Props.SetText(ical.PropProductID, calendar.ProductID)
 		wrapperCal.Props.SetText(ical.PropVersion, "2.0")
 		wrapperCal.Children = append(wrapperCal.Children, referencedVTimezones(timezones, item.comps...)...)
 		wrapperCal.Children = append(wrapperCal.Children, item.comps...)
@@ -241,10 +258,7 @@ func (it *importItem) summary() string {
 			break
 		}
 	}
-	if p := primary.Props.Get(ical.PropSummary); p != nil {
-		return p.Value
-	}
-	return ""
+	return calendar.TextPropValue(primary, ical.PropSummary)
 }
 
 // groupImportItems groups the VEVENT/VTODO children of a VCALENDAR into calendar

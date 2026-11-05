@@ -6,6 +6,7 @@ import {
   isPastEvent,
   searchAvatarColor,
   searchInitials,
+  taskListRoute,
   toLocalDateParam,
 } from './searchFormat';
 import type { CalendarEvent } from '~/types/calendar';
@@ -137,5 +138,16 @@ describe('contactMetaLine', () => {
     expect(contactMetaLine(hit({ emails: [{ type: 'work', value: 'first@example.com' }] }, ''))).toBe(
       'first@example.com'
     );
+  });
+});
+
+// #170 (story 28): only a task list leaves the Calendar section.
+describe('taskListRoute', () => {
+  it('sends a task list to the Tasks section by its UUID', () => {
+    expect(taskListRoute({ kind: 'tasks', uuid: 'list-uuid' })).toEqual({ path: '/tasks', query: { list: 'list-uuid' } });
+  });
+
+  it.each([['events'], ['both'], [undefined]] as const)('leaves a %s calendar to the caller', (kind) => {
+    expect(taskListRoute({ kind, uuid: 'cal-uuid' })).toBeNull();
   });
 });

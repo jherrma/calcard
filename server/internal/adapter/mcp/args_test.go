@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jherrma/caldav-server/internal/adapter/http/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -149,6 +150,28 @@ func typoCases() map[string]typoCase {
 		"delete_address_book": {args: func(f *storageFixture) map[string]interface{} {
 			return map[string]interface{}{"address_book_id": f.otherBook, "confirmation": "DELETE"}
 		}, misspelt: "force", writes: true},
+		// tasks (#170)
+		"list_tasks": {args: func(f *storageFixture) map[string]interface{} {
+			return map[string]interface{}{"calendar_id": f.taskList, "status": "all"}
+		}, correct: "status", misspelt: "state"},
+		"create_task": {args: func(f *storageFixture) map[string]interface{} {
+			return map[string]interface{}{"calendar_id": f.taskList, "summary": "Buy milk", "priority": 5}
+		}, correct: "priority", misspelt: "prio", writes: true},
+		"update_task": {args: func(f *storageFixture) map[string]interface{} {
+			return map[string]interface{}{"task_id": f.task, "summary": "Renew ID card"}
+		}, correct: "summary", misspelt: "title", writes: true},
+		"complete_task": {args: func(f *storageFixture) map[string]interface{} {
+			return map[string]interface{}{"task_id": f.task}
+		}, correct: "task_id", misspelt: "id", writes: true},
+		"uncomplete_task": {args: func(f *storageFixture) map[string]interface{} {
+			return map[string]interface{}{"task_id": f.doneTask}
+		}, misspelt: "percent_complete", writes: true},
+		"delete_task": {args: func(f *storageFixture) map[string]interface{} {
+			return map[string]interface{}{"task_id": f.task}
+		}, misspelt: "confirmation", writes: true},
+		"get_task_summary": {args: func(*storageFixture) map[string]interface{} {
+			return map[string]interface{}{"as_of": "2026-03-04T10:00:00+01:00"}
+		}, correct: "as_of", misspelt: "now"},
 	}
 }
 
@@ -283,6 +306,47 @@ func TestDecodeArgs(t *testing.T) {
 		require.NotNil(t, bad)
 		assert.Equal(t, `Unknown argument "verbose"; the tool did not run. This tool takes no arguments.`, bad.Content[0].Text)
 		assert.Nil(t, decodeArgs(json.RawMessage(`{}`), &struct{}{}))
+	})
+
+	t.Run("nullable arguments", func(t *testing.T) {
+		// update_task's removable fields (#170) are dto.OptionalField: a value
+		// or null. A wrong type names the inner type plus null, never "an
+		// object", whatever encoding/json puts into UnmarshalTypeError.Field
+		// for an error from a custom UnmarshalJSON.
+		type nullable struct {
+			TaskID   string                    `json:"task_id"`
+			Note     dto.OptionalField[string] `json:"note"`
+			Priority dto.OptionalField[int]    `json:"priority"`
+			Flag     *bool                     `json:"flag"`
+		}
+		for raw, want := range map[string]string{
+			`{"priority": "high"}`:               `Argument "priority" must be an integer or null, got a string; the tool did not run.`,
+			`{"priority": 2.5}`:                  `Argument "priority" must be an integer or null, got 2.5; the tool did not run.`,
+			`{"priority": {}}`:                   `Argument "priority" must be an integer or null, got an object; the tool did not run.`,
+			`{"note": 5}`:                        `Argument "note" must be a string or null, got a number; the tool did not run.`,
+			`{"note": ["a"]}`:                    `Argument "note" must be a string or null, got an array; the tool did not run.`,
+			`{"task_id": "t", "priority": true}`: `Argument "priority" must be an integer or null, got a boolean; the tool did not run.`,
+			// Two wrong arguments: the first one in the request is named, whatever
+			// the order of the tool's own fields.
+			`{"flag": "yes", "note": 1}`: `Argument "flag" must be a boolean (true or false), got a string; the tool did not run.`,
+			`{"note": 1, "flag": "yes"}`: `Argument "note" must be a string or null, got a number; the tool did not run.`,
+		} {
+			var dst nullable
+			bad := decodeArgs(json.RawMessage(raw), &dst)
+			require.NotNil(t, bad, raw)
+			assert.Equal(t, want, bad.Content[0].Text, raw)
+		}
+
+		var dst nullable
+		require.Nil(t, decodeArgs(json.RawMessage(`{"note": null, "priority": 3}`), &dst))
+		assert.True(t, dst.Note.Set)
+		assert.Nil(t, dst.Note.Value, "null is set, without a value")
+		require.True(t, dst.Priority.Set)
+		assert.Equal(t, 3, *dst.Priority.Value)
+		dst = nullable{}
+		require.Nil(t, decodeArgs(json.RawMessage(`{"task_id": "t"}`), &dst))
+		assert.False(t, dst.Note.Set, "absent is not set")
+		assert.False(t, dst.Priority.Set)
 	})
 
 	t.Run("decodes", func(t *testing.T) {

@@ -3,6 +3,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import { createTestingPinia } from '@pinia/testing';
 import { useAuthStore } from './auth';
+import { useTasksStore } from './tasks';
+import { useAlarmsStore } from './alarms';
+import { flushPromises } from '@vue/test-utils';
 import {
   usePreferencesStore,
   DEFAULT_PREFERENCES,
@@ -180,6 +183,54 @@ describe('logout drops per-user cached state (story 103)', () => {
     expect(prefs.preferences).toEqual(DEFAULT_PREFERENCES);
     expect(prefs.timeFormat).toBe('24h');
     expect(prefs.defaultEventDuration).toBe(60);
+  });
+
+  it('logout() empties the tasks store too: rows, badge counts and filters of user A never reach user B (MN12)', async () => {
+    apiMock.mockResolvedValue({});
+    const tasks = useTasksStore();
+    tasks.tasks = [{ id: 't1' } as never];
+    tasks.summary = { open: 1, overdue: 1, due_today: 0, completed: 0, by_calendar: {} };
+    tasks.searchQuery = 'milk';
+    tasks.statusFilter = 'all';
+    tasks.selectedListId = 'list-a';
+
+    const store = useAuthStore();
+    store.setAuth(loginResponse(), true);
+    await store.logout();
+    await flushPromises();
+
+    expect(tasks.tasks).toEqual([]);
+    expect(tasks.summary).toBeNull();
+    expect(tasks.overdueCount).toBe(0);
+    expect(tasks.searchQuery).toBe('');
+    expect(tasks.statusFilter).toBe('open');
+    expect(tasks.selectedListId).toBeNull();
+  });
+
+  it('a failed refresh (clearAuth directly) resets the tasks store as well', async () => {
+    const tasks = useTasksStore();
+    tasks.tasks = [{ id: 't1' } as never];
+
+    useAuthStore().clearAuth();
+    await flushPromises();
+
+    expect(tasks.tasks).toEqual([]);
+  });
+
+  it('clearAuth resets the alarms store through a lazy import: queue, keys and the user\'s stored entry go (#169)', async () => {
+    const alarms = useAlarmsStore();
+    alarms.userId = '1';
+    alarms.queue = [{ key: 'a'.repeat(32) } as never];
+    alarms.pendingAck = { ['b'.repeat(32)]: 1 };
+    const removeSpy = vi.spyOn(alarms, 'removePersisted');
+
+    useAuthStore().clearAuth();
+    await flushPromises();
+
+    expect(removeSpy).toHaveBeenCalled();
+    expect(alarms.queue).toEqual([]);
+    expect(alarms.pendingAck).toEqual({});
+    expect(alarms.userId).toBeNull();
   });
 });
 

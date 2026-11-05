@@ -50,6 +50,11 @@ func (s *Server) listResources(cc *callContext) []Resource {
 		return resources
 	}
 	for _, c := range cals {
+		// A task list holds no events (#170): its events resource would always
+		// be empty, so it is not advertised. Reading the URI still works.
+		if c.Kind == calendar.KindTasks {
+			continue
+		}
 		resources = append(resources, Resource{
 			URI:         calendarURIStem + c.UUID + eventsURISuffix,
 			Name:        c.Name + " — events",

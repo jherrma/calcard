@@ -74,18 +74,67 @@ All backend stories are implemented.
 | 101 | Open Source Attribution                    | Done    |
 | 103 | Event Default Settings                     | Done    |
 | 104 | MCP Server Integration                     | Done    |
+| 169 | Web-app Reminders (VALARM)                 | Partial |
+| 170 | Tasks (VTODO) and Task Lists               | Done    |
 
 ## Summary
 
-- **Done**: 47 / 51
-- **Partial**: 3 / 51 — 045 Error Handling, 047 Accessibility, 049 Responsive
-- **Pending**: 1 / 51 — 050 PWA & Push
+- **Done**: 48 / 53
+- **Partial**: 4 / 53 — 045 Error Handling, 047 Accessibility, 049 Responsive, 169 Web-app Reminders
+- **Pending**: 1 / 53 — 050 PWA & Push
 
-<!-- Counts are of the rows in the three tables above (28 backend + 17 frontend + 6
-     continuation = 51). The denominator used to read 57, which never matched the
+<!-- Counts are of the rows in the three tables above (28 backend + 17 frontend + 8
+     continuation = 53; 170 added 2026-11-03, 169 added 2026-11-04). The denominator used to read 57, which never matched the
      tables — it kept counting stories that are not listed here (there is no 012,
      and 048/102 were dropped). It read 52 until story 030 (API Documentation)
      was removed. Recount from the tables when you change a status. -->
+
+## #169 web-app reminders: status (2026-11-05)
+
+#169 stays **Partial**. Stories 01-18 (server: VALARM parsing, expansion, `GET /alarms/upcoming`,
+`POST /alarms/acknowledge`, cleanup job, `reminders` on events and tasks, the all-day date shift; web app:
+alarms store, toasts, reminder fields in the event and task forms) are implemented and covered by the unit,
+integration (SQLite and PostgreSQL) and Vitest suites. Still open before it can be Done: the manual browser
+checks (laptop sleep, hidden tab, two windows, all-day reminder across a DST change, logout/login on one tab)
+and the real-client DAV interop under **#68** (Thunderbird, Apple, DAVx5/Tasks.org: all NOT VERIFIED). Also open
+for the user: whether the "050 PWA & Push Notifications" rows should point at #169 (in-app reminders) and #171
+(installability).
+
+## #170 real-client interop (Phase 4 matrix, 2026-11-03)
+
+#170 (tasks and task lists) is Done: the REST API, the DAV component sets, the one-shot narrowing migration, the
+VTODO time-range matcher and the Tasks section are covered by the unit, integration and Vitest suites. The manual
+client matrix below is only partly done. Its Apple and DAVx⁵ rows stay open under **#68**.
+
+How Thunderbird was tested: Thunderbird 156.0.1 (flatpak, build 20260922151802) ran headless on Linux against a
+local CalCard built from this branch (SQLite). It was driven over Marionette through its own CalDAV provider and
+UI code: the New Calendar wizard's network detection, the Tasks tab, the task tree checkbox, quick-add, the context
+menu and the New Task/Event dialogs. A logging proxy recorded every DAV request. The web side was checked over the
+REST API and in the built web UI. Apple Reminders and Tasks.org via DAVx⁵ were not run: there is no Apple device and
+no Android device or emulator in this environment.
+
+| Matrix row | Client and version | Result |
+| --- | --- | --- |
+| Apple Reminders (iOS/macOS) | — | **NOT VERIFIED** (no Apple device) |
+| Tasks.org via DAVx⁵ | — | **NOT VERIFIED** (no Android device or emulator) |
+| Thunderbird (CalDAV, Tasks view) | Thunderbird 156.0.1 | **Pass.** A `kind:"tasks"` list appears in the Tasks tab with its colour (`calendar-color`). The event calendar reports tasks unsupported: the New Task dialog's calendar menu leaves it out, quick-add answers "Please select a calendar that supports tasks", and it adds no rows. Thunderbird's left-hand calendar list is shared by its Calendar and Tasks tabs and always shows every calendar; that is Thunderbird's design, not a server setting. "Next Seven Days", "Overdue" and "Completed" list the CalCard tasks, but Thunderbird computes them from its local cache: it **never sends a `calendar-query`**, only PROPFIND, `sync-collection`, `calendar-multiget`, PUT and DELETE. So the story-17 VTODO time-range matcher is not exercised by Thunderbird. Complete and un-complete round-trip both ways, and so do create, priority, due date (timed and all-day), rename and delete. Text with `, ;` stays plain. A REST edit of a Thunderbird-written task keeps `RELATED-TO;RELTYPE=PARENT`, `VALARM`, `X-` properties and the escaped `DESCRIPTION` byte for byte. A Thunderbird repeating task keeps its `RRULE` after a web rename; the web refuses to complete it (409 with the message), and Thunderbird itself refuses to tick a repeating task. A delete from either side is gone from the other after one sync (hard delete). |
+| Mixed legacy calendar | Thunderbird 156.0.1 | **Pass** (Apple and DAVx⁵ **NOT VERIFIED**). A `VEVENT,VTODO` calendar keeps both in Thunderbird. Events and tasks written in it from Thunderbird and from the web reach the other side, and the narrowing migration leaves it mixed. |
+| Narrowed set pickup | Thunderbird 156.0.1 | **Pass.** Refresh action needed: **restart Thunderbird**. After the migration narrowed one legacy calendar to `VEVENT` and one to `VTODO`, "Synchronize" (a new sync token, ctag bumped) and disabling/re-enabling the calendar left Thunderbird on the old set. In that state Thunderbird offers the calendar for the dropped type, and the server refuses the PUT with 403 `supported-calendar-component`; Thunderbird logs it and does not keep the item. After a restart, the first sync's PROPFIND re-read the set and the dialogs offered only the right kind. Reminders and DAVx⁵ ("Refresh collection list") are **NOT VERIFIED**. |
+| Extra: evolution-data-server 3.60.2 | WebDAV discovery only | **Pass.** `e_webdav_discover_sources_sync`, the discovery Evolution and GNOME Online Accounts use, classifies task lists as tasks only, event calendars as events only and mixed calendars as both, with their colours. The Evolution app is not installed and was not tested. |
+
+Findings from the pass. No GitHub issues have been filed for them yet.
+
+- Docs and comments claimed that Thunderbird sends a VTODO `time-range` query. The `.md` docs are corrected. The
+  same claim is still in Go comments: `server/internal/adapter/webdav/caldav_vtodo_filter.go` (top comment),
+  `server/internal/adapter/webdav/caldav_backend.go` (`QueryCalendarObjects`) and
+  `server/integration/caldav_vtodo_report_test.go`.
+- go-webdav v0.7.0 answers **201** to a PUT that replaces an existing object (`caldav/server.go`, its own "TODO:
+  http.StatusNoContent if the resource already existed"). RFC 4918 expects 200/204. Thunderbird accepts it.
+- This is a Thunderbird issue, not CalCard's: once, Thunderbird's in-memory copy of a task kept the pre-update
+  priority and due date after a sync, although its `cache.sqlite` already held the server's new version. The next
+  change showed correctly.
+- Still open from story 17 (go-webdav, not exercised by Thunderbird): `<prop-filter name="COMPLETED"><is-not-defined/>`
+  also matches completed tasks, and a VEVENT `time-range` without `start` is ignored.
 
 ## What remains
 
@@ -110,7 +159,7 @@ filed straight onto the tracker and never got a story file.
 | **#159** `GET /events/upcoming` | Cross-calendar upcoming events with recurrence expansion — would replace the dashboard's per-calendar fan-out the way #156 replaced the search fan-out. |
 | **#157** Per-sharee visibility | Persistent hide/show of a shared collection, honoured over DAV too, without letting a sharee self-leave. Touches the sharing model. |
 | **#112** Dependency majors | The safe sweep landed in #149/#150; the tracked major upgrades remain. |
-| **#68** DAV interop pass | Real clients (iOS/macOS, DAVx⁵, Thunderbird). Blocked on physical devices — cannot be done in CI. |
+| **#68** DAV interop pass | Real clients (iOS/macOS, DAVx⁵, Thunderbird). **Thunderbird 156.0.1 done for #170 task lists on 2026-11-03** (all its rows pass, including mixed legacy calendars and narrowed-set pickup after a restart; see "#170 real-client interop" above). Still open: Apple Calendar/Reminders and DAVx⁵ (+ Tasks.org), including their narrowed-set refresh action. These need physical devices and cannot be done in CI. |
 
 ### Large
 

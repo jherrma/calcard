@@ -114,6 +114,12 @@
       />
     </div>
 
+    <!-- Reminders: only for calendars the user owns (a shared event's alarms ring for the owner and every sharee) -->
+    <div v-if="showReminders" class="flex flex-col gap-1" data-test="reminders-block">
+      <span id="event-reminders-label" class="text-sm font-medium text-surface-700 dark:text-surface-300">Reminders</span>
+      <CommonReminderField v-model="reminders" :all-day="form.all_day" />
+    </div>
+
     <!-- Recurrence -->
     <div class="flex flex-col gap-3">
       <div class="flex items-center gap-3">
@@ -200,7 +206,7 @@
 </template>
 
 <script setup lang="ts">
-import type { CalendarEvent, EventFormData, RecurrenceRule } from '~/types/calendar';
+import type { CalendarEvent, EventFormData, Reminder, RecurrenceRule } from '~/types/calendar';
 import { useCalendarStore, toRFC3339 } from '~/stores/calendars';
 import { usePreferencesStore } from '~/stores/preferences';
 
@@ -334,6 +340,19 @@ watch(() => form.start?.getTime(), (newTime, oldTime) => {
   }
 });
 
+// Reminders (#169): the event's own list as the API answered it, editable or not. Switching all-day <-> timed
+// maps the editable relative ones to the other mode's preset; `reminders` is sent only when the editable set changed.
+const initialReminders: Reminder[] = [...(props.event?.reminders ?? [])];
+const reminders = ref<Reminder[]>(normalizeReminders(initialReminders));
+
+watch(() => form.all_day, (allDay) => {
+  reminders.value = mapReminderMode(reminders.value, allDay);
+});
+
+const showReminders = computed(() =>
+  calendarStore.ownedCalendars.some((c) => String(c.id) === String(form.calendar_id)),
+);
+
 // Recurrence state
 const enableRecurrence = ref(!!props.event?.recurrence);
 const recurrence = reactive({
@@ -413,6 +432,9 @@ const handleSubmit = () => {
     end: form.end,
     timezone: form.timezone,
     recurrence: recurrenceData,
+    ...(showReminders.value && remindersChanged(initialReminders, reminders.value)
+      ? { reminders: toReminderInputs(reminders.value) }
+      : {}),
   });
 };
 

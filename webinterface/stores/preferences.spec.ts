@@ -10,6 +10,7 @@ import {
   PREF_DEFAULT_EVENT_DURATION,
   PREF_FIRST_DAY_OF_WEEK,
   PREF_TIME_FORMAT,
+  PREF_TIMEZONE,
 } from './preferences';
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
@@ -322,5 +323,28 @@ describe('updatePreferences', () => {
 
     // Local state is untouched: the server refused the write.
     expect(store.preferences).toEqual(DEFAULT_PREFERENCES);
+  });
+});
+
+describe('timezone', () => {
+  it('defaults to UTC', () => {
+    expect(DEFAULT_PREFERENCES[PREF_TIMEZONE]).toBe('UTC');
+    expect(usePreferencesStore().timezone).toBe('UTC');
+  });
+
+  it('setTimezone stores the value without any request', () => {
+    const store = usePreferencesStore();
+    store.setTimezone('Europe/Berlin');
+
+    expect(store.timezone).toBe('Europe/Berlin');
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('reset() restores UTC', () => {
+    const store = usePreferencesStore();
+    store.setTimezone('Europe/Berlin');
+    store.reset();
+
+    expect(store.timezone).toBe('UTC');
   });
 });

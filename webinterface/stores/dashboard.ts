@@ -306,8 +306,9 @@ export const useDashboardStore = defineStore('dashboard', {
     async ensureMonths(anchor: Date, count = 1) {
       const calendarStore = useCalendarStore();
       // Nothing to ask yet — leave the months unmarked so a later call retries
-      // once the calendar list has arrived.
-      if (calendarStore.calendars.length === 0) return;
+      // once the calendar list has arrived. Task lists do not count (#170): a
+      // user whose calendars are all task lists has no event to load either.
+      if (calendarStore.eventCalendars.length === 0) return;
 
       const wanted = Array.from({ length: count }, (_, i) => addMonths(anchor, i));
       const missing = wanted.filter((m: Date) => !this.loadedMonths.includes(monthKey(m)));
@@ -340,10 +341,14 @@ export const useDashboardStore = defineStore('dashboard', {
      * Returns null for "no usable answer": either there was no calendar to ask,
      * or EVERY request failed. Callers must not treat that as an empty result —
      * an offline refresh would otherwise wipe the whole dashboard.
+     *
+     * Only event calendars are asked (`eventCalendars`, #170): a task list holds
+     * no events, and one wasted request per list adds pressure on the per-IP
+     * rate limiter that a dashboard load already leans on.
      */
     async fetchEventRange(start: Date, end: Date): Promise<CalendarEvent[] | null> {
       const calendarStore = useCalendarStore();
-      const calendars = calendarStore.calendars;
+      const calendars = calendarStore.eventCalendars;
       if (calendars.length === 0) return null;
 
       const api = useApi();

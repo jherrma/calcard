@@ -1,0 +1,179 @@
+package task
+
+import (
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
+)
+
+// Validation of the writable task fields (spec §3.1). Every refusal is an
+// ErrInvalidInput whose message is the 400 body; create and update share
+// them (update adds the checks against the stored times, update.go).
+
+// MaxSummaryRunes bounds a task's title, counted in runes after trimming.
+const MaxSummaryRunes = 500
+
+// taskSummary validates a title: required, not blank, at most MaxSummaryRunes
+// runes. It returns the title without surrounding white space, the form that
+// is stored.
+func taskSummary(summary string) (string, error) {
+	s := strings.TrimSpace(summary)
+	if isBlank(s) {
+		return "", invalidInputf("summary is required")
+	}
+	if utf8.RuneCountInString(s) > MaxSummaryRunes {
+		return "", invalidInputf("summary must be at most %d characters", MaxSummaryRunes)
+	}
+	if hasControlChar(s) {
+		return "", invalidInputf("summary must not contain control characters")
+	}
+	return s, nil
+}
+
+// isBlank reports a title with nothing visible in it: empty, or only white
+// space and format characters (zero-width space, joiners, BOM; Unicode category
+// Cf), which strings.TrimSpace keeps.
+func isBlank(s string) bool {
+	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) }) == ""
+}
+
+// taskDescription validates a description: any text without control
+// characters (a line break is fine).
+func taskDescription(description string) error {
+	if hasControlChar(description) {
+		return invalidInputf("description must not contain control characters")
+	}
+	return nil
+}
+
+// hasControlChar reports a control character other than TAB, CR and LF:
+// every C0 control, DEL (U+007F) and the C1 range (U+0080..U+009F), all
+// category Cc. RFC 5545 §3.3.11 keeps them out of TEXT, and a NUL makes
+// PostgreSQL refuse the row. CR and LF are line breaks, stored as the
+// iCalendar \n escape.
+func hasControlChar(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) && r != '\t' && r != '\n' && r != '\r' {
+			return true
+		}
+	}
+	return false
+}
+
+// taskStatuses are the STATUS values a task can be given, in the order the
+// error message names them. Their wire form is the lower-case spelling.
+var taskStatuses = []string{
+	calendar.TaskStatusNeedsAction,
+	calendar.TaskStatusInProcess,
+	calendar.TaskStatusCompleted,
+	calendar.TaskStatusCancelled,
+}
+
+// taskStatus maps a wire status (needs-action, in-process, completed,
+// cancelled; compared exactly, like a list's status filter) to the STATUS
+// value it stores. Empty is needs-action, the default.
+func taskStatus(status string) (string, error) {
+	if status == "" {
+		return calendar.TaskStatusNeedsAction, nil
+	}
+	for _, s := range taskStatuses {
+		if status == strings.ToLower(s) {
+			return s, nil
+		}
+	}
+	return "", invalidInputf(`status must be "needs-action", "in-process", "completed" or "cancelled"`)
+}
+
+// checkPriority accepts no priority (nil) or the RFC 5545 range 0..9, where 0
+// means undefined and 1 is the highest.
+func checkPriority(p *int) error {
+	if p != nil && (*p < 0 || *p > 9) {
+		return invalidInputf("priority must be between 0 and 9")
+	}
+	return nil
+}
+
+// checkPercent accepts no percentage (nil) or 0..100.
+func checkPercent(p *int) error {
+	if p != nil && (*p < 0 || *p > 100) {
+		return invalidInputf("percent_complete must be between 0 and 100")
+	}
+	return nil
+}
+
+// taskTime is a parsed due or start value: a calendar date (allDay, at
+// midnight UTC) or an instant.
+type taskTime struct {
+	t      time.Time
+	allDay bool
+}
+
+// parseTaskTime reads the due or start value named field. Empty means none
+// (nil). With allDay the value must be a date ("YYYY-MM-DD"), otherwise an RFC
+// 3339 date-time. One flag decides the value type of DUE and DTSTART alike,
+// so the two always match (RFC 5545 §3.8.2.3).
+func parseTaskTime(field, value string, allDay bool) (*taskTime, error) {
+	if value == "" {
+		return nil, nil
+	}
+	if allDay {
+		t, err := time.Parse(time.DateOnly, value)
+		if err != nil {
+			return nil, invalidInputf("%s must be a date (YYYY-MM-DD) when due_all_day is true", field)
+		}
+		return &taskTime{t: t, allDay: true}, nil
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, invalidInputf("%s must be an RFC 3339 date-time unless due_all_day is true", field)
+	}
+	return &taskTime{t: t}, nil
+}
+
+// checkDueAfterStart refuses a due date before the start; equal is allowed.
+// Either may be absent.
+func checkDueAfterStart(due, start *taskTime) error {
+	if due != nil && start != nil && due.t.Before(start.t) {
+		return invalidInputf("due must not be before start")
+	}
+	return nil
+}
+
+// reminderNeedsDueMessage is the 400 for an offset reminder on a task that has no
+// due date to count from (spec §7.4).
+const reminderNeedsDueMessage = "A reminder needs a due date"
+
+// checkReminderShape validates the count and the one-of rule of every entry.
+func checkReminderShape(reminders []calendar.ReminderInput) error {
+	if err := calendar.CheckReminderShape(reminders); err != nil {
+		return invalidInput(err)
+	}
+	return nil
+}
+
+// checkReminderTargets validates the entries that are new to the task
+// (entries): an offset needs a due date (hasDue), and offsets and absolute
+// times must be in range, an absolute time against now (spec §7.4). An
+// absolute time needs no date.
+func checkReminderTargets(entries []calendar.ReminderInput, hasDue bool, now time.Time) error {
+	for _, d := range entries {
+		if d.OffsetSeconds != nil && !hasDue {
+			return invalidInputf(reminderNeedsDueMessage)
+		}
+	}
+	if err := calendar.CheckReminderRanges(entries, now); err != nil {
+		return invalidInput(err)
+	}
+	return nil
+}
+
+// checkReminders is create's check: shape, then due date and ranges.
+func checkReminders(reminders []calendar.ReminderInput, hasDue bool, now time.Time) error {
+	if err := checkReminderShape(reminders); err != nil {
+		return err
+	}
+	return checkReminderTargets(reminders, hasDue, now)
+}

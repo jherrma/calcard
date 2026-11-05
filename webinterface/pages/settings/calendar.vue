@@ -73,6 +73,24 @@
           </small>
         </div>
 
+        <!-- Time zone -->
+        <div class="flex flex-col gap-2">
+          <label for="pref-timezone" class="text-sm font-medium text-surface-700 dark:text-surface-300">
+            Time zone
+          </label>
+          <Select
+            id="pref-timezone"
+            v-model="form.timezone"
+            :options="timezoneOptions"
+            filter
+            class="w-full sm:w-80"
+            aria-describedby="pref-timezone-help"
+          />
+          <small id="pref-timezone-help" class="text-surface-500 dark:text-surface-400">
+            Used for reminders on all-day events and tasks in your calendars.
+          </small>
+        </div>
+
         <div class="flex items-center gap-3 pt-2">
           <Button
             type="submit"
@@ -105,6 +123,7 @@ import {
   PREF_DEFAULT_EVENT_DURATION,
   PREF_FIRST_DAY_OF_WEEK,
   PREF_TIME_FORMAT,
+  PREF_TIMEZONE,
 } from '~/stores/preferences';
 
 definePageMeta({
@@ -126,12 +145,14 @@ const timeFormatOptions: { label: string; value: TimeFormat }[] = [
   { label: '24-hour (13:00)', value: '24h' },
 ];
 const firstDayOptions = FIRST_DAY_OF_WEEK_OPTIONS;
+const timezoneOptions = Array.from(new Set(['UTC', ...Intl.supportedValuesOf('timeZone')]));
 
 const form = reactive({
   duration: preferencesStore.defaultEventDuration,
   allDay: preferencesStore.defaultAllDay,
   timeFormat: preferencesStore.timeFormat as TimeFormat,
   firstDayOfWeek: preferencesStore.firstDayOfWeek as FirstDayOfWeek,
+  timezone: preferencesStore.timezone,
 });
 
 const applyStoreValues = () => {
@@ -139,17 +160,20 @@ const applyStoreValues = () => {
   form.allDay = preferencesStore.defaultAllDay;
   form.timeFormat = preferencesStore.timeFormat;
   form.firstDayOfWeek = preferencesStore.firstDayOfWeek;
+  form.timezone = preferencesStore.timezone;
 };
 
 const isDirty = computed(() =>
   form.duration !== preferencesStore.defaultEventDuration
   || form.allDay !== preferencesStore.defaultAllDay
   || form.timeFormat !== preferencesStore.timeFormat
-  || form.firstDayOfWeek !== preferencesStore.firstDayOfWeek,
+  || form.firstDayOfWeek !== preferencesStore.firstDayOfWeek
+  || form.timezone !== preferencesStore.timezone,
 );
 
 const handleSave = async () => {
   saving.value = true;
+  const timezoneChanged = form.timezone !== preferencesStore.timezone;
   try {
     // Send every key on the page, not just the changed ones: the endpoint
     // upserts, so a full payload also repairs a row left behind by an older build.
@@ -158,9 +182,12 @@ const handleSave = async () => {
       [PREF_DEFAULT_ALL_DAY]: String(form.allDay),
       [PREF_TIME_FORMAT]: form.timeFormat,
       [PREF_FIRST_DAY_OF_WEEK]: String(form.firstDayOfWeek),
+      [PREF_TIMEZONE]: form.timezone,
     });
     // Re-read from the store: the server response is authoritative.
     applyStoreValues();
+    // The server resolves floating and all-day reminders in the user's zone (#169).
+    if (timezoneChanged) refreshAlarmsSoon();
     toast.success('Calendar preferences saved');
   } catch (e: any) {
     toast.error(e?.data?.message || 'Failed to save preferences');

@@ -555,3 +555,88 @@ describe('setMiniMonth()', () => {
     expect(monthKey(store.miniMonth)).toBe('2026-11');
   });
 });
+
+// SCOPE (#170): task lists come back from GET /calendars next to the calendars.
+// They hold no events, so the dashboard's /events fan-out must not ask them:
+// one wasted request per list on every load and every 5-minute refresh, against
+// a per-IP rate limiter the dashboard already leans on.
+describe('task lists are never asked for events (#170)', () => {
+  const taskList = (id: number) => calendar(id, `Tasks ${id}`, { kind: 'tasks' });
+
+  it('fetchEventRange asks event and mixed calendars only', async () => {
+    const calendarStore = useCalendarStore();
+    calendarStore.calendars = [
+      taskList(1),
+      calendar(2, 'Personal', { kind: 'events' }),
+      calendar(3, 'Old mixed', { kind: 'both' }),
+      calendar(4, 'No kind'),
+      taskList(5),
+    ];
+    apiMock.mockResolvedValue({ events: [] });
+
+    const store = useDashboardStore();
+    const result = await store.fetchEventRange(new Date(2026, 6, 1), new Date(2026, 7, 1));
+
+    // REVERT PROOF: reading `calendars` again fires five requests.
+    const urls = eventUrls();
+    expect(urls).toHaveLength(3);
+    expect(urls.map((u) => u.split('/')[4])).toEqual(['cal-uuid-2', 'cal-uuid-3', 'cal-uuid-4']);
+    expect(result).toEqual([]);
+    expect(store.eventsIncomplete).toBe(false);
+  });
+
+  it('fetchEventRange with only task lists asks nothing and reports "no usable answer"', async () => {
+    const calendarStore = useCalendarStore();
+    calendarStore.calendars = [taskList(1), taskList(2)];
+
+    const store = useDashboardStore();
+    const result = await store.fetchEventRange(new Date(2026, 6, 1), new Date(2026, 7, 1));
+
+    expect(apiMock).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+    // Nothing failed: no "some data could not be loaded" banner.
+    expect(store.eventsIncomplete).toBe(false);
+  });
+
+  it('ensureMonths with only task lists leaves the months unmarked and sends nothing', async () => {
+    const calendarStore = useCalendarStore();
+    calendarStore.calendars = [taskList(1)];
+
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+    await store.ensureMonths(NOW, 2);
+
+    expect(apiMock).not.toHaveBeenCalled();
+    expect(store.loadedMonths).toEqual([]);
+  });
+
+  it('refresh() loads the calendar list once and the events of the event calendars only', async () => {
+    const calendarStore = useCalendarStore();
+    apiMock.mockImplementation((url: string) => {
+      if (url === '/api/v1/calendars') {
+        return {
+          calendars: [
+            calendar(1, 'Personal', { kind: 'events' }),
+            taskList(2),
+            calendar(3, 'Shared tasks', { kind: 'tasks', shared: true, permission: 'read-write' }),
+          ],
+        };
+      }
+      if (url === '/api/v1/addressbooks') return { addressbooks: [] };
+      return { events: [event('standup', new Date(2026, 6, 30, 9, 0), new Date(2026, 6, 30, 9, 15))] };
+    });
+
+    const store = useDashboardStore();
+    store.now = NOW.getTime();
+    await store.refresh();
+
+    const calls = apiMock.mock.calls.map((c) => c[0] as string);
+    expect(calls.filter((u) => u === '/api/v1/calendars')).toHaveLength(1);
+    // The task lists stay in the calendar store for the tasks section …
+    expect(calendarStore.calendars).toHaveLength(3);
+    // … but only Personal is asked for its events.
+    expect(eventUrls().map((u) => u.split('/')[4])).toEqual(['cal-uuid-1']);
+    expect(store.events.map((e) => e.id)).toEqual(['standup']);
+    expect(store.eventsIncomplete).toBe(false);
+  });
+});

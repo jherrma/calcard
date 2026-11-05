@@ -98,8 +98,9 @@
         <NuxtLink
           v-for="cal in searchStore.results.calendars"
           :key="cal.uuid"
-          to="/calendar"
+          :to="calendarHitRoute(cal)"
           class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800"
+          data-testid="page-calendar-row"
         >
           <span class="w-3 h-3 rounded-full flex-shrink-0" :style="{ backgroundColor: cal.color || '#3b82f6' }" />
           <span class="flex-1 min-w-0">
@@ -110,6 +111,12 @@
               <HighlightText :text="cal.description" :highlight="searchStore.query" />
             </span>
           </span>
+          <!-- Says where the row leads: a task list opens in Tasks, not in the Calendar (#170). -->
+          <span
+            v-if="cal.kind === 'tasks'"
+            class="text-xs text-surface-500 dark:text-surface-400 flex-shrink-0"
+            data-testid="task-list-hint"
+          >Task list</span>
         </NuxtLink>
       </section>
 
@@ -146,6 +153,7 @@
 import HighlightText from '~/components/common/HighlightText.vue';
 import SearchSectionHeader from '~/components/common/SearchSectionHeader.vue';
 import { MIN_QUERY_LENGTH, SEARCH_LIMIT, useSearchStore } from '~/stores/search';
+import type { Calendar } from '~/types/calendar';
 import type { ContactHit, EventHit } from '~/types/search';
 import {
   contactMetaLine,
@@ -154,6 +162,7 @@ import {
   isPastEvent,
   searchAvatarColor,
   searchInitials,
+  taskListRoute,
   toLocalDateParam,
 } from '~/utils/searchFormat';
 
@@ -232,4 +241,13 @@ const selectContact = (hit: ContactHit) => {
   // NUMERIC address book id — `Contact.addressbook_id`, not the UUID.
   navigateTo(`/contacts/${hit.contact.id}?ab=${encodeURIComponent(hit.addressBookId)}`);
 };
+
+/**
+ * A calendars-group hit. A task list (`kind: 'tasks'`) opens in the Tasks section
+ * as `/tasks?list=<uuid>` (#170); event and mixed (`both`) calendars open the
+ * Calendar section as `/calendar?cal=<numeric id>`, a param the calendar page
+ * consumes and strips (on its own it only lands on the calendar).
+ */
+const calendarHitRoute = (cal: Calendar) =>
+  taskListRoute(cal) ?? { path: '/calendar', query: { cal: String(cal.id) } };
 </script>

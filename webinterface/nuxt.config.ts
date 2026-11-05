@@ -95,7 +95,7 @@ export default defineNuxtConfig({
       },
     },
     components: {
-      include: ['Button', 'InputText', 'Dialog', 'Toast', 'Menu', 'Avatar', 'DataTable', 'Column', 'Card', 'Password', 'Checkbox', 'Message', 'ProgressSpinner', 'SelectButton', 'DatePicker', 'InputSwitch', 'InputNumber', 'Textarea', 'RadioButton', 'ToggleButton', 'Select', 'ConfirmDialog', 'Tag', 'ColorPicker', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel', 'Divider', 'Accordion', 'AccordionPanel', 'AccordionHeader', 'AccordionContent'],
+      include: ['Button', 'InputText', 'Dialog', 'Toast', 'Menu', 'Avatar', 'DataTable', 'Column', 'Card', 'Password', 'Checkbox', 'Message', 'ProgressSpinner', 'SelectButton', 'DatePicker', 'InputSwitch', 'InputNumber', 'Slider', 'Textarea', 'RadioButton', 'ToggleButton', 'Select', 'ConfirmDialog', 'Tag', 'ColorPicker', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel', 'Divider', 'Accordion', 'AccordionPanel', 'AccordionHeader', 'AccordionContent'],
     },
   },
 

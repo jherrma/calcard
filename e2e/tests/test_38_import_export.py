@@ -7,7 +7,7 @@ from urllib.parse import unquote
 import pytest
 
 from harness.checks import known
-from harness.data import PROPFIND_LIST, ics_calendar, ics_event, ics_vevent
+from harness.data import PROPFIND_LIST, ics_calendar, ics_event, ics_vevent, ics_vtodo
 from harness.xml import evaluate, lp
 
 DESCRIPTION = "calendar/contact import (body, JSON, multipart, duplicates) and export"
@@ -213,6 +213,36 @@ def test_cal_unsafe_uid(t, e2e, u1):
     r = _import(u1, cal["uuid"], ics)
     if t.status(r, 200):
         t.json(r, "skipped", len(uids), "re-import matches the objects by UID, whatever their path")
+
+
+def test_cal_component_skip(t, e2e, u1):
+    """import into a task list skips the events, an event calendar the tasks (#170); a task list exports its VTODOs"""
+    tag = e2e.uniq("kinds")
+    ics = ics_calendar(ics_vevent(f"{tag}-ev@e2e", f"Imported meeting {tag}", "20300401T090000Z", "20300401T100000Z"),
+                       ics_vtodo(f"{tag}-todo@e2e", f"Imported chore {tag}", "DUE:20300402T170000Z"))
+    tasks = u1.mk_calendar(e2e.uniq("import-tasks"), kind="tasks")
+    events = u1.mk_calendar(e2e.uniq("import-events"))
+    for cal, kept, skipped, reason in ((tasks, "todo", (0, "ev", "meeting"), "This calendar does not store events"),
+                                       (events, "ev", (1, "todo", "chore"), "This calendar does not store tasks")):
+        r = _import(u1, cal["uuid"], ics)
+        if not t.status(r, 200, msg=f"import into {cal['name']}"):
+            continue
+        t.eq((r.jdict().get("total"), r.jdict().get("imported"), r.jdict().get("skipped"), r.jdict().get("failed")),
+             (2, 1, 1, 0), f"{cal['name']}: one imported, one skipped")
+        index, uid, word = skipped
+        t.eq(r.jdict().get("errors"), [{"index": index, "uid": f"{tag}-{uid}@e2e",
+                                        "summary": f"Imported {word} {tag}", "error": reason}],
+             f"{cal['name']}: the skipped item and the reason")
+    r = u1.api("GET", f"/calendars/{tasks['uuid']}/tasks?status=all")
+    t.jq(r, lambda j: [x["uid"] for x in j["tasks"]] == [f"{tag}-todo@e2e"], "the task list holds the task only")
+    t.eq(_summaries(u1, tasks["uuid"]), "", "and no event")
+    t.eq(_summaries(u1, events["uuid"]), f"Imported meeting {tag}", "the event calendar holds the event only")
+
+    r = u1.api("GET", f"/calendars/{tasks['uuid']}/export")
+    if t.status(r, 200, msg="export of a task list"):
+        t.contains(r, "BEGIN:VTODO", "a task list's export holds its VTODOs")
+        t.contains(r, f"UID:{tag}-todo@e2e")
+        t.not_contains(r, "BEGIN:VEVENT")
 
 
 def test_cal_roundtrip(t, e2e, u1, imp):

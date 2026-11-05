@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -68,17 +69,36 @@ func New(cfg *config.Config, db database.Database) *Server {
 // spawned during wiring has no owner: tests construct a Server per case, and
 // each one would leave a worker polling the database for the rest of the run.
 func (s *Server) startBackground() {
-	if s.services == nil || s.services.SubscriptionWorker == nil {
+	if s.services == nil {
 		return
 	}
+	var runners []func(context.Context)
+	if s.services.SubscriptionWorker != nil {
+		runners = append(runners, s.services.SubscriptionWorker.Run)
+	}
+	if s.services.AlarmAckCleanup != nil {
+		runners = append(runners, s.services.AlarmAckCleanup.Run)
+	}
+	if len(runners) == 0 {
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	s.stopBackground = cancel
 	s.bgDone = done
 
+	var wg sync.WaitGroup
+	for _, run := range runners {
+		wg.Add(1)
+		go func(run func(context.Context)) {
+			defer wg.Done()
+			run(ctx)
+		}(run)
+	}
 	go func() {
-		defer close(done)
-		s.services.SubscriptionWorker.Run(ctx)
+		wg.Wait()
+		close(done)
 	}()
 }
 

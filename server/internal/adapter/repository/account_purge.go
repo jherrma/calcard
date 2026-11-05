@@ -11,7 +11,8 @@ import (
 // PurgeAccountData hard-deletes everything an account owns or was granted:
 // its calendars and address books with everything in them (the collection
 // cascade of collection_purge.go: objects, photos, change logs, shares,
-// subscription, public link), every share granted TO the account, and its app
+// subscription, public link), every share granted TO the account, its alarm
+// acknowledgements (#169), and its app
 // passwords, DAV credentials, MCP tokens, OAuth links and preferences (F18).
 //
 // users is a single user id, a slice of ids, or a subquery selecting ids. Run
@@ -42,6 +43,8 @@ func PurgeAccountData(tx *gorm.DB, users any) error {
 		{&sharing.CalendarShare{}, "shared_with_id IN (?)"},
 		{&sharing.AddressBookShare{}, "shared_with_id IN (?)"},
 		{&calendar.CalendarSubscription{}, "user_id IN (?)"},
+		// Alarm dismissals are keyed by user and alarm key, no foreign key (#169).
+		{&calendar.AlarmAcknowledgement{}, "user_id IN (?)"},
 	} {
 		if err := hardDelete(tx, nil, s.model, s.query, users); err != nil {
 			return err

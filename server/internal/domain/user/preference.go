@@ -48,6 +48,10 @@ const (
 	// Date.getDay() and FullCalendar's `firstDay` count them: "0" Sunday,
 	// "1" Monday, "6" Saturday. See AllowedFirstDaysOfWeek.
 	PrefFirstDayOfWeek = "first_day_of_week"
+	// PrefTimezone is the user's IANA time zone ("Europe/Berlin"). "Not set"
+	// is the ABSENCE of a row (the default "UTC" is only what GET reports), so
+	// the set-if-empty write can tell an explicit "UTC" from no choice.
+	PrefTimezone = "timezone"
 )
 
 // AllowedEventDurations lists the accepted values for PrefDefaultEventDuration
@@ -92,6 +96,30 @@ var patternPreferences = map[string]patternPreference{
 		valid:     accentColorPattern.MatchString,
 		hint:      "a 6-digit hex colour such as #3b82f6",
 	},
+	PrefTimezone: {
+		normalize: strings.TrimSpace,
+		valid:     func(v string) bool { _, ok := LoadTimezone(v); return ok },
+		hint:      "an IANA time zone name such as Europe/Berlin",
+	},
+}
+
+// maxTimezoneNameLen caps a zone name; the longest IANA name is well under it.
+const maxTimezoneNameLen = 64
+
+// LoadTimezone resolves an IANA zone name. It refuses "", "Local" (the
+// server's own zone), names over 64 bytes and anything time.LoadLocation
+// cannot load (which includes path tricks such as "../etc/passwd"). The rule
+// duplicates calendar.LoadEventLocation on purpose: domain/user must not import
+// domain/calendar.
+func LoadTimezone(value string) (*time.Location, bool) {
+	if value == "" || value == "Local" || len(value) > maxTimezoneNameLen {
+		return nil, false
+	}
+	loc, err := time.LoadLocation(value)
+	if err != nil {
+		return nil, false
+	}
+	return loc, true
 }
 
 // preferenceDefaults holds the value used when a user has not set a key.
@@ -107,6 +135,7 @@ var preferenceDefaults = map[string]string{
 	// Sunday, which is what the calendar showed before the setting existed
 	// (FullCalendar's default for its built-in English locale).
 	PrefFirstDayOfWeek: "0",
+	PrefTimezone:       "UTC",
 }
 
 // DefaultPreferences returns a fresh copy of the default preference map. It is

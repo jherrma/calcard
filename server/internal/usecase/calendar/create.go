@@ -14,6 +14,12 @@ type CreateCalendarRequest struct {
 	Description string `json:"description"`
 	Color       string `json:"color"`
 	Timezone    string `json:"timezone"`
+	// Kind picks what the calendar stores (#170): "events" (VEVENT, the
+	// default when empty), "tasks" (VTODO, a task list) or "both"
+	// (VEVENT,VTODO). Any other value is calendar.ErrInvalidInput (400). A
+	// closed enum on purpose: a free-form component set would let callers
+	// store sets CalDAV cannot advertise.
+	Kind string `json:"kind"`
 }
 
 // CreateCalendarUseCase handles calendar creation
@@ -58,6 +64,17 @@ func (uc *CreateCalendarUseCase) Execute(ctx context.Context, userID uint, req C
 		}
 	}
 
+	// Validate or set default kind. Without one the calendar is a plain event
+	// calendar (#170): task lists are asked for explicitly with "tasks".
+	kind := req.Kind
+	if kind == "" {
+		kind = calendar.KindEvents
+	}
+	components, err := calendar.SupportedComponentsForKind(kind)
+	if err != nil {
+		return nil, err
+	}
+
 	// Generate UUID and path
 	calUUID := uuid.New().String()
 	path := fmt.Sprintf("%s.ics", calUUID)
@@ -71,7 +88,7 @@ func (uc *CreateCalendarUseCase) Execute(ctx context.Context, userID uint, req C
 		Description:         req.Description,
 		Color:               color,
 		Timezone:            timezone,
-		SupportedComponents: "VEVENT,VTODO",
+		SupportedComponents: components,
 		// SyncToken/CTag are minted by the repository inside Create, together
 		// with a matching change-log anchor row.
 	}

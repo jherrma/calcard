@@ -23,6 +23,10 @@ type EventInstance struct {
 	IsAllDay     bool            `json:"is_all_day"`
 	RecurrenceID string          `json:"recurrence_id,omitempty"`
 	IsException  bool            `json:"is_exception"`
+	// Alarms are the occurrence's VALARMs (#169): the override's when it has
+	// one, else the master's. Not part of the JSON; the REST layer renders them
+	// as `reminders`.
+	Alarms []AlarmSpec `json:"-"`
 }
 
 // RecurrenceRule represents the recurrence rules for an event
@@ -102,16 +106,59 @@ func (r *RecurrenceRule) ToRRule(allDay bool) string {
 	return strings.Join(parts, ";")
 }
 
-// ExpandRecurringEvent expands a recurring event into instances within a time range
-func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventInstance, error) {
-	cal, err := ical.NewDecoder(strings.NewReader(obj.ICalData)).Decode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse iCalendar data: %w", err)
-	}
+// Occurrence is one visit of the expansion: a generated beat of a master, a
+// single master, an override that replaced a beat, or a stray override.
+type Occurrence struct {
+	Start, End time.Time
+	// Wall is true when the series' DTSTART (the override's own for an
+	// override) is a DATE or floating: Start and End then hold a wall clock in
+	// UTC (spec R3) and a trigger placed on them needs the owner's zone.
+	Wall bool
+	// RecurrenceID is the canonical UTC key of the beat (RecurrenceIDLayout);
+	// "" for a master without an RRULE and without an override.
+	RecurrenceID string
+	Master       *ical.Event // nil for a stray override
+	Override     *ical.Event // nil when the master's own data applies
+}
 
+// isWallProp reports whether a DTSTART property is a DATE or a floating
+// DATE-TIME (neither TZID nor Z).
+func isWallProp(p *ical.Prop) bool {
+	if p == nil {
+		return false
+	}
+	if strings.EqualFold(p.Params.Get(ical.ParamValue), "DATE") {
+		return true
+	}
+	if p.Params.Get(ical.ParamTimezoneID) != "" {
+		return false
+	}
+	v := strings.TrimSpace(p.Value)
+	return len(v) > 0 && !strings.HasSuffix(strings.ToUpper(v), "Z")
+}
+
+// seriesLocation is the document's base zone: the zone of the first master's
+// DTSTART, UTC when there is none or it is floating, a DATE or a `Z` value.
+func seriesLocation(masters []ical.Event) *time.Location {
+	if len(masters) > 0 {
+		if p := masters[0].Props.Get(ical.PropDateTimeStart); p != nil {
+			if t, err := p.DateTime(time.UTC); err == nil {
+				return t.Location()
+			}
+		}
+	}
+	return time.UTC
+}
+
+// forEachOccurrence is the expansion ExpandRecurringEvent and ExpandAlarms
+// share: it visits every occurrence of cal's VEVENT series that overlaps
+// [start, end), in the order the REST list returns them (masters in document
+// order, then stray overrides), under the per-object caps of recurrence.go.
+// fn returns false to stop the walk.
+func forEachOccurrence(cal *ical.Calendar, start, end time.Time, fn func(Occurrence) bool) {
 	allEvents := cal.Events()
 	if len(allEvents) == 0 {
-		return nil, nil
+		return
 	}
 
 	// Group components: masters (no RECURRENCE-ID) vs exception overrides.
@@ -128,14 +175,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 	// DTSTART (default UTC). A RECURRENCE-ID written without an explicit TZID
 	// is interpreted in this zone, matching how clients emit exception/split
 	// overrides.
-	docLoc := time.UTC
-	if len(masters) > 0 {
-		if dtstartProp := masters[0].Props.Get(ical.PropDateTimeStart); dtstartProp != nil {
-			if t, err := dtstartProp.DateTime(time.UTC); err == nil {
-				docLoc = t.Location()
-			}
-		}
-	}
+	docLoc := seriesLocation(masters)
 
 	// Key exceptions by their canonical UTC RECURRENCE-ID so TZID= / VALUE=DATE
 	// / floating forms all collapse to the same key the generated occurrences
@@ -150,9 +190,15 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		exceptions[key] = rawExceptions[i]
 	}
 
-	var instances []EventInstance
+	emitted := make(map[string]bool)
 	remainingIterations := maxRecurrenceIterations
 	remainingInstances := maxRecurrenceInstances
+	// emit counts the occurrence against the instance cap and hands it to fn.
+	emit := func(o Occurrence) bool {
+		remainingInstances--
+		emitted[o.RecurrenceID] = true
+		return fn(o)
+	}
 
 	// Process each master series
 	for i := range masters {
@@ -167,6 +213,7 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		if mDuration < 0 {
 			mDuration = 0
 		}
+		masterWall := isWallProp(master.Props.Get(ical.PropDateTimeStart))
 
 		// Determine the base timezone
 		loc := time.UTC
@@ -180,12 +227,15 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 			// Single occurrence master
 			rid := mStart.UTC().Format("20060102T150405Z")
 			if remainingInstances > 0 && mStart.Before(end) && mEnd.After(start) {
-				if exc, ok := exceptions[rid]; ok {
-					instances = append(instances, ToEventInstance(obj, mStart, mEnd, rid, master, &exc))
+				var ok bool
+				if exc, found := exceptions[rid]; found {
+					ok = emit(Occurrence{Start: mStart, End: mEnd, Wall: masterWall, RecurrenceID: rid, Master: master, Override: &exc})
 				} else {
-					instances = append(instances, ToEventInstance(obj, mStart, mEnd, "", master, nil))
+					ok = emit(Occurrence{Start: mStart, End: mEnd, Wall: masterWall, Master: master})
 				}
-				remainingInstances--
+				if !ok {
+					return
+				}
 			}
 			continue
 		}
@@ -248,8 +298,13 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 				if !tStart.Before(end) || !tEnd.After(start) {
 					continue
 				}
-				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, master, &exc))
-				remainingInstances--
+				wall := masterWall
+				if excStartProp != nil {
+					wall = isWallProp(excStartProp)
+				}
+				if !emit(Occurrence{Start: tStart, End: tEnd, Wall: wall, RecurrenceID: rid, Master: master, Override: &exc}) {
+					return
+				}
 			} else {
 				// Keep only occurrences that actually overlap [start, end): the
 				// widened lower bound can surface beats that ended before the
@@ -258,8 +313,9 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 				if !dt.Before(end) || !occEnd.After(start) {
 					continue
 				}
-				instances = append(instances, ToEventInstance(obj, dt, occEnd, rid, master, nil))
-				remainingInstances--
+				if !emit(Occurrence{Start: dt, End: occEnd, Wall: masterWall, RecurrenceID: rid, Master: master}) {
+					return
+				}
 			}
 		}
 	}
@@ -270,23 +326,31 @@ func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventIns
 		if remainingInstances == 0 {
 			break
 		}
-		found := false
-		for _, inst := range instances {
-			if inst.RecurrenceID == rid {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !emitted[rid] {
 			tStart, _ := e.DateTimeStart(time.UTC)
 			tEnd, _ := e.DateTimeEnd(time.UTC)
 			if tStart.Before(end) && tEnd.After(start) {
-				instances = append(instances, ToEventInstance(obj, tStart, tEnd, rid, nil, &e))
-				remainingInstances--
+				e := e
+				if !emit(Occurrence{Start: tStart, End: tEnd, Wall: isWallProp(e.Props.Get(ical.PropDateTimeStart)), RecurrenceID: rid, Override: &e}) {
+					return
+				}
 			}
 		}
 	}
+}
 
+// ExpandRecurringEvent expands a recurring event into instances within a time range
+func ExpandRecurringEvent(obj *CalendarObject, start, end time.Time) ([]EventInstance, error) {
+	cal, err := ical.NewDecoder(strings.NewReader(obj.ICalData)).Decode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse iCalendar data: %w", err)
+	}
+
+	var instances []EventInstance
+	forEachOccurrence(cal, start, end, func(o Occurrence) bool {
+		instances = append(instances, ToEventInstance(obj, o.Start, o.End, o.RecurrenceID, o.Master, o.Override))
+		return true
+	})
 	return instances, nil
 }
 
@@ -306,32 +370,65 @@ func ToEventInstance(obj *CalendarObject, start, end time.Time, recurrenceID str
 		RecurrenceID: recurrenceID,
 	}
 
-	// Use master properties if available
+	// Use master properties if available. Text is unescaped (text.go), like
+	// the denormalized columns above.
 	if master != nil {
 		if p := master.Props.Get(ical.PropSummary); p != nil {
-			inst.Summary = p.Value
+			inst.Summary = UnescapeText(p.Value)
 		}
 		if p := master.Props.Get(ical.PropDescription); p != nil {
-			inst.Description = p.Value
+			inst.Description = UnescapeText(p.Value)
 		}
 		if p := master.Props.Get(ical.PropLocation); p != nil {
-			inst.Location = p.Value
+			inst.Location = UnescapeText(p.Value)
 		}
+	}
+
+	// Alarms come from the override when present, else the master: the
+	// components are already decoded, so this costs no extra parse.
+	if override != nil {
+		inst.Alarms = ParseAlarms(override.Component)
+	} else if master != nil {
+		inst.Alarms = ParseAlarms(master.Component)
 	}
 
 	// Override with exception properties
 	if override != nil {
 		if p := override.Props.Get(ical.PropSummary); p != nil {
-			inst.Summary = p.Value
+			inst.Summary = UnescapeText(p.Value)
 		}
 		if p := override.Props.Get(ical.PropDescription); p != nil {
-			inst.Description = p.Value
+			inst.Description = UnescapeText(p.Value)
 		}
 		if p := override.Props.Get(ical.PropLocation); p != nil {
-			inst.Location = p.Value
+			inst.Location = UnescapeText(p.Value)
 		}
 		inst.IsException = true
 	}
 
 	return inst
+}
+
+// EventAlarms decodes the object's iCalendar data and reads the VALARMs of its
+// master VEVENT (the first one without RECURRENCE-ID, else the first). Nil when
+// the data does not decode or holds no VEVENT. For an object that is not
+// expanded (a plain event, the single-event routes).
+func (o *CalendarObject) EventAlarms() []AlarmSpec {
+	cal, err := ical.NewDecoder(strings.NewReader(o.ICalData)).Decode()
+	if err != nil {
+		return nil
+	}
+	var first *ical.Component
+	for _, child := range cal.Children {
+		if child.Name != ical.CompEvent {
+			continue
+		}
+		if child.Props.Get(ical.PropRecurrenceID) == nil {
+			return ParseAlarms(child)
+		}
+		if first == nil {
+			first = child
+		}
+	}
+	return ParseAlarms(first)
 }

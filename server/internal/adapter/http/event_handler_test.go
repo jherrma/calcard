@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,31 +86,34 @@ func setupEventHandlerTest(t *testing.T) (*fiber.App, database.Database, *user.U
 	events.Get("/", handler.List)
 	events.Get("/:event_id", handler.Get)
 	events.Put("/:event_id", handler.Update)
+	events.Patch("/:event_id", handler.Update) // the verb routes.go registers
 	events.Delete("/:event_id", handler.Delete)
 	events.Post("/:event_id/move", handler.Move)
 
 	return app, db, u, cal, token
 }
 
-// TestEventHandlerVTODONilTimes is the regression test for M19: a stored object
-// without DTSTART/DTEND (e.g. a VTODO synced over CalDAV) must serialize through
-// the REST Get handler without panicking on a nil time pointer (which returned
-// a 500). eventResponseFromObject now zero-values the missing times.
-func TestEventHandlerVTODONilTimes(t *testing.T) {
+// TestEventHandlerNilTimes is the regression test for M19: a stored object
+// without DTSTART/DTEND must serialize through the REST Get handler without
+// panicking on a nil time pointer (which returned a 500).
+// eventResponseFromObject now zero-values the missing times. The object used to
+// be a VTODO; since #170 a task is not served by the event routes at all
+// (TestEventHandlerTaskIsNotAnEvent), so a timeless VEVENT carries the check.
+func TestEventHandlerNilTimes(t *testing.T) {
 	app, db, _, cal, token := setupEventHandlerTest(t)
 	defer db.Close()
 
-	// Insert a timeless VTODO directly — REST Create always supplies times, so
+	// Insert a timeless VEVENT directly — REST Create always supplies times, so
 	// such an object can only arrive via CalDAV PUT in production.
 	obj := &calendar.CalendarObject{
-		UUID:          "vtodo-uuid",
+		UUID:          "timeless-uuid",
 		CalendarID:    cal.ID,
-		UID:           "vtodo-uid",
-		Path:          "vtodo-uid.ics",
-		ComponentType: "VTODO",
-		Summary:       "Buy milk",
-		ETag:          "etag-vtodo",
-		ICalData:      "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:vtodo-uid\r\nSUMMARY:Buy milk\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+		UID:           "timeless-uid",
+		Path:          "timeless-uid.ics",
+		ComponentType: calendar.ComponentEvent,
+		Summary:       "Someday",
+		ETag:          "etag-timeless",
+		ICalData:      "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:timeless-uid\r\nSUMMARY:Someday\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
 		// StartTime and EndTime intentionally nil.
 	}
 	require.NoError(t, db.DB().Create(obj).Error)
@@ -118,12 +123,12 @@ func TestEventHandlerVTODONilTimes(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
-	require.Equal(t, fiber.StatusOK, resp.StatusCode, "GET of a timeless VTODO must not 500")
+	require.Equal(t, fiber.StatusOK, resp.StatusCode, "GET of a timeless event must not 500")
 
 	var res dto.EventResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&res))
-	assert.Equal(t, "vtodo-uid", res.UID)
-	assert.Equal(t, "Buy milk", res.Summary)
+	assert.Equal(t, "timeless-uid", res.UID)
+	assert.Equal(t, "Someday", res.Summary)
 	assert.True(t, res.Start.IsZero(), "missing DTSTART must serialize as a zero time, not panic")
 	assert.True(t, res.End.IsZero(), "missing DTEND must serialize as a zero time, not panic")
 }
@@ -211,6 +216,122 @@ func TestEventHandlerCreateRequiresStartAndEnd(t *testing.T) {
 	var count int64
 	require.NoError(t, db.DB().Model(&calendar.CalendarObject{}).Count(&count).Error)
 	assert.Zero(t, count, "a rejected create must not store an event")
+}
+
+// TestEventHandlerCalendarMustStoreEvents (#170, one component-set rule on every
+// write path): event create into, update in and move into a calendar that does
+// not store VEVENT (a task list, supported_components "VTODO") answer 400
+// "This calendar does not store events" and write nothing. A "VEVENT" and a
+// legacy "" calendar behave as before.
+func TestEventHandlerCalendarMustStoreEvents(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+
+	taskList := &calendar.Calendar{UUID: "task-list-uuid", UserID: cal.UserID, Name: "Tasks", Path: "tasks", SupportedComponents: "VTODO"}
+	require.NoError(t, db.DB().Create(taskList).Error)
+	eventsOnly := &calendar.Calendar{UUID: "events-only-uuid", UserID: cal.UserID, Name: "Events", Path: "events", SupportedComponents: "VEVENT"}
+	require.NoError(t, db.DB().Create(eventsOnly).Error)
+
+	const notStored = `{"status":"error","message":"This calendar does not store events"}`
+	send := func(method, path string, body any) (int, string) {
+		var b []byte
+		if body != nil {
+			b, _ = json.Marshal(body)
+		}
+		req, _ := http.NewRequest(method, "/api/v1/calendars/"+path, bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(resp.Body)
+		return resp.StatusCode, buf.String()
+	}
+	create := func(calUUID, summary string) dto.EventResponse {
+		code, raw := send("POST", calUUID+"/events", dto.CreateEventRequest{
+			Summary: summary,
+			Start:   time.Date(2030, 1, 15, 10, 0, 0, 0, time.UTC),
+			End:     time.Date(2030, 1, 15, 11, 0, 0, 0, time.UTC),
+		})
+		require.Equal(t, fiber.StatusCreated, code, raw)
+		var ev dto.EventResponse
+		require.NoError(t, json.Unmarshal([]byte(raw), &ev))
+		return ev
+	}
+	objectsIn := func(calendarID uint) int64 {
+		var n int64
+		require.NoError(t, db.DB().Model(&calendar.CalendarObject{}).Where("calendar_id = ?", calendarID).Count(&n).Error)
+		return n
+	}
+
+	t.Run("create into a task list is 400", func(t *testing.T) {
+		code, body := send("POST", taskList.UUID+"/events", dto.CreateEventRequest{
+			Summary: "Planning",
+			Start:   time.Date(2030, 1, 15, 10, 0, 0, 0, time.UTC),
+			End:     time.Date(2030, 1, 15, 11, 0, 0, 0, time.UTC),
+		})
+		assert.Equal(t, fiber.StatusBadRequest, code)
+		assert.JSONEq(t, notStored, body)
+		assert.Zero(t, objectsIn(taskList.ID), "a refused create must store nothing")
+	})
+
+	t.Run("create into a VEVENT calendar still works", func(t *testing.T) {
+		ev := create(eventsOnly.UUID, "Standup")
+		assert.Equal(t, eventsOnly.ID, ev.CalendarID)
+	})
+
+	t.Run("move into a task list is 400", func(t *testing.T) {
+		ev := create(cal.UUID, "Movable")
+		code, body := send("POST", cal.UUID+"/events/"+ev.ID+"/move", dto.MoveEventRequest{TargetCalendarID: taskList.UUID})
+		assert.Equal(t, fiber.StatusBadRequest, code)
+		assert.JSONEq(t, notStored, body)
+
+		code, raw := send("GET", cal.UUID+"/events/"+ev.ID, nil)
+		require.Equal(t, fiber.StatusOK, code, raw)
+		var got dto.EventResponse
+		require.NoError(t, json.Unmarshal([]byte(raw), &got))
+		assert.Equal(t, cal.ID, got.CalendarID, "the event must stay where it was")
+		assert.Zero(t, objectsIn(taskList.ID))
+
+		// The same event moves into a VEVENT calendar as before.
+		code, raw = send("POST", cal.UUID+"/events/"+ev.ID+"/move", dto.MoveEventRequest{TargetCalendarID: eventsOnly.UUID})
+		require.Equal(t, fiber.StatusOK, code, raw)
+		require.NoError(t, json.Unmarshal([]byte(raw), &got))
+		assert.Equal(t, eventsOnly.ID, got.CalendarID)
+	})
+
+	t.Run("update in a calendar that no longer stores events is 400", func(t *testing.T) {
+		// An event that reached a calendar before it was narrowed to VTODO.
+		narrowed := &calendar.Calendar{UUID: "narrowed-uuid", UserID: cal.UserID, Name: "Narrowed", Path: "narrowed"}
+		require.NoError(t, db.DB().Create(narrowed).Error)
+		ev := create(narrowed.UUID, "Before narrowing")
+		require.NoError(t, db.DB().Model(narrowed).Update("supported_components", "VTODO").Error)
+
+		summary := "After narrowing"
+		code, body := send("PUT", narrowed.UUID+"/events/"+ev.ID, dto.UpdateEventRequest{Summary: &summary})
+		assert.Equal(t, fiber.StatusBadRequest, code)
+		assert.JSONEq(t, notStored, body)
+
+		code, raw := send("GET", narrowed.UUID+"/events/"+ev.ID, nil)
+		require.Equal(t, fiber.StatusOK, code, raw)
+		var got dto.EventResponse
+		require.NoError(t, json.Unmarshal([]byte(raw), &got))
+		assert.Equal(t, "Before narrowing", got.Summary, "a refused update must write nothing")
+
+		// Deleting it stays possible: that writes no event into the calendar.
+		code, raw = send("DELETE", narrowed.UUID+"/events/"+ev.ID, nil)
+		assert.Equal(t, fiber.StatusNoContent, code, raw)
+	})
+
+	t.Run("update in a VEVENT calendar still works", func(t *testing.T) {
+		ev := create(eventsOnly.UUID, "Retro")
+		summary := "Retrospective"
+		code, raw := send("PUT", eventsOnly.UUID+"/events/"+ev.ID, dto.UpdateEventRequest{Summary: &summary})
+		require.Equal(t, fiber.StatusOK, code, raw)
+		var got dto.EventResponse
+		require.NoError(t, json.Unmarshal([]byte(raw), &got))
+		assert.Equal(t, "Retrospective", got.Summary)
+	})
 }
 
 // TestEventHandlerRejectsWrongCalendar is the regression test for F09: the
@@ -575,4 +696,177 @@ func TestEventHandler(t *testing.T) {
 		assert.Equal(t, 2, dayCounts["Splittable Series"], "Should have 2 instances of original summary")
 		assert.Equal(t, 3, dayCounts["Shared Future"], "Should have 3 instances of new summary")
 	})
+}
+
+// TestEventHandlerRemindersOnReads (#169 story 10): a DAV-written event with
+// three VALARMs reports them as `reminders` on Get and on the expanded and the
+// plain list; an event without VALARM reports [].
+func TestEventHandlerRemindersOnReads(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+
+	mk := func(uid, alarms string) *calendar.CalendarObject {
+		data := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\nBEGIN:VEVENT\r\nUID:" + uid + "\r\nDTSTAMP:20301101T000000Z\r\n" +
+			"DTSTART:20301104T100000Z\r\nDTEND:20301104T110000Z\r\nSUMMARY:" + uid + "\r\n" + alarms + "END:VEVENT\r\nEND:VCALENDAR\r\n"
+		obj := &calendar.CalendarObject{
+			UUID: uid + "-uuid", CalendarID: cal.ID, UID: uid, Path: uid + ".ics",
+			ComponentType: calendar.ComponentEvent, ETag: "e-" + uid, ICalData: data,
+		}
+		require.NoError(t, obj.PopulateDenormFieldsFromICal())
+		require.NoError(t, db.DB().Create(obj).Error)
+		return obj
+	}
+	three := mk("three", "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n"+
+		"BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20301104T080000Z\r\nEND:VALARM\r\n"+
+		"BEGIN:VALARM\r\nACTION:EMAIL\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n")
+	none := mk("none", "")
+
+	get := func(path string) []byte {
+		req, _ := http.NewRequest("GET", path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		require.Equal(t, fiber.StatusOK, resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		return b
+	}
+	base := "/api/v1/calendars/" + cal.UUID + "/events"
+	wantThree := `[{"index":0,"action":"display","related":"start","offset_seconds":-900,"at":null,"editable":true},
+	{"index":1,"action":"display","related":null,"offset_seconds":null,"at":"2030-11-04T08:00:00Z","editable":true},
+	{"index":2,"action":"email","related":"start","offset_seconds":-900,"at":null,"editable":false}]`
+
+	var one struct {
+		Reminders json.RawMessage `json:"reminders"`
+	}
+	require.NoError(t, json.Unmarshal(get(base+"/"+three.UUID), &one))
+	assert.JSONEq(t, wantThree, string(one.Reminders))
+	require.NoError(t, json.Unmarshal(get(base+"/"+none.UUID), &one))
+	assert.JSONEq(t, `[]`, string(one.Reminders))
+
+	rng := "start=" + url.QueryEscape("2030-11-04T00:00:00Z") + "&end=" + url.QueryEscape("2030-11-05T00:00:00Z")
+	for _, q := range []string{"?expand=true&" + rng, "?" + rng} {
+		var list struct {
+			Events []struct {
+				UID       string          `json:"uid"`
+				Reminders json.RawMessage `json:"reminders"`
+			} `json:"events"`
+		}
+		require.NoError(t, json.Unmarshal(get(base+q), &list), q)
+		require.Len(t, list.Events, 2, q)
+		for _, e := range list.Events {
+			if e.UID == "three" {
+				assert.JSONEq(t, wantThree, string(e.Reminders), q)
+			} else {
+				assert.JSONEq(t, `[]`, string(e.Reminders), q)
+			}
+		}
+	}
+}
+
+// TestEventHandlerReminderWrites (#169 story 11): create with reminders, PATCH
+// with reminders absent / null / [] / an array, and every 400 text.
+func TestEventHandlerReminderWrites(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+	base := "/api/v1/calendars/" + cal.UUID + "/events"
+
+	call := func(method, path, body string) (int, []byte) {
+		req, _ := http.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+	type rem struct {
+		Index         int        `json:"index"`
+		OffsetSeconds *int64     `json:"offset_seconds"`
+		At            *time.Time `json:"at"`
+		Editable      bool       `json:"editable"`
+	}
+	type ev struct {
+		ID        string `json:"id"`
+		Reminders []rem  `json:"reminders"`
+	}
+	decode := func(b []byte) ev {
+		var e ev
+		require.NoError(t, json.Unmarshal(b, &e), string(b))
+		return e
+	}
+	const times = `"start":"2030-11-04T10:00:00Z","end":"2030-11-04T11:00:00Z"`
+
+	status, raw := call("POST", base, `{"summary":"S",`+times+`,"reminders":[{"offset_seconds":-900},{"at":"2030-11-04T09:00:00+01:00"}]}`)
+	require.Equal(t, http.StatusCreated, status, string(raw))
+	created := decode(raw)
+	require.Len(t, created.Reminders, 2)
+	assert.Equal(t, int64(-900), *created.Reminders[0].OffsetSeconds)
+	assert.True(t, created.Reminders[0].Editable)
+	assert.Equal(t, "2030-11-04T08:00:00Z", created.Reminders[1].At.UTC().Format(time.RFC3339))
+	id := created.ID
+
+	var stored calendar.CalendarObject
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	assert.Contains(t, stored.ICalData, "TRIGGER:-PT15M")
+	assert.Contains(t, stored.ICalData, "TRIGGER;VALUE=DATE-TIME:20301104T080000Z")
+	etag := stored.ETag
+
+	// Absent: reminders untouched.
+	status, raw = call("PATCH", base+"/"+id, `{"summary":"Renamed"}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Len(t, decode(raw).Reminders, 2)
+
+	// The same reminders and nothing else: no write, ETag unchanged.
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	etag = stored.ETag
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":[{"offset_seconds":-900},{"at":"2030-11-04T08:00:00Z"}]}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	assert.Equal(t, etag, stored.ETag)
+
+	// An array adds one.
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":[{"offset_seconds":-900},{"at":"2030-11-04T08:00:00Z"},{"offset_seconds":-3600}]}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Len(t, decode(raw).Reminders, 3)
+
+	// 400s, each text; nothing is written.
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	etag = stored.ETag
+	eleven := strings.TrimSuffix(strings.Repeat(`{"offset_seconds":-60},`, 11), ",")
+	for body, want := range map[string]string{
+		`{"reminders":[` + eleven + `]}`: "reminders must contain at most 10 entries",
+		`{"reminders":[{}]}`:             "a reminder needs exactly one of offset_seconds and at",
+		`{"reminders":[null]}`:           "a reminder needs exactly one of offset_seconds and at",
+		`{"reminders":[{"offset_seconds":1,"at":"2030-01-01T00:00:00Z"}]}`: "a reminder needs exactly one of offset_seconds and at",
+		`{"reminders":[{"offset_seconds":34560001}]}`:                      "reminder offset out of range",
+		`{"reminders":[{"offset_seconds":-34560001}]}`:                     "reminder offset out of range",
+		`{"reminders":[{"at":"2030-11-04 09:00"}]}`:                        "Invalid reminder time",
+		`{"reminders":[{"at":"2030-11-04T09:00:00"}]}`:                     "Invalid reminder time",
+		`{"reminders":[{"at":"2032-12-04T09:00:00Z"}]}`:                    "reminder time out of range",
+	} {
+		status, raw = call("PATCH", base+"/"+id, body)
+		assert.Equal(t, http.StatusBadRequest, status, body)
+		assert.JSONEq(t, `{"status":"error","message":"`+want+`"}`, string(raw), body)
+	}
+	status, raw = call("POST", base, `{"summary":"S",`+times+`,"reminders":[`+eleven+`]}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, string(raw), "reminders must contain at most 10 entries")
+	status, raw = call("POST", base, `{"summary":"S",`+times+`,"reminders":[{"at":"2032-12-04T09:00:00Z"}]}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, string(raw), "reminder time out of range")
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	assert.Equal(t, etag, stored.ETag, "nothing written on a 400")
+	var count int64
+	db.DB().Model(&calendar.CalendarObject{}).Count(&count)
+	assert.Equal(t, int64(1), count, "no event created on a 400")
+
+	// null and [] remove every editable VALARM.
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":null}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Empty(t, decode(raw).Reminders)
+	call("PATCH", base+"/"+id, `{"reminders":[{"offset_seconds":-60}]}`)
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":[]}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Empty(t, decode(raw).Reminders)
+	assert.Contains(t, string(raw), `"reminders":[]`)
 }

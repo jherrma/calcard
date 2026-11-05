@@ -27,10 +27,57 @@ def ics_event(uid: str, summary: str, start: str, end: str, *extra: str) -> str:
 
 
 def ics_todo(uid: str, summary: str) -> str:
+    """A VCALENDAR with one undated VTODO (no DTSTART, no DUE)."""
     return ics_calendar(
         f"BEGIN:VTODO\r\nUID:{uid}\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:{summary}\r\n"
         "STATUS:NEEDS-ACTION\r\nEND:VTODO\r\n"
     )
+
+
+def ics_vtodo(uid: str, summary: str, *props: str) -> str:
+    """A bare VTODO block; PROPS are further content lines (DUE, STATUS, …) or
+    whole sub-components (a VALARM's BEGIN … END lines)."""
+    lines = ["BEGIN:VTODO", f"UID:{uid}", "DTSTAMP:20260101T000000Z", f"SUMMARY:{summary}", *props, "END:VTODO"]
+    return CRLF.join(lines) + CRLF
+
+
+def _due_line(due: str) -> str:
+    """DUE as a DATE for YYYYMMDD, else a date-time (UTC with Z, or floating)."""
+    return f"DUE;VALUE=DATE:{due}" if len(due) == 8 else f"DUE:{due}"
+
+
+def ics_todo_due(uid: str, summary: str, due: str, *extra: str) -> str:
+    """A VCALENDAR with one VTODO due DUE: a date (20300601) or a date-time in
+    basic format (20300601T100000Z). EXTRA: additional lines (STATUS, DTSTART,
+    PRIORITY, …); without a STATUS line the task is NEEDS-ACTION by default."""
+    return ics_calendar(ics_vtodo(uid, summary, _due_line(due), *extra))
+
+
+def ics_todo_rrule(uid: str, summary: str, due: str, rrule: str, *extra: str) -> str:
+    """ics_todo_due plus RRULE:<rrule> — a repeating task (DUE + RRULE without a
+    DTSTART is how Tasks.org writes one; add a DTSTART line in EXTRA if needed)."""
+    return ics_todo_due(uid, summary, due, f"RRULE:{rrule}", *extra)
+
+
+# Europe/Berlin as clients send it, for objects with DTSTART/DUE;TZID=Europe/Berlin.
+VTIMEZONE_BERLIN = CRLF.join([
+    "BEGIN:VTIMEZONE", "TZID:Europe/Berlin",
+    "BEGIN:STANDARD", "DTSTART:19701025T030000", "TZOFFSETFROM:+0200", "TZOFFSETTO:+0100",
+    "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU", "END:STANDARD",
+    "BEGIN:DAYLIGHT", "DTSTART:19700329T020000", "TZOFFSETFROM:+0100", "TZOFFSETTO:+0200",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU", "END:DAYLIGHT",
+    "END:VTIMEZONE"]) + CRLF
+
+
+def ical_lines(body: str) -> list[str]:
+    """The content lines of an iCalendar body, unfolded (RFC 5545 §3.1)."""
+    out: list[str] = []
+    for line in body.replace("\r\n", "\n").split("\n"):
+        if line[:1] in (" ", "\t") and out:
+            out[-1] += line[1:]
+        elif line:
+            out.append(line)
+    return out
 
 
 def vcard(uid: str, fn: str, *extra: str) -> str:

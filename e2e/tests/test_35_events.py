@@ -406,6 +406,57 @@ def test_move(t, e2e, u1, cal):
     t.status(r, 404, msg="moving into an unknown calendar")
 
 
+EVENTS_ONLY = "This calendar does not store events"
+
+
+def test_task_routes(t, e2e, u1, cal):
+    """event routes and tasks (#170): a task's UUID is an unknown event; no event into a task list; no task in a listing"""
+    tasklist = u1.mk_calendar(e2e.uniq("events-tasklist"), kind="tasks")
+    mixed = u1.mk_calendar(e2e.uniq("events-mixed"), kind="both")
+    tasks = {}
+    for c in (tasklist, mixed):
+        r = u1.api("POST", f"/calendars/{c['uuid']}/tasks", json={
+            "summary": f"Dated task {e2e.run_id}", "start": "2031-09-01T09:00:00Z", "due": "2031-09-01T11:00:00Z"})
+        if not t.status(r, 201, msg="a dated task (start + due inside the window below)"):
+            return
+        tasks[c["uuid"]] = r.jdict()["id"]
+
+    for c in (tasklist, mixed):
+        unknown = u1.api("GET", f"/calendars/{c['uuid']}/events/{ZERO}")
+        if not t.status(unknown, 404, msg="reference: an unknown event") or not t.eq(unknown.jmsg(), "Event not found"):
+            return
+        path = f"/calendars/{c['uuid']}/events/{tasks[c['uuid']]}"
+        for method, suffix, kw in (("GET", "", {}), ("PATCH", "", {"json": {"summary": "an event now?"}}),
+                                   ("DELETE", "", {}), ("POST", "/move", {"json": {"target_calendar_id": cal.ev["uuid"]}})):
+            r = u1.api(method, path + suffix, **kw)
+            t.status(r, 404, msg=f"{method}{suffix} of a task's UUID on the event routes")
+            t.eq(r.text, unknown.text, f"{method}{suffix} of a task answers like an unknown event")
+        r = u1.api("GET", f"/calendars/{c['uuid']}/tasks/{tasks[c['uuid']]}")
+        if t.status(r, 200, msg="the task survived every event verb"):
+            t.eq(r.jdict().get("summary"), f"Dated task {e2e.run_id}", "and is unchanged")
+
+    r = u1.api("POST", f"/calendars/{tasklist['uuid']}/events", json={
+        "summary": "No place here", "start": "2031-09-02T09:00:00Z", "end": "2031-09-02T10:00:00Z", "timezone": "UTC"})
+    if t.status(r, 400, msg="creating an event in a task list"):
+        t.eq(r.jmsg(), EVENTS_ONLY)
+    ev = u1.mk_event(cal.ev["uuid"], f"Stays put {e2e.run_id}", "2031-09-03T09:00:00Z", "2031-09-03T10:00:00Z")
+    r = u1.api("POST", f"/calendars/{cal.ev['uuid']}/events/{ev['id']}/move",
+               json={"target_calendar_id": tasklist["uuid"]})
+    if t.status(r, 400, msg="moving an event into a task list"):
+        t.eq(r.jmsg(), EVENTS_ONLY)
+    t.status(u1.api("GET", f"/calendars/{cal.ev['uuid']}/events/{ev['id']}"), 200, msg="the event stays where it was")
+
+    u1.mk_event(mixed["uuid"], f"Mixed event {e2e.run_id}", "2031-09-01T12:00:00Z", "2031-09-01T13:00:00Z")
+    for c in (tasklist, mixed):
+        for expand in ("true", "false"):
+            r = _list(u1, c["uuid"], f"start=2031-08-01T00:00:00Z&end=2031-10-01T00:00:00Z&expand={expand}")
+            if not t.status(r, 200, msg=f"event list of {c['name']} (expand={expand})"):
+                continue
+            t.not_contains(r, f"Dated task {e2e.run_id}", f"the event list never shows a dated task (expand={expand})")
+            if c is mixed:
+                t.contains(r, f"Mixed event {e2e.run_id}", f"control: the mixed calendar's event is listed ({expand})")
+
+
 def test_delete(t, u1, cal, st):
     """delete is 204, then the event is gone"""
     t.need(st, "ev_id")

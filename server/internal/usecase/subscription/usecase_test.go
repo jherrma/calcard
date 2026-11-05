@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -175,10 +176,17 @@ func (f *fakeCalRepo) Delete(_ context.Context, id uint) error {
 	return nil
 }
 
+// GetEventCount counts events only, as the real repository does (#170).
 func (f *fakeCalRepo) GetEventCount(_ context.Context, calendarID uint) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return int64(len(f.objects[calendarID])), nil
+	var n int64
+	for _, obj := range f.objects[calendarID] {
+		if obj.IsEvent() {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeCalRepo) UpdateMetadata(_ context.Context, cal *calendar.Calendar) error {
@@ -323,6 +331,54 @@ func TestCreatePopulatesTheCalendarAndTakesDefaultsFromTheFeed(t *testing.T) {
 	require.NotNil(t, view.Subscription.LastSyncedAt)
 	assert.Equal(t, calendar.StatusSynced, view.Subscription.Status())
 	assert.Len(t, h.cals.objects[view.Calendar.ID], 2)
+}
+
+// TestCreateCountsEventsNotTasks: a feed's VTODOs are mirrored with its events,
+// but event_count counts events only (#170) — on create exactly as on every
+// later list (GetEventCount), so the number does not shrink after a reload.
+func TestCreateCountsEventsNotTasks(t *testing.T) {
+	h := newHarness(t, 5)
+	fs := newFeedServer(t, strings.Replace(twoEventFeed, "END:VCALENDAR\r\n",
+		"BEGIN:VTODO\r\nUID:t@example.com\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:Task\r\nEND:VTODO\r\nEND:VCALENDAR\r\n", 1))
+
+	view, err := h.create.Execute(context.Background(), 1, CreateInput{URL: fs.URL})
+	require.NoError(t, err)
+	assert.Len(t, h.cals.objects[view.Calendar.ID], 3, "the task is mirrored with the events")
+	assert.Equal(t, int64(2), view.EventCount, "the task is not an event")
+
+	rows, err := h.list.Execute(context.Background(), 1)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, view.EventCount, rows[0].EventCount, "create and list report the same count")
+}
+
+// TestCreateStoresAMixedComponentSet: a subscription's calendar stays
+// "VEVENT,VTODO" (#170), not the "VEVENT" a REST calendar defaults to — the
+// feed's VTODOs are mirrored into it, and the collection must advertise what
+// it holds.
+func TestCreateStoresAMixedComponentSet(t *testing.T) {
+	for name, feed := range map[string]string{
+		"events only":     twoEventFeed,
+		"events and task": strings.Replace(twoEventFeed, "END:VCALENDAR\r\n", "BEGIN:VTODO\r\nUID:t@example.com\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:Task\r\nEND:VTODO\r\nEND:VCALENDAR\r\n", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, 5)
+			fs := newFeedServer(t, feed)
+
+			view, err := h.create.Execute(context.Background(), 1, CreateInput{URL: fs.URL})
+			require.NoError(t, err)
+
+			assert.Equal(t, "VEVENT,VTODO", view.Calendar.SupportedComponents)
+			stored := h.cals.cals[view.Calendar.ID]
+			require.NotNil(t, stored)
+			assert.Equal(t, "VEVENT,VTODO", stored.SupportedComponents, "stored set")
+			assert.Equal(t, calendar.KindBoth, calendar.KindOf(stored))
+			for _, obj := range h.cals.objects[view.Calendar.ID] {
+				assert.True(t, calendar.SupportsComponent(stored, obj.ComponentType),
+					"%s %s is stored in a calendar that advertises it", obj.ComponentType, obj.UID)
+			}
+		})
+	}
 }
 
 func TestCreatePrefersAnExplicitNameOverTheFeeds(t *testing.T) {

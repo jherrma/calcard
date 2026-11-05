@@ -24,6 +24,7 @@ func Models() []interface{} {
 		&calendar.CalendarObject{},
 		&calendar.SyncChangeLog{},
 		&calendar.CalendarSubscription{},
+		&calendar.AlarmAcknowledgement{},
 		&addressbook.AddressBook{},
 		&addressbook.AddressObject{},
 		&addressbook.ContactPhoto{},

@@ -22,6 +22,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	aboutusecase "github.com/jherrma/caldav-server/internal/usecase/about"
 	addressbookusecase "github.com/jherrma/caldav-server/internal/usecase/addressbook"
+	alarmusecase "github.com/jherrma/caldav-server/internal/usecase/alarm"
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
@@ -29,9 +30,11 @@ import (
 	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
 	"github.com/jherrma/caldav-server/internal/usecase/importexport"
 	"github.com/jherrma/caldav-server/internal/usecase/mcptoken"
+	"github.com/jherrma/caldav-server/internal/usecase/ownerzone"
 	searchusecase "github.com/jherrma/caldav-server/internal/usecase/search"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 	subscriptionusecase "github.com/jherrma/caldav-server/internal/usecase/subscription"
+	taskusecase "github.com/jherrma/caldav-server/internal/usecase/task"
 	userusecase "github.com/jherrma/caldav-server/internal/usecase/user"
 )
 
@@ -43,6 +46,10 @@ type BackgroundServices struct {
 	// SubscriptionWorker refreshes remote calendar subscriptions (story 100).
 	// Nil when the feature or the worker interval is turned off.
 	SubscriptionWorker *subscriptionusecase.Worker
+
+	// AlarmAckCleanup deletes old alarm acknowledgements (#169, spec §9.2).
+	// Nil when alarms.enabled is false or alarms.cleanup_interval is 0.
+	AlarmAckCleanup *alarmusecase.CleanupJob
 }
 
 // SetupRoutes registers all application routes and returns the background
@@ -95,6 +102,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
 	getPreferencesUC := userusecase.NewGetPreferencesUseCase(userRepo, userPrefRepo)
 	updatePreferencesUC := userusecase.NewUpdatePreferencesUseCase(userRepo, userPrefRepo)
+	setDefaultTimezoneUC := userusecase.NewSetDefaultTimezoneUseCase(userRepo, userPrefRepo)
 
 	// App Password Use Cases
 	createAppPwdUC := apppassword.NewCreateUseCase(userRepo, appPwdRepo, securityLogger)
@@ -140,7 +148,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// Handlers
 	authHandler := http.NewAuthHandler(registerUC, verifyUC, loginUC, refreshUC, logoutUC, forgotPasswordUC, resetPasswordUC, cfg)
 	systemHandler := http.NewSystemHandler(cfg, userRepo, oauthManager)
-	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC, getPreferencesUC, updatePreferencesUC, calendarRepo, addressBookRepo, appPwdRepo)
+	userHandler := http.NewUserHandler(changePasswordUC, getProfileUC, updateProfileUC, deleteAccountUC, getPreferencesUC, updatePreferencesUC, setDefaultTimezoneUC, calendarRepo, addressBookRepo, appPwdRepo)
 	appPwdHandler := http.NewAppPasswordHandler(createAppPwdUC, listAppPwdUC, revokeAppPwdUC, cfg)
 	caldavCredHandler := http.NewCalDAVCredentialHandler(createCaldavCredUC, listCaldavCredUC, revokeCaldavCredUC)
 	carddavCredHandler := http.NewCardDAVCredentialHandler(createCarddavCredUC, listCarddavCredUC, revokeCarddavCredUC)
@@ -260,6 +268,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// Event/display defaults for the web UI (story 103).
 	userGroup.Get("/me/preferences", userHandler.GetPreferences)
 	userGroup.Patch("/me/preferences", userHandler.UpdatePreferences)
+	userGroup.Put("/me/preferences/timezone-default", userHandler.SetDefaultTimezone)
 
 	// Import/Export Use Cases
 	calendarImportUC := importexport.NewCalendarImportUseCase(calendarRepo)
@@ -465,7 +474,10 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	eventListUC := eventusecase.NewListEventsUseCase(calendarRepo)
 	eventGetUC := eventusecase.NewGetEventUseCase(calendarRepo)
 	eventCreateUC := eventusecase.NewCreateEventUseCase(calendarRepo)
-	eventUpdateUC := eventusecase.NewUpdateEventUseCase(calendarRepo)
+	// One owner-zone resolver (#169): the all-day date shift of the update use
+	// cases and the alarm use cases share it, so the fallback logs once.
+	ownerZones := ownerzone.New(userPrefRepo, userRepo)
+	eventUpdateUC := eventusecase.NewUpdateEventUseCase(calendarRepo).WithOwnerZones(ownerZones)
 	eventDeleteUC := eventusecase.NewDeleteEventUseCase(calendarRepo)
 	eventMoveUC := eventusecase.NewMoveEventUseCase(calendarRepo)
 
@@ -487,6 +499,64 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	eventGroup.Delete("/:event_id", eventHandler.Delete)
 	eventGroup.Post("/:event_id/move", eventHandler.Move)
 
+	// Task Routes (Protected, #170): the VTODOs of a task list, with the event
+	// routes' access rules. Raw JSON like events. The write, cross-list and
+	// summary use cases are built once: the MCP task tools get the same
+	// instances (below).
+	taskCreateUC := taskusecase.NewCreateTaskUseCase(calendarRepo, nil)
+	taskUpdateUC := taskusecase.NewUpdateTaskUseCase(calendarRepo, nil).WithOwnerZones(ownerZones)
+	taskDeleteUC := taskusecase.NewDeleteTaskUseCase(calendarRepo)
+	taskCompleteUC := taskusecase.NewCompleteTaskUseCase(calendarRepo, nil)
+	taskUncompleteUC := taskusecase.NewUncompleteTaskUseCase(calendarRepo, nil)
+	taskListAllUC := taskusecase.NewListAllTasksUseCase(calendarRepo)
+	taskSummaryUC := taskusecase.NewTaskSummaryUseCase(calendarRepo)
+	taskHandler := http.NewTaskHandler(
+		taskusecase.NewListTasksUseCase(calendarRepo),
+		taskusecase.NewGetTaskUseCase(calendarRepo),
+		taskCreateUC,
+		taskUpdateUC,
+		taskDeleteUC,
+		taskCompleteUC,
+		taskUncompleteUC,
+		taskListAllUC,
+		taskSummaryUC,
+		calendarRepo,
+	)
+
+	taskGroup := calendarGroup.Group("/:calendar_id/tasks")
+	taskGroup.Get("/", taskHandler.List)
+	taskGroup.Post("/", taskHandler.Create)
+	taskGroup.Get("/:task_id", taskHandler.Get)
+	taskGroup.Patch("/:task_id", taskHandler.Update)
+	taskGroup.Delete("/:task_id", taskHandler.Delete)
+	taskGroup.Post("/:task_id/complete", taskHandler.Complete)
+	taskGroup.Post("/:task_id/uncomplete", taskHandler.Uncomplete)
+
+	// Cross-list tasks (#170): every task list the caller can read, in one
+	// query. On v1 itself, so it needs its own Authenticate like /search and
+	// /contacts/search (without it the handler has no user).
+	v1.Get("/tasks", http.Authenticate(jwtManager, userRepo), taskHandler.ListAll)
+	// Open/overdue/due-today/completed counts of those lists at the caller's
+	// as_of, in one query (#170): the sidebar badge and per-list counts.
+	v1.Get("/tasks/summary", http.Authenticate(jwtManager, userRepo), taskHandler.Summary)
+
+	// Web-app reminders (#169), off with alarms.enabled: the routes are then
+	// absent and /api/* answers 404 instead of the SPA.
+	var alarmAckCleanup *alarmusecase.CleanupJob
+	if cfg.Alarms.Enabled {
+		alarmAckRepo := repository.NewAlarmAcknowledgementRepository(db.DB())
+		alarmHandler := http.NewAlarmHandler(
+			alarmusecase.NewUpcomingUseCase(calendarRepo, alarmAckRepo, ownerZones, nil),
+			alarmusecase.NewAcknowledgeUseCase(alarmAckRepo, nil))
+		alarmGroup := v1.Group("/alarms", http.Authenticate(jwtManager, userRepo))
+		alarmGroup.Get("/upcoming", alarmHandler.Upcoming)
+		alarmGroup.Post("/acknowledge", alarmHandler.Acknowledge)
+		if cfg.Alarms.CleanupInterval > 0 {
+			alarmAckCleanup = alarmusecase.NewCleanupJob(
+				alarmAckRepo, cfg.Alarms.CleanupInterval, cfg.Alarms.AckRetention, nil)
+		}
+	}
+
 	// MCP Server (story 104). Registered here, after every use case it delegates
 	// to exists, and mounted at /mcp rather than under /api/v1 because the
 	// protocol addresses one endpoint URL that clients are configured with
@@ -507,6 +577,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 			EventCreate:       eventCreateUC,
 			EventUpdate:       eventUpdateUC,
 			EventDelete:       eventDeleteUC,
+			TaskListAll:       taskListAllUC,
+			TaskCreate:        taskCreateUC,
+			TaskUpdate:        taskUpdateUC,
+			TaskDelete:        taskDeleteUC,
+			TaskComplete:      taskCompleteUC,
+			TaskUncomplete:    taskUncompleteUC,
+			TaskSummary:       taskSummaryUC,
 			AddressBookList:   abListUC,
 			AddressBookCreate: abCreateUC,
 			AddressBookUpdate: abUpdateUC,
@@ -547,7 +624,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// share one Fetcher — and therefore one SSRF policy — so a URL that the
 	// create endpoint refuses can never be reached by the background worker
 	// either.
-	services := &BackgroundServices{}
+	services := &BackgroundServices{AlarmAckCleanup: alarmAckCleanup}
 	if cfg.Subscriptions.Enabled {
 		fetcher := subscriptionusecase.NewFetcher(subscriptionusecase.FetchOptions{
 			MaxSize:           cfg.Subscriptions.MaxFeedSize,
