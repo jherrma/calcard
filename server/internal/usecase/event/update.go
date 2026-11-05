@@ -29,6 +29,10 @@ type UpdateEventInput struct {
 	Timezone     *string
 	RecurrenceID string // Specific instance to update (RFC 5545 format, e.g., 20230101T100000Z)
 	Scope        string // this, this_and_future, all
+	// Reminders (#169): nil leaves the VALARMs untouched, a pointer to an empty
+	// slice removes every editable VALARM of the target component, a non-empty
+	// slice is the desired multiset of editable reminders.
+	Reminders *[]calendar.ReminderInput
 }
 
 type UpdateEventUseCase struct {
@@ -65,6 +69,14 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	// Find or create the target event component based on scope
 	var targetEvent *ical.Event
 	allEvents := cal.Events()
+	// createdTarget: the edit built a new override or master (scope this /
+	// this_and_future), which is a change whatever the reminders say.
+	createdTarget := false
+	if input.Reminders != nil {
+		if err := calendar.CheckReminderShape(*input.Reminders); err != nil {
+			return nil, invalidInput(err)
+		}
+	}
 
 	if input.Scope == "this" && input.RecurrenceID != "" {
 		// Normalize the requested instance to a canonical UTC key so an
@@ -148,6 +160,7 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			copyRelativeAlarms(master.Component, event.Component)
 			cal.Children = append(cal.Children, event.Component)
 			targetEvent = event
+			createdTarget = true
 		}
 	} else if input.Scope == "this_and_future" && input.RecurrenceID != "" {
 		// SPLIT SERIES:
@@ -252,6 +265,7 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		copyRelativeAlarms(master.Component, newMaster.Component)
 		cal.Children = append(cal.Children, newMaster.Component)
 		targetEvent = newMaster
+		createdTarget = true
 
 		// 4b. Ensure the new master has valid DTSTART/DTEND from the split point
 		// so that if input.Start/End are nil, it still starts at the right place.
@@ -413,6 +427,24 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 	}
 
+	// Reminders (#169, spec §7.5): after the field edits and after the relative
+	// VALARMs were copied into a new override or master. The range rules apply
+	// only to entries that match no existing VALARM, so a kept reminder is never
+	// refused. Nothing has been written yet, so a 400 writes nothing.
+	if input.Reminders != nil {
+		desired := *input.Reminders
+		if err := calendar.CheckReminderRanges(
+			calendar.UnmatchedReminders(targetEvent.Component, desired, calendar.ReminderKindEvent), effectiveStart); err != nil {
+			return nil, invalidInput(err)
+		}
+		changed, _ := calendar.ApplyReminders(targetEvent.Component, desired, calendar.ReminderKindEvent)
+		if !changed && !createdTarget && onlyReminders(input) {
+			// The same reminders as stored and nothing else to edit: write
+			// nothing, so the ETag stays.
+			return obj, nil
+		}
+	}
+
 	// Update DTSTAMP. It must be UTC (RFC 5545 §3.8.7.2); go-ical writes a
 	// time.Local value as DTSTAMP;TZID=Local:… (F04).
 	targetEvent.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
@@ -440,6 +472,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	return obj, nil
+}
+
+// onlyReminders reports that the request edits nothing but the reminders.
+func onlyReminders(in UpdateEventInput) bool {
+	return in.Summary == nil && in.Description == nil && in.Location == nil &&
+		in.Start == nil && in.End == nil && in.IsAllDay == nil &&
+		in.Recurrence == nil && in.Timezone == nil
 }
 
 // formatUntilBoundary formats an RRULE UNTIL value with the value type that

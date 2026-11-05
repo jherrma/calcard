@@ -212,6 +212,13 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 	if req.Recurrence != nil {
 		input.RRule = req.Recurrence.ToRRule(req.AllDay)
 	}
+	if len(req.Reminders) > 0 {
+		reminders, err := dto.ToDomainReminders(req.Reminders)
+		if err != nil {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
+		input.Reminders = reminders
+	}
 
 	obj, err := h.createUC.Execute(c.Context(), input)
 	if err != nil {
@@ -280,6 +287,17 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 		// here with the request's flag would persist a DATE-TIME UNTIL on an
 		// all-day series — the exact issue #118 violation, plus an off-by-one day.
 		input.Recurrence = req.Recurrence.ToDomain()
+	}
+
+	if req.Reminders.Set {
+		reminders := []calendar.ReminderInput{}
+		if req.Reminders.Value != nil {
+			var err error
+			if reminders, err = dto.ToDomainReminders(*req.Reminders.Value); err != nil {
+				return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+			}
+		}
+		input.Reminders = &reminders
 	}
 
 	obj, err := h.updateUC.Execute(c.Context(), input)

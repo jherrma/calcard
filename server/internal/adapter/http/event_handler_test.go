@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -760,4 +761,112 @@ func TestEventHandlerRemindersOnReads(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestEventHandlerReminderWrites (#169 story 11): create with reminders, PATCH
+// with reminders absent / null / [] / an array, and every 400 text.
+func TestEventHandlerReminderWrites(t *testing.T) {
+	app, db, _, cal, token := setupEventHandlerTest(t)
+	defer db.Close()
+	base := "/api/v1/calendars/" + cal.UUID + "/events"
+
+	call := func(method, path, body string) (int, []byte) {
+		req, _ := http.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+	type rem struct {
+		Index         int        `json:"index"`
+		OffsetSeconds *int64     `json:"offset_seconds"`
+		At            *time.Time `json:"at"`
+		Editable      bool       `json:"editable"`
+	}
+	type ev struct {
+		ID        string `json:"id"`
+		Reminders []rem  `json:"reminders"`
+	}
+	decode := func(b []byte) ev {
+		var e ev
+		require.NoError(t, json.Unmarshal(b, &e), string(b))
+		return e
+	}
+	const times = `"start":"2030-11-04T10:00:00Z","end":"2030-11-04T11:00:00Z"`
+
+	status, raw := call("POST", base, `{"summary":"S",`+times+`,"reminders":[{"offset_seconds":-900},{"at":"2030-11-04T09:00:00+01:00"}]}`)
+	require.Equal(t, http.StatusCreated, status, string(raw))
+	created := decode(raw)
+	require.Len(t, created.Reminders, 2)
+	assert.Equal(t, int64(-900), *created.Reminders[0].OffsetSeconds)
+	assert.True(t, created.Reminders[0].Editable)
+	assert.Equal(t, "2030-11-04T08:00:00Z", created.Reminders[1].At.UTC().Format(time.RFC3339))
+	id := created.ID
+
+	var stored calendar.CalendarObject
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	assert.Contains(t, stored.ICalData, "TRIGGER:-PT15M")
+	assert.Contains(t, stored.ICalData, "TRIGGER;VALUE=DATE-TIME:20301104T080000Z")
+	etag := stored.ETag
+
+	// Absent: reminders untouched.
+	status, raw = call("PATCH", base+"/"+id, `{"summary":"Renamed"}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Len(t, decode(raw).Reminders, 2)
+
+	// The same reminders and nothing else: no write, ETag unchanged.
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	etag = stored.ETag
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":[{"offset_seconds":-900},{"at":"2030-11-04T08:00:00Z"}]}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	assert.Equal(t, etag, stored.ETag)
+
+	// An array adds one.
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":[{"offset_seconds":-900},{"at":"2030-11-04T08:00:00Z"},{"offset_seconds":-3600}]}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Len(t, decode(raw).Reminders, 3)
+
+	// 400s, each text; nothing is written.
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	etag = stored.ETag
+	eleven := strings.TrimSuffix(strings.Repeat(`{"offset_seconds":-60},`, 11), ",")
+	for body, want := range map[string]string{
+		`{"reminders":[` + eleven + `]}`: "reminders must contain at most 10 entries",
+		`{"reminders":[{}]}`:             "a reminder needs exactly one of offset_seconds and at",
+		`{"reminders":[null]}`:           "a reminder needs exactly one of offset_seconds and at",
+		`{"reminders":[{"offset_seconds":1,"at":"2030-01-01T00:00:00Z"}]}`: "a reminder needs exactly one of offset_seconds and at",
+		`{"reminders":[{"offset_seconds":34560001}]}`:                      "reminder offset out of range",
+		`{"reminders":[{"offset_seconds":-34560001}]}`:                     "reminder offset out of range",
+		`{"reminders":[{"at":"2030-11-04 09:00"}]}`:                        "Invalid reminder time",
+		`{"reminders":[{"at":"2030-11-04T09:00:00"}]}`:                     "Invalid reminder time",
+		`{"reminders":[{"at":"2032-12-04T09:00:00Z"}]}`:                    "reminder time out of range",
+	} {
+		status, raw = call("PATCH", base+"/"+id, body)
+		assert.Equal(t, http.StatusBadRequest, status, body)
+		assert.JSONEq(t, `{"status":"error","message":"`+want+`"}`, string(raw), body)
+	}
+	status, raw = call("POST", base, `{"summary":"S",`+times+`,"reminders":[`+eleven+`]}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, string(raw), "reminders must contain at most 10 entries")
+	status, raw = call("POST", base, `{"summary":"S",`+times+`,"reminders":[{"at":"2032-12-04T09:00:00Z"}]}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, string(raw), "reminder time out of range")
+	require.NoError(t, db.DB().Where("uuid = ?", id).First(&stored).Error)
+	assert.Equal(t, etag, stored.ETag, "nothing written on a 400")
+	var count int64
+	db.DB().Model(&calendar.CalendarObject{}).Count(&count)
+	assert.Equal(t, int64(1), count, "no event created on a 400")
+
+	// null and [] remove every editable VALARM.
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":null}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Empty(t, decode(raw).Reminders)
+	call("PATCH", base+"/"+id, `{"reminders":[{"offset_seconds":-60}]}`)
+	status, raw = call("PATCH", base+"/"+id, `{"reminders":[]}`)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	assert.Empty(t, decode(raw).Reminders)
+	assert.Contains(t, string(raw), `"reminders":[]`)
 }

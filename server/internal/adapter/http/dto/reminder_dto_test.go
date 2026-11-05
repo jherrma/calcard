@@ -90,3 +90,32 @@ func TestNewReminderResponses(t *testing.T) {
 }
 
 func i64(v int64) *int64 { return &v }
+
+func TestToDomainReminders(t *testing.T) {
+	var req UpdateEventRequest
+	require.NoError(t, json.Unmarshal([]byte(`{}`), &req))
+	assert.False(t, req.Reminders.Set)
+	require.NoError(t, json.Unmarshal([]byte(`{"reminders":null}`), &req))
+	assert.True(t, req.Reminders.Set)
+	assert.Nil(t, req.Reminders.Value)
+	require.NoError(t, json.Unmarshal([]byte(`{"reminders":[{"offset_seconds":-900},{"at":"2030-11-04T09:00:00+01:00"}]}`), &req))
+	got, err := ToDomainReminders(*req.Reminders.Value)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, int64(-900), *got[0].OffsetSeconds)
+	assert.Equal(t, "2030-11-04T08:00:00Z", got[1].At.UTC().Format(time.RFC3339))
+
+	one := int64(1)
+	at := "2030-11-04T09:00:00Z"
+	_, err = ToDomainReminders([]ReminderInputDTO{{}})
+	assert.EqualError(t, err, "a reminder needs exactly one of offset_seconds and at")
+	_, err = ToDomainReminders([]ReminderInputDTO{{OffsetSeconds: &one, At: &at}})
+	assert.EqualError(t, err, "a reminder needs exactly one of offset_seconds and at")
+	_, err = ToDomainReminders(make([]ReminderInputDTO, 11))
+	assert.EqualError(t, err, "reminders must contain at most 10 entries")
+	for _, bad := range []string{"", "2030-11-04", "2030-11-04T09:00:00", "tomorrow"} {
+		b := bad
+		_, err = ToDomainReminders([]ReminderInputDTO{{At: &b}})
+		assert.EqualError(t, err, "Invalid reminder time", bad)
+	}
+}

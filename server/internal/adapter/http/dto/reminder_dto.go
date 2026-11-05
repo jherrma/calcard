@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -65,18 +66,45 @@ func newReminderResponse(s calendar.AlarmSpec, kind ReminderKind) ReminderRespon
 		}
 	}
 
-	wantRelated := "start"
+	k := calendar.ReminderKindEvent
 	if kind == ReminderKindTask {
-		wantRelated = "end"
+		k = calendar.ReminderKindTask
 	}
-	actionOK := s.Action == "" || s.Action == "DISPLAY" || s.Action == "AUDIO"
-	if s.Valid && actionOK && !s.Repeat && !s.Snooze {
-		switch {
-		case s.Relative:
-			r.Editable = r.Related != nil && *r.Related == wantRelated
-		case s.Absolute != nil:
-			r.Editable = !s.Floating
-		}
-	}
+	r.Editable = s.Editable(k)
 	return r
+}
+
+// ReminderInputDTO is one entry of a request's `reminders` (#169, spec §7.3):
+// exactly one of OffsetSeconds (relative) and At (RFC 3339 with an offset).
+type ReminderInputDTO struct {
+	OffsetSeconds *int64  `json:"offset_seconds"`
+	At            *string `json:"at"`
+}
+
+// ErrInvalidReminderTime is the 400 text of an `at` that is not RFC 3339 with an offset.
+var ErrInvalidReminderTime = errors.New("Invalid reminder time")
+
+// ToDomainReminders checks the count and the one-of rule of every entry and
+// parses `at`. The range rules need the existing VALARMs and the component's
+// start, so the use case applies them.
+func ToDomainReminders(in []ReminderInputDTO) ([]calendar.ReminderInput, error) {
+	if len(in) > calendar.MaxReminders {
+		return nil, calendar.ErrReminderCount
+	}
+	out := make([]calendar.ReminderInput, 0, len(in))
+	for _, e := range in {
+		if (e.OffsetSeconds == nil) == (e.At == nil) {
+			return nil, calendar.ErrReminderShape
+		}
+		r := calendar.ReminderInput{OffsetSeconds: e.OffsetSeconds}
+		if e.At != nil {
+			t, err := time.Parse(time.RFC3339, strings.TrimSpace(*e.At))
+			if err != nil {
+				return nil, ErrInvalidReminderTime
+			}
+			r.At = &t
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
