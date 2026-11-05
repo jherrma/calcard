@@ -79,7 +79,11 @@ func (fakeUsers) GetByID(_ context.Context, id uint) (*user.User, error) {
 }
 
 func newUC(cals *fakeCalendars, prefs *fakePrefs) *UpcomingUseCase {
-	return NewUpcomingUseCase(cals, ownerzone.New(prefs, fakeUsers{}), func() time.Time { return testNow })
+	return newUCWithAcks(cals, prefs, newFakeAcks())
+}
+
+func newUCWithAcks(cals *fakeCalendars, prefs *fakePrefs, acks *fakeAcks) *UpcomingUseCase {
+	return NewUpcomingUseCase(cals, acks, ownerzone.New(prefs, fakeUsers{}), func() time.Time { return testNow })
 }
 
 func stamp(t time.Time) string { return t.UTC().Format("20060102T150405Z") }

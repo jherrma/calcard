@@ -537,9 +537,13 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// absent and /api/* answers 404 instead of the SPA.
 	if cfg.Alarms.Enabled {
 		ownerZones := ownerzone.New(userPrefRepo, userRepo)
-		alarmHandler := http.NewAlarmHandler(alarmusecase.NewUpcomingUseCase(calendarRepo, ownerZones, nil))
+		alarmAckRepo := repository.NewAlarmAcknowledgementRepository(db.DB())
+		alarmHandler := http.NewAlarmHandler(
+			alarmusecase.NewUpcomingUseCase(calendarRepo, alarmAckRepo, ownerZones, nil),
+			alarmusecase.NewAcknowledgeUseCase(alarmAckRepo, nil))
 		alarmGroup := v1.Group("/alarms", http.Authenticate(jwtManager, userRepo))
 		alarmGroup.Get("/upcoming", alarmHandler.Upcoming)
+		alarmGroup.Post("/acknowledge", alarmHandler.Acknowledge)
 	}
 
 	// MCP Server (story 104). Registered here, after every use case it delegates

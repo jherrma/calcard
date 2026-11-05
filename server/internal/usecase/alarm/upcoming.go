@@ -13,6 +13,9 @@ import (
 	"github.com/jherrma/caldav-server/internal/usecase/ownerzone"
 )
 
+// ackLookupBatch is the keys per AcknowledgedKeys call (spec §7.1 step 6).
+const ackLookupBatch = 500
+
 // MaxAlarms is the most entries one answer carries (spec §7.1).
 const MaxAlarms = 500
 
@@ -34,16 +37,17 @@ type UpcomingOutput struct {
 // UpcomingUseCase lists the alarms of every calendar a user can read (spec §7.1).
 type UpcomingUseCase struct {
 	calendars calendar.CalendarRepository
+	acks      calendar.AlarmAcknowledgementRepository
 	zones     *ownerzone.Resolver
 	now       func() time.Time
 }
 
 // NewUpcomingUseCase builds the use case; a nil clock is time.Now.
-func NewUpcomingUseCase(calendars calendar.CalendarRepository, zones *ownerzone.Resolver, now func() time.Time) *UpcomingUseCase {
+func NewUpcomingUseCase(calendars calendar.CalendarRepository, acks calendar.AlarmAcknowledgementRepository, zones *ownerzone.Resolver, now func() time.Time) *UpcomingUseCase {
 	if now == nil {
 		now = time.Now
 	}
-	return &UpcomingUseCase{calendars: calendars, zones: zones, now: now}
+	return &UpcomingUseCase{calendars: calendars, acks: acks, zones: zones, now: now}
 }
 
 // Execute answers the alarms with trigger in [now-24h, until]. until is RFC 3339
@@ -133,6 +137,36 @@ func (uc *UpcomingUseCase) Execute(ctx context.Context, userID uint, untilRaw st
 			seen[in.Key] = true
 			all = append(all, Upcoming{AlarmInstance: in, Calendar: cal})
 		}
+	}
+
+	// The key match is the join (D19): drop what the caller has acknowledged,
+	// one primary-key lookup per 500 keys. Nothing else suppresses an alarm (D18).
+	if len(all) > 0 {
+		acked := map[string]bool{}
+		for start := 0; start < len(all); start += ackLookupBatch {
+			end := start + ackLookupBatch
+			if end > len(all) {
+				end = len(all)
+			}
+			keys := make([]string, 0, end-start)
+			for _, a := range all[start:end] {
+				keys = append(keys, a.Key)
+			}
+			got, err := uc.acks.AcknowledgedKeys(ctx, userID, keys)
+			if err != nil {
+				return nil, fmt.Errorf("load acknowledged alarm keys: %w", err)
+			}
+			for k := range got {
+				acked[k] = true
+			}
+		}
+		kept := all[:0]
+		for _, a := range all {
+			if !acked[a.Key] {
+				kept = append(kept, a)
+			}
+		}
+		all = kept
 	}
 
 	sort.SliceStable(all, func(i, j int) bool {

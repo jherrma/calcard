@@ -113,3 +113,8 @@ func nonZero(t *time.Time) *time.Time {
 	}
 	return t
 }
+
+// AcknowledgeAlarmsRequest is the body of POST /api/v1/alarms/acknowledge (#169).
+type AcknowledgeAlarmsRequest struct {
+	Keys []string `json:"keys"`
+}

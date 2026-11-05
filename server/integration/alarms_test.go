@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/config"
+	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -515,6 +516,17 @@ func TestAlarmsSharing(t *testing.T) {
 	assert.Empty(t, alarmsOfUID(outsider, "alarm169-shared-timed"))
 	assert.Empty(t, alarmsOfUID(outsider, "alarm169-shared-allday"))
 
+	// Acknowledgements are per user (D18): the owner's does not hide the alarm
+	// from a sharee and a sharee's does not hide it from the owner.
+	require.Equal(t, http.StatusNoContent, acknowledge(t, ownerToken, ownerTimed[0].Key))
+	assert.Empty(t, alarmsOfUID(upcomingUntil(t, ownerToken), "alarm169-shared-timed"), "the owner dismissed it")
+	assert.Len(t, alarmsOfUID(upcomingUntil(t, readerToken), "alarm169-shared-timed"), 1, "the reader still has it")
+	assert.Len(t, alarmsOfUID(upcomingUntil(t, rwToken), "alarm169-shared-timed"), 1, "the writer still has it")
+	require.Equal(t, http.StatusNoContent, acknowledge(t, readerToken, ownerAllDay[0].Key))
+	assert.Empty(t, alarmsOfUID(upcomingUntil(t, readerToken), "alarm169-shared-allday"))
+	assert.Len(t, alarmsOfUID(upcomingUntil(t, ownerToken), "alarm169-shared-allday"), 1, "the owner is unaffected by the reader")
+	assert.Len(t, alarmsOfUID(upcomingUntil(t, rwToken), "alarm169-shared-allday"), 1)
+
 	status, raw := restCall(t, http.MethodDelete, "/calendars/"+calUUID+"/shares/"+readerShare, ownerToken, nil)
 	require.Containsf(t, []int{http.StatusOK, http.StatusNoContent}, status, "%s", raw)
 	assert.Empty(t, alarmsOfUID(upcomingUntil(t, readerToken), "alarm169-shared-timed"), "a revoked share stops the alarms")
@@ -568,4 +580,187 @@ func TestAlarmsDisabled(t *testing.T) {
 	status, body := rawCall(t, http.MethodGet, base+"/api/v1/alarms/upcoming", login.Data.AccessToken, nil, nil)
 	assert.Equal(t, http.StatusNotFound, status)
 	assert.NotContains(t, strings.ToLower(string(body)), "<html", "an unknown /api path never serves the SPA")
+
+	status, body = rawCall(t, http.MethodPost, base+"/api/v1/alarms/acknowledge", login.Data.AccessToken,
+		map[string][]string{"keys": {strings.Repeat("a", 32)}}, nil)
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.NotContains(t, strings.ToLower(string(body)), "<html", "the acknowledge route is absent too")
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/alarms/acknowledge (#169 story 07)
+// ---------------------------------------------------------------------------
+
+// acknowledge posts the keys and returns the HTTP status.
+func acknowledge(t *testing.T, token string, keys ...string) int {
+	t.Helper()
+	status, _ := restCall(t, http.MethodPost, "/alarms/acknowledge", token, map[string][]string{"keys": keys})
+	return status
+}
+
+// loginAgain returns a second access token of the same user ("another device").
+func loginAgain(t *testing.T, email, password string) string {
+	t.Helper()
+	var login struct {
+		AccessToken string `json:"access_token"`
+	}
+	require.Equal(t, http.StatusOK, doJSON(t, http.MethodPost, "/auth/login", "", map[string]string{"email": email, "password": password}, &login))
+	require.NotEmpty(t, login.AccessToken)
+	return login.AccessToken
+}
+
+func userIDByEmail(t *testing.T, email string) uint {
+	t.Helper()
+	var id uint
+	require.NoError(t, testDB.Raw("SELECT id FROM users WHERE email = ?", email).Scan(&id).Error)
+	require.NotZero(t, id)
+	return id
+}
+
+func ackRows(t *testing.T, userID uint) []calendar.AlarmAcknowledgement {
+	t.Helper()
+	var rows []calendar.AlarmAcknowledgement
+	require.NoError(t, testDB.Where("user_id = ?", userID).Order("alarm_key").Find(&rows).Error)
+	return rows
+}
+
+func hexKeyN(i int) string { return strings.Repeat("0", 24) + hex8(i) }
+
+func hex8(i int) string {
+	const digits = "0123456789abcdef"
+	out := make([]byte, 8)
+	for p := 7; p >= 0; p-- {
+		out[p] = digits[i&0xf]
+		i >>= 4
+	}
+	return string(out)
+}
+
+func TestAlarmsAcknowledge(t *testing.T) {
+	password := "alarmAck!123"
+	email := "alarm-ack@example.test"
+	token, username := registerAndLoginFull(t, email, password, "Alarm Ack")
+	_, appPassword := createAppPassword(t, token, "alarm-ack")
+	otherEmail := "alarm-ack-other@example.test"
+	otherToken := registerAndLogin(t, otherEmail, password, "Alarm Ack Other")
+	collection, _ := eventCollection(t, token, username)
+	userID, otherID := userIDByEmail(t, email), userIDByEmail(t, otherEmail)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	start := now.Add(2 * time.Hour)
+	put := func(start time.Time) {
+		davPut(t, collection+"ack.ics", email, appPassword, vcalendar(vevent("alarm169-ack",
+			"DTSTART:"+icsStamp(start)+"\r\n", "DTEND:"+icsStamp(start.Add(time.Hour))+"\r\n", displayAlarm("TRIGGER:-PT15M"))))
+	}
+	put(start)
+	first := alarmsOfUID(upcomingUntil(t, token), "alarm169-ack")
+	require.Len(t, first, 1)
+	key := first[0].Key
+
+	t.Run("204, idempotent, one row with three columns in UTC", func(t *testing.T) {
+		assert.Equal(t, http.StatusNoContent, acknowledge(t, token, key))
+		assert.Equal(t, http.StatusNoContent, acknowledge(t, token, key, key), "a repeat and a duplicate are still 204")
+		rows := ackRows(t, userID)
+		require.Len(t, rows, 1)
+		assert.Equal(t, key, rows[0].AlarmKey)
+		assert.WithinDuration(t, time.Now(), rows[0].AcknowledgedAt, time.Minute)
+		// (UTC storage is pinned by the repository test; PostgreSQL hands timestamptz back in the host's zone.)
+		cols, err := testDB.Migrator().ColumnTypes(&calendar.AlarmAcknowledgement{})
+		require.NoError(t, err)
+		var names []string
+		for _, c := range cols {
+			names = append(names, c.Name())
+		}
+		assert.ElementsMatch(t, []string{"user_id", "alarm_key", "acknowledged_at"}, names)
+	})
+
+	t.Run("hidden after a reload and on another device", func(t *testing.T) {
+		assert.Empty(t, alarmsOfUID(upcomingUntil(t, token), "alarm169-ack"))
+		assert.Empty(t, alarmsOfUID(upcomingUntil(t, loginAgain(t, email, password)), "alarm169-ack"))
+	})
+
+	t.Run("another user's POST of the same key hides nothing from this user", func(t *testing.T) {
+		start2 := now.Add(5 * time.Hour)
+		davPut(t, collection+"ack2.ics", email, appPassword, vcalendar(vevent("alarm169-ack2",
+			"DTSTART:"+icsStamp(start2)+"\r\n", "DTEND:"+icsStamp(start2.Add(time.Hour))+"\r\n", displayAlarm("TRIGGER:-PT15M"))))
+		k2 := alarmsOfUID(upcomingUntil(t, token), "alarm169-ack2")
+		require.Len(t, k2, 1)
+		assert.Equal(t, http.StatusNoContent, acknowledge(t, otherToken, k2[0].Key), "a key of nobody's alarm is accepted")
+		assert.Len(t, alarmsOfUID(upcomingUntil(t, token), "alarm169-ack2"), 1)
+		// The same key for two users both persist.
+		assert.Equal(t, http.StatusNoContent, acknowledge(t, token, k2[0].Key))
+		assert.Len(t, ackRows(t, otherID), 1)
+		assert.Len(t, ackRows(t, userID), 2)
+		assert.Empty(t, alarmsOfUID(upcomingUntil(t, token), "alarm169-ack2"))
+	})
+
+	t.Run("a DAV move lists the alarm again under a new key, the old row stays", func(t *testing.T) {
+		put(start.Add(30 * time.Minute))
+		moved := alarmsOfUID(upcomingUntil(t, token), "alarm169-ack")
+		require.Len(t, moved, 1)
+		assert.NotEqual(t, key, moved[0].Key)
+		assert.Equal(t, rfcStamp(start.Add(15*time.Minute)), moved[0].TriggerAt)
+		var n int64
+		require.NoError(t, testDB.Model(&calendar.AlarmAcknowledgement{}).Where("user_id = ? AND alarm_key = ?", userID, key).Count(&n).Error)
+		assert.EqualValues(t, 1, n, "the old row ages out with the retention job")
+	})
+
+	t.Run("400 texts, the first bad index, nothing written", func(t *testing.T) {
+		before := len(ackRows(t, userID))
+		good := hexKeyN(1)
+		many := make([]string, 501)
+		for i := range many {
+			many[i] = hexKeyN(i)
+		}
+		for name, tc := range map[string]struct {
+			body any
+			msg  string
+		}{
+			"invalid json":  {`{"keys":`, "Invalid request body"},
+			"missing keys":  {map[string]any{}, "keys is required"},
+			"empty keys":    {map[string][]string{"keys": {}}, "keys is required"},
+			"501 keys":      {map[string][]string{"keys": many}, "Too many keys: at most 500 per request"},
+			"uppercase":     {map[string][]string{"keys": {good, strings.ToUpper(hexKeyN(171))}}, "Invalid alarm key at index 1"},
+			"31 characters": {map[string][]string{"keys": {good[1:]}}, "Invalid alarm key at index 0"},
+			"43 characters": {map[string][]string{"keys": {good, good, good + "abcdefghijk"}}, "Invalid alarm key at index 2"},
+			"non-hex":       {map[string][]string{"keys": {good, strings.Repeat("z", 32)}}, "Invalid alarm key at index 1"},
+		} {
+			status, raw := restCall(t, http.MethodPost, "/alarms/acknowledge", token, tc.body)
+			assert.Equalf(t, http.StatusBadRequest, status, "%s: %s", name, raw)
+			assert.Containsf(t, string(raw), tc.msg, name)
+		}
+		assert.Len(t, ackRows(t, userID), before, "a refused batch writes nothing")
+	})
+
+	t.Run("500 keys are accepted", func(t *testing.T) {
+		before := len(ackRows(t, userID))
+		keys := make([]string, 500)
+		for i := range keys {
+			keys[i] = hexKeyN(100000 + i)
+		}
+		assert.Equal(t, http.StatusNoContent, acknowledge(t, token, keys...))
+		assert.Len(t, ackRows(t, userID), before+500)
+	})
+
+	t.Run("401 without a token", func(t *testing.T) {
+		status, _ := restCall(t, http.MethodPost, "/alarms/acknowledge", "", map[string][]string{"keys": {key}})
+		assert.Equal(t, http.StatusUnauthorized, status)
+	})
+}
+
+func TestAlarmAcknowledgementsPurgedWithAccount(t *testing.T) {
+	password := "alarmPurge!123"
+	goneEmail, keptEmail := "alarm-purge-gone@example.test", "alarm-purge-kept@example.test"
+	goneToken := registerAndLogin(t, goneEmail, password, "Alarm Purge Gone")
+	keptToken := registerAndLogin(t, keptEmail, password, "Alarm Purge Kept")
+	goneID, keptID := userIDByEmail(t, goneEmail), userIDByEmail(t, keptEmail)
+	require.Equal(t, http.StatusNoContent, acknowledge(t, goneToken, hexKeyN(1), hexKeyN(2)))
+	require.Equal(t, http.StatusNoContent, acknowledge(t, keptToken, hexKeyN(1)))
+	require.Len(t, ackRows(t, goneID), 2)
+
+	status, raw := restCall(t, http.MethodDelete, "/users/me", goneToken, map[string]string{"password": password, "confirmation": "DELETE"})
+	require.Equalf(t, http.StatusNoContent, status, "%s", raw)
+
+	assert.Empty(t, ackRows(t, goneID), "the deleted account's acknowledgements are gone")
+	assert.Len(t, ackRows(t, keptID), 1, "another account's rows stay")
 }

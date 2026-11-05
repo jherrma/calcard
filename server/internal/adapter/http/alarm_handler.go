@@ -11,12 +11,13 @@ import (
 
 // AlarmHandler serves the web app's reminders (#169).
 type AlarmHandler struct {
-	upcomingUC *alarmuc.UpcomingUseCase
+	upcomingUC    *alarmuc.UpcomingUseCase
+	acknowledgeUC *alarmuc.AcknowledgeUseCase
 }
 
 // NewAlarmHandler creates the handler.
-func NewAlarmHandler(upcomingUC *alarmuc.UpcomingUseCase) *AlarmHandler {
-	return &AlarmHandler{upcomingUC: upcomingUC}
+func NewAlarmHandler(upcomingUC *alarmuc.UpcomingUseCase, acknowledgeUC *alarmuc.AcknowledgeUseCase) *AlarmHandler {
+	return &AlarmHandler{upcomingUC: upcomingUC, acknowledgeUC: acknowledgeUC}
 }
 
 // GET /api/v1/alarms/upcoming
@@ -56,4 +57,39 @@ func (h *AlarmHandler) Upcoming(c fiber.Ctx) error {
 	}
 	c.Set("Cache-Control", "no-store")
 	return c.JSON(dto.NewUpcomingAlarmsResponse(out))
+}
+
+// POST /api/v1/alarms/acknowledge
+//
+// Body {"keys": ["<32 lowercase hex>", ...]}: 1 to 500 keys from GET
+// /alarms/upcoming, duplicates allowed. Every key is validated before anything
+// is written; one bad key refuses the whole batch. The rows are written for the
+// caller only (another user's alarms are unaffected) and the key is not checked
+// against the caller's alarms. Answers 204, also when every row already existed.
+//
+// 400 "Invalid request body", "keys is required" (missing or empty), "Too many
+// keys: at most 500 per request", "Invalid alarm key at index <n>"; 500
+// "Internal server error".
+func (h *AlarmHandler) Acknowledge(c fiber.Ctx) error {
+	userID, err := GetUserIDFromContext(c)
+	if err != nil {
+		return UnauthorizedResponse(c, "missing authentication token")
+	}
+	var req dto.AcknowledgeAlarmsRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequestResponse(c, "Invalid request body")
+	}
+	if err := h.acknowledgeUC.Execute(c.Context(), userID, req.Keys); err != nil {
+		var invalid *alarmuc.InvalidKeyError
+		if errors.Is(err, alarmuc.ErrKeysRequired) || errors.Is(err, alarmuc.ErrTooManyKeys) || errors.As(err, &invalid) {
+			return BadRequestResponse(c, err.Error())
+		}
+		slog.Error("alarm request failed",
+			slog.String("method", c.Method()),
+			slog.String("path", c.Path()),
+			slog.Any("error", err),
+		)
+		return ErrorResponse(c, fiber.StatusInternalServerError, "Internal server error")
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }

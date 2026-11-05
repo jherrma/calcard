@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,15 +48,41 @@ func (alarmTestUsers) GetByID(context.Context, uint) (*user.User, error) {
 	return &user.User{UUID: "u"}, nil
 }
 
+// alarmTestAcks is the acknowledgement repository of alarmTestApp; tests that
+// need a failure or to inspect writes replace its fields (reset by alarmTestApp).
+var alarmTestAcks = &alarmAckFake{}
+
+type alarmAckFake struct {
+	calendar.AlarmAcknowledgementRepository
+	err   error
+	users []uint
+	keys  [][]string
+}
+
+func (f *alarmAckFake) Acknowledge(_ context.Context, userID uint, keys []string, _ time.Time) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.users = append(f.users, userID)
+	f.keys = append(f.keys, keys)
+	return nil
+}
+
+func (f *alarmAckFake) AcknowledgedKeys(context.Context, uint, []string) (map[string]bool, error) {
+	return map[string]bool{}, nil
+}
+
 func alarmTestApp(repo alarmTestCalendars, withUser bool) *fiber.App {
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
-	uc := alarmuc.NewUpcomingUseCase(repo, ownerzone.New(alarmTestPrefs{}, alarmTestUsers{}), func() time.Time { return now })
-	h := NewAlarmHandler(uc)
+	*alarmTestAcks = alarmAckFake{}
+	uc := alarmuc.NewUpcomingUseCase(repo, alarmTestAcks, ownerzone.New(alarmTestPrefs{}, alarmTestUsers{}), func() time.Time { return now })
+	h := NewAlarmHandler(uc, alarmuc.NewAcknowledgeUseCase(alarmTestAcks, func() time.Time { return now }))
 	app := fiber.New()
 	if withUser {
 		app.Use(func(c fiber.Ctx) error { c.Locals("user_id", uint(1)); return c.Next() })
 	}
 	app.Get("/api/v1/alarms/upcoming", h.Upcoming)
+	app.Post("/api/v1/alarms/acknowledge", h.Acknowledge)
 	return app
 }
 
@@ -138,5 +165,62 @@ func TestAlarmHandlerUpcoming(t *testing.T) {
 		resp, body := alarmGet(t, alarmTestApp(alarmTestCalendars{err: errors.New("pq: relation secret_table")}, true), "")
 		assert.Equal(t, 500, resp.Status)
 		assert.JSONEq(t, `{"status":"error","message":"Internal server error"}`, string(body))
+	})
+}
+
+func alarmPost(t *testing.T, app *fiber.App, body string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/v1/alarms/acknowledge", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+func TestAlarmHandlerAcknowledge(t *testing.T) {
+	key := strings.Repeat("ab", 16)
+
+	t.Run("204 with an empty body, rows for the caller", func(t *testing.T) {
+		app := alarmTestApp(alarmTestCalendars{}, true)
+		status, body := alarmPost(t, app, `{"keys":["`+key+`","`+key+`"]}`)
+		assert.Equal(t, 204, status)
+		assert.Empty(t, body)
+		assert.Equal(t, []uint{1}, alarmTestAcks.users)
+		assert.Equal(t, [][]string{{key}}, alarmTestAcks.keys, "duplicates collapse")
+	})
+
+	bad := func(msg string) string { return `{"status":"error","message":"` + msg + `"}` }
+	for name, tc := range map[string]struct{ body, msg string }{
+		"invalid json":  {`{"keys":`, "Invalid request body"},
+		"wrong type":    {`{"keys":"x"}`, "Invalid request body"},
+		"missing keys":  {`{}`, "keys is required"},
+		"empty keys":    {`{"keys":[]}`, "keys is required"},
+		"null keys":     {`{"keys":null}`, "keys is required"},
+		"uppercase key": {`{"keys":["` + key + `","` + strings.ToUpper(key) + `"]}`, "Invalid alarm key at index 1"},
+		"short key":     {`{"keys":["` + key[1:] + `"]}`, "Invalid alarm key at index 0"},
+		"too many keys": {`{"keys":[` + strings.TrimSuffix(strings.Repeat(`"`+key+`",`, 501), ",") + `]}`, "Too many keys: at most 500 per request"},
+	} {
+		t.Run("400 "+name, func(t *testing.T) {
+			app := alarmTestApp(alarmTestCalendars{}, true)
+			status, body := alarmPost(t, app, tc.body)
+			assert.Equal(t, 400, status)
+			assert.JSONEq(t, bad(tc.msg), body)
+			assert.Empty(t, alarmTestAcks.keys)
+		})
+	}
+
+	t.Run("401 without a user", func(t *testing.T) {
+		status, _ := alarmPost(t, alarmTestApp(alarmTestCalendars{}, false), `{"keys":["`+key+`"]}`)
+		assert.Equal(t, 401, status)
+	})
+
+	t.Run("500 does not echo the cause", func(t *testing.T) {
+		app := alarmTestApp(alarmTestCalendars{}, true)
+		alarmTestAcks.err = errors.New("pq: relation secret_table")
+		status, body := alarmPost(t, app, `{"keys":["`+key+`"]}`)
+		assert.Equal(t, 500, status)
+		assert.JSONEq(t, bad("Internal server error"), body)
 	})
 }

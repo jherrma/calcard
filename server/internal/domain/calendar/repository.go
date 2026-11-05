@@ -272,6 +272,23 @@ type CalendarRepository interface {
 	ReplaceFeedObjects(ctx context.Context, calendarID uint, objects []*CalendarObject) (FeedSyncStats, error)
 }
 
+// AlarmAcknowledgementRepository persists per-user alarm dismissals (#169).
+type AlarmAcknowledgementRepository interface {
+	// Acknowledge inserts (userID, key) rows; an existing row is left as it is
+	// (INSERT ... ON CONFLICT DO NOTHING), so a repeat is a no-op. At most 500
+	// keys per call (the endpoint's cap), inserted in chunks of 300 rows, all in
+	// one transaction. at is stored in UTC.
+	Acknowledge(ctx context.Context, userID uint, keys []string, at time.Time) error
+
+	// AcknowledgedKeys returns the subset of keys the user has acknowledged, in
+	// batches of at most 500 keys, served by the primary key.
+	AcknowledgedKeys(ctx context.Context, userID uint, keys []string) (map[string]bool, error)
+
+	// DeleteAcknowledgedBefore removes every row with acknowledged_at < cutoff
+	// and returns how many it removed.
+	DeleteAcknowledgedBefore(ctx context.Context, cutoff time.Time) (int64, error)
+}
+
 // CalendarSubscriptionRepository defines persistence for remote calendar
 // subscriptions (story 100).
 type CalendarSubscriptionRepository interface {
