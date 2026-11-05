@@ -256,7 +256,15 @@ func (h *TaskHandler) Create(c fiber.Ctx) error {
 		return BadRequestResponse(c, "Invalid request body")
 	}
 
+	var reminders []calendar.ReminderInput
+	if len(req.Reminders) > 0 {
+		if reminders, err = dto.ToDomainReminders(req.Reminders); err != nil {
+			return BadRequestResponse(c, err.Error())
+		}
+	}
+
 	task, err := h.createUC.Execute(c.Context(), taskuc.CreateTaskInput{
+		Reminders:       reminders,
 		Calendar:        cal,
 		Summary:         req.Summary,
 		Description:     req.Description,
@@ -303,7 +311,19 @@ func (h *TaskHandler) Update(c fiber.Ctx) error {
 	if err := c.Bind().Body(&req); err != nil {
 		return BadRequestResponse(c, "Invalid request body")
 	}
+	var reminders *[]calendar.ReminderInput
+	if req.Reminders.Set {
+		list := []calendar.ReminderInput{}
+		if req.Reminders.Value != nil {
+			var err error
+			if list, err = dto.ToDomainReminders(*req.Reminders.Value); err != nil {
+				return BadRequestResponse(c, err.Error())
+			}
+		}
+		reminders = &list
+	}
 	task, err := h.updateUC.Execute(c.Context(), taskuc.UpdateTaskInput{
+		Reminders:       reminders,
 		Calendar:        cal,
 		UUID:            taskID,
 		Summary:         req.Summary,

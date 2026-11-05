@@ -5,6 +5,7 @@ package integration_test
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -280,4 +281,181 @@ func TestAlarmRemindersSharing(t *testing.T) {
 		"reminders": []map[string]any{{"offset_seconds": -60}},
 	})
 	assert.Equal(t, http.StatusForbidden, status)
+}
+
+// TestAlarmRemindersRoundTripTasks (#169 story 12, task part): reminders
+// written by REST create and PATCH land as VALARMs with RELATED=END in the DAV
+// object, relative to DUE, and an edit keeps every VALARM it does not own byte
+// for byte (also on a recurring task and across complete/uncomplete).
+func TestAlarmRemindersRoundTripTasks(t *testing.T) {
+	email := "alarm-roundtrip-tasks@example.test"
+	token, username := registerAndLoginFull(t, email, "alarmRoundT!123", "Alarm Roundtrip Tasks")
+	_, appPass := createAppPassword(t, token, "alarm-roundtrip-tasks")
+	list := createTaskCalendar(t, token, "Chores", "tasks")
+	collection := "/dav/" + username + "/calendars/" + list.Path + "/"
+
+	due := time.Now().UTC().Truncate(time.Second).Add(36 * time.Hour)
+	type remindersTask struct {
+		ID        string         `json:"id"`
+		UID       string         `json:"uid"`
+		ETag      string         `json:"etag"`
+		Reminders []reminderJSON `json:"reminders"`
+	}
+	decode := func(raw []byte) remindersTask {
+		var r remindersTask
+		require.NoErrorf(t, json.Unmarshal(raw, &r), "decode: %s", raw)
+		return r
+	}
+
+	// --- create: relative to DUE, RELATED=END ----------------------------
+	status, raw := restCall(t, http.MethodPost, tasksURL(list.UUID), token, map[string]any{
+		"summary": "Pay rent", "due": rfcStamp(due), "reminders": []map[string]any{{"offset_seconds": -1800}},
+	})
+	require.Equalf(t, http.StatusCreated, status, "create: %s", raw)
+	created := decode(raw)
+	require.Len(t, created.Reminders, 1)
+	require.NotNil(t, created.Reminders[0].Related)
+	assert.Equal(t, "end", *created.Reminders[0].Related)
+	assert.True(t, created.Reminders[0].Editable)
+
+	object := collection + created.ID + ".ics"
+	body, _ := davGet(t, object, email, appPass)
+	blocks := valarmBlocks(icalLines(body))
+	require.Len(t, blocks, 1)
+	assert.Contains(t, blocks[0], "TRIGGER;RELATED=END:-PT30M")
+	assert.Contains(t, blocks[0], "ACTION:DISPLAY")
+
+	var triggerAt string
+	for _, a := range alarmsOfUID(upcomingUntil(t, token), created.UID) {
+		triggerAt = a.TriggerAt
+	}
+	assert.Equal(t, rfcStamp(due.Add(-30*time.Minute)), triggerAt, "fires at DUE - 30 min")
+
+	// --- all-day task: PT9H -------------------------------------------------
+	status, raw = restCall(t, http.MethodPost, tasksURL(list.UUID), token, map[string]any{
+		"summary": "All day", "due": "2030-11-05", "due_all_day": true,
+		"reminders": []map[string]any{{"offset_seconds": 32400}},
+	})
+	require.Equalf(t, http.StatusCreated, status, "create all-day: %s", raw)
+	allDay := decode(raw)
+	body, _ = davGet(t, collection+allDay.ID+".ics", email, appPass)
+	assert.Contains(t, icalLines(body), "TRIGGER;RELATED=END:PT9H")
+
+	// --- 400s on create ---------------------------------------------------
+	status, raw = restCall(t, http.MethodPost, tasksURL(list.UUID), token, map[string]any{
+		"summary": "No due", "reminders": []map[string]any{{"offset_seconds": -60}},
+	})
+	assertErrorBody(t, http.StatusBadRequest, "A reminder needs a due date", status, raw, "offset without due")
+
+	// --- a DAV client adds foreign VALARMs ---------------------------------
+	f1 := []string{"BEGIN:VALARM", "ACTION:EMAIL", "DESCRIPTION:mail", "SUMMARY:mail", "TRIGGER:-PT45M", "END:VALARM"}
+	f2 := []string{"BEGIN:VALARM", "ACTION:DISPLAY", "DURATION:PT1M", "REPEAT:2", "TRIGGER;RELATED=END:-PT10M", "END:VALARM"}
+	f3 := []string{"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT5M", "X-CLIENT;X-PARAM=kept:yes", "END:VALARM"}
+	foreign := append(append(append([]string{}, f1...), f2...), f3...)
+	put := strings.Replace(body0(t, object, email, appPass), "END:VTODO",
+		"RELATED-TO;RELTYPE=PARENT:parent@phone\r\nX-APPLE-SORT-ORDER:731492317\r\n"+strings.Join(foreign, "\r\n")+"\r\nEND:VTODO", 1)
+	davPut(t, object, email, appPass, put)
+	before, _ := davGet(t, object, email, appPass)
+	beforeLines := icalLines(before)
+	require.Len(t, valarmBlocks(beforeLines), 4)
+
+	patch := func(body any) (int, []byte) {
+		return apiCall(t, http.MethodPatch, taskURL(list.UUID, created.ID), token, body, nil)
+	}
+
+	// PATCH without reminders and complete/uncomplete keep every VALARM.
+	status, raw = patch(map[string]any{"summary": "Pay the rent"})
+	require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+	for _, step := range []string{"/complete", "/uncomplete"} {
+		status, raw = restCall(t, http.MethodPost, taskURL(list.UUID, created.ID)+step, token, nil)
+		require.Equalf(t, http.StatusOK, status, "%s: %s", step, raw)
+	}
+	after, _ := davGet(t, object, email, appPass)
+	assert.Equal(t, valarmBlocks(beforeLines), valarmBlocks(icalLines(after)))
+
+	// The same list again: nothing written, ETag unchanged.
+	_, etagBefore := davGet(t, object, email, appPass)
+	status, raw = patch(map[string]any{"reminders": []map[string]any{{"offset_seconds": -1800}}})
+	require.Equalf(t, http.StatusOK, status, "same list: %s", raw)
+	_, etagSame := davGet(t, object, email, appPass)
+	assert.Equal(t, etagBefore, etagSame, "unchanged list keeps the ETag")
+
+	// A reminders-only change: bookkeeping bumps, foreign properties and VALARMs stay.
+	before, _ = davGet(t, object, email, appPass)
+	beforeLines = icalLines(before)
+	status, raw = patch(map[string]any{"reminders": []map[string]any{{"offset_seconds": -1800}, {"offset_seconds": -7200}}})
+	require.Equalf(t, http.StatusOK, status, "patch reminders: %s", raw)
+	assert.Len(t, decode(raw).Reminders, 5)
+	after, etagAfter := davGet(t, object, email, appPass)
+	assert.NotEqual(t, etagBefore, etagAfter)
+	beforeBlocks, afterBlocks := valarmBlocks(beforeLines), valarmBlocks(icalLines(after))
+	require.Len(t, afterBlocks, 5)
+	for i := range beforeBlocks {
+		assert.Equal(t, beforeBlocks[i], afterBlocks[i], "VALARM %d untouched", i)
+	}
+	assert.True(t, blockHas(afterBlocks[4], "TRIGGER;RELATED=END:-PT2H"), "appended last: %v", afterBlocks[4])
+	afterLines := icalLines(after)
+	for _, l := range []string{"RELATED-TO;RELTYPE=PARENT:parent@phone", "X-APPLE-SORT-ORDER:731492317"} {
+		assert.Contains(t, afterLines, l)
+	}
+	stripBookkeeping := func(ls []string) []string {
+		var out []string
+		in := false
+		for _, l := range ls {
+			switch {
+			case l == "BEGIN:VALARM":
+				in = true
+			case l == "END:VALARM":
+				in = false
+			case !in && propName(l) != "DTSTAMP" && propName(l) != "LAST-MODIFIED" && propName(l) != "SEQUENCE":
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	assert.Equal(t, stripBookkeeping(beforeLines), stripBookkeeping(afterLines))
+	assert.Contains(t, afterLines, "SEQUENCE:"+seqAfter(t, beforeLines))
+
+	// An empty list removes the editable ones, never the foreign ones.
+	status, raw = patch(map[string]any{"reminders": []any{}})
+	require.Equalf(t, http.StatusOK, status, "patch []: %s", raw)
+	after, _ = davGet(t, object, email, appPass)
+	remaining := valarmBlocks(icalLines(after))
+	require.Len(t, remaining, 3)
+	assert.Equal(t, f1, remaining[0])
+	assert.Equal(t, f2, remaining[1])
+	// f3 is START-related: not editable on a task either, so it stays.
+	assert.Equal(t, f3, remaining[2])
+
+	// --- due handling ------------------------------------------------------
+	status, raw = patch(map[string]any{"reminders": []map[string]any{{"offset_seconds": -600}}})
+	require.Equalf(t, http.StatusOK, status, "re-add: %s", raw)
+	status, raw = patch(map[string]any{"due": nil})
+	require.Equalf(t, http.StatusOK, status, "remove due: %s", raw)
+	body, _ = davGet(t, object, email, appPass)
+	assert.Len(t, valarmBlocks(icalLines(body)), 4, "removing the due keeps the VALARMs")
+	status, raw = patch(map[string]any{"reminders": []map[string]any{{"offset_seconds": -60}}})
+	assertErrorBody(t, http.StatusBadRequest, "A reminder needs a due date", status, raw, "offset on a due-less task")
+	status, raw = patch(map[string]any{"reminders": []map[string]any{{"at": rfcStamp(due)}}})
+	assert.Equalf(t, http.StatusOK, status, "at without due: %s", raw)
+}
+
+func body0(t *testing.T, object, email, pass string) string {
+	t.Helper()
+	b, _ := davGet(t, object, email, pass)
+	return b
+}
+
+// seqAfter is the SEQUENCE value one above the one in lines.
+func seqAfter(t *testing.T, lines []string) string {
+	t.Helper()
+	for _, l := range lines {
+		if v, ok := strings.CutPrefix(l, "SEQUENCE:"); ok {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			require.NoError(t, err)
+			return strconv.Itoa(n + 1)
+		}
+	}
+	t.Fatal("no SEQUENCE")
+	return ""
 }

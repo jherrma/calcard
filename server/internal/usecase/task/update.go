@@ -55,6 +55,12 @@ type UpdateTaskInput struct {
 	// none): the write happens only on a task that still has it, else
 	// ErrPreconditionFailed.
 	IfMatch string
+	// Reminders (#169, spec §7.5): nil leaves every VALARM untouched, a
+	// pointer to an empty slice removes the editable ones, otherwise the
+	// slice is the desired multiset of editable reminders (offsets relative
+	// to DUE, TRIGGER;RELATED=END). The foreign, non-editable VALARMs are
+	// never touched.
+	Reminders *[]calendar.ReminderInput
 }
 
 type UpdateTaskUseCase struct {
@@ -152,6 +158,8 @@ type taskUpdate struct {
 	allDay, allDaySent bool
 	due, start         timeChange
 	loc                *time.Location
+	// reminders is the desired list; nil leaves the VALARMs alone.
+	reminders *[]calendar.ReminderInput
 }
 
 // timeChange is a due or start of the request: set says it was given, v is
@@ -206,6 +214,12 @@ func newTaskUpdate(in UpdateTaskInput, storedAllDay bool) (*taskUpdate, error) {
 	if u.start, err = parseTimeChange("start", in.Start, u.allDay); err != nil {
 		return nil, err
 	}
+	if in.Reminders != nil {
+		if err := checkReminderShape(*in.Reminders); err != nil {
+			return nil, err
+		}
+		u.reminders = in.Reminders
+	}
 	u.loc, _ = calendar.LoadEventLocation(in.Timezone)
 	return u, nil
 }
@@ -233,6 +247,9 @@ func (u *taskUpdate) apply(cal *ical.Calendar, todo *ical.Component, stored load
 		return err
 	}
 	if err := u.checkOverrides(cal, todo); err != nil {
+		return err
+	}
+	if err := u.checkReminders(todo, now); err != nil {
 		return err
 	}
 	if stored.details.Recurring && u.completes() {
@@ -271,10 +288,43 @@ func (u *taskUpdate) apply(cal *ical.Calendar, todo *ical.Component, stored load
 		changed = setIntChange(todo, ical.PropPercentComplete, u.percent.Value) || changed
 	}
 
+	if u.reminders != nil {
+		reminderChanged, _ := calendar.ApplyReminders(todo, *u.reminders, calendar.ReminderKindTask)
+		changed = reminderChanged || changed
+	}
+
 	if !changed {
 		return errUnchanged
 	}
 	return nil
+}
+
+// checkReminders refuses the reminders that are new to the task (spec §7.4):
+// an offset when the task has no due date after this request, and any out of
+// range. A reminder that matches a stored VALARM is kept as it is and never
+// refused, so a form can save a due-less task with its old reminders. It runs
+// before the recurring-task refusal, like every field 400.
+func (u *taskUpdate) checkReminders(todo *ical.Component, now time.Time) error {
+	if u.reminders == nil {
+		return nil
+	}
+	fresh := calendar.UnmatchedReminders(todo, *u.reminders, calendar.ReminderKindTask)
+	return checkReminderTargets(fresh, u.hasDue(todo), now)
+}
+
+// hasDue reports a task that has a due date once the request is applied: a
+// DUE, or a DURATION after a DTSTART (RFC 5545 allows it instead of DUE).
+func (u *taskUpdate) hasDue(todo *ical.Component) bool {
+	hasDue := todo.Props.Get(ical.PropDue) != nil
+	hasDuration := todo.Props.Get(ical.PropDuration) != nil
+	hasStart := todo.Props.Get(ical.PropDateTimeStart) != nil
+	if u.due.set {
+		hasDue, hasDuration = u.due.v != nil, false
+	}
+	if u.start.set {
+		hasStart = u.start.v != nil
+	}
+	return hasDue || (hasDuration && hasStart)
 }
 
 // checkTimes refuses a due/start that does not fit the task's other time,

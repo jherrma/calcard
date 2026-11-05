@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jherrma/caldav-server/internal/adapter/repository"
@@ -387,4 +388,59 @@ func TestTaskHandlerUpdateServerErrors(t *testing.T) {
 		assert.Equal(t, fiber.StatusNotFound, code)
 		assert.JSONEq(t, taskNotFoundBody, body)
 	})
+}
+
+// TestTaskHandlerReminders_Write (#169 story 12): `reminders` on create and
+// PATCH (absent / null / [] / array) and the 400s with their texts.
+func TestTaskHandlerReminders_Write(t *testing.T) {
+	f := setupTaskHandlerTest(t)
+
+	got, _ := f.create(t, f.ownerToken, f.taskList, `{"summary":"Pay","due":"2030-11-05T17:00:00Z","reminders":[{"offset_seconds":-1800}]}`)
+	require.Len(t, got.Reminders, 1)
+	assert.Equal(t, int64(-1800), *got.Reminders[0].OffsetSeconds)
+	assert.Equal(t, "end", *got.Reminders[0].Related)
+	assert.True(t, got.Reminders[0].Editable)
+	stored := f.reload(t, &calendar.CalendarObject{UUID: got.ID})
+	assert.Contains(t, stored.ICalData, "TRIGGER;RELATED=END:-PT30M")
+
+	path := f.taskList.UUID + "/tasks/" + got.ID
+	patch := func(body string) (int, string) {
+		return f.patch(t, f.ownerToken, path, body, nil)
+	}
+
+	// absent: untouched
+	code, body := patch(`{"summary":"Pay rent"}`)
+	require.Equal(t, fiber.StatusOK, code, body)
+	assert.Len(t, decodeTask(t, body).Reminders, 1)
+	// the same list: nothing written
+	etag := decodeTask(t, body).ETag
+	code, body = patch(`{"reminders":[{"offset_seconds":-1800}]}`)
+	require.Equal(t, fiber.StatusOK, code, body)
+	assert.Equal(t, etag, decodeTask(t, body).ETag)
+	// array
+	soon := time.Now().UTC().Add(48 * time.Hour).Format(time.RFC3339)
+	code, body = patch(`{"reminders":[{"offset_seconds":-3600},{"at":"` + soon + `"}]}`)
+	require.Equal(t, fiber.StatusOK, code, body)
+	assert.Len(t, decodeTask(t, body).Reminders, 2)
+	assert.NotEqual(t, etag, decodeTask(t, body).ETag)
+	// null removes
+	code, body = patch(`{"reminders":null}`)
+	require.Equal(t, fiber.StatusOK, code, body)
+	assert.Empty(t, decodeTask(t, body).Reminders)
+
+	for name, tc := range map[string]struct{ body, msg string }{
+		"shape":  {`{"reminders":[{}]}`, "a reminder needs exactly one of offset_seconds and at"},
+		"time":   {`{"reminders":[{"at":"tomorrow"}]}`, "Invalid reminder time"},
+		"offset": {`{"reminders":[{"offset_seconds":99999999999}]}`, "reminder offset out of range"},
+	} {
+		code, body := patch(tc.body)
+		assert.Equal(t, fiber.StatusBadRequest, code, name)
+		assert.JSONEq(t, errorBody(tc.msg), body, name)
+	}
+
+	code, body = f.post(t, f.ownerToken, f.taskList.UUID, `{"summary":"No due","reminders":[{"offset_seconds":-60}]}`)
+	assert.Equal(t, fiber.StatusBadRequest, code)
+	assert.JSONEq(t, errorBody("A reminder needs a due date"), body)
+	code, _ = f.post(t, f.ownerToken, f.taskList.UUID, `{"summary":"At","reminders":[{"at":"2099-01-01T00:00:00Z"}]}`)
+	assert.Equal(t, fiber.StatusBadRequest, code, "400 years away")
 }

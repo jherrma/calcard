@@ -141,3 +141,39 @@ func checkDueAfterStart(due, start *taskTime) error {
 	}
 	return nil
 }
+
+// reminderNeedsDueMessage is the 400 for an offset reminder on a task that has no
+// due date to count from (spec §7.4).
+const reminderNeedsDueMessage = "A reminder needs a due date"
+
+// checkReminderShape validates the count and the one-of rule of every entry.
+func checkReminderShape(reminders []calendar.ReminderInput) error {
+	if err := calendar.CheckReminderShape(reminders); err != nil {
+		return invalidInput(err)
+	}
+	return nil
+}
+
+// checkReminderTargets validates the entries that are new to the task
+// (entries): an offset needs a due date (hasDue), and offsets and absolute
+// times must be in range, an absolute time against now (spec §7.4). An
+// absolute time needs no date.
+func checkReminderTargets(entries []calendar.ReminderInput, hasDue bool, now time.Time) error {
+	for _, d := range entries {
+		if d.OffsetSeconds != nil && !hasDue {
+			return invalidInputf(reminderNeedsDueMessage)
+		}
+	}
+	if err := calendar.CheckReminderRanges(entries, now); err != nil {
+		return invalidInput(err)
+	}
+	return nil
+}
+
+// checkReminders is create's check: shape, then due date and ranges.
+func checkReminders(reminders []calendar.ReminderInput, hasDue bool, now time.Time) error {
+	if err := checkReminderShape(reminders); err != nil {
+		return err
+	}
+	return checkReminderTargets(reminders, hasDue, now)
+}

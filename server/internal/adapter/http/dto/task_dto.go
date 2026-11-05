@@ -72,6 +72,9 @@ type CreateTaskRequest struct {
 	PercentComplete OptionalField[int] `json:"percent_complete"`
 	Status          string             `json:"status"`
 	Timezone        string             `json:"timezone"`
+	// Reminders are the task's reminders (#169, optional): an offset_seconds
+	// entry counts from the due date, an at entry is an absolute time.
+	Reminders []ReminderInputDTO `json:"reminders"`
 }
 
 // UpdateTaskRequest is the body of PATCH /calendars/:calendar_id/tasks/:task_id
@@ -93,6 +96,9 @@ type UpdateTaskRequest struct {
 	PercentComplete OptionalField[int]    `json:"percent_complete"`
 	Status          *string               `json:"status"`
 	Timezone        string                `json:"timezone"`
+	// Reminders (#169): absent = untouched; null or [] = remove every
+	// editable reminder; an array is the desired list.
+	Reminders OptionalField[[]ReminderInputDTO] `json:"reminders,omitzero"`
 }
 
 // OptionalField is a JSON field of a partial update that tells an absent key
