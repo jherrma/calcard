@@ -108,6 +108,7 @@ webinterface/
 │   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
 │       ├── ActionToast.vue        # Host of useAppToast().action() toasts ("Task completed" + Undo), bottom centre; default layout only
+│       ├── ReminderToast.vue      # #169: sticky reminder toasts (group app-reminder) for the alarms store's queue; default + settings layouts
 │       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
 │       ├── AppSidebar.vue         # Main navigation sidebar (Dashboard, Calendar, Tasks, Contacts, Settings); the Tasks badge is
 │       │                          #   tasksStore.overdueCount, summary fetched on mount, at each local midnight, at the next timed due instant of a loaded task, and when the tab becomes visible again (#170)
@@ -144,7 +145,7 @@ webinterface/
 │   ├── auth.ts              # Requires authentication (redirects to /auth/login)
 │   └── guest.ts             # Requires unauthenticated (redirects away from auth pages)
 ├── layouts/
-│   ├── default.vue          # App shell: sidebar + header + Toast + ActionToast + ConfirmDialog + loading overlay
+│   ├── default.vue          # App shell: sidebar + header + Toast + ActionToast + ReminderToast + ConfirmDialog + loading overlay
 │   └── auth.vue             # Centered card with CalCard branding
 ├── types/
 │   ├── alarms.ts            # #169: UpcomingAlarm, UpcomingAlarmsResponse, AcknowledgeAlarmsBody
@@ -166,6 +167,9 @@ webinterface/
 │   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page; taskListRoute (#170)
+│   ├── alarmRefresh.ts      # #169: refreshAlarmsSoon() (lazy import of the alarms store's refreshSoon), called after event/task mutations and a time-zone change
+│   ├── alarmToast.ts        # #169: toast wording (alarmDetail, summaryLines, MAX_SINGLE_TOASTS)
+│   ├── reminderChannel.ts   # #169: BroadcastChannel('calcard-reminders') claim between tabs (§10.7)
 │   ├── alarmSchedule.ts     # #169 pure helpers: delayMs (cap 2^31-1, skew), mergePoll (§10.3), alarmLink (Open targets)
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
 │   ├── davCredentials.ts    # Generated DAV credential username/password + the username rule
@@ -548,8 +552,8 @@ through the preferences PATCH, a 400 shows the server's text.
 
 ### Reminders (#169)
 
-`stores/alarms.ts` is the data layer of the web app's reminders; story 16 renders its `queue` (toasts) and adds the
-refresh hooks. Spec §10.
+`stores/alarms.ts` is the data layer of the web app's reminders; `components/common/ReminderToast.vue` renders its
+`queue` as toasts (see "Toasts, several tabs and refresh hooks" below). Spec §10.
 
 - **Lifecycle.** `plugins/alarms.client.ts` watches `auth.isAuthenticated` (immediate): `true` -> `start()`,
   `false` -> `stop()`. `start()` waits for `$timezoneReady()` (at most 3 s, so the first poll does not hit the UTC
@@ -562,14 +566,14 @@ refresh hooks. Spec §10.
   ofetch encodes the `+` of the offset; no zone parameter. One request in flight (a call meanwhile schedules ONE
   follow-up). Triggers: `start()`, every 5 minutes (also hidden tabs), `visibilitychange` to visible when the last
   poll is older than 60 s, `online`, heartbeat gap > 90 s (sleep: `checkDue()` + `refresh()`), `refreshSoon()`
-  (2 s debounce, for story 16's hooks).
+  (2 s debounce, for the refresh hooks below).
 - **Skew.** `skewMs = Date.parse(server_time) - (requestStart + requestEnd) / 2`; every "now" is `Date.now() + skewMs`.
 - **Timers.** `mergePoll` (pure, `utils/alarmSchedule.ts`): a new key gets exactly one `setTimeout` (delay
   `delayMs`, capped at 2^31-1), or goes straight into `queue` when `trigger_at <= now` (missed, up to 24 h); a key
   absent from the answer is cancelled, except when `truncated` and its trigger is after the last returned one;
   queued, shown and pending keys are never armed again. A firing timer re-arms when `now + skew < trigger_at`
   (clock set back). `queue` is oldest first and holds the data the toast needs.
-- **Acknowledgement.** Story 16 calls `markShown(keys)` once toasts are rendered in a visible document. The keys
+- **Acknowledgement.** `ReminderToast` calls `markShown(keys)` once toasts are rendered in a visible document. The keys
   move to `pendingAck`, then a 1 s debounced `POST /api/v1/alarms/acknowledge` sends `{ keys }` (no times) in batches
   of at most 500; 204 moves them to `shown`. A failure keeps them pending and retries after 5 s, 30 s, 2 min, then
   with every poll (`useApi` never retries writes). `shown` and `pendingAck` are mirrored to
@@ -585,6 +589,32 @@ refresh hooks. Spec §10.
   | 404 on the poll or the acknowledgement | `disabled`: polling and timers stop until the next sign-in (the server runs with `alarms.enabled: false`) |
   | 400 on the poll | a bug: `console.error` once, polling stops for the session, armed timers keep running |
   | Acknowledge fails | retry schedule above; the key is never queued again while pending |
+
+#### Toasts, several tabs and refresh hooks (story 16)
+
+- **Group `app-reminder`** (`REMINDER_TOAST_GROUP` in `composables/useAppToast.ts`, next to `ACTION_TOAST_GROUP`):
+  `components/common/ReminderToast.vue` hosts it, top right, and is mounted by the **default and settings layouts**
+  (not the auth layout), so a reminder shows on every authenticated page. It cannot reuse `useAppToast().action()`
+  (one at a time, 5 s). The toasts are sticky `info` (no `life`) with "Open" and "Dismiss"; PrimeVue renders them as
+  `role="alert"`, the component never moves focus, and the buttons are named ("Open Team sync", "Dismiss reminder for
+  Team sync"). Wording lives in `utils/alarmToast.ts`.
+- **Display rules.** Nothing is claimed or shown while `document.visibilityState !== 'visible'`; the queue waits and is
+  worked off at `visibilitychange`. A toast rendered in a visible document calls `markShown(keys)` (the
+  acknowledgement), so call `markShown` only then. More than 3 at once become ONE summary toast ("You missed N
+  reminders", up to 5 lines plus "and N more") that acknowledges every key. "Open" goes to `alarmLink(alarm)`.
+- **Several tabs (§10.7).** `utils/reminderChannel.ts`, `BroadcastChannel('calcard-reminders')`: a visible tab posts
+  `{type:'claim', key, tab, at}`, waits 300 ms, the smallest `(at, tab)` shows the toast and posts
+  `{type:'shown', key}`; every tab receiving `shown` calls `alarms.drop([key])` (cancels the timer, leaves the queue,
+  never queues it again, acknowledges nothing). A tab that lost yields the key and claims it again after 5 s if no
+  `shown` came. Hidden tabs never claim. Without `BroadcastChannel` (absent or throwing) every tab shows its own.
+  `navigator.locks` is not used (secure contexts only; the default compose deployment is plain http).
+- **Refresh hooks (§10.3).** `refreshAlarmsSoon()` (`utils/alarmRefresh.ts`, a lazy import of the alarms store's
+  debounced `refreshSoon()`) runs after a SUCCESSFUL `calendars.createEvent` / `updateEvent` / `updateEventTime` /
+  `moveEvent` / `deleteEvent`, `tasks.createTask` / `updateTask` / `toggleComplete` / `undoComplete` (through
+  `updateTask`) / `removeTask`, and after Settings > Calendar saved a changed time zone. Any new code that creates,
+  changes, moves or deletes an event or task over the API (the reminder fields of the forms, stories 17 and 18) goes
+  through those store actions and needs no call of its own; a new direct `api()` write must call
+  `refreshAlarmsSoon()` itself.
 
 ### Type System Gotchas
 
@@ -782,7 +812,8 @@ toast.action('Task completed', 'Undo', () => undo()); // one button, 5 s, bottom
 ```
 
 `action()` toasts render in `components/common/ActionToast.vue` (group `ACTION_TOAST_GROUP`), which only
-the **default** layout mounts, so they do not show on settings or auth pages. One at a time: a new one
+the **default** layout mounts, so they do not show on settings or auth pages. Reminder toasts (#169) use their own
+group `REMINDER_TOAST_GROUP` and host `ReminderToast.vue` (default and settings layouts); see "Reminders (#169)". One at a time: a new one
 replaces the previous. The button runs the callback once and closes the toast. The 5 s countdown pauses while the pointer is over the toast or the focus is inside it (PrimeVue pauses on hover only when `onMouseEnter` is passed; the focus pause raises the same synthetic mouseenter/mouseleave).
 
 ### Confirmation Dialogs

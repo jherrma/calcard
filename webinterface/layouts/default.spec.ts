@@ -6,6 +6,7 @@ import PrimeVue from 'primevue/config';
 import ToastService from 'primevue/toastservice';
 import DefaultLayout from './default.vue';
 import ActionToast from '~/components/common/ActionToast.vue';
+import ReminderToast from '~/components/common/ReminderToast.vue';
 import { useAppToast } from '~/composables/useAppToast';
 
 // SCOPE (#170 story 32, gap W3): the default layout is the one place that
@@ -57,5 +58,10 @@ describe('layouts/default — the action toast host', () => {
     expect(button.textContent?.trim()).toBe('Undo');
     button.click();
     expect(undone).toBe(1);
+  });
+
+  it('mounts the reminder toast host (#169)', () => {
+    const { wrapper } = mountLayout();
+    expect(wrapper.findComponent(ReminderToast).exists()).toBe(true);
   });
 });

@@ -337,6 +337,7 @@ export const useTasksStore = defineStore('tasks', {
         const api = useApi();
         const created = await api<Task>(`/api/v1/calendars/${listId}/tasks`, { method: 'POST', body: input });
         const task = withListInfo(created);
+        refreshAlarmsSoon();
         if (
           matchesView(task, this.selectedListId, this.statusFilter) &&
           !this.tasks.some((t: Task) => t.id === task.id)
@@ -365,6 +366,7 @@ export const useTasksStore = defineStore('tasks', {
           method: 'PATCH',
           body: patch,
         });
+        refreshAlarmsSoon();
         return this.replaceTask(fresh);
       } catch (e: unknown) {
         notifyError(e, "Couldn't save the task", RETRY_HINT);
@@ -407,6 +409,7 @@ export const useTasksStore = defineStore('tasks', {
           `/api/v1/calendars/${before.calendar_uuid}/tasks/${before.id}/${completing ? 'complete' : 'uncomplete'}`,
           { method: 'POST' },
         );
+        refreshAlarmsSoon();
         return this.replaceTask(fresh);
       } catch (e: unknown) {
         const at = this.tasks.findIndex((t: Task) => t.id === task.id);
@@ -498,10 +501,12 @@ export const useTasksStore = defineStore('tasks', {
         const api = useApi();
         await api(`/api/v1/calendars/${task.calendar_uuid}/tasks/${task.id}`, { method: 'DELETE' });
         this.dropTask(task.id);
+        refreshAlarmsSoon();
         return true;
       } catch (e: unknown) {
         if (httpErrorStatus(e) === 404) {
           this.dropTask(task.id);
+          refreshAlarmsSoon();
           return true;
         }
         notifyError(e, "Couldn't delete the task", RETRY_HINT);

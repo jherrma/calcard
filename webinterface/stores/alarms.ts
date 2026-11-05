@@ -35,6 +35,8 @@ interface AlarmsState {
   shown: Record<string, number>;
   /** Keys shown but not yet confirmed by the server -> trigger instant (epoch ms). */
   pendingAck: Record<string, number>;
+  /** Keys another tab shows (spec §10.7) -> trigger instant (epoch ms): never queued here, never acknowledged here, not persisted. */
+  dropped: Record<string, number>;
   /** Due alarms waiting to be displayed, oldest first. */
   queue: UpcomingAlarm[];
   /** server clock minus client clock (ms). */
@@ -85,6 +87,7 @@ export const useAlarmsStore = defineStore('alarms', {
     scheduled: {},
     shown: {},
     pendingAck: {},
+    dropped: {},
     queue: [],
     skewMs: 0,
     disabled: false,
@@ -214,6 +217,7 @@ export const useAlarmsStore = defineStore('alarms', {
       this.alarms = {};
       this.shown = {};
       this.pendingAck = {};
+      this.dropped = {};
       this.queue = [];
       this.skewMs = 0;
       this.disabled = false;
@@ -293,7 +297,7 @@ export const useAlarmsStore = defineStore('alarms', {
 
     applyPoll(response: UpcomingAlarmsResponse): void {
       const now = this.serverNow();
-      const blocked = [...Object.keys(this.shown), ...Object.keys(this.pendingAck)];
+      const blocked = [...Object.keys(this.shown), ...Object.keys(this.pendingAck), ...Object.keys(this.dropped)];
       const triggers = new Map(Object.entries(this.scheduled));
       const result = mergePoll(
         {
@@ -361,7 +365,7 @@ export const useAlarmsStore = defineStore('alarms', {
       if (t) clearTimeout(t);
       timers.delete(alarm.key);
       delete this.scheduled[alarm.key];
-      if (alarm.key in this.shown || alarm.key in this.pendingAck) return;
+      if (alarm.key in this.shown || alarm.key in this.pendingAck || alarm.key in this.dropped) return;
       if (this.queue.some((a) => a.key === alarm.key)) return;
       this.alarms[alarm.key] = alarm;
       this.queue.push(alarm);
@@ -379,7 +383,7 @@ export const useAlarmsStore = defineStore('alarms', {
     // ---- acknowledgement -------------------------------------------------
 
     /**
-     * Story 16 calls this when toasts were rendered in a visible document: the keys leave the
+     * ReminderToast calls this when toasts were rendered in a visible document: the keys leave the
      * queue, wait in `pendingAck` and are acknowledged after a 1 s debounce.
      */
     markShown(keys: string[]): void {
@@ -400,6 +404,26 @@ export const useAlarmsStore = defineStore('alarms', {
       if (!changed) return;
       this.persist();
       this.scheduleFlush(ACK_DEBOUNCE_MS);
+    },
+
+    /**
+     * Another tab shows these keys (spec §10.7): cancel their timers, remove them from the queue
+     * and never queue them again here. Unlike `markShown` nothing is acknowledged; the tab that
+     * shows them does that.
+     */
+    drop(keys: string[]): void {
+      for (const key of keys) {
+        const alarm = this.alarms[key] ?? this.queue.find((a) => a.key === key);
+        const trigger = alarm ? Date.parse(alarm.trigger_at) : this.scheduled[key];
+        const t = timers.get(key);
+        if (t) clearTimeout(t);
+        timers.delete(key);
+        delete this.scheduled[key];
+        this.queue = this.queue.filter((a) => a.key !== key);
+        delete this.alarms[key];
+        if (key in this.shown || key in this.pendingAck) continue;
+        this.dropped[key] = trigger === undefined || Number.isNaN(trigger) ? Date.now() : trigger;
+      }
     },
 
     scheduleFlush(delay: number): void {
@@ -507,6 +531,7 @@ export const useAlarmsStore = defineStore('alarms', {
     prune(): void {
       const cutoff = Date.now() - KEEP_AFTER_TRIGGER_MS;
       for (const key of Object.keys(this.shown)) if ((this.shown[key] ?? 0) < cutoff) delete this.shown[key];
+      for (const key of Object.keys(this.dropped)) if ((this.dropped[key] ?? 0) < cutoff) delete this.dropped[key];
       for (const key of Object.keys(this.pendingAck)) if ((this.pendingAck[key] ?? 0) < cutoff) delete this.pendingAck[key];
     },
   },

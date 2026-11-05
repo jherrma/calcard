@@ -197,6 +197,7 @@ export const useCalendarStore = defineStore('calendars', {
       });
 
       this.events.push(response);
+      refreshAlarmsSoon();
       return response;
     },
 
@@ -272,6 +273,7 @@ export const useCalendarStore = defineStore('calendars', {
           this.events[idx] = response;
         }
       }
+      refreshAlarmsSoon();
 
       return response;
     },
@@ -283,6 +285,7 @@ export const useCalendarStore = defineStore('calendars', {
         method: 'POST',
         body: { target_calendar_id: this.calendarUuid(targetCalendarId) },
       });
+      refreshAlarmsSoon();
     },
 
     async deleteEvent(calendarId: string, eventId: string, scope?: string, recurrenceId?: string) {
@@ -298,6 +301,7 @@ export const useCalendarStore = defineStore('calendars', {
 
       // Remove from local state
       this.events = this.events.filter((e: CalendarEvent) => e.id !== eventId);
+      refreshAlarmsSoon();
     },
 
     async updateEventTime(eventId: string, calendarId: string, start: Date, end: Date, scope?: string, recurrenceId?: string) {
@@ -332,6 +336,7 @@ export const useCalendarStore = defineStore('calendars', {
           event.end = toRFC3339(end);
         }
       }
+      refreshAlarmsSoon();
     },
 
     async createCalendar(data: { name: string; color: string; timezone: string; description: string }) {

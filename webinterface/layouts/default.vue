@@ -36,6 +36,7 @@
     <!-- Toast notifications; action toasts ("Task completed" + Undo) sit at the bottom -->
     <Toast position="top-right" />
     <ActionToast />
+    <ReminderToast />
     <ConfirmDialog />
 
     <!-- Global loading overlay -->
@@ -60,6 +61,7 @@
 <script setup lang="ts">
 import AppSidebar from '~/components/common/AppSidebar.vue';
 import AppHeader from '~/components/common/AppHeader.vue';
+import ReminderToast from '~/components/common/ReminderToast.vue';
 import ActionToast from '~/components/common/ActionToast.vue';
 
 const sidebarOpen = ref(false);

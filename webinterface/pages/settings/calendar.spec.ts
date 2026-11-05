@@ -25,6 +25,9 @@ mockNuxtImport('useAppToast', () => () => toastSpies);
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
 mockNuxtImport('useApi', () => () => apiMock);
+// The reminder refresh hook (#169, story 16) is a lazy import of the alarms store: stand in for it.
+const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
+mockNuxtImport('refreshAlarmsSoon', () => refreshMock);
 
 interface PageVm {
   form: { duration: number; allDay: boolean; timeFormat: string; firstDayOfWeek: number; timezone: string };
@@ -189,5 +192,31 @@ describe('Settings → Calendar: time zone', () => {
 
     expect(toastSpies.error).toHaveBeenCalledWith('timezone must be a valid IANA time zone');
     expect(store.timezone).toBe('UTC');
+  });
+});
+
+describe('reminder refresh on a time-zone change (#169)', () => {
+  beforeEach(() => refreshMock.mockReset());
+
+  it('asks for one refresh when the time zone changed', async () => {
+    const { vm } = await mountPage();
+    vm.form.timezone = 'America/New_York';
+    await vm.handleSave();
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not when only another preference changed', async () => {
+    const { vm } = await mountPage();
+    vm.form.duration = 45;
+    await vm.handleSave();
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it('does not when the save failed', async () => {
+    const { vm } = await mountPage();
+    apiMock.mockRejectedValueOnce({ data: { message: 'nope' } });
+    vm.form.timezone = 'America/New_York';
+    await vm.handleSave();
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 });

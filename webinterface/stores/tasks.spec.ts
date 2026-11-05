@@ -21,6 +21,9 @@ const { apiMock, toastMock, confirmMock } = vi.hoisted(() => ({
 mockNuxtImport('useApi', () => () => apiMock);
 mockNuxtImport('useAppToast', () => () => toastMock);
 mockNuxtImport('useConfirm', () => () => confirmMock);
+// The reminder refresh hook (#169, story 16) is a lazy import of the alarms store: stand in for it.
+const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
+mockNuxtImport('refreshAlarmsSoon', () => refreshMock);
 
 interface ApiOptions {
   method?: string;
@@ -166,6 +169,7 @@ beforeEach(() => {
   restoreStorage = installMemoryStorage().restore;
   createTestingPinia({ stubActions: false });
   apiMock.mockReset();
+  refreshMock.mockReset();
   Object.values(toastMock).forEach((fn) => fn.mockReset());
   confirmMock.require.mockReset();
   serve({});
@@ -1328,5 +1332,54 @@ describe('reset (logout)', () => {
     expect(store.isLoading).toBe(false);
     expect(store.isSaving.size).toBe(0);
     expect([store.sortBy, store.sortDir]).toEqual(['title', 'desc']);
+  });
+});
+
+describe('reminder refresh hook (#169)', () => {
+  const row = () => listed({ id: 'task-x' });
+  const base = '/api/v1/calendars/list-a/tasks';
+  const ok = () => ({
+    [`POST ${base}`]: () => row(),
+    [`PATCH ${base}/task-x`]: () => row(),
+    [`POST ${base}/task-x/complete`]: () => row(),
+    [`POST ${base}/task-x/uncomplete`]: () => row(),
+    [`DELETE ${base}/task-x`]: () => undefined,
+  });
+
+  it('createTask, updateTask, toggleComplete, undoComplete and removeTask each ask for a refresh', async () => {
+    serve(ok());
+    const store = useTasksStore();
+    store.tasks = [row()];
+
+    await store.createTask('list-a', { summary: 'New' });
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+    await store.updateTask(row(), { summary: 'Renamed' });
+    expect(refreshMock).toHaveBeenCalledTimes(2);
+    await store.toggleComplete(row());
+    expect(refreshMock).toHaveBeenCalledTimes(3);
+    await store.undoComplete(row());
+    expect(refreshMock).toHaveBeenCalledTimes(4);
+    await store.removeTask(row());
+    expect(refreshMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('a task that is already gone (404 on delete) still refreshes; other failures do not', async () => {
+    const store = useTasksStore();
+    serve({ [`DELETE ${base}/task-x`]: () => { throw httpError(404, 'Task not found'); } });
+    await store.removeTask(row());
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+
+    refreshMock.mockReset();
+    serve({
+      [`DELETE ${base}/task-x`]: () => { throw httpError(500, 'boom'); },
+      [`PATCH ${base}/task-x`]: () => { throw httpError(500, 'boom'); },
+      [`POST ${base}`]: () => { throw httpError(500, 'boom'); },
+      [`POST ${base}/task-x/complete`]: () => { throw httpError(500, 'boom'); },
+    });
+    await store.removeTask(row());
+    await store.updateTask(row(), { summary: 'x' });
+    await store.createTask('list-a', { summary: 'x' });
+    await store.toggleComplete(row());
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 });

@@ -48,7 +48,7 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
     │   ├── settings/        # DavCredentialManager, DavUrlBox (copyable /dav/<username>/… URLs)
     │   ├── sharing/         # SharePanel, PublicLinkPanel, ShareDialog (calendars + address books)
     │   └── common/          # AppHeader, AppSidebar (Tasks entry + overdue badge), GlobalSearch, Search*, HighlightText, ThemeToggle,
-    │                        #   LoadingSpinner, SkeletonList, ActionToast ("Task completed" + Undo)
+    │                        #   LoadingSpinner, SkeletonList, ActionToast ("Task completed" + Undo), ReminderToast (#169)
     ├── stores/              # Pinia stores: alarms (#169 reminders), auth, calendars, contacts, dashboard, preferences, search, sharing, tasks
     ├── composables/         # useApi, useAppToast, useTheme (light/dark/system), useAccentColor — both singletons
     ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, theme, accent, tasks, taskForm, taskLists, alarmSchedule, …

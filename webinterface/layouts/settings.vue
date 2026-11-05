@@ -97,6 +97,7 @@
 
     <!-- Toast notifications -->
     <Toast position="top-right" />
+    <ReminderToast />
     <ConfirmDialog />
 
     <!-- Global loading overlay -->
@@ -121,6 +122,7 @@
 <script setup lang="ts">
 import AppSidebar from '~/components/common/AppSidebar.vue';
 import AppHeader from '~/components/common/AppHeader.vue';
+import ReminderToast from '~/components/common/ReminderToast.vue';
 
 const authStore = useAuthStore();
 const route = useRoute();

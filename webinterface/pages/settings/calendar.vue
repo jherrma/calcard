@@ -173,6 +173,7 @@ const isDirty = computed(() =>
 
 const handleSave = async () => {
   saving.value = true;
+  const timezoneChanged = form.timezone !== preferencesStore.timezone;
   try {
     // Send every key on the page, not just the changed ones: the endpoint
     // upserts, so a full payload also repairs a row left behind by an older build.
@@ -185,6 +186,8 @@ const handleSave = async () => {
     });
     // Re-read from the store: the server response is authoritative.
     applyStoreValues();
+    // The server resolves floating and all-day reminders in the user's zone (#169).
+    if (timezoneChanged) refreshAlarmsSoon();
     toast.success('Calendar preferences saved');
   } catch (e: any) {
     toast.error(e?.data?.message || 'Failed to save preferences');

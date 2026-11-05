@@ -697,3 +697,40 @@ describe('stop and reset', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe('drop (another tab shows the key, story 16)', () => {
+  it('cancels the timer, leaves the queue, acknowledges nothing and is never queued again', async () => {
+    const store = freshStore();
+    response = () => ({ alarms: [alarm(1, 10 * MIN), alarm(2, -MIN)] });
+    await startStore(store);
+    expect(store.queue.map((a) => a.key)).toEqual([key(2)]);
+
+    store.drop([key(1), key(2)]);
+    expect(store.queue).toEqual([]);
+    expect(store.scheduled).toEqual({});
+    expect(Object.keys(store.dropped).sort()).toEqual([key(1), key(2)]);
+
+    await advance(11 * MIN); // the timer of key 1 would have fired
+    expect(store.queue).toEqual([]);
+    expect(store.pendingAck).toEqual({});
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('a later poll that still returns the key does not queue or arm it', async () => {
+    const store = freshStore();
+    response = () => ({ alarms: [alarm(1, -MIN)] });
+    await startStore(store);
+    store.drop([key(1)]);
+    store.refreshSoon();
+    await advance(2_100);
+    expect(store.queue).toEqual([]);
+    expect(store.scheduled).toEqual({});
+  });
+
+  it('reset forgets dropped keys', () => {
+    const store = freshStore();
+    store.drop([key(1)]);
+    store.reset();
+    expect(store.dropped).toEqual({});
+  });
+});
