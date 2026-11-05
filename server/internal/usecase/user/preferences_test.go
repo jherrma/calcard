@@ -87,6 +87,10 @@ func (f *fakePrefRepo) InsertIfAbsent(_ context.Context, pref *user.UserPreferen
 	return nil
 }
 
+func (f *fakePrefRepo) ListByKey(_ context.Context, _ []uint, _ string) ([]user.UserPreference, error) {
+	return nil, nil
+}
+
 func (f *fakePrefRepo) ReplaceValueIf(_ context.Context, userID uint, key, oldValue, newValue string) (bool, error) {
 	for i := range f.rows {
 		if f.rows[i].UserID == userID && f.rows[i].Key == key && f.rows[i].Value == oldValue {

@@ -259,6 +259,16 @@ over plain http is trivially modifiable in transit, and the events it injects
 appear in the user's calendar as if the server vouched for them. `webcal://`
 links are rewritten to `https://` and are unaffected by this setting.
 
+### Alarms Section (`alarms:`)
+
+Controls web-app reminders (#169): the `/api/v1/alarms/*` endpoints behind the
+in-app reminder toasts. VALARMs are parsed and stored whatever this says, so
+switching it back on later needs no backfill.
+
+| YAML Key  | Env Var                | Default | Description                                                                                         |
+| :-------- | :--------------------- | :------ | :-------------------------------------------------------------------------------------------------- |
+| `enabled` | `CALDAV_ALARMS_ENABLED` | `true`  | Register the `/api/v1/alarms/*` routes. `false` removes them (they answer 404, never the web app). |
+
 ### TLS Section (`tls:`)
 
 | YAML Key    | Env Var                | Default | Description                       |

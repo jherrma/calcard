@@ -111,6 +111,10 @@ func (m *mockCalendarRepo) RecordChange(context.Context, uint, string, string, s
 func (m *mockCalendarRepo) ListEvents(context.Context, uint, time.Time, time.Time) ([]*calendar.CalendarObject, error) {
 	return nil, nil
 }
+func (m *mockCalendarRepo) ListAlarmCandidates(context.Context, []uint, time.Time, time.Time) ([]*calendar.CalendarObject, error) {
+	return nil, nil
+}
+
 func (m *mockCalendarRepo) ListTasks(context.Context, calendar.TaskQuery) ([]*calendar.CalendarObject, int64, error) {
 	return nil, 0, nil
 }

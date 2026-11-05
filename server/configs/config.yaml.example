@@ -114,3 +114,8 @@ subscriptions:
   # users are meant to subscribe to feeds on this machine's private network.
   allow_insecure_urls: false
   allow_private_hosts: false
+
+# Web-app reminders (#169): GET /api/v1/alarms/upcoming. false removes the
+# routes; VALARMs are still parsed on write.
+alarms:
+  enabled: true

@@ -88,6 +88,11 @@ type ReadableCalendar struct {
 	Name                string
 	Color               string
 	SupportedComponents string
+	// OwnerID is the calendar's owner and Subscribed marks a mirror of a remote
+	// feed (#169). Both only steer the alarm use case (the owner's time zone,
+	// subscribed calendars contribute no alarms); neither is ever serialised.
+	OwnerID    uint
+	Subscribed bool
 }
 
 // SupportsComponent reports whether the calendar stores componentType, by the
@@ -218,6 +223,13 @@ type CalendarRepository interface {
 	// unprioritised tasks last, then created_at, then id (a stable order, so
 	// pages never overlap).
 	ListTasks(ctx context.Context, q TaskQuery) ([]*CalendarObject, int64, error)
+
+	// ListAlarmCandidates returns the live objects of calendarIDs whose alarm
+	// bounds overlap [from, until] (inclusive): alarm_last_at >= from AND
+	// alarm_first_at <= until (#169). A coarse pre-filter; ExpandAlarms computes
+	// the exact instants. An empty id list matches nothing and runs no query;
+	// the ids are never widened.
+	ListAlarmCandidates(ctx context.Context, calendarIDs []uint, from, until time.Time) ([]*CalendarObject, error)
 
 	// CountTasks counts the tasks (ComponentToDo objects; events and deleted
 	// objects are excluded) of calendarIDs at TaskDayOf(asOf): open, overdue,

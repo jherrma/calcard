@@ -46,6 +46,8 @@ type Config struct {
 	MCP          MCPConfig          `yaml:"mcp"`
 
 	Subscriptions SubscriptionConfig `yaml:"subscriptions"`
+
+	Alarms AlarmConfig `yaml:"alarms"`
 }
 
 // ServerConfig contains server-specific settings
@@ -98,6 +100,21 @@ type JWTConfig struct {
 type MCPConfig struct {
 	Enabled  bool `yaml:"enabled" env:"CALDAV_MCP_ENABLED"`
 	Requests int  `yaml:"requests" env:"CALDAV_MCP_RATE_LIMIT_REQUESTS"`
+}
+
+// Alarm window (#169), shared by GET /api/v1/alarms/upcoming and, later, the
+// acknowledgement retention floor.
+const (
+	AlarmLookBack         = 24 * time.Hour     // from = now − AlarmLookBack
+	AlarmDefaultLookAhead = 24 * time.Hour     // until when the request gives none
+	AlarmMaxLookAhead     = 7 * 24 * time.Hour // until is clamped to now + AlarmMaxLookAhead
+)
+
+// AlarmConfig controls web-app reminders (#169).
+type AlarmConfig struct {
+	// Enabled off unregisters /api/v1/alarms/*. VALARMs are still parsed on
+	// write, so switching it on again needs no backfill.
+	Enabled bool `yaml:"enabled" env:"CALDAV_ALARMS_ENABLED"`
 }
 
 // SubscriptionConfig controls remote calendar subscriptions (story 100) — the
@@ -340,6 +357,7 @@ func Load(configPath string) (*Config, error) {
 			// break normal use, while this still bounds a runaway loop.
 			Requests: 120,
 		},
+		Alarms: AlarmConfig{Enabled: true},
 		Subscriptions: SubscriptionConfig{
 			Enabled: true,
 			// A minute of granularity is plenty when the shortest refresh

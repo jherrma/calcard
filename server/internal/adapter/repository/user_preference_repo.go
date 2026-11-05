@@ -40,6 +40,17 @@ func (r *gormUserPreferenceRepo) GetByKey(ctx context.Context, userID uint, key 
 	return &pref, nil
 }
 
+func (r *gormUserPreferenceRepo) ListByKey(ctx context.Context, userIDs []uint, key string) ([]user.UserPreference, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	var prefs []user.UserPreference
+	if err := r.db.WithContext(ctx).Where("key = ? AND user_id IN ?", key, userIDs).Find(&prefs).Error; err != nil {
+		return nil, err
+	}
+	return prefs, nil
+}
+
 // Upsert relies on the idx_user_pref_key unique index over (user_id, key), which
 // AutoMigrate creates from the struct tags. The conflict target must name those
 // two columns in that order for both SQLite and PostgreSQL to match the index.

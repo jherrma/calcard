@@ -22,6 +22,7 @@ import (
 	"github.com/jherrma/caldav-server/internal/infrastructure/logging"
 	aboutusecase "github.com/jherrma/caldav-server/internal/usecase/about"
 	addressbookusecase "github.com/jherrma/caldav-server/internal/usecase/addressbook"
+	alarmusecase "github.com/jherrma/caldav-server/internal/usecase/alarm"
 	"github.com/jherrma/caldav-server/internal/usecase/apppassword"
 	authusecase "github.com/jherrma/caldav-server/internal/usecase/auth"
 	calendarusecase "github.com/jherrma/caldav-server/internal/usecase/calendar"
@@ -29,6 +30,7 @@ import (
 	eventusecase "github.com/jherrma/caldav-server/internal/usecase/event"
 	"github.com/jherrma/caldav-server/internal/usecase/importexport"
 	"github.com/jherrma/caldav-server/internal/usecase/mcptoken"
+	"github.com/jherrma/caldav-server/internal/usecase/ownerzone"
 	searchusecase "github.com/jherrma/caldav-server/internal/usecase/search"
 	"github.com/jherrma/caldav-server/internal/usecase/sharing"
 	subscriptionusecase "github.com/jherrma/caldav-server/internal/usecase/subscription"
@@ -530,6 +532,15 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// Open/overdue/due-today/completed counts of those lists at the caller's
 	// as_of, in one query (#170): the sidebar badge and per-list counts.
 	v1.Get("/tasks/summary", http.Authenticate(jwtManager, userRepo), taskHandler.Summary)
+
+	// Web-app reminders (#169), off with alarms.enabled: the routes are then
+	// absent and /api/* answers 404 instead of the SPA.
+	if cfg.Alarms.Enabled {
+		ownerZones := ownerzone.New(userPrefRepo, userRepo)
+		alarmHandler := http.NewAlarmHandler(alarmusecase.NewUpcomingUseCase(calendarRepo, ownerZones, nil))
+		alarmGroup := v1.Group("/alarms", http.Authenticate(jwtManager, userRepo))
+		alarmGroup.Get("/upcoming", alarmHandler.Upcoming)
+	}
 
 	// MCP Server (story 104). Registered here, after every use case it delegates
 	// to exists, and mounted at /mcp rather than under /api/v1 because the

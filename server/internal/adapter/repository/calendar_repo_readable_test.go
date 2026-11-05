@@ -93,6 +93,7 @@ func TestListReadableCalendarIDs(t *testing.T) {
 		for i, cal := range want {
 			assert.Equal(t, calendar.ReadableCalendar{
 				ID: cal.ID, UUID: cal.UUID, Name: cal.Name, Color: "#a1b2c3", SupportedComponents: cal.SupportedComponents,
+				OwnerID: cal.UserID, Subscribed: cal.Subscribed,
 			}, got[i], cal.Name)
 		}
 	})

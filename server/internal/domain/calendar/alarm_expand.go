@@ -45,6 +45,12 @@ type AlarmInstance struct {
 	Summary    string
 	Start, End time.Time
 	Wall       bool
+	// Location is the component's LOCATION (an override's own, else the master's,
+	// else the object column). ZoneDependent reports that the trigger instant
+	// depended on the owner's time zone: a relative trigger on a floating or DATE
+	// anchor, or a floating absolute trigger (spec §6.5).
+	Location      string
+	ZoneDependent bool
 }
 
 // AlarmKey is the stable identity of an alarm (spec §6.7, D22): lowercase hex of
@@ -90,7 +96,16 @@ func (c *alarmCollector) add(comp *ical.Component, spec AlarmSpec, rid string, b
 	inst := AlarmInstance{
 		Key: key, TriggerAt: t, UID: c.obj.UID, RecurrenceID: rid,
 		Index: spec.Index, Action: action, Description: desc,
-		Object: c.obj, Summary: c.obj.Summary,
+		Object: c.obj, Summary: c.obj.Summary, Location: c.obj.Location,
+	}
+	if spec.Relative {
+		zoneBase := start
+		if spec.Related == "END" {
+			zoneBase = end
+		}
+		inst.ZoneDependent = zoneBase != nil && zoneBase.Wall
+	} else {
+		inst.ZoneDependent = spec.Floating
 	}
 	for _, src := range []*ical.Component{base, comp} {
 		if src == nil {
@@ -98,6 +113,9 @@ func (c *alarmCollector) add(comp *ical.Component, spec AlarmSpec, rid string, b
 		}
 		if p := src.Props.Get(ical.PropSummary); p != nil {
 			inst.Summary = UnescapeText(p.Value)
+		}
+		if p := src.Props.Get(ical.PropLocation); p != nil {
+			inst.Location = UnescapeText(p.Value)
 		}
 	}
 	if start != nil {

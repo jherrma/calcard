@@ -162,6 +162,17 @@ Remote calendar subscriptions (story 100) — mirroring third-party iCalendar fe
 - `create.go`, `manage.go` — the CRUD use cases. Create validates the feed BEFORE writing anything and rolls the calendar back if the subscription cannot be stored. The mirror calendar stores `VEVENT,VTODO` on purpose (#170): the parser keeps a feed's VTODOs and `ReplaceFeedObjects` bypasses the component-set check, so a narrower set would hold objects it does not advertise. A view's `event_count` counts events only — create counts the feed's VEVENT objects, every later view uses `GetEventCount` — so a feed's tasks are not reported as events. Delete is a single `CalendarRepository.Delete` of the mirror calendar: the collection cascade removes the subscription row with it, in one transaction.
 - `worker.go` — the ticker that refreshes due subscriptions. A poller over a `NextSyncAt` column rather than a timer per subscription, so the schedule survives a restart with no recovery step.
 
+### [alarm/](alarm/)
+
+Web-app reminders (#169):
+
+- `upcoming.go` — `UpcomingUseCase` (injected clock), behind `GET /api/v1/alarms/upcoming`. Parse and clamp `until` (`ErrInvalidUntil` → 400; `until < from` is an empty answer), `ListReadableCalendarIDs` and drop `Subscribed` calendars (owned + live shares, never a second share query), `ListAlarmCandidates`, owner zones in one `ListByKey`, `calendar.ExpandAlarms` per object (an error is a WARN with the object UUID and a skip; a capped object is a WARN and sets `truncated`), dedupe by key keeping the lowest calendar id, sort by `trigger_at` then `key`, truncate at 500. The zone fallback is logged only for an alarm in the answer whose `ZoneDependent` is set. No acknowledgement filter yet.
+- `errors.go` — `ErrInvalidUntil`.
+
+### [ownerzone/](ownerzone/)
+
+`Resolver` (#169): the time zone of a calendar's OWNER. `Many(ownerIDs)` is one `UserPreferenceRepository.ListByKey` and returns `Zones` (`For` = zone or UTC, `Has`); `One(ownerID)` reads one; both validate with `user.LoadTimezone`, an absent or invalid value is "no zone" (UTC). `Fallback(ctx, ownerID)` logs INFO `alarm time zone fallback: owner has no timezone preference, using UTC` with the owner's user UUID (never the e-mail), once per owner per process (`sync.Map`), so build ONE resolver and share it.
+
 ### [about/](about/)
 
 Project metadata (story 101):
