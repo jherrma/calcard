@@ -260,3 +260,60 @@ func FormatAlarmDuration(seconds int64) string {
 	}
 	return sb.String()
 }
+
+// DatePropDay is the calendar day number (days since 1970-01-01) of a DATE
+// valued property, false for a date-time, a missing or an unreadable one. The
+// difference of two of them is the number of days an all-day item moved (spec
+// §7.5 step 1 and 4).
+func DatePropDay(p *ical.Prop) (int, bool) {
+	if p == nil || p.ValueType() != ical.ValueDate {
+		return 0, false
+	}
+	t, err := p.DateTime(time.UTC)
+	if err != nil {
+		return 0, false
+	}
+	return int(time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).Unix() / 86400), true
+}
+
+// ShiftAbsoluteTriggers moves the absolute, non-floating TRIGGER of every
+// VALARM child of comp that is not in skip by n calendar days in ownerLoc, so
+// the trigger keeps its local time of day there, also across a DST change (spec
+// §7.5 step 4, D23). A nil ownerLoc is UTC (whole 24 h days). Relative
+// triggers, floating ones and every other property are left untouched. It
+// reports whether anything changed.
+func ShiftAbsoluteTriggers(comp *ical.Component, n int, ownerLoc *time.Location, skip map[*ical.Component]bool) bool {
+	if comp == nil || n == 0 {
+		return false
+	}
+	if ownerLoc == nil {
+		ownerLoc = time.UTC
+	}
+	changed := false
+	var alarms []*ical.Component
+	for _, ch := range comp.Children {
+		if ch != nil && ch.Name == ical.CompAlarm {
+			alarms = append(alarms, ch)
+		}
+	}
+	specs := ParseAlarms(comp)
+	for i, a := range alarms {
+		if skip[a] || i >= len(specs) {
+			continue
+		}
+		sp := specs[i]
+		if sp.Relative || sp.Absolute == nil || sp.Floating {
+			continue
+		}
+		l := sp.Absolute.In(ownerLoc)
+		t := time.Date(l.Year(), l.Month(), l.Day()+n, l.Hour(), l.Minute(), l.Second(), 0, ownerLoc).UTC()
+		prop := a.Props.Get(ical.PropTrigger)
+		if prop == nil {
+			continue
+		}
+		prop.Value = t.Format("20060102T150405Z")
+		prop.Params = ical.Params{ical.ParamValue: {"DATE-TIME"}}
+		changed = true
+	}
+	return changed
+}

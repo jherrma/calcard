@@ -474,7 +474,10 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	eventListUC := eventusecase.NewListEventsUseCase(calendarRepo)
 	eventGetUC := eventusecase.NewGetEventUseCase(calendarRepo)
 	eventCreateUC := eventusecase.NewCreateEventUseCase(calendarRepo)
-	eventUpdateUC := eventusecase.NewUpdateEventUseCase(calendarRepo)
+	// One owner-zone resolver (#169): the all-day date shift of the update use
+	// cases and the alarm use cases share it, so the fallback logs once.
+	ownerZones := ownerzone.New(userPrefRepo, userRepo)
+	eventUpdateUC := eventusecase.NewUpdateEventUseCase(calendarRepo).WithOwnerZones(ownerZones)
 	eventDeleteUC := eventusecase.NewDeleteEventUseCase(calendarRepo)
 	eventMoveUC := eventusecase.NewMoveEventUseCase(calendarRepo)
 
@@ -501,7 +504,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// summary use cases are built once: the MCP task tools get the same
 	// instances (below).
 	taskCreateUC := taskusecase.NewCreateTaskUseCase(calendarRepo, nil)
-	taskUpdateUC := taskusecase.NewUpdateTaskUseCase(calendarRepo, nil)
+	taskUpdateUC := taskusecase.NewUpdateTaskUseCase(calendarRepo, nil).WithOwnerZones(ownerZones)
 	taskDeleteUC := taskusecase.NewDeleteTaskUseCase(calendarRepo)
 	taskCompleteUC := taskusecase.NewCompleteTaskUseCase(calendarRepo, nil)
 	taskUncompleteUC := taskusecase.NewUncompleteTaskUseCase(calendarRepo, nil)
@@ -541,7 +544,6 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// absent and /api/* answers 404 instead of the SPA.
 	var alarmAckCleanup *alarmusecase.CleanupJob
 	if cfg.Alarms.Enabled {
-		ownerZones := ownerzone.New(userPrefRepo, userRepo)
 		alarmAckRepo := repository.NewAlarmAcknowledgementRepository(db.DB())
 		alarmHandler := http.NewAlarmHandler(
 			alarmusecase.NewUpcomingUseCase(calendarRepo, alarmAckRepo, ownerZones, nil),

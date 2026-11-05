@@ -37,7 +37,7 @@ func NewCreateEventUseCase(calendarRepo calendar.CalendarRepository) *CreateEven
 func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInput) (*calendar.CalendarObject, error) {
 	// A task list (supported_components "VTODO") does not take events (#170).
 	// Checked first: no other correction to the request would make it succeed.
-	if err := requireEventCalendar(ctx, uc.calendarRepo, input.CalendarID); err != nil {
+	if _, err := requireEventCalendar(ctx, uc.calendarRepo, input.CalendarID); err != nil {
 		return nil, err
 	}
 	// A missing (or JSON null) start/end arrives as the zero time. Without this

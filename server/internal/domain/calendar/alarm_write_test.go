@@ -218,3 +218,79 @@ func TestUnmatchedRemindersOnlyUnmatched(t *testing.T) {
 	assert.Equal(t, int64(-60), *got[0].OffsetSeconds)
 	assert.Equal(t, int64(-900), *got[1].OffsetSeconds)
 }
+
+func TestShiftAbsoluteTriggers(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	require.NoError(t, err)
+	const (
+		absCET   = "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20261104T080000Z\r\nX-KEEP:1\r\nEND:VALARM\r\n"
+		rel      = "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:PT9H\r\nEND:VALARM\r\n"
+		floating = "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20261104T090000\r\nEND:VALARM\r\n"
+		bad      = "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:garbage\r\nEND:VALARM\r\n"
+	)
+	triggers := func(c *ical.Component) []string {
+		var out []string
+		for _, ch := range c.Children {
+			if ch.Name == ical.CompAlarm {
+				out = append(out, ch.Props.Get(ical.PropTrigger).Value)
+			}
+		}
+		return out
+	}
+	t.Run("plus seven days keeps the local time", func(t *testing.T) {
+		c := writeComp(t, absCET)
+		assert.True(t, ShiftAbsoluteTriggers(c, 7, berlin, nil))
+		assert.Equal(t, []string{"20261111T080000Z"}, triggers(c))
+		assert.Equal(t, "DATE-TIME", c.Children[0].Props.Get(ical.PropTrigger).Params.Get(ical.ParamValue))
+		assert.Equal(t, "1", c.Children[0].Props.Get("X-KEEP").Value, "other properties stay")
+	})
+	t.Run("into summer time and back", func(t *testing.T) {
+		// 2026-11-04 + 148 days = 2027-04-01: 09:00 CEST = 07:00Z
+		c := writeComp(t, absCET)
+		ShiftAbsoluteTriggers(c, 148, berlin, nil)
+		assert.Equal(t, []string{"20270401T070000Z"}, triggers(c))
+		ShiftAbsoluteTriggers(c, -148, berlin, nil)
+		assert.Equal(t, []string{"20261104T080000Z"}, triggers(c))
+		// across the 2027-03-28 change by one day: 03-27 09:00 CET -> 03-28 09:00 CEST
+		c = writeComp(t, "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20270327T080000Z\r\nEND:VALARM\r\n")
+		ShiftAbsoluteTriggers(c, 1, berlin, nil)
+		assert.Equal(t, []string{"20270328T070000Z"}, triggers(c))
+		// autumn 2027 (10-31): 10-30 09:00 CEST = 07:00Z -> 11-01 09:00 CET = 08:00Z
+		c = writeComp(t, "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20271030T070000Z\r\nEND:VALARM\r\n")
+		ShiftAbsoluteTriggers(c, 2, berlin, nil)
+		assert.Equal(t, []string{"20271101T080000Z"}, triggers(c))
+	})
+	t.Run("nil zone is whole UTC days", func(t *testing.T) {
+		c := writeComp(t, absCET)
+		ShiftAbsoluteTriggers(c, 3, nil, nil)
+		assert.Equal(t, []string{"20261107T080000Z"}, triggers(c))
+	})
+	t.Run("skip, relative, floating, unreadable and zero are untouched", func(t *testing.T) {
+		c := writeComp(t, absCET, rel, floating, bad, absCET)
+		skip := map[*ical.Component]bool{c.Children[4]: true}
+		assert.True(t, ShiftAbsoluteTriggers(c, 1, berlin, skip))
+		assert.Equal(t, []string{"20261105T080000Z", "PT9H", "20261104T090000", "garbage", "20261104T080000Z"}, triggers(c))
+		assert.False(t, ShiftAbsoluteTriggers(c, 0, berlin, nil))
+		assert.False(t, ShiftAbsoluteTriggers(writeComp(t, rel), 5, berlin, nil))
+		assert.False(t, ShiftAbsoluteTriggers(nil, 5, berlin, nil))
+	})
+	t.Run("a TZID trigger is rewritten as UTC", func(t *testing.T) {
+		c := writeComp(t, "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;TZID=Europe/Berlin;VALUE=DATE-TIME:20261104T090000\r\nEND:VALARM\r\n")
+		ShiftAbsoluteTriggers(c, 1, berlin, nil)
+		assert.Equal(t, []string{"20261105T080000Z"}, triggers(c))
+	})
+}
+
+func TestDatePropDay(t *testing.T) {
+	c := writeComp(t)
+	_, ok := DatePropDay(c.Props.Get(ical.PropDateTimeStart))
+	assert.False(t, ok, "a date-time is not a date")
+	_, ok = DatePropDay(nil)
+	assert.False(t, ok)
+	p := &ical.Prop{Name: ical.PropDue, Value: "20261105", Params: ical.Params{ical.ParamValue: {"DATE"}}}
+	a, ok := DatePropDay(p)
+	require.True(t, ok)
+	p.Value = "20261112"
+	b, _ := DatePropDay(p)
+	assert.Equal(t, 7, b-a)
+}

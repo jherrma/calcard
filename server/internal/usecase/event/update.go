@@ -9,6 +9,7 @@ import (
 
 	"github.com/emersion/go-ical"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/usecase/ownerzone"
 	"github.com/teambition/rrule-go"
 )
 
@@ -37,6 +38,15 @@ type UpdateEventInput struct {
 
 type UpdateEventUseCase struct {
 	calendarRepo calendar.CalendarRepository
+	zones        ownerzone.Source
+}
+
+// WithOwnerZones sets the resolver of the calendar owner's time zone, used to
+// shift the absolute reminders of an all-day event whose date moves (#169, spec
+// §7.5 step 4). Without one the shift counts whole UTC days.
+func (uc *UpdateEventUseCase) WithOwnerZones(z ownerzone.Source) *UpdateEventUseCase {
+	uc.zones = z
+	return uc
 }
 
 func NewUpdateEventUseCase(calendarRepo calendar.CalendarRepository) *UpdateEventUseCase {
@@ -53,7 +63,8 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	// Rewriting an event in a calendar that does not store events is refused
 	// like a create (#170), as a DAV PUT of it would be. Deleting it stays
 	// possible.
-	if err := requireEventCalendar(ctx, uc.calendarRepo, obj.CalendarID); err != nil {
+	evCal, err := requireEventCalendar(ctx, uc.calendarRepo, obj.CalendarID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -313,6 +324,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 	}
 
+	// Spec §7.5 step 1: the target's date before the field edits. A component
+	// this request created has no earlier date and is never shifted.
+	beforeDay, beforeAllDay := 0, false
+	if !createdTarget {
+		beforeDay, beforeAllDay = calendar.DatePropDay(targetEvent.Props.Get(ical.PropDateTimeStart))
+	}
+
 	if input.Summary != nil {
 		// Denormalized obj.Summary is rederived by PopulateDenormFieldsFromICal
 		// after re-encoding; only the iCal property needs setting here. The
@@ -431,17 +449,36 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	// VALARMs were copied into a new override or master. The range rules apply
 	// only to entries that match no existing VALARM, so a kept reminder is never
 	// refused. Nothing has been written yet, so a 400 writes nothing.
+	var appended []*ical.Component
 	if input.Reminders != nil {
 		desired := *input.Reminders
 		if err := calendar.CheckReminderRanges(
 			calendar.UnmatchedReminders(targetEvent.Component, desired, calendar.ReminderKindEvent), effectiveStart); err != nil {
 			return nil, invalidInput(err)
 		}
-		changed, _ := calendar.ApplyReminders(targetEvent.Component, desired, calendar.ReminderKindEvent)
+		var changed bool
+		changed, appended = calendar.ApplyReminders(targetEvent.Component, desired, calendar.ReminderKindEvent)
 		if !changed && !createdTarget && onlyReminders(input) {
 			// The same reminders as stored and nothing else to edit: write
 			// nothing, so the ETag stays.
 			return obj, nil
+		}
+	}
+
+	// All-day date shift (D23, spec §7.5 step 4): REST and MCP only, a DAV PUT
+	// never comes through here. The reminders this request appended are written
+	// as sent and are not shifted.
+	if beforeAllDay {
+		if afterDay, afterAllDay := calendar.DatePropDay(targetEvent.Props.Get(ical.PropDateTimeStart)); afterAllDay && afterDay != beforeDay {
+			ownerLoc, err := ownerzone.Load(ctx, uc.zones, evCal.UserID)
+			if err != nil {
+				return nil, err
+			}
+			skip := map[*ical.Component]bool{}
+			for _, a := range appended {
+				skip[a] = true
+			}
+			calendar.ShiftAbsoluteTriggers(targetEvent.Component, afterDay-beforeDay, ownerLoc, skip)
 		}
 	}
 

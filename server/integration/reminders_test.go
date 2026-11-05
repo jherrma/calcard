@@ -5,6 +5,8 @@ package integration_test
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -458,4 +460,375 @@ func seqAfter(t *testing.T, lines []string) string {
 	}
 	t.Fatal("no SEQUENCE")
 	return ""
+}
+
+// ---------------------------------------------------------------------------
+// #169 story 13: all-day reminders and the REST/MCP date shift (D23).
+// ---------------------------------------------------------------------------
+
+// mcpSession initialises an MCP session for a token minted from jwt and returns
+// a function that calls one tool and decodes its JSON payload.
+func mcpSession(t *testing.T, jwt string) func(tool string, args map[string]any) map[string]any {
+	t.Helper()
+	token := mcpToken(t, jwt, "alarm-shift")
+	status, headers, _ := mcpCall(t, token, "",
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"integration","version":"1"}}}`)
+	require.Equal(t, http.StatusOK, status)
+	session := headers.Get("Mcp-Session-Id")
+	require.NotEmpty(t, session)
+	mcpCall(t, token, session, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	id := 10
+	return func(tool string, args map[string]any) map[string]any {
+		t.Helper()
+		id++
+		raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call",
+			"params": map[string]any{"name": tool, "arguments": args}})
+		require.NoError(t, err)
+		status, _, body := mcpCall(t, token, session, string(raw))
+		require.Equal(t, http.StatusOK, status)
+		payload, isErr := toolResultText(t, body)
+		require.Falsef(t, isErr, "%s failed: %v", tool, payload)
+		return payload
+	}
+}
+
+// triggerLines are the TRIGGER lines of the unfolded iCalendar, in order.
+func triggerLines(body string) []string {
+	var out []string
+	for _, l := range icalLines(body) {
+		if strings.HasPrefix(l, "TRIGGER") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// syncReport runs a sync-collection REPORT with the given token ("" = initial)
+// and returns the body and the new token.
+func syncReport(t *testing.T, collection, email, pass, token string) (string, string) {
+	t.Helper()
+	body := strings.Replace(syncCollectionBody, "<D:sync-token/>", "<D:sync-token>"+token+"</D:sync-token>", 1)
+	if token == "" {
+		body = syncCollectionBody
+	}
+	status, _, resp := davCall(t, "REPORT", collection, email, pass, body, depthHeader("1"))
+	require.Equalf(t, http.StatusMultiStatus, status, "sync-collection: %s", string(resp))
+	m := regexp.MustCompile(`<sync-token>([^<]*)</sync-token>`).FindStringSubmatch(string(resp))
+	require.NotNilf(t, m, "no sync-token in %s", string(resp))
+	return string(resp), m[1]
+}
+
+func eventIDByUID(t *testing.T, token, calUUID, uid string) string {
+	t.Helper()
+	status, raw := restCall(t, http.MethodGet, "/calendars/"+calUUID+"/events?start=2026-01-01T00:00:00Z&end=2028-01-01T00:00:00Z", token, nil)
+	require.Equalf(t, http.StatusOK, status, "list events: %s", raw)
+	var out struct {
+		Events []struct {
+			ID  string `json:"id"`
+			UID string `json:"uid"`
+		} `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	for _, e := range out.Events {
+		if e.UID == uid {
+			return e.ID
+		}
+	}
+	t.Fatalf("event %s not listed: %s", uid, raw)
+	return ""
+}
+
+func taskIDByUID(t *testing.T, token, calUUID, uid string) string {
+	t.Helper()
+	status, raw := restCall(t, http.MethodGet, tasksURL(calUUID)+"?status=all", token, nil)
+	require.Equalf(t, http.StatusOK, status, "list tasks: %s", raw)
+	var out struct {
+		Tasks []struct {
+			ID  string `json:"id"`
+			UID string `json:"uid"`
+		} `json:"tasks"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	for _, tk := range out.Tasks {
+		if tk.UID == uid {
+			return tk.ID
+		}
+	}
+	t.Fatalf("task %s not listed: %s", uid, raw)
+	return ""
+}
+
+func upcomingWeek(t *testing.T, token string) upcomingBody {
+	t.Helper()
+	until := time.Now().UTC().Add(7 * 24 * time.Hour).Format(time.RFC3339)
+	status, body, raw := getUpcoming(t, token, "until="+until)
+	require.Equalf(t, http.StatusOK, status, "upcoming: %s", raw)
+	return body
+}
+
+func triggerTimes(body upcomingBody, uid string) []string {
+	var out []string
+	for _, a := range alarmsOfUID(body, uid) {
+		out = append(out, a.TriggerAt)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestAllDayRemindersMoveWithDate(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	require.NoError(t, err)
+	// localNine is 09:00 on the UTC date d (plus days) in Berlin, as the API prints it.
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	day := func(n int) time.Time { return today.AddDate(0, 0, n) }
+	localAt := func(d time.Time, hour int) string {
+		return rfcStamp(time.Date(d.Year(), d.Month(), d.Day(), hour, 0, 0, 0, berlin))
+	}
+	dateOnly := func(d time.Time) string { return d.Format("2006-01-02") }
+	sortedStrings := func(in ...string) []string { sort.Strings(in); return in }
+
+	password := "allDayShift!123"
+	email := "alarm-shift-owner@example.test"
+	token, username := registerAndLoginFull(t, email, password, "Alarm All Day")
+	_, appPass := createAppPassword(t, token, "alarm-allday")
+	setTimezoneDefault(t, token, "Europe/Berlin")
+	collection, calUUID := eventCollection(t, token, username)
+	eventsURL := "/calendars/" + calUUID + "/events"
+	mcp := mcpSession(t, token)
+
+	t.Run("relative event reminders resolve in the owner's zone and move with the date", func(t *testing.T) {
+		d := day(2)
+		status, raw := restCall(t, http.MethodPost, eventsURL, token, map[string]any{
+			"summary": "All day", "start": rfcStamp(d), "end": rfcStamp(d.AddDate(0, 0, 1)), "all_day": true, "timezone": "UTC",
+			"reminders": []map[string]any{{"offset_seconds": 32400}, {"offset_seconds": -54000}},
+		})
+		require.Equalf(t, http.StatusCreated, status, "create: %s", raw)
+		ev := decodeReminderEvent(t, raw)
+
+		body, _ := davGet(t, collection+ev.ID+".ics", email, appPass)
+		assert.Equal(t, []string{"TRIGGER:PT9H", "TRIGGER:-PT15H"}, triggerLines(body))
+		assert.NotContains(t, body, "X-CALCARD", "no anchor property (D23)")
+		assert.Equal(t, sortedStrings(localAt(d, 9), localAt(d.AddDate(0, 0, -1), 9)), triggerTimes(upcomingWeek(t, token), ev.UID))
+
+		// REST move by +1 day: both alarms follow, still 09:00 local.
+		d2 := day(3)
+		status, raw = restCall(t, http.MethodPatch, eventsURL+"/"+ev.ID, token, map[string]any{
+			"start": rfcStamp(d2), "end": rfcStamp(d2.AddDate(0, 0, 1)), "all_day": true, "timezone": "UTC"})
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		body, _ = davGet(t, collection+ev.ID+".ics", email, appPass)
+		assert.Equal(t, []string{"TRIGGER:PT9H", "TRIGGER:-PT15H"}, triggerLines(body), "relative triggers untouched")
+		assert.Equal(t, sortedStrings(localAt(d2, 9), localAt(d2.AddDate(0, 0, -1), 9)), triggerTimes(upcomingWeek(t, token), ev.UID))
+
+		// MCP move by one more day.
+		d3 := day(4)
+		mcp("update_event", map[string]any{"event_id": ev.ID, "start": rfcStamp(d3), "end": rfcStamp(d3.AddDate(0, 0, 1))})
+		assert.Equal(t, sortedStrings(localAt(d3, 9), localAt(d3.AddDate(0, 0, -1), 9)), triggerTimes(upcomingWeek(t, token), ev.UID))
+	})
+
+	t.Run("absolute event triggers shift on REST and MCP moves, not on DAV moves", func(t *testing.T) {
+		const uid = "alarm169-shift-event"
+		object := collection + "shift-event.ics"
+		put := func(date, endDate, trigger string) {
+			davPut(t, object, email, appPass, vcalendar(vevent(uid,
+				"DTSTART;VALUE=DATE:"+date+"\r\n", "DTEND;VALUE=DATE:"+endDate+"\r\n", "SUMMARY:Shift\r\n",
+				displayAlarm("TRIGGER;VALUE=DATE-TIME:"+trigger))))
+		}
+		put("20261105", "20261106", "20261104T080000Z")
+		id := eventIDByUID(t, token, calUUID, uid)
+		move := func(via, date string) {
+			start, err := time.Parse("2006-01-02", date)
+			require.NoError(t, err)
+			end := start.AddDate(0, 0, 1)
+			if via == "rest" {
+				status, raw := restCall(t, http.MethodPatch, eventsURL+"/"+id, token, map[string]any{
+					"start": rfcStamp(start), "end": rfcStamp(end), "all_day": true, "timezone": "UTC"})
+				require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+				return
+			}
+			mcp("update_event", map[string]any{"event_id": id, "start": rfcStamp(start), "end": rfcStamp(end)})
+		}
+		trigger := func() (string, string) {
+			body, etag := davGet(t, object, email, appPass)
+			require.Len(t, triggerLines(body), 1)
+			return triggerLines(body)[0], etag
+		}
+
+		_, syncToken := syncReport(t, collection, email, appPass, "")
+		_, etag0 := trigger()
+		move("rest", "2026-11-12")
+		got, etag1 := trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20261111T080000Z", got, "+7 days, CET")
+		assert.NotEqual(t, etag0, etag1)
+		report, _ := syncReport(t, collection, email, appPass, syncToken)
+		assert.Contains(t, report, "shift-event.ics", "sync-collection reports the moved object")
+
+		move("rest", "2027-04-02")
+		got, _ = trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20270401T070000Z", got, "09:00 CEST after the DST change")
+
+		move("mcp", "2027-04-05")
+		got, etag2 := trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20270404T070000Z", got)
+		move("mcp", "2026-11-05")
+		got, etag3 := trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20261104T080000Z", got, "back across the DST change")
+		assert.NotEqual(t, etag2, etag3)
+
+		// A title-only PATCH shifts nothing.
+		status, raw := restCall(t, http.MethodPatch, eventsURL+"/"+id, token, map[string]any{"summary": "Renamed"})
+		require.Equalf(t, http.StatusOK, status, "rename: %s", raw)
+		got, _ = trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20261104T080000Z", got)
+
+		// A DAV move leaves the absolute trigger where the client put it.
+		put("20270601", "20270602", "20261104T080000Z")
+		got, _ = trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20261104T080000Z", got, "a DAV move does not shift")
+	})
+
+	t.Run("an at in the same request is matched and shifted, a new one is written as sent", func(t *testing.T) {
+		const uid = "alarm169-shift-skip"
+		object := collection + "shift-skip.ics"
+		davPut(t, object, email, appPass, vcalendar(vevent(uid,
+			"DTSTART;VALUE=DATE:20261105\r\n", "DTEND;VALUE=DATE:20261106\r\n", "SUMMARY:Skip\r\n",
+			displayAlarm("TRIGGER;VALUE=DATE-TIME:20261104T080000Z"))))
+		id := eventIDByUID(t, token, calUUID, uid)
+		status, raw := restCall(t, http.MethodPatch, eventsURL+"/"+id, token, map[string]any{
+			"start": "2026-11-12T00:00:00Z", "end": "2026-11-13T00:00:00Z", "all_day": true, "timezone": "UTC",
+			"reminders": []map[string]any{{"at": "2026-11-04T08:00:00Z"}, {"at": "2026-11-20T08:00:00Z"}}})
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		body, _ := davGet(t, object, email, appPass)
+		assert.Equal(t, []string{"TRIGGER;VALUE=DATE-TIME:20261111T080000Z", "TRIGGER;VALUE=DATE-TIME:20261120T080000Z"}, triggerLines(body))
+	})
+
+	t.Run("a timed event and a floating trigger never shift", func(t *testing.T) {
+		const uid = "alarm169-shift-timed"
+		object := collection + "shift-timed.ics"
+		davPut(t, object, email, appPass, vcalendar(vevent(uid,
+			"DTSTART:20261105T100000Z\r\n", "DTEND:20261105T110000Z\r\n", "SUMMARY:Timed\r\n",
+			displayAlarm("TRIGGER;VALUE=DATE-TIME:20261104T080000Z"))))
+		id := eventIDByUID(t, token, calUUID, uid)
+		status, raw := restCall(t, http.MethodPatch, eventsURL+"/"+id, token, map[string]any{
+			"start": "2026-11-12T10:00:00Z", "end": "2026-11-12T11:00:00Z"})
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		body, _ := davGet(t, object, email, appPass)
+		assert.Equal(t, []string{"TRIGGER;VALUE=DATE-TIME:20261104T080000Z"}, triggerLines(body))
+
+		const uid2 = "alarm169-shift-floating"
+		object2 := collection + "shift-floating.ics"
+		davPut(t, object2, email, appPass, vcalendar(vevent(uid2,
+			"DTSTART;VALUE=DATE:20261105\r\n", "DTEND;VALUE=DATE:20261106\r\n", "SUMMARY:Floating\r\n",
+			displayAlarm("TRIGGER;VALUE=DATE-TIME:20261104T090000"))))
+		id2 := eventIDByUID(t, token, calUUID, uid2)
+		status, raw = restCall(t, http.MethodPatch, eventsURL+"/"+id2, token, map[string]any{
+			"start": "2026-11-12T00:00:00Z", "end": "2026-11-13T00:00:00Z", "all_day": true, "timezone": "UTC"})
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		body, _ = davGet(t, object2, email, appPass)
+		assert.Equal(t, []string{"TRIGGER;VALUE=DATE-TIME:20261104T090000"}, triggerLines(body))
+	})
+
+	t.Run("a read-write sharee's move shifts in the owner's zone", func(t *testing.T) {
+		shareeEmail := "alarm-shift-sharee@example.test"
+		shareeToken := registerAndLogin(t, shareeEmail, password, "Alarm Sharee")
+		setTimezoneDefault(t, shareeToken, "America/New_York")
+		shareCalendarWith(t, token, calUUID, shareeEmail, "read-write")
+		const uid = "alarm169-shift-sharee"
+		davPut(t, collection+"shift-sharee.ics", email, appPass, vcalendar(vevent(uid,
+			"DTSTART;VALUE=DATE:20261105\r\n", "DTEND;VALUE=DATE:20261106\r\n", "SUMMARY:Shared\r\n",
+			displayAlarm("TRIGGER;VALUE=DATE-TIME:20261104T080000Z"))))
+		id := eventIDByUID(t, token, calUUID, uid)
+		status, raw := restCall(t, http.MethodPatch, eventsURL+"/"+id, shareeToken, map[string]any{
+			"start": "2027-04-02T00:00:00Z", "end": "2027-04-03T00:00:00Z", "all_day": true, "timezone": "UTC"})
+		require.Equalf(t, http.StatusOK, status, "sharee patch: %s", raw)
+		body, _ := davGet(t, collection+"shift-sharee.ics", email, appPass)
+		assert.Equal(t, []string{"TRIGGER;VALUE=DATE-TIME:20270401T070000Z"}, triggerLines(body), "Berlin (owner), not New York")
+	})
+
+	t.Run("all-day task reminders resolve at 09:00 on the due date and follow it", func(t *testing.T) {
+		list := createTaskCalendar(t, token, "Chores", "tasks")
+		d := day(2)
+		status, raw := restCall(t, http.MethodPost, tasksURL(list.UUID), token, map[string]any{
+			"summary": "All day task", "due": dateOnly(d), "due_all_day": true,
+			"reminders": []map[string]any{{"offset_seconds": 32400}}})
+		require.Equalf(t, http.StatusCreated, status, "create: %s", raw)
+		var created struct {
+			ID  string `json:"id"`
+			UID string `json:"uid"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &created))
+		object := "/dav/" + username + "/calendars/" + list.Path + "/" + created.ID + ".ics"
+		body, _ := davGet(t, object, email, appPass)
+		assert.Equal(t, []string{"TRIGGER;RELATED=END:PT9H"}, triggerLines(body))
+		assert.Equal(t, []string{localAt(d, 9)}, triggerTimes(upcomingWeek(t, token), created.UID))
+
+		d2 := day(3)
+		status, raw = apiCall(t, http.MethodPatch, taskURL(list.UUID, created.ID), token, map[string]any{"due": dateOnly(d2)}, nil)
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		assert.Equal(t, []string{localAt(d2, 9)}, triggerTimes(upcomingWeek(t, token), created.UID))
+
+		d3 := day(4)
+		mcp("update_task", map[string]any{"task_id": created.ID, "due": dateOnly(d3)})
+		assert.Equal(t, []string{localAt(d3, 9)}, triggerTimes(upcomingWeek(t, token), created.UID))
+	})
+
+	t.Run("absolute task triggers shift on REST and MCP due moves", func(t *testing.T) {
+		list := createTaskCalendar(t, token, "Shift tasks", "tasks")
+		const uid = "alarm169-shift-task"
+		object := "/dav/" + username + "/calendars/" + list.Path + "/shift-task.ics"
+		put := func(due string) {
+			davPut(t, object, email, appPass, vcalendar("BEGIN:VTODO\r\nUID:"+uid+"\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:Shift\r\n"+
+				"DUE;VALUE=DATE:"+due+"\r\n"+displayAlarm("TRIGGER;VALUE=DATE-TIME:20261104T080000Z")+"END:VTODO\r\n"))
+		}
+		put("20261105")
+		id := taskIDByUID(t, token, list.UUID, uid)
+		trigger := func() (string, string) {
+			body, etag := davGet(t, object, email, appPass)
+			require.Len(t, triggerLines(body), 1)
+			return triggerLines(body)[0], etag
+		}
+		_, etag0 := trigger()
+		status, raw := apiCall(t, http.MethodPatch, taskURL(list.UUID, id), token, map[string]any{"due": "2026-11-12"}, nil)
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		got, etag1 := trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20261111T080000Z", got)
+		assert.NotEqual(t, etag0, etag1)
+
+		status, raw = apiCall(t, http.MethodPatch, taskURL(list.UUID, id), token, map[string]any{"due": "2027-04-02"}, nil)
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		got, _ = trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20270401T070000Z", got)
+
+		mcp("update_task", map[string]any{"task_id": id, "due": "2026-11-05"})
+		got, _ = trigger()
+		assert.Equal(t, "TRIGGER;VALUE=DATE-TIME:20261104T080000Z", got, "MCP, back across the DST change")
+
+		// Same-request `at` entries: matched then shifted, new ones as sent.
+		status, raw = apiCall(t, http.MethodPatch, taskURL(list.UUID, id), token, map[string]any{
+			"due": "2026-11-12", "reminders": []map[string]any{{"at": "2026-11-04T08:00:00Z"}, {"at": "2026-11-20T08:00:00Z"}}}, nil)
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		body, _ := davGet(t, object, email, appPass)
+		assert.Equal(t, []string{"TRIGGER;VALUE=DATE-TIME:20261111T080000Z", "TRIGGER;VALUE=DATE-TIME:20261120T080000Z"}, triggerLines(body))
+
+		// A DAV move leaves the trigger.
+		put("20270601")
+		body, _ = davGet(t, object, email, appPass)
+		assert.Equal(t, []string{"TRIGGER;VALUE=DATE-TIME:20261104T080000Z"}, triggerLines(body))
+	})
+
+	t.Run("an owner without a preference shifts whole UTC days", func(t *testing.T) {
+		email2 := "alarm-shift-nopref@example.test"
+		token2, username2 := registerAndLoginFull(t, email2, password, "Alarm No Pref")
+		_, appPass2 := createAppPassword(t, token2, "alarm-allday-nopref")
+		collection2, calUUID2 := eventCollection(t, token2, username2)
+		const uid = "alarm169-shift-nopref"
+		davPut(t, collection2+"nopref.ics", email2, appPass2, vcalendar(vevent(uid,
+			"DTSTART;VALUE=DATE:20261105\r\n", "DTEND;VALUE=DATE:20261106\r\n", "SUMMARY:UTC\r\n",
+			displayAlarm("TRIGGER;VALUE=DATE-TIME:20261104T080000Z"))))
+		id := eventIDByUID(t, token2, calUUID2, uid)
+		status, raw := restCall(t, http.MethodPatch, "/calendars/"+calUUID2+"/events/"+id, token2, map[string]any{
+			"start": "2027-04-02T00:00:00Z", "end": "2027-04-03T00:00:00Z", "all_day": true, "timezone": "UTC"})
+		require.Equalf(t, http.StatusOK, status, "patch: %s", raw)
+		body, _ := davGet(t, collection2+"nopref.ics", email2, appPass2)
+		assert.Equal(t, []string{"TRIGGER;VALUE=DATE-TIME:20270401T080000Z"}, triggerLines(body), "24 h days in UTC")
+	})
 }

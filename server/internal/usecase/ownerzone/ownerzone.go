@@ -98,3 +98,27 @@ func (r *Resolver) Fallback(ctx context.Context, ownerID uint) {
 	}
 	slog.Info(FallbackMessage, slog.String("owner_uuid", u.UUID))
 }
+
+// Source is what the write use cases need of a Resolver (and what tests fake).
+type Source interface {
+	One(ctx context.Context, ownerID uint) (loc *time.Location, ok bool, err error)
+	Fallback(ctx context.Context, ownerID uint)
+}
+
+// Load returns the owner's zone for a write that needs one (the all-day date
+// shift, #169 §7.5). A nil source or an owner without a valid preference gives
+// UTC, the latter also logging the fallback line once per owner.
+func Load(ctx context.Context, src Source, ownerID uint) (*time.Location, error) {
+	if src == nil {
+		return time.UTC, nil
+	}
+	loc, ok, err := src.One(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		src.Fallback(ctx, ownerID)
+		return time.UTC, nil
+	}
+	return loc, nil
+}
