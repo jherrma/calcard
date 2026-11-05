@@ -119,6 +119,7 @@ webinterface/
 │       ├── LoadingSpinner.vue     # Centered spinner
 │       └── SkeletonList.vue       # Loading placeholder rows
 ├── stores/                  # Pinia stores (state + getters + actions)
+│   ├── alarms.ts            # #169 reminders: polling of /alarms/upcoming, one timer per alarm key, display queue, acknowledgement + localStorage mirror
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
@@ -146,6 +147,7 @@ webinterface/
 │   ├── default.vue          # App shell: sidebar + header + Toast + ActionToast + ConfirmDialog + loading overlay
 │   └── auth.vue             # Centered card with CalCard branding
 ├── types/
+│   ├── alarms.ts            # #169: UpcomingAlarm, UpcomingAlarmsResponse, AcknowledgeAlarmsBody
 │   ├── auth.ts              # User, LoginResponse, RefreshResponse, SystemSettings, AuthMethod
 │   ├── calendar.ts          # Calendar, CalendarEvent, RecurrenceRule, EventFormData
 │   ├── contacts.ts          # AddressBook, Contact, ContactEmail/Phone/Address/URL
@@ -164,6 +166,7 @@ webinterface/
 │   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page; taskListRoute (#170)
+│   ├── alarmSchedule.ts     # #169 pure helpers: delayMs (cap 2^31-1, skew), mergePoll (§10.3), alarmLink (Open targets)
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
 │   ├── davCredentials.ts    # Generated DAV credential username/password + the username rule
 │   ├── passwordPolicy.ts    # Client copy of the server's password rules (Unicode classes, 8–72 bytes); checks the NEW-password field of
@@ -176,6 +179,7 @@ webinterface/
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
+│   ├── alarms.client.ts     # #169: isAuthenticated (immediate) -> alarms.start() / alarms.stop()
 │   ├── first-day-of-week.client.ts # Starts useDatePickerFirstDay() app-wide at boot
 │   ├── primevue-services.ts # Registers ConfirmationService (for useConfirm) and the v-tooltip directive (#170)
 │   ├── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
@@ -541,6 +545,46 @@ only `console.warn`: no toast, no retry. The flag re-arms when `isAuthenticated`
 `PREF_TIMEZONE` (`timezone`, default `UTC`) and the `timezone` getter live in `stores/preferences.ts`;
 Settings -> Calendar has a filterable "Time zone" Select (`UTC` + `Intl.supportedValuesOf('timeZone')`) saved
 through the preferences PATCH, a 400 shows the server's text.
+
+### Reminders (#169)
+
+`stores/alarms.ts` is the data layer of the web app's reminders; story 16 renders its `queue` (toasts) and adds the
+refresh hooks. Spec §10.
+
+- **Lifecycle.** `plugins/alarms.client.ts` watches `auth.isAuthenticated` (immediate): `true` -> `start()`,
+  `false` -> `stop()`. `start()` waits for `$timezoneReady()` (at most 3 s, so the first poll does not hit the UTC
+  fallback), loads the persisted keys, polls, then installs the 5-minute interval, the 30 s heartbeat, the
+  `visibilitychange` and `online` listeners. `stop()` clears every timer and listener, bumps the sequence tokens (a
+  late answer is dropped) and keeps state; `reset()` (called by `clearAuth` through a lazy import, like
+  `resetTasksStore`) also empties the state and removes that user's `localStorage` entry. Both are idempotent.
+  Every cross-store access (`toRFC3339` from `stores/calendars.ts`) is a lazy `import()`.
+- **Poll.** `GET /api/v1/alarms/upcoming` (raw JSON, no envelope) with `query: { until: toRFC3339(now + 24 h) }`:
+  ofetch encodes the `+` of the offset; no zone parameter. One request in flight (a call meanwhile schedules ONE
+  follow-up). Triggers: `start()`, every 5 minutes (also hidden tabs), `visibilitychange` to visible when the last
+  poll is older than 60 s, `online`, heartbeat gap > 90 s (sleep: `checkDue()` + `refresh()`), `refreshSoon()`
+  (2 s debounce, for story 16's hooks).
+- **Skew.** `skewMs = Date.parse(server_time) - (requestStart + requestEnd) / 2`; every "now" is `Date.now() + skewMs`.
+- **Timers.** `mergePoll` (pure, `utils/alarmSchedule.ts`): a new key gets exactly one `setTimeout` (delay
+  `delayMs`, capped at 2^31-1), or goes straight into `queue` when `trigger_at <= now` (missed, up to 24 h); a key
+  absent from the answer is cancelled, except when `truncated` and its trigger is after the last returned one;
+  queued, shown and pending keys are never armed again. A firing timer re-arms when `now + skew < trigger_at`
+  (clock set back). `queue` is oldest first and holds the data the toast needs.
+- **Acknowledgement.** Story 16 calls `markShown(keys)` once toasts are rendered in a visible document. The keys
+  move to `pendingAck`, then a 1 s debounced `POST /api/v1/alarms/acknowledge` sends `{ keys }` (no times) in batches
+  of at most 500; 204 moves them to `shown`. A failure keeps them pending and retries after 5 s, 30 s, 2 min, then
+  with every poll (`useApi` never retries writes). `shown` and `pendingAck` are mirrored to
+  `localStorage['calcard-alarms:<user id>']` as `{ shown, pending }` (key -> trigger instant, dropped 25 h after
+  it); after a reload a pending key is neither shown again nor forgotten (its POST is retried). Storage access is
+  always in `try/catch`.
+- **Failures.**
+
+  | Situation | Behaviour |
+  |---|---|
+  | Poll fails (network, 5xx) | timers kept, `console.warn`, next trigger retries |
+  | 401 | `useApi` refreshes the token; a failed refresh logs out -> `stop()` |
+  | 404 on the poll or the acknowledgement | `disabled`: polling and timers stop until the next sign-in (the server runs with `alarms.enabled: false`) |
+  | 400 on the poll | a bug: `console.error` once, polling stops for the session, armed timers keep running |
+  | Acknowledge fails | retry schedule above; the key is never queued again while pending |
 
 ### Type System Gotchas
 

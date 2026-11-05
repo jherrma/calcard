@@ -49,13 +49,13 @@ This is a CalDAV/CardDAV server project with a Go backend and Nuxt 4 web interfa
     │   ├── sharing/         # SharePanel, PublicLinkPanel, ShareDialog (calendars + address books)
     │   └── common/          # AppHeader, AppSidebar (Tasks entry + overdue badge), GlobalSearch, Search*, HighlightText, ThemeToggle,
     │                        #   LoadingSpinner, SkeletonList, ActionToast ("Task completed" + Undo)
-    ├── stores/              # Pinia stores: auth, calendars, contacts, dashboard, preferences, search, sharing, tasks
+    ├── stores/              # Pinia stores: alarms (#169 reminders), auth, calendars, contacts, dashboard, preferences, search, sharing, tasks
     ├── composables/         # useApi, useAppToast, useTheme (light/dark/system), useAccentColor — both singletons
-    ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, theme, accent, tasks, taskForm, taskLists, …
+    ├── utils/               # Auto-imported helpers: dashboardDates, agendaLayout, contactAvatar, theme, accent, tasks, taskForm, taskLists, alarmSchedule, …
     ├── middleware/           # auth (requires login), guest (redirects if logged in)
     ├── layouts/             # default (sidebar + header), auth (centered card)
-    ├── types/               # TypeScript interfaces: auth, calendar, contacts, search, api, tasks
-    └── plugins/             # PrimeVue services, theme boot (story 046), timezone-default PUT (#169)
+    ├── types/               # TypeScript interfaces: auth, calendar, contacts, search, api, tasks, alarms
+    └── plugins/             # PrimeVue services, theme boot (story 046), timezone-default PUT (#169), alarms.client.ts (#169)
 ```
 
 ## AGENT.md and CLAUDE.md Files

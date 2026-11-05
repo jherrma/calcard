@@ -60,6 +60,15 @@ function resetTasksStore() {
     .catch((e: unknown) => console.warn("Could not reset the tasks store", e));
 }
 
+// The reminder store (#169) polls for the signed-in user and keeps their
+// acknowledged keys in localStorage; logout stops it and removes that entry.
+// Lazy for the same reason as the tasks store above.
+function resetAlarmsStore() {
+  void import("~/stores/alarms")
+    .then(({ useAlarmsStore }) => useAlarmsStore().reset())
+    .catch((e: unknown) => console.warn("Could not reset the alarms store", e));
+}
+
 export const useAuthStore = defineStore("auth", {
   state: (): AuthState => ({
     user: null,
@@ -263,6 +272,7 @@ export const useAuthStore = defineStore("auth", {
       // tab would otherwise inherit the previous user's preferences (story 103).
       usePreferencesStore().reset();
       resetTasksStore();
+      resetAlarmsStore();
     },
 
     async initAuth() {
