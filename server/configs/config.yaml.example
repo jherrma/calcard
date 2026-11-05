@@ -119,3 +119,8 @@ subscriptions:
 # routes; VALARMs are still parsed on write.
 alarms:
   enabled: true
+  # Background job that deletes old acknowledgements. 0 turns it off.
+  cleanup_interval: 24h
+  # How long acknowledgements are kept. Minimum 192h (7d look-ahead + 24h
+  # look-back): a shorter value would let acknowledged reminders reappear.
+  ack_retention: 720h

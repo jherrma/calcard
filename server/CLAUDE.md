@@ -34,6 +34,7 @@ The entrypoint (`cmd/server/main.go`) follows this sequence:
 4. Handle CLI commands (e.g., `./server migrate` for manual migrations).
 5. Auto-migrate database schema if `database.auto_migrate` is enabled.
 6. Initialize Fiber server, register routes (dependency injection happens in `infrastructure/server/routes.go`), and start listening.
+7. `Server.startBackground` starts the background jobs `SetupRoutes` built (`BackgroundServices`): the subscription worker (`subscriptions.enabled`, `worker_interval > 0`) and the alarm acknowledgement cleanup (`alarms.enabled`, `alarms.cleanup_interval > 0`, #169; keys in `CONFIGURATION.md`, "Alarms Section"). Each runs in its own goroutine under one cancellable context; none starts when both are off. Shutdown cancels the context and waits for all of them before the database closes.
 
 ## API Surface
 

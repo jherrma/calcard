@@ -46,6 +46,10 @@ type BackgroundServices struct {
 	// SubscriptionWorker refreshes remote calendar subscriptions (story 100).
 	// Nil when the feature or the worker interval is turned off.
 	SubscriptionWorker *subscriptionusecase.Worker
+
+	// AlarmAckCleanup deletes old alarm acknowledgements (#169, spec §9.2).
+	// Nil when alarms.enabled is false or alarms.cleanup_interval is 0.
+	AlarmAckCleanup *alarmusecase.CleanupJob
 }
 
 // SetupRoutes registers all application routes and returns the background
@@ -535,6 +539,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 
 	// Web-app reminders (#169), off with alarms.enabled: the routes are then
 	// absent and /api/* answers 404 instead of the SPA.
+	var alarmAckCleanup *alarmusecase.CleanupJob
 	if cfg.Alarms.Enabled {
 		ownerZones := ownerzone.New(userPrefRepo, userRepo)
 		alarmAckRepo := repository.NewAlarmAcknowledgementRepository(db.DB())
@@ -544,6 +549,10 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 		alarmGroup := v1.Group("/alarms", http.Authenticate(jwtManager, userRepo))
 		alarmGroup.Get("/upcoming", alarmHandler.Upcoming)
 		alarmGroup.Post("/acknowledge", alarmHandler.Acknowledge)
+		if cfg.Alarms.CleanupInterval > 0 {
+			alarmAckCleanup = alarmusecase.NewCleanupJob(
+				alarmAckRepo, cfg.Alarms.CleanupInterval, cfg.Alarms.AckRetention, nil)
+		}
 	}
 
 	// MCP Server (story 104). Registered here, after every use case it delegates
@@ -613,7 +622,7 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// share one Fetcher — and therefore one SSRF policy — so a URL that the
 	// create endpoint refuses can never be reached by the background worker
 	// either.
-	services := &BackgroundServices{}
+	services := &BackgroundServices{AlarmAckCleanup: alarmAckCleanup}
 	if cfg.Subscriptions.Enabled {
 		fetcher := subscriptionusecase.NewFetcher(subscriptionusecase.FetchOptions{
 			MaxSize:           cfg.Subscriptions.MaxFeedSize,

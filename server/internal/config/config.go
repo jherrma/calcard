@@ -108,6 +108,17 @@ const (
 	AlarmLookBack         = 24 * time.Hour     // from = now − AlarmLookBack
 	AlarmDefaultLookAhead = 24 * time.Hour     // until when the request gives none
 	AlarmMaxLookAhead     = 7 * 24 * time.Hour // until is clamped to now + AlarmMaxLookAhead
+
+	// AlarmAckRetentionFloor is the shortest acknowledgement retention that
+	// cannot let an acknowledged alarm reappear: a row must outlive every
+	// window that could still list its alarm (look-ahead plus look-back).
+	AlarmAckRetentionFloor = AlarmMaxLookAhead + AlarmLookBack
+)
+
+// Defaults for the acknowledgement cleanup job (spec §9.1).
+const (
+	DefaultAlarmCleanupInterval = 24 * time.Hour
+	DefaultAlarmAckRetention    = 720 * time.Hour
 )
 
 // AlarmConfig controls web-app reminders (#169).
@@ -115,6 +126,17 @@ type AlarmConfig struct {
 	// Enabled off unregisters /api/v1/alarms/*. VALARMs are still parsed on
 	// write, so switching it on again needs no backfill.
 	Enabled bool `yaml:"enabled" env:"CALDAV_ALARMS_ENABLED"`
+
+	// CleanupInterval is how often the background job deletes old
+	// acknowledgements. 0 turns the job off (acknowledgements then accumulate);
+	// a negative value falls back to the default of 24h.
+	CleanupInterval time.Duration `yaml:"cleanup_interval" env:"CALDAV_ALARMS_CLEANUP_INTERVAL"`
+
+	// AckRetention is how long an acknowledgement is kept. A value <= 0 falls
+	// back to 720h; a positive value below AlarmAckRetentionFloor is rejected
+	// by Validate, because an acknowledgement deleted while its alarm is still
+	// inside the upcoming window would make the alarm fire again.
+	AckRetention time.Duration `yaml:"ack_retention" env:"CALDAV_ALARMS_ACK_RETENTION"`
 }
 
 // SubscriptionConfig controls remote calendar subscriptions (story 100) — the
@@ -357,7 +379,11 @@ func Load(configPath string) (*Config, error) {
 			// break normal use, while this still bounds a runaway loop.
 			Requests: 120,
 		},
-		Alarms: AlarmConfig{Enabled: true},
+		Alarms: AlarmConfig{
+			Enabled:         true,
+			CleanupInterval: DefaultAlarmCleanupInterval,
+			AckRetention:    DefaultAlarmAckRetention,
+		},
 		Subscriptions: SubscriptionConfig{
 			Enabled: true,
 			// A minute of granularity is plenty when the shortest refresh
@@ -475,6 +501,15 @@ func Load(configPath string) (*Config, error) {
 		cfg.MCP.Requests = 120
 	}
 
+	// Alarm acknowledgement cleanup: zero is meaningful for CleanupInterval
+	// (job off), so only a negative value is corrected; retention has no "off".
+	if cfg.Alarms.CleanupInterval < 0 {
+		cfg.Alarms.CleanupInterval = DefaultAlarmCleanupInterval
+	}
+	if cfg.Alarms.AckRetention <= 0 {
+		cfg.Alarms.AckRetention = DefaultAlarmAckRetention
+	}
+
 	// Subscription limits: a zero or negative value here would mean "no cap"
 	// on an outbound-fetch feature, so mirror the defaults instead. Zero is
 	// meaningful for WorkerInterval (disable the worker) and MaxFailures
@@ -562,6 +597,11 @@ func (c *Config) Validate() error {
 			// Don't fail if file doesn't exist yet (might be generated), but fail on permission errors
 			errs = append(errs, fmt.Sprintf("Cannot access TLS cert file: %v", err))
 		}
+	}
+
+	if c.Alarms.AckRetention > 0 && c.Alarms.AckRetention < AlarmAckRetentionFloor {
+		errs = append(errs, fmt.Sprintf("CALDAV_ALARMS_ACK_RETENTION must be at least %dh",
+			AlarmAckRetentionFloor/time.Hour))
 	}
 
 	if len(errs) > 0 {

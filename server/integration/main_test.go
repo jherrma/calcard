@@ -82,7 +82,8 @@ func runTests(m *testing.M) (int, error) {
 		MCP: config.MCPConfig{Enabled: true, Requests: 120},
 		// Same literal-config trap for alarms (#169): without it /api/v1/alarms
 		// is never routed.
-		Alarms: config.AlarmConfig{Enabled: true},
+		Alarms: config.AlarmConfig{Enabled: true, AckRetention: 720 * time.Hour},
+		// CleanupInterval stays zero: the cleanup job is off in the suite.
 		// Same literal-config trap for subscriptions (story 100). The worker
 		// interval is left at zero on purpose: the tests drive refreshes
 		// explicitly, and a ticker firing mid-suite would fetch feeds nothing
