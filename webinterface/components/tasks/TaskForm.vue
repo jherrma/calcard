@@ -147,6 +147,20 @@
       </div>
     </div>
 
+    <!-- Reminders (#169): relative to the due date; only on lists the user owns (a shared list's alarms ring for
+         every sharee), disabled while there is no due date. -->
+    <div v-if="showReminders" class="flex flex-col gap-1" data-test="reminders-block">
+      <span :id="ids.remindersLabel" class="text-sm font-medium text-surface-700 dark:text-surface-300">Reminders</span>
+      <CommonReminderField
+        v-model="form.reminders"
+        target="task"
+        :all-day="form.allDay"
+        :read-only="readOnly"
+        :disabled="!form.due"
+        disabled-hint="Set a due date to add a reminder"
+      />
+    </div>
+
     <!-- Priority: the same marks as the rows. -->
     <div class="flex flex-col gap-1">
       <span :id="ids.priorityLabel" class="text-sm font-medium text-surface-700 dark:text-surface-300">Priority</span>
@@ -319,6 +333,7 @@ const ids = {
   due: `${uid}-due`,
   dueError: `${uid}-due-error`,
   start: `${uid}-start`,
+  remindersLabel: `${uid}-reminders-label`,
   priorityLabel: `${uid}-priority-label`,
   percent: `${uid}-percent`,
   percentLabel: `${uid}-percent-label`,
@@ -368,6 +383,30 @@ const percentSlider = computed<number | number[]>({
     form.percent = Array.isArray(value) ? value[0] ?? 0 : value;
   },
 });
+
+// Reminders are the owner's: a task on a shared list or a subscription shows none.
+const showReminders = computed(() => {
+  const list = listById(form.listId);
+  return !!list && !list.shared && !list.subscribed;
+});
+
+// Switching all day <-> timed maps each editable reminder to the other mode's preset (as in the event form). Without
+// a due date the reminders cannot change (the field is disabled), so the stored ones stay as they are.
+watch(
+  () => form.allDay,
+  (allDay: boolean) => {
+    if (!form.due) return;
+    form.reminders = mapReminderMode(form.reminders, allDay, 'task');
+  },
+);
+
+// A due date that is cleared takes the reminders back to the stored ones: a new one needs a due date (400 else).
+watch(
+  () => form.due,
+  (due: Date | null) => {
+    if (!due) form.reminders = normalizeReminders([...initial.reminders]);
+  },
+);
 
 // All day off: a date becomes a date-time at the current hour on that day
 // (like EventForm), not at midnight, which would mean "due the day before".

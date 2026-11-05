@@ -40,11 +40,16 @@
 
     <template v-if="!readOnly">
       <p
-        v-if="atCap"
+        v-if="disabled"
+        class="text-sm text-surface-500 dark:text-surface-400 m-0"
+        data-test="reminder-disabled-hint"
+      >{{ disabledHint }}</p>
+      <p
+        v-if="atCap && !disabled"
         class="text-xs text-surface-500 dark:text-surface-400 m-0"
         data-test="reminder-cap"
       >At most {{ MAX_EDITABLE_REMINDERS }} reminders.</p>
-      <template v-else>
+      <template v-if="disabled || !atCap">
         <Select
           v-model="picked"
           :options="presetOptions"
@@ -52,13 +57,14 @@
           option-value="value"
           placeholder="Add reminder"
           aria-label="Add reminder"
+          :disabled="disabled"
           class="w-full sm:w-64"
           data-test="reminder-add"
           @update:model-value="onPick"
         />
 
         <div
-          v-if="customOpen"
+          v-if="customOpen && !disabled"
           class="flex flex-wrap items-center gap-2"
           data-test="reminder-custom"
         >
@@ -78,7 +84,7 @@
               option-value="value"
               aria-label="Unit"
             />
-            <span class="text-sm text-surface-600 dark:text-surface-400">before</span>
+            <span class="text-sm text-surface-600 dark:text-surface-400">{{ target === 'task' ? 'before due' : 'before' }}</span>
           </template>
           <Button type="button" label="Add" size="small" data-test="reminder-custom-add" @click="addCustom" />
           <Button type="button" label="Cancel" size="small" text @click="customOpen = false" />
@@ -90,7 +96,7 @@
 
 <script setup lang="ts">
 import type { Reminder } from '~/types/calendar';
-import type { CustomUnit } from '~/utils/reminders';
+import type { CustomUnit, ReminderTarget } from '~/utils/reminders';
 
 // The reminder chips and the "Add reminder" menu of the event form (#169, spec §10.9). v-model is the full list of
 // the item's reminders as the API answers them (editable and not): a read-only one is shown and carried along, never
@@ -99,7 +105,13 @@ const props = withDefaults(defineProps<{
   modelValue: Reminder[];
   allDay?: boolean;
   readOnly?: boolean;
-}>(), { allDay: false, readOnly: false });
+  /** `task`: relative to the due date (task presets and wording, end-related new reminders). */
+  target?: ReminderTarget;
+  /** Chips stay, adding is off (a task without a due date). */
+  disabled?: boolean;
+  /** Shown under the chips while `disabled`. */
+  disabledHint?: string;
+}>(), { allDay: false, readOnly: false, target: 'event', disabled: false, disabledHint: '' });
 
 const emit = defineEmits<{ 'update:modelValue': [value: Reminder[]] }>();
 
@@ -109,7 +121,7 @@ const items = computed(() =>
   props.modelValue.map((reminder) => ({
     reminder,
     key: reminderKey(reminder),
-    label: describeReminder(reminder, props.allDay),
+    label: describeReminder(reminder, props.allDay, props.target),
   })),
 );
 
@@ -117,7 +129,7 @@ const editableCount = computed(() => editableReminders(props.modelValue).length)
 const atCap = computed(() => editableCount.value >= MAX_EDITABLE_REMINDERS);
 
 const presetOptions = computed(() => [
-  ...reminderPresets(props.allDay).map((p) => ({ label: p.label, value: p.offset as number | string })),
+  ...reminderPresets(props.allDay, props.target).map((p) => ({ label: p.label, value: p.offset as number | string })),
   { label: 'Custom…', value: CUSTOM },
 ]);
 
@@ -137,7 +149,7 @@ watch(() => props.allDay, () => {
 function add(offset: number) {
   if (atCap.value) return;
   // normalizeReminders merges a duplicate, so adding the same offset twice changes nothing.
-  emit('update:modelValue', normalizeReminders([...props.modelValue, offsetReminder(offset)]));
+  emit('update:modelValue', normalizeReminders([...props.modelValue, offsetReminder(offset, props.target)]));
 }
 
 function onPick(value: number | string | null) {

@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { Reminder } from '~/types/calendar';
 import {
   ALL_DAY_REMINDER_PRESETS,
+  ALL_DAY_TASK_REMINDER_PRESETS,
+  TIMED_TASK_REMINDER_PRESETS,
+  reminderPresets,
   TIMED_REMINDER_PRESETS,
   allDayOffset,
   customAllDayOffset,
@@ -167,5 +170,63 @@ describe('mapReminderMode', () => {
     expect(out).toContain(abs);
     expect(out).toContain(ro);
     expect(out.filter((r) => r.editable && !r.at).map((r) => r.offset_seconds)).toEqual([-54000]);
+  });
+});
+
+// ---- Tasks (#169 story 18): relative to the due date, RELATED=END -----------------------------------------------
+
+describe('task reminders', () => {
+  const end = (over: Partial<Reminder> = {}) => rem({ related: 'end', ...over });
+
+  it('timed task presets: At due time, 5/15/30 minutes, 1 hour, 1 day before due', () => {
+    expect(TIMED_TASK_REMINDER_PRESETS.map((p) => [p.label, p.offset])).toEqual([
+      ['At due time', 0],
+      ['5 minutes before due', -300],
+      ['15 minutes before due', -900],
+      ['30 minutes before due', -1800],
+      ['1 hour before due', -3600],
+      ['1 day before due', -86400],
+    ]);
+  });
+
+  it('all-day task presets: On the due date at 09:00 = 32400, 1 day before at 09:00 = -54000', () => {
+    expect(ALL_DAY_TASK_REMINDER_PRESETS.map((p) => [p.label, p.offset])).toEqual([
+      ['On the due date at 09:00', 32400],
+      ['1 day before at 09:00', -54000],
+    ]);
+  });
+
+  it('reminderPresets picks by target and mode; events are unchanged', () => {
+    expect(reminderPresets(false, 'task')).toBe(TIMED_TASK_REMINDER_PRESETS);
+    expect(reminderPresets(true, 'task')).toBe(ALL_DAY_TASK_REMINDER_PRESETS);
+    expect(reminderPresets(false)).toBe(TIMED_REMINDER_PRESETS);
+    expect(reminderPresets(true)).toBe(ALL_DAY_REMINDER_PRESETS);
+  });
+
+  it('a new task reminder is end-related, an event one start-related', () => {
+    expect(offsetReminder(-900, 'task')).toMatchObject({ related: 'end', index: -1, editable: true, offset_seconds: -900 });
+    expect(offsetReminder(-900).related).toBe('start');
+  });
+
+  it('describes end-related reminders in due words, timed and all-day', () => {
+    expect(describeReminder(end({ offset_seconds: 0 }), false, 'task')).toBe('At due time');
+    expect(describeReminder(end({ offset_seconds: -1800 }), false, 'task')).toBe('30 minutes before due');
+    expect(describeReminder(end({ offset_seconds: 600 }), false, 'task')).toBe('10 minutes after due');
+    expect(describeReminder(end({ offset_seconds: 32400 }), true, 'task')).toBe('On the due date at 09:00');
+    expect(describeReminder(end({ offset_seconds: -54000 }), true, 'task')).toBe('1 day before at 09:00');
+    expect(describeReminder(end({ offset_seconds: 34200 }), true, 'task')).toBe('On the due date at 09:30');
+  });
+
+  it('a read-only start-related alarm of a task keeps its start wording', () => {
+    expect(describeReminder(rem({ editable: false, offset_seconds: -300, action: 'email' }), false, 'task'))
+      .toBe('E-mail, 5 minutes before start');
+  });
+
+  it('mapReminderMode with the task target keeps the reminders end-related', () => {
+    const toAllDay = mapReminderMode([end({ offset_seconds: -86400 })], true, 'task');
+    expect(toAllDay).toHaveLength(1);
+    expect(toAllDay[0]).toMatchObject({ related: 'end', offset_seconds: -54000, index: -1 });
+    const toTimed = mapReminderMode([end({ offset_seconds: -54000 })], false, 'task');
+    expect(toTimed[0]).toMatchObject({ related: 'end', offset_seconds: -86400 });
   });
 });

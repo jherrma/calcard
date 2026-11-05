@@ -18,6 +18,7 @@
 import type { PriorityLevel, Task, TaskFormData, TaskInput, TaskPatch } from '~/types/tasks';
 import { toRFC3339 } from '~/stores/calendars';
 import { dayKey } from './dashboardDates';
+import { remindersChanged, normalizeReminders, toReminderInputs } from './reminders';
 import { parseDateOnly, priorityLevel } from './tasks';
 
 /** What the form saves for each priority level (DECISIONS 3): RFC 5545 PRIORITY, none = removed. */
@@ -56,6 +57,7 @@ export function taskToFormData(task: Task): TaskFormData {
     priority: priorityLevel(task.priority),
     percent: task.percent_complete,
     status: task.status,
+    reminders: normalizeReminders([...(task.reminders ?? [])]),
   };
 }
 
@@ -74,6 +76,7 @@ export function newTaskFormData(listId: string, summary = ''): TaskFormData {
     priority: 'none',
     percent: null,
     status: 'needs-action',
+    reminders: [],
   };
 }
 
@@ -130,6 +133,9 @@ export function buildTaskInput(form: TaskFormData): TaskInput {
   if (priority !== null) input.priority = priority;
   if (form.percent !== null) input.percent_complete = form.percent;
   if (form.status !== 'needs-action') input.status = form.status;
+  // A reminder is relative to the due date, so a task without one sends none (the server refuses them, 400).
+  const reminders = due === null ? [] : toReminderInputs(form.reminders);
+  if (reminders.length > 0) input.reminders = reminders;
   return input;
 }
 
@@ -173,6 +179,9 @@ export function buildTaskPatch(initial: TaskFormData, form: TaskFormData, recurr
     if (form.percent !== initial.percent) patch.percent_complete = form.percent;
     if (form.status !== initial.status) patch.status = form.status;
   }
+  // The full editable list, only when it changed: a due-only edit sends none (relative ones move with the due
+  // date, the server shifts absolute all-day ones itself). Read-only ones are never sent.
+  if (remindersChanged(initial.reminders, form.reminders)) patch.reminders = toReminderInputs(form.reminders);
   return patch;
 }
 

@@ -874,6 +874,24 @@ describe('create, update and delete mutate the state', () => {
     expect(store.total).toBe(5);
   });
 
+  it('createTask and updateTask pass `reminders` through unchanged', async () => {
+    seedLists();
+    const row = listed();
+    serve({
+      'POST /api/v1/calendars/list-a/tasks': () => task({ summary: 'Pay' }),
+      [`PATCH /api/v1/calendars/list-a/tasks/${row.id}`]: () => writeAnswer(row, {}),
+    });
+    const store = useTasksStore();
+    store.tasks = [row];
+    const withReminders: TaskInput = { summary: 'Pay', due: '2026-11-05', due_all_day: true, reminders: [{ offset_seconds: 32400 }] };
+
+    await store.createTask('list-a', withReminders);
+    await store.updateTask(row, { reminders: [] });
+
+    expect(optionsOf('POST /api/v1/calendars/list-a/tasks')).toEqual({ method: 'POST', body: withReminders });
+    expect(optionsOf(`PATCH /api/v1/calendars/list-a/tasks/${row.id}`)).toEqual({ method: 'PATCH', body: { reminders: [] } });
+  });
+
   it('createTask does not add a row that is not in the current view', async () => {
     seedLists();
     serve({

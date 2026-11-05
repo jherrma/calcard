@@ -108,7 +108,7 @@ webinterface/
 │   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
 │       ├── ActionToast.vue        # Host of useAppToast().action() toasts ("Task completed" + Undo), bottom centre; default layout only
-│       ├── ReminderField.vue      # #169: reminder chips + "Add reminder" (presets, Custom…), v-model = Reminder[]; props allDay, readOnly; used by EventForm
+│       ├── ReminderField.vue      # #169: reminder chips + "Add reminder" (presets, Custom…), v-model = Reminder[]; props allDay, readOnly, target ('event'|'task'), disabled, disabledHint; used by EventForm and TaskForm
 │       ├── ReminderToast.vue      # #169: sticky reminder toasts (group app-reminder) for the alarms store's queue; default + settings layouts
 │       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
 │       ├── AppSidebar.vue         # Main navigation sidebar (Dashboard, Calendar, Tasks, Contacts, Settings); the Tasks badge is
@@ -170,7 +170,7 @@ webinterface/
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page; taskListRoute (#170)
 │   ├── alarmRefresh.ts      # #169: refreshAlarmsSoon() (lazy import of the alarms store's refreshSoon), called after event/task mutations and a time-zone change
 │   ├── alarmToast.ts        # #169: toast wording (alarmDetail, summaryLines, MAX_SINGLE_TOASTS)
-│   ├── reminders.ts         # #169: presets, all-day offset formulas, describeReminder, remindersChanged, toReminderInputs, mapReminderMode
+│   ├── reminders.ts         # #169: presets, all-day offset formulas, describeReminder, remindersChanged, toReminderInputs, mapReminderMode; task presets/wording via ReminderTarget
 │   ├── reminderChannel.ts   # #169: BroadcastChannel('calcard-reminders') claim between tabs (§10.7)
 │   ├── alarmSchedule.ts     # #169 pure helpers: delayMs (cap 2^31-1, skew), mergePoll (§10.3), alarmLink (Open targets)
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
@@ -634,7 +634,22 @@ through the preferences PATCH, a 400 shows the server's text.
   (`mapReminderMode`); absolute and read-only ones stay. At most 5 editable reminders, duplicates merge, ordered by trigger.
 - **Ownership (Q9)**: the block is hidden (and nothing sent) unless the selected calendar is in `calendarStore.ownedCalendars`: a shared
   event's VALARMs alert the owner and every sharee. New events start with none (Q13).
-- Story 18 (task form) reuses the field and the helpers; `ReminderField` knows only event wording today (start-related, "At start").
+- Story 18 (task form) reuses the field and helpers with `target="task"` (below).
+
+#### Reminder field in the task form (story 18)
+
+- `TaskForm` renders `<CommonReminderField target="task" :disabled="!form.due" disabled-hint="Set a due date to add a reminder">` below
+  the Due/Start row. `target="task"` (`ReminderTarget`) switches the presets and wording to the due date: timed = At due time, 5/15/30 minutes,
+  1 hour, 1 day before due; all-day = "On the due date at 09:00" (`32400`) and "1 day before at 09:00" (`-54000`); `offsetReminder(offset, 'task')`
+  creates `related: 'end'` (the server writes `TRIGGER;RELATED=END`). `describeReminder(r, allDay, 'task')` words an end-related one
+  ("30 minutes before due"); a start-related one on a task is read only. `mapReminderMode(..., 'task')` keeps them end-related.
+- `TaskFormData.reminders` (full `Reminder[]`): `taskToFormData` reads `task.reminders`, `newTaskFormData` starts with none.
+  `buildTaskInput` sends `reminders` only with a due date (the server answers 400 `A reminder needs a due date` otherwise); `buildTaskPatch`
+  sends the full editable list ONLY when `remindersChanged` (a due-only change sends none), so `isEmptyTaskPatch` covers an untouched form.
+  `stores/tasks.ts` `createTask`/`updateTask` pass the bodies through. Quick-add has no reminder control.
+- Disabled without a due date (chips of stored reminders stay and can be removed). Clearing the due resets the field to the stored list;
+  the all-day switch maps reminders only while a due date is set. Hidden when the task's list is not owned (`shared` or `subscribed`, Q9);
+  `readOnly` shows chips without controls. A repeating task's field stays editable (a reminders-only PATCH edits the master, no 409).
 
 ### Type System Gotchas
 

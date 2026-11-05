@@ -44,10 +44,13 @@ export function splitAllDayOffset(offset: number): { daysBefore: number; timeS: 
   return { daysBefore: 0 - floor, timeS: offset - floor * DAY_S };
 }
 
-/** "1 day before at 09:00", "On the day at 09:00", "2 days after at 01:00". */
-export function allDayLabel(daysBefore: number, timeS: number): string {
+/** What a reminder is relative to: an event's start or a task's due date (`RELATED=END`, story 18). */
+export type ReminderTarget = 'event' | 'task';
+
+/** "1 day before at 09:00", "On the day at 09:00" (a task: "On the due date at 09:00"), "2 days after at 01:00". */
+export function allDayLabel(daysBefore: number, timeS: number, target: ReminderTarget = 'event'): string {
   const time = timeOfDayLabel(timeS);
-  if (daysBefore === 0) return `On the day at ${time}`;
+  if (daysBefore === 0) return `On the ${target === 'task' ? 'due date' : 'day'} at ${time}`;
   const n = Math.abs(daysBefore);
   const dir = daysBefore > 0 ? 'before' : 'after';
   if (n % 7 === 0) return `${plural(n / 7, 'week')} ${dir} at ${time}`;
@@ -86,8 +89,26 @@ export const ALL_DAY_REMINDER_PRESETS: ReminderPreset[] = [0, 1, 2, 7].map((days
   offset: allDayOffset(days, ALL_DAY_DEFAULT_TIME_S),
 }));
 
-export const reminderPresets = (allDay: boolean): ReminderPreset[] =>
-  allDay ? ALL_DAY_REMINDER_PRESETS : TIMED_REMINDER_PRESETS;
+/** Presets of a timed task, relative to the due time (story 18, spec §10.9). */
+export const TIMED_TASK_REMINDER_PRESETS: ReminderPreset[] = [
+  { label: 'At due time', offset: 0 },
+  { label: '5 minutes before due', offset: -5 * MINUTE_S },
+  { label: '15 minutes before due', offset: -15 * MINUTE_S },
+  { label: '30 minutes before due', offset: -30 * MINUTE_S },
+  { label: '1 hour before due', offset: -HOUR_S },
+  { label: '1 day before due', offset: -DAY_S },
+];
+
+/** Presets of an all-day task: "On the due date at 09:00" (`32400`), "1 day before at 09:00" (`-54000`). */
+export const ALL_DAY_TASK_REMINDER_PRESETS: ReminderPreset[] = [0, 1].map((days) => ({
+  label: allDayLabel(days, ALL_DAY_DEFAULT_TIME_S, 'task'),
+  offset: allDayOffset(days, ALL_DAY_DEFAULT_TIME_S),
+}));
+
+export const reminderPresets = (allDay: boolean, target: ReminderTarget = 'event'): ReminderPreset[] => {
+  if (target === 'task') return allDay ? ALL_DAY_TASK_REMINDER_PRESETS : TIMED_TASK_REMINDER_PRESETS;
+  return allDay ? ALL_DAY_REMINDER_PRESETS : TIMED_REMINDER_PRESETS;
+};
 
 export type CustomUnit = 'minutes' | 'hours' | 'days' | 'weeks';
 export const CUSTOM_UNITS: Array<{ value: CustomUnit; label: string; seconds: number }> = [
@@ -108,9 +129,16 @@ export function customAllDayOffset(daysBefore: number, hours: number, minutes: n
   return allDayOffset(daysBefore, hours * HOUR_S + minutes * MINUTE_S);
 }
 
-/** A reminder the form creates (not yet stored): `index` -1, display action, start-related. */
-export function offsetReminder(offset: number): Reminder {
-  return { index: -1, action: 'display', related: 'start', offset_seconds: offset, at: null, editable: true };
+/** A reminder the form creates (not yet stored): `index` -1, display action, start-related (a task's: end-related). */
+export function offsetReminder(offset: number, target: ReminderTarget = 'event'): Reminder {
+  return {
+    index: -1,
+    action: 'display',
+    related: target === 'task' ? 'end' : 'start',
+    offset_seconds: offset,
+    at: null,
+    editable: true,
+  };
 }
 
 /** "4 Nov, 09:00" in the browser's zone. */
@@ -122,7 +150,21 @@ export function absoluteLabel(at: string): string {
 
 const ACTION_LABELS: Record<string, string> = { email: 'E-mail', audio: 'Sound', none: 'No action' };
 
-function relativeLabel(reminder: Reminder, offset: number, allDay: boolean): string {
+function relativeLabel(reminder: Reminder, offset: number, allDay: boolean, target: ReminderTarget): string {
+  if (target === 'task') {
+    if (reminder.related === 'end') {
+      // Relative to the due date: an all-day one reads as a day and a time, a timed one as a duration.
+      if (allDay) {
+        const { daysBefore, timeS } = splitAllDayOffset(offset);
+        return allDayLabel(daysBefore, timeS, 'task');
+      }
+      if (offset === 0) return 'At due time';
+      return `${durationLabel(offset)} ${offset < 0 ? 'before due' : 'after due'}`;
+    }
+    // A start-related alarm of a task is read only (written by another app).
+    if (offset === 0) return 'At start';
+    return `${durationLabel(offset)} ${offset < 0 ? 'before start' : 'after start'}`;
+  }
   if (reminder.related === 'end') {
     // Relative to the end (or the due date of a task): no all-day wording, it is a plain duration.
     if (offset === 0) return 'At end';
@@ -140,12 +182,12 @@ function relativeLabel(reminder: Reminder, offset: number, allDay: boolean): str
  * The words of one reminder chip: "15 minutes before", "1 day before at 09:00", "At 4 Nov, 09:00",
  * "15 minutes after end", "E-mail, 1 day before". `allDay` says how a start-related offset is read.
  */
-export function describeReminder(reminder: Reminder, allDay: boolean): string {
+export function describeReminder(reminder: Reminder, allDay: boolean, target: ReminderTarget = 'event'): string {
   const action = ACTION_LABELS[reminder.action];
   let text: string;
   if (reminder.at) text = `At ${absoluteLabel(reminder.at)}`;
   else if (reminder.offset_seconds === null) text = 'Unreadable reminder';
-  else text = relativeLabel(reminder, reminder.offset_seconds, allDay);
+  else text = relativeLabel(reminder, reminder.offset_seconds, allDay, target);
   return action ? `${action}, ${lowerFirst(text)}` : text;
 }
 
@@ -213,16 +255,16 @@ export function remindersChanged(initial: Reminder[], current: Reminder[]): bool
  * other mode's preset with the same number of days before ("On the day at 09:00" <-> "At start", "N days before
  * at 09:00" <-> "N days before"). Absolute and read-only ones stay; duplicates merge.
  */
-export function mapReminderMode(reminders: Reminder[], toAllDay: boolean): Reminder[] {
+export function mapReminderMode(reminders: Reminder[], toAllDay: boolean, target: ReminderTarget = 'event'): Reminder[] {
   const mapped = reminders.map((r) => {
     if (!r.editable || r.at || r.offset_seconds === null) return r;
     if (toAllDay) {
       // A timed offset counts whole days before the start: 15 minutes -> 0, 1 day -> 1, 1 week -> 7.
       const days = Math.max(0, Math.floor(-r.offset_seconds / DAY_S));
-      return offsetReminder(allDayOffset(days, ALL_DAY_DEFAULT_TIME_S));
+      return offsetReminder(allDayOffset(days, ALL_DAY_DEFAULT_TIME_S), target);
     }
     const { daysBefore } = splitAllDayOffset(r.offset_seconds);
-    return offsetReminder(0 - Math.max(0, daysBefore) * DAY_S);
+    return offsetReminder(0 - Math.max(0, daysBefore) * DAY_S, target);
   });
   return normalizeReminders(mapped);
 }

@@ -1,6 +1,7 @@
 // @vitest-environment nuxt
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
+import type { VueWrapper } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import PrimeVue from 'primevue/config';
 import ReminderField from './ReminderField.vue';
@@ -109,7 +110,7 @@ describe('ReminderField', () => {
   });
 
   it('stops at 5 editable reminders (read-only ones do not count)', async () => {
-    const five = [-300, -600, -900, -1800, -3600].map(offsetReminder);
+    const five = [-300, -600, -900, -1800, -3600].map((o) => offsetReminder(o));
     const { wrapper, vm, last } = mountField([...five, foreign()]);
     expect(vm.atCap).toBe(true);
     expect(wrapper.find('[data-test="reminder-add"]').exists()).toBe(false);
@@ -153,5 +154,49 @@ describe('ReminderField', () => {
   it('readOnly with nothing says so', () => {
     const { wrapper } = mountField([], { readOnly: true });
     expect(wrapper.find('[data-test="reminder-none"]').exists()).toBe(true);
+  });
+});
+
+const addDisabled = (w: ReturnType<typeof mountField>['wrapper']) =>
+  ((w.findComponent('[data-test="reminder-add"]') as VueWrapper).vm.$props as { disabled?: boolean }).disabled;
+
+describe('ReminderField — task target (#169 story 18)', () => {
+  it('offers the due-based presets plus Custom', () => {
+    const { vm } = mountField([], { target: 'task' });
+    expect(vm.presetOptions.map((o) => o.label)).toEqual([
+      'At due time', '5 minutes before due', '15 minutes before due', '30 minutes before due',
+      '1 hour before due', '1 day before due', 'Custom…',
+    ]);
+  });
+
+  it('offers the due date presets for an all-day task', () => {
+    const { vm } = mountField([], { target: 'task', allDay: true });
+    expect(vm.presetOptions.map((o) => [o.label, o.value])).toEqual([
+      ['On the due date at 09:00', 32400], ['1 day before at 09:00', -54000], ['Custom…', 'custom'],
+    ]);
+  });
+
+  it('adds an end-related reminder and words its chip in due words', () => {
+    const { wrapper, vm, last } = mountField([], { target: 'task' });
+    vm.onPick(-1800);
+    expect(last()).toEqual([expect.objectContaining({ offset_seconds: -1800, related: 'end', editable: true })]);
+    const chips = mountField([offsetReminder(-1800, 'task')], { target: 'task' }).wrapper;
+    expect(chips.get('[data-test="reminder-chip"]').text()).toContain('30 minutes before due');
+    expect(wrapper.exists()).toBe(true);
+  });
+
+  it('disabled keeps the chips, shows the hint and disables the menu', () => {
+    const { wrapper } = mountField([offsetReminder(-1800, 'task')], {
+      target: 'task', disabled: true, disabledHint: 'Set a due date to add a reminder',
+    });
+    expect(wrapper.get('[data-test="reminder-disabled-hint"]').text()).toBe('Set a due date to add a reminder');
+    expect(wrapper.findAll('[data-test="reminder-chip"]')).toHaveLength(1);
+    expect(addDisabled(wrapper)).toBe(true);
+  });
+
+  it('not disabled: no hint, enabled menu', () => {
+    const { wrapper } = mountField([], { target: 'task' });
+    expect(wrapper.find('[data-test="reminder-disabled-hint"]').exists()).toBe(false);
+    expect(addDisabled(wrapper)).toBe(false);
   });
 });
