@@ -8,6 +8,8 @@
  * by `GET /calendars` like any calendar (`types/calendar.ts`).
  */
 
+import type { Reminder, ReminderInput } from './calendar';
+
 /** A task's status on the wire: lower-case with hyphens. */
 export type TaskStatus = 'needs-action' | 'in-process' | 'completed' | 'cancelled';
 
@@ -68,6 +70,8 @@ export interface Task {
   /** The repeat rule, read-only (there is no recurrence editing in v1). */
   rrule: string | null;
   etag: string;
+  /** The task's VALARMs (story 18): `[]` for none; the editable ones are `RELATED=END` (relative to the due date). */
+  reminders?: Reminder[];
   created_at: string;
   updated_at: string;
   /**
@@ -109,6 +113,8 @@ export interface TaskInput {
   status?: TaskStatus;
   /** IANA zone the timed due/start are written in (`TZID`); without one they are stored in UTC. */
   timezone?: string;
+  /** Editable reminders, relative to the due date (needs a due date); a list replaces the stored editable ones. */
+  reminders?: ReminderInput[];
 }
 
 /**
@@ -131,6 +137,8 @@ export interface TaskPatch {
   status?: TaskStatus;
   /** Applies to the timed due/start sent in the same body; without it they are written in UTC. */
   timezone?: string;
+  /** The full list of editable reminders the form keeps (replaces the stored ones); sent only when changed. */
+  reminders?: ReminderInput[];
 }
 
 /** One task list's entry in `TasksSummary.by_calendar`. */
@@ -217,4 +225,6 @@ export interface TaskFormData {
   /** 0..100, or null when the task has none. */
   percent: number | null;
   status: TaskStatus;
+  /** All the task's reminders as the API answered them, editable or not; read-only ones are never sent. */
+  reminders: Reminder[];
 }

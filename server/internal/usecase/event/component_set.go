@@ -27,14 +27,15 @@ func loadEvent(ctx context.Context, repo calendar.CalendarRepository, uuid strin
 // one component-set rule of #170). The refusal is an ErrInvalidInput whose
 // message is exactly "This calendar does not store events", so REST answers 400
 // with it and the MCP event tools return it; a failed lookup is returned as is
-// (a server failure).
-func requireEventCalendar(ctx context.Context, repo calendar.CalendarRepository, calendarID uint) error {
+// (a server failure). It returns the calendar so the update use case knows its
+// owner (#169 date shift).
+func requireEventCalendar(ctx context.Context, repo calendar.CalendarRepository, calendarID uint) (*calendar.Calendar, error) {
 	cal, err := repo.GetByID(ctx, calendarID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := calendar.RequireComponent(cal, calendar.ComponentEvent); err != nil {
-		return invalidInput(err)
+		return nil, invalidInput(err)
 	}
-	return nil
+	return cal, nil
 }

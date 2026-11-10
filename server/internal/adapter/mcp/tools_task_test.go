@@ -701,3 +701,30 @@ func TestUpdateTaskEmptyString(t *testing.T) {
 		})
 	}
 }
+
+// The task tools render dto.TaskResponse, so a task's VALARMs show up as
+// `reminders` there too (#169 story 10); a task without one has [].
+func TestTaskToolsCarryReminders(t *testing.T) {
+	e := newTestEnv(t)
+	alice := e.newUser("alice@example.com")
+	chores := e.newCalendarWithSet(alice.ID, "Chores", "VTODO")
+	id := e.storeTaskLines(chores, "alarmed", "DUE:20260306T090000Z", "SUMMARY:Pay rent",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;RELATED=END:-PT30M", "END:VALARM")
+	plainID := e.storeTask(chores, "plain")
+
+	payload, isErr := e.call(alice.ID, "list_tasks", map[string]interface{}{"status": "all"})
+	require.False(t, isErr, "%v", payload)
+	byID := map[string]map[string]interface{}{}
+	for _, it := range payload["tasks"].([]interface{}) {
+		m := it.(map[string]interface{})
+		byID[m["id"].(string)] = m
+	}
+	reminders, ok := byID[id]["reminders"].([]interface{})
+	require.True(t, ok, "reminders is an array: %v", byID[id]["reminders"])
+	require.Len(t, reminders, 1)
+	r := reminders[0].(map[string]interface{})
+	assert.Equal(t, "end", r["related"])
+	assert.Equal(t, float64(-1800), r["offset_seconds"])
+	assert.Equal(t, true, r["editable"])
+	assert.Equal(t, []interface{}{}, byID[plainID]["reminders"])
+}

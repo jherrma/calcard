@@ -39,6 +39,10 @@ type CreateTaskInput struct {
 	// Without a usable one (empty, unknown or "Local") they are stored in UTC,
 	// as for events.
 	Timezone string
+	// Reminders are the simple reminders to write as VALARMs (#169, spec
+	// §7.4): an offset is relative to DUE (TRIGGER;RELATED=END), an absolute
+	// time needs no due date. MCP passes none.
+	Reminders []calendar.ReminderInput
 }
 
 type CreateTaskUseCase struct {
@@ -68,14 +72,14 @@ func (uc *CreateTaskUseCase) Execute(ctx context.Context, input CreateTaskInput)
 	if input.Calendar == nil {
 		return nil, errors.New("create task: no calendar given")
 	}
-	create, err := newTaskCreate(input)
+	now := uc.now().UTC()
+	create, err := newTaskCreate(input, now)
 	if err != nil {
 		return nil, err
 	}
 
 	taskUUID := uuid.New().String()
 	uid := taskUUID + "@" + calendar.UIDDomain
-	now := uc.now().UTC()
 	cal, todo := newTaskCalendar(uid, now)
 	create.writeTo(todo, now)
 	icalData, err := encodeTaskCalendar(cal)
@@ -108,12 +112,14 @@ type taskCreate struct {
 	due, start                   *taskTime
 	priority, percent            *int
 	loc                          *time.Location
+	reminders                    []calendar.ReminderInput
 }
 
 // newTaskCreate validates input.Calendar's component set, then the fields in
 // this order: summary, description, status, priority, percent, due, start, due not before
-// start. The first refusal is returned.
-func newTaskCreate(input CreateTaskInput) (*taskCreate, error) {
+// start, reminders (count and shape, an offset without a due date, ranges
+// against now). The first refusal is returned.
+func newTaskCreate(input CreateTaskInput, now time.Time) (*taskCreate, error) {
 	if err := calendar.RequireComponent(input.Calendar, calendar.ComponentToDo); err != nil {
 		return nil, invalidInput(err)
 	}
@@ -145,6 +151,9 @@ func newTaskCreate(input CreateTaskInput) (*taskCreate, error) {
 	if err := checkDueAfterStart(due, start); err != nil {
 		return nil, err
 	}
+	if err := checkReminders(input.Reminders, due != nil, now); err != nil {
+		return nil, err
+	}
 	loc, _ := calendar.LoadEventLocation(input.Timezone)
 	return &taskCreate{
 		summary:     summary,
@@ -155,6 +164,7 @@ func newTaskCreate(input CreateTaskInput) (*taskCreate, error) {
 		priority:    input.Priority,
 		percent:     input.PercentComplete,
 		loc:         loc,
+		reminders:   input.Reminders,
 	}, nil
 }
 
@@ -183,4 +193,5 @@ func (c *taskCreate) writeTo(todo *ical.Component, now time.Time) {
 	if c.status == calendar.TaskStatusCompleted {
 		markCompleted(todo, now)
 	}
+	calendar.ApplyReminders(todo, c.reminders, calendar.ReminderKindTask)
 }

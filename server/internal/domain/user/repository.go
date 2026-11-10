@@ -86,12 +86,21 @@ type AppPasswordRepository interface {
 type UserPreferenceRepository interface {
 	GetByUserID(ctx context.Context, userID uint) ([]UserPreference, error)
 	GetByKey(ctx context.Context, userID uint, key string) (*UserPreference, error)
+	// ListByKey returns the rows of key for the given users, in one query. Users
+	// without a row are simply absent; an empty list runs no query.
+	ListByKey(ctx context.Context, userIDs []uint, key string) ([]UserPreference, error)
 	// Upsert inserts the preference or, when (user_id, key) already exists,
 	// updates its value in a single statement. Implementations MUST be
 	// insert-or-update in one round trip: a read-then-write would let two
 	// concurrent PATCHes race into a unique-index violation.
 	Upsert(ctx context.Context, pref *UserPreference) error
 	Delete(ctx context.Context, userID uint, key string) error
+	// InsertIfAbsent inserts the preference and does nothing when (user_id, key)
+	// already exists (one INSERT ... ON CONFLICT DO NOTHING statement).
+	InsertIfAbsent(ctx context.Context, pref *UserPreference) error
+	// ReplaceValueIf sets the value only while it still equals oldValue and
+	// reports whether a row changed.
+	ReplaceValueIf(ctx context.Context, userID uint, key, oldValue, newValue string) (bool, error)
 }
 
 type CardDAVCredentialRepository interface {

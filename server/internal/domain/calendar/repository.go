@@ -88,6 +88,11 @@ type ReadableCalendar struct {
 	Name                string
 	Color               string
 	SupportedComponents string
+	// OwnerID is the calendar's owner and Subscribed marks a mirror of a remote
+	// feed (#169). Both only steer the alarm use case (the owner's time zone,
+	// subscribed calendars contribute no alarms); neither is ever serialised.
+	OwnerID    uint
+	Subscribed bool
 }
 
 // SupportsComponent reports whether the calendar stores componentType, by the
@@ -219,6 +224,13 @@ type CalendarRepository interface {
 	// pages never overlap).
 	ListTasks(ctx context.Context, q TaskQuery) ([]*CalendarObject, int64, error)
 
+	// ListAlarmCandidates returns the live objects of calendarIDs whose alarm
+	// bounds overlap [from, until] (inclusive): alarm_last_at >= from AND
+	// alarm_first_at <= until (#169). A coarse pre-filter; ExpandAlarms computes
+	// the exact instants. An empty id list matches nothing and runs no query;
+	// the ids are never widened.
+	ListAlarmCandidates(ctx context.Context, calendarIDs []uint, from, until time.Time) ([]*CalendarObject, error)
+
 	// CountTasks counts the tasks (ComponentToDo objects; events and deleted
 	// objects are excluded) of calendarIDs at TaskDayOf(asOf): open, overdue,
 	// due today and completed, per calendar and in total, in one query over
@@ -258,6 +270,23 @@ type CalendarRepository interface {
 	// It is used only by the subscription sync path (story 100), which is also
 	// the only writer permitted on a Subscribed calendar.
 	ReplaceFeedObjects(ctx context.Context, calendarID uint, objects []*CalendarObject) (FeedSyncStats, error)
+}
+
+// AlarmAcknowledgementRepository persists per-user alarm dismissals (#169).
+type AlarmAcknowledgementRepository interface {
+	// Acknowledge inserts (userID, key) rows; an existing row is left as it is
+	// (INSERT ... ON CONFLICT DO NOTHING), so a repeat is a no-op. At most 500
+	// keys per call (the endpoint's cap), inserted in chunks of 300 rows, all in
+	// one transaction. at is stored in UTC.
+	Acknowledge(ctx context.Context, userID uint, keys []string, at time.Time) error
+
+	// AcknowledgedKeys returns the subset of keys the user has acknowledged, in
+	// batches of at most 500 keys, served by the primary key.
+	AcknowledgedKeys(ctx context.Context, userID uint, keys []string) (map[string]bool, error)
+
+	// DeleteAcknowledgedBefore removes every row with acknowledged_at < cutoff
+	// and returns how many it removed.
+	DeleteAcknowledgedBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // CalendarSubscriptionRepository defines persistence for remote calendar

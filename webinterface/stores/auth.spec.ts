@@ -4,6 +4,7 @@ import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import { createTestingPinia } from '@pinia/testing';
 import { useAuthStore } from './auth';
 import { useTasksStore } from './tasks';
+import { useAlarmsStore } from './alarms';
 import { flushPromises } from '@vue/test-utils';
 import {
   usePreferencesStore,
@@ -214,6 +215,22 @@ describe('logout drops per-user cached state (story 103)', () => {
     await flushPromises();
 
     expect(tasks.tasks).toEqual([]);
+  });
+
+  it('clearAuth resets the alarms store through a lazy import: queue, keys and the user\'s stored entry go (#169)', async () => {
+    const alarms = useAlarmsStore();
+    alarms.userId = '1';
+    alarms.queue = [{ key: 'a'.repeat(32) } as never];
+    alarms.pendingAck = { ['b'.repeat(32)]: 1 };
+    const removeSpy = vi.spyOn(alarms, 'removePersisted');
+
+    useAuthStore().clearAuth();
+    await flushPromises();
+
+    expect(removeSpy).toHaveBeenCalled();
+    expect(alarms.queue).toEqual([]);
+    expect(alarms.pendingAck).toEqual({});
+    expect(alarms.userId).toBeNull();
   });
 });
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/emersion/go-ical"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/usecase/ownerzone"
 )
 
 // Change is one optional field of a partial update that tells "absent" from
@@ -55,11 +56,26 @@ type UpdateTaskInput struct {
 	// none): the write happens only on a task that still has it, else
 	// ErrPreconditionFailed.
 	IfMatch string
+	// Reminders (#169, spec §7.5): nil leaves every VALARM untouched, a
+	// pointer to an empty slice removes the editable ones, otherwise the
+	// slice is the desired multiset of editable reminders (offsets relative
+	// to DUE, TRIGGER;RELATED=END). The foreign, non-editable VALARMs are
+	// never touched.
+	Reminders *[]calendar.ReminderInput
 }
 
 type UpdateTaskUseCase struct {
 	calendarRepo calendar.CalendarRepository
 	now          func() time.Time
+	zones        ownerzone.Source
+}
+
+// WithOwnerZones sets the resolver of the calendar owner's time zone, used to
+// shift the absolute reminders of an all-day task whose due date moves (#169,
+// spec §7.5 step 4). Without one the shift counts whole UTC days.
+func (uc *UpdateTaskUseCase) WithOwnerZones(z ownerzone.Source) *UpdateTaskUseCase {
+	uc.zones = z
+	return uc
 }
 
 // NewUpdateTaskUseCase builds the use case. now is the clock for the
@@ -114,6 +130,12 @@ func (uc *UpdateTaskUseCase) attempt(ctx context.Context, input UpdateTaskInput)
 	if err != nil {
 		return nil, err
 	}
+	// The owner's zone is read only when a shift can be due: an all-day task
+	// and a request that writes a due date. The owner is the calendar's.
+	if obj.IsAllDay && input.Due.Set && input.Due.Value != nil {
+		ownerID := input.Calendar.UserID
+		update.zone = func() (*time.Location, error) { return ownerzone.Load(ctx, uc.zones, ownerID) }
+	}
 	stored := loadedTask{status: obj.Status, dueAt: obj.DueAt, details: obj.TaskDetails()}
 
 	now := uc.now().UTC()
@@ -152,6 +174,11 @@ type taskUpdate struct {
 	allDay, allDaySent bool
 	due, start         timeChange
 	loc                *time.Location
+	// reminders is the desired list; nil leaves the VALARMs alone.
+	reminders *[]calendar.ReminderInput
+	// zone loads the calendar owner's zone for the all-day date shift; nil
+	// when no shift can be due.
+	zone func() (*time.Location, error)
 }
 
 // timeChange is a due or start of the request: set says it was given, v is
@@ -206,6 +233,12 @@ func newTaskUpdate(in UpdateTaskInput, storedAllDay bool) (*taskUpdate, error) {
 	if u.start, err = parseTimeChange("start", in.Start, u.allDay); err != nil {
 		return nil, err
 	}
+	if in.Reminders != nil {
+		if err := checkReminderShape(*in.Reminders); err != nil {
+			return nil, err
+		}
+		u.reminders = in.Reminders
+	}
 	u.loc, _ = calendar.LoadEventLocation(in.Timezone)
 	return u, nil
 }
@@ -235,6 +268,9 @@ func (u *taskUpdate) apply(cal *ical.Calendar, todo *ical.Component, stored load
 	if err := u.checkOverrides(cal, todo); err != nil {
 		return err
 	}
+	if err := u.checkReminders(todo, now); err != nil {
+		return err
+	}
 	if stored.details.Recurring && u.completes() {
 		return ErrRecurringNotSupported
 	}
@@ -250,6 +286,7 @@ func (u *taskUpdate) apply(cal *ical.Calendar, todo *ical.Component, stored load
 			changed = setTextProp(todo, ical.PropDescription, *u.description.Value) || changed
 		}
 	}
+	beforeDay, beforeAllDay := calendar.DatePropDay(todo.Props.Get(ical.PropDue))
 	changed = u.applyTimes(cal, todo, stored) || changed
 	if u.priority.Set {
 		changed = setPriorityChange(todo, u.priority.Value) || changed
@@ -271,10 +308,62 @@ func (u *taskUpdate) apply(cal *ical.Calendar, todo *ical.Component, stored load
 		changed = setIntChange(todo, ical.PropPercentComplete, u.percent.Value) || changed
 	}
 
+	var appended []*ical.Component
+	if u.reminders != nil {
+		var reminderChanged bool
+		reminderChanged, appended = calendar.ApplyReminders(todo, *u.reminders, calendar.ReminderKindTask)
+		changed = reminderChanged || changed
+	}
+
+	// All-day date shift (D17, D23, spec §7.5 step 4): a due date that moved
+	// while the task stayed all-day drags its absolute reminders along, in the
+	// owner's zone. Reminders appended by this request are written as sent.
+	if afterDay, afterAllDay := calendar.DatePropDay(todo.Props.Get(ical.PropDue)); beforeAllDay && afterAllDay && afterDay != beforeDay && u.zone != nil {
+		loc, err := u.zone()
+		if err != nil {
+			return err
+		}
+		skip := map[*ical.Component]bool{}
+		for _, a := range appended {
+			skip[a] = true
+		}
+		if calendar.ShiftAbsoluteTriggers(todo, afterDay-beforeDay, loc, skip) {
+			changed = true
+		}
+	}
+
 	if !changed {
 		return errUnchanged
 	}
 	return nil
+}
+
+// checkReminders refuses the reminders that are new to the task (spec §7.4):
+// an offset when the task has no due date after this request, and any out of
+// range. A reminder that matches a stored VALARM is kept as it is and never
+// refused, so a form can save a due-less task with its old reminders. It runs
+// before the recurring-task refusal, like every field 400.
+func (u *taskUpdate) checkReminders(todo *ical.Component, now time.Time) error {
+	if u.reminders == nil {
+		return nil
+	}
+	fresh := calendar.UnmatchedReminders(todo, *u.reminders, calendar.ReminderKindTask)
+	return checkReminderTargets(fresh, u.hasDue(todo), now)
+}
+
+// hasDue reports a task that has a due date once the request is applied: a
+// DUE, or a DURATION after a DTSTART (RFC 5545 allows it instead of DUE).
+func (u *taskUpdate) hasDue(todo *ical.Component) bool {
+	hasDue := todo.Props.Get(ical.PropDue) != nil
+	hasDuration := todo.Props.Get(ical.PropDuration) != nil
+	hasStart := todo.Props.Get(ical.PropDateTimeStart) != nil
+	if u.due.set {
+		hasDue, hasDuration = u.due.v != nil, false
+	}
+	if u.start.set {
+		hasStart = u.start.v != nil
+	}
+	return hasDue || (hasDuration && hasStart)
 }
 
 // checkTimes refuses a due/start that does not fit the task's other time,

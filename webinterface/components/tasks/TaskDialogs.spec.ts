@@ -12,6 +12,7 @@ import { useTasksStore } from '~/stores/tasks';
 import type { Calendar } from '~/types/calendar';
 import type { Task, TaskFormData } from '~/types/tasks';
 import { taskToFormData } from '~/utils/taskForm';
+import { offsetReminder } from '~/utils/reminders';
 import PrimeVue from 'primevue/config';
 
 // SCOPE (#170 story 26, spec §7.3/§7.5/§8): "Add a task" and the task editor.
@@ -209,6 +210,38 @@ describe('TaskCreateDialog', () => {
     expect(wrapper.emitted('created')).toEqual([[expect.objectContaining({ id: 'new' })]]);
   });
 
+  it('a timed task with "30 minutes before" creates with reminders [{ offset_seconds: -1800 }]', async () => {
+    serve({ 'POST /api/v1/calendars/errands/tasks': () => task({ id: 'new' }) });
+    const { formVm } = mountCreate();
+    const vm = formVm();
+    vm.form.summary = 'Call';
+    vm.form.listId = 'errands';
+    vm.form.allDay = false;
+    await flushPromises();
+    vm.form.due = local(2026, 11, 6, 18);
+    vm.form.reminders = [offsetReminder(-1800, 'task')];
+
+    await vm.handleSubmit();
+    await flushPromises();
+
+    expect(writes()[0]!.body).toMatchObject({ due_all_day: false, reminders: [{ offset_seconds: -1800 }] });
+  });
+
+  it('an all-day task with "On the due date at 09:00" creates with [{ offset_seconds: 32400 }]', async () => {
+    serve({ 'POST /api/v1/calendars/errands/tasks': () => task({ id: 'new' }) });
+    const { formVm } = mountCreate();
+    const vm = formVm();
+    vm.form.summary = 'Pay';
+    vm.form.listId = 'errands';
+    vm.form.due = local(2026, 11, 6);
+    vm.form.reminders = [offsetReminder(32400, 'task')];
+
+    await vm.handleSubmit();
+    await flushPromises();
+
+    expect(writes()[0]!.body).toMatchObject({ due: '2026-11-06', reminders: [{ offset_seconds: 32400 }] });
+  });
+
   it('a failed create keeps the dialog open with what was typed', async () => {
     serve({ 'POST /api/v1/calendars/home/tasks': () => { throw Object.assign(new Error('x'), { statusCode: 500 }); } });
     const { wrapper, formVm } = mountCreate({ initialSummary: 'Buy milk' });
@@ -329,6 +362,36 @@ describe('TaskEditDialog', () => {
     await flushPromises();
 
     expect(writes()[0]!.body).toEqual({ due: '2026-11-06T18:00:00+01:00', start: null, timezone: 'Europe/Berlin' });
+  });
+
+  it('removing a reminder PATCHes the remaining list; a reminders-only save of a repeating task goes through', async () => {
+    const rem = (i: number, o: number) => ({
+      index: i, action: 'display', related: 'end', offset_seconds: o, at: null, editable: true,
+    }) as const;
+    const t = task({ is_recurring: true, rrule: 'FREQ=DAILY', reminders: [rem(0, -1800), rem(1, -3600)] });
+    serve({ 'PATCH /api/v1/calendars/errands/tasks/task-1': () => t });
+    const { formVm } = mountEdit(t);
+    formVm().form.reminders = formVm().form.reminders.filter((r) => r.offset_seconds !== -1800);
+
+    await formVm().handleSubmit();
+    await flushPromises();
+
+    expect(writes()).toEqual([{
+      key: 'PATCH /api/v1/calendars/errands/tasks/task-1',
+      body: { reminders: [{ offset_seconds: -3600 }] },
+    }]);
+  });
+
+  it('editing only the due date sends no reminders', async () => {
+    const t = task({ reminders: [{ index: 0, action: 'display', related: 'end', offset_seconds: -1800, at: null, editable: true }] });
+    serve({ 'PATCH /api/v1/calendars/errands/tasks/task-1': () => t });
+    const { formVm } = mountEdit(t);
+    formVm().form.due = local(2026, 11, 8, 18);
+
+    await formVm().handleSubmit();
+    await flushPromises();
+
+    expect(writes()[0]!.body).not.toHaveProperty('reminders');
   });
 
   it('a repeating task never sends status or progress (the server would answer 409)', async () => {

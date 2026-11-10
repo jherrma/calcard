@@ -29,7 +29,7 @@ func (uc *MoveEventUseCase) Execute(ctx context.Context, input MoveEventInput) (
 	// The target must store events (#170): a task list never gains one through
 	// a move. Checked before the same-calendar shortcut, so the answer depends
 	// on the target alone.
-	if err := requireEventCalendar(ctx, uc.calendarRepo, input.TargetCalendarID); err != nil {
+	if _, err := requireEventCalendar(ctx, uc.calendarRepo, input.TargetCalendarID); err != nil {
 		return nil, err
 	}
 

@@ -541,7 +541,7 @@ func TestTaskHandlerResponse(t *testing.T) {
 			// Fields every task carries the same way.
 			full := map[string]any{
 				"id": obj.UUID, "calendar_id": float64(f.taskList.ID), "calendar_uuid": f.taskList.UUID,
-				"uid": obj.UID, "etag": obj.ETag,
+				"uid": obj.UID, "etag": obj.ETag, "reminders": []any{},
 			}
 			for k, v := range expected {
 				full[k] = v
@@ -644,4 +644,45 @@ func TestTaskHandlerServerErrors(t *testing.T) {
 		assert.Equal(t, fiber.StatusNotFound, code)
 		assert.JSONEq(t, taskNotFoundBody, body)
 	})
+}
+
+// TestTaskHandlerReminders (#169 story 10): VALARMs written by a DAV client
+// come back as `reminders` from GET one and the list; an END-related alarm is
+// editable on a task, a START-related one is not.
+func TestTaskHandlerReminders(t *testing.T) {
+	f := setupTaskHandlerTest(t)
+	withAlarms := f.todo(t, f.taskList, "alarmed", "Pay rent", "DUE:20301105T170000Z",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;RELATED=END:-PT30M", "END:VALARM",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT30M", "END:VALARM")
+	plain := f.todo(t, f.taskList, "plain", "No alarm", "DUE:20301106T170000Z")
+
+	want := `[{"index":0,"action":"display","related":"end","offset_seconds":-1800,"at":null,"editable":true},
+	{"index":1,"action":"display","related":"start","offset_seconds":-1800,"at":null,"editable":false}]`
+
+	code, body := f.get(t, f.ownerToken, f.taskList.UUID+"/tasks/"+withAlarms.UUID)
+	require.Equal(t, fiber.StatusOK, code, body)
+	var one struct {
+		Reminders json.RawMessage `json:"reminders"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &one))
+	assert.JSONEq(t, want, string(one.Reminders))
+
+	code, body = f.get(t, f.ownerToken, f.taskList.UUID+"/tasks?status=all")
+	require.Equal(t, fiber.StatusOK, code, body)
+	var list struct {
+		Tasks []struct {
+			ID        string          `json:"id"`
+			Reminders json.RawMessage `json:"reminders"`
+		} `json:"tasks"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &list))
+	require.Len(t, list.Tasks, 2)
+	for _, task := range list.Tasks {
+		if task.ID == withAlarms.UUID {
+			assert.JSONEq(t, want, string(task.Reminders))
+		} else {
+			assert.Equal(t, plain.UUID, task.ID)
+			assert.JSONEq(t, `[]`, string(task.Reminders))
+		}
+	}
 }

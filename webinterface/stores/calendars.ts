@@ -190,6 +190,9 @@ export const useCalendarStore = defineStore('calendars', {
       if (data.recurrence) {
         body.recurrence = data.recurrence;
       }
+      if (data.reminders) {
+        body.reminders = data.reminders;
+      }
 
       const response = await api<CalendarEvent>(`/api/v1/calendars/${this.calendarUuid(calendarId)}/events`, {
         method: 'POST',
@@ -197,6 +200,7 @@ export const useCalendarStore = defineStore('calendars', {
       });
 
       this.events.push(response);
+      refreshAlarmsSoon();
       return response;
     },
 
@@ -253,6 +257,9 @@ export const useCalendarStore = defineStore('calendars', {
       if (data.recurrence) {
         body.recurrence = data.recurrence;
       }
+      if (data.reminders) {
+        body.reminders = data.reminders;
+      }
 
       let url = `/api/v1/calendars/${this.calendarUuid(calendarId)}/events/${eventId}`;
       const params = new URLSearchParams();
@@ -272,6 +279,7 @@ export const useCalendarStore = defineStore('calendars', {
           this.events[idx] = response;
         }
       }
+      refreshAlarmsSoon();
 
       return response;
     },
@@ -283,6 +291,7 @@ export const useCalendarStore = defineStore('calendars', {
         method: 'POST',
         body: { target_calendar_id: this.calendarUuid(targetCalendarId) },
       });
+      refreshAlarmsSoon();
     },
 
     async deleteEvent(calendarId: string, eventId: string, scope?: string, recurrenceId?: string) {
@@ -298,6 +307,7 @@ export const useCalendarStore = defineStore('calendars', {
 
       // Remove from local state
       this.events = this.events.filter((e: CalendarEvent) => e.id !== eventId);
+      refreshAlarmsSoon();
     },
 
     async updateEventTime(eventId: string, calendarId: string, start: Date, end: Date, scope?: string, recurrenceId?: string) {
@@ -332,6 +342,7 @@ export const useCalendarStore = defineStore('calendars', {
           event.end = toRFC3339(end);
         }
       }
+      refreshAlarmsSoon();
     },
 
     async createCalendar(data: { name: string; color: string; timezone: string; description: string }) {

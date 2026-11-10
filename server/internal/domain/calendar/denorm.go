@@ -110,6 +110,7 @@ func (o *CalendarObject) PopulateDenormFieldsFromICal() error {
 	}
 
 	o.RecurrenceEndTime = recurrenceEndTime(masters)
+	o.populateAlarmBounds(cal)
 
 	return nil
 }

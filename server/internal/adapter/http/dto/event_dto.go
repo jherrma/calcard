@@ -17,6 +17,8 @@ type CreateEventRequest struct {
 	Timezone    string             `json:"timezone"`
 	AllDay      bool               `json:"all_day"`
 	Recurrence  *RecurrenceRuleDTO `json:"recurrence"`
+	// Reminders are the event's reminders (#169, optional).
+	Reminders []ReminderInputDTO `json:"reminders"`
 }
 
 type RecurrenceRuleDTO struct {
@@ -68,6 +70,9 @@ type UpdateEventRequest struct {
 	Timezone    *string            `json:"timezone"`
 	AllDay      *bool              `json:"all_day"`
 	Recurrence  *RecurrenceRuleDTO `json:"recurrence"`
+	// Reminders (#169): absent = untouched; null or [] = remove every editable
+	// VALARM of the target component; an array = the desired editable set.
+	Reminders OptionalField[[]ReminderInputDTO] `json:"reminders,omitzero"`
 }
 
 type MoveEventRequest struct {
@@ -87,6 +92,8 @@ type EventResponse struct {
 	IsRecurring  bool               `json:"is_recurring"`
 	RecurrenceID *string            `json:"recurrence_id"`
 	Recurrence   *RecurrenceRuleDTO `json:"recurrence,omitempty"`
+	// Reminders are the event's VALARMs (#169); always an array.
+	Reminders []ReminderResponse `json:"reminders"`
 }
 
 type EventListResponse struct {

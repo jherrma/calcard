@@ -74,19 +74,31 @@ All backend stories are implemented.
 | 101 | Open Source Attribution                    | Done    |
 | 103 | Event Default Settings                     | Done    |
 | 104 | MCP Server Integration                     | Done    |
+| 169 | Web-app Reminders (VALARM)                 | Partial |
 | 170 | Tasks (VTODO) and Task Lists               | Done    |
 
 ## Summary
 
-- **Done**: 48 / 52
-- **Partial**: 3 / 52 — 045 Error Handling, 047 Accessibility, 049 Responsive
-- **Pending**: 1 / 52 — 050 PWA & Push
+- **Done**: 48 / 53
+- **Partial**: 4 / 53 — 045 Error Handling, 047 Accessibility, 049 Responsive, 169 Web-app Reminders
+- **Pending**: 1 / 53 — 050 PWA & Push
 
-<!-- Counts are of the rows in the three tables above (28 backend + 17 frontend + 7
-     continuation = 52; 170 added 2026-11-03). The denominator used to read 57, which never matched the
+<!-- Counts are of the rows in the three tables above (28 backend + 17 frontend + 8
+     continuation = 53; 170 added 2026-11-03, 169 added 2026-11-04). The denominator used to read 57, which never matched the
      tables — it kept counting stories that are not listed here (there is no 012,
      and 048/102 were dropped). It read 52 until story 030 (API Documentation)
      was removed. Recount from the tables when you change a status. -->
+
+## #169 web-app reminders: status (2026-11-05)
+
+#169 stays **Partial**. Stories 01-18 (server: VALARM parsing, expansion, `GET /alarms/upcoming`,
+`POST /alarms/acknowledge`, cleanup job, `reminders` on events and tasks, the all-day date shift; web app:
+alarms store, toasts, reminder fields in the event and task forms) are implemented and covered by the unit,
+integration (SQLite and PostgreSQL) and Vitest suites. Still open before it can be Done: the manual browser
+checks (laptop sleep, hidden tab, two windows, all-day reminder across a DST change, logout/login on one tab)
+and the real-client DAV interop under **#68** (Thunderbird, Apple, DAVx5/Tasks.org: all NOT VERIFIED). Also open
+for the user: whether the "050 PWA & Push Notifications" rows should point at #169 (in-app reminders) and #171
+(installability).
 
 ## #170 real-client interop (Phase 4 matrix, 2026-11-03)
 

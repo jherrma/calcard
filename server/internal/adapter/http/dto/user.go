@@ -86,6 +86,17 @@ type UpdatePreferencesRequest struct {
 	Preferences map[string]string `json:"preferences"`
 }
 
+// SetDefaultTimezoneRequest is the body of PUT /users/me/preferences/timezone-default.
+// A pointer so a missing key and a non-string are told apart from "".
+type SetDefaultTimezoneRequest struct {
+	Timezone *string `json:"timezone"`
+}
+
+// TimezoneDefaultResponse carries the zone that is stored after the call.
+type TimezoneDefaultResponse struct {
+	Timezone string `json:"timezone"`
+}
+
 // ChangePasswordRequest represents variable for change password
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`

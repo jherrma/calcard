@@ -40,7 +40,9 @@ func (uc *ListEventsUseCase) Execute(ctx context.Context, input ListEventsInput)
 			result = append(result, instances...)
 		} else {
 			if obj.StartTime != nil && obj.EndTime != nil {
-				result = append(result, calendar.ToEventInstance(obj, *obj.StartTime, *obj.EndTime, "", nil, nil))
+				inst := calendar.ToEventInstance(obj, *obj.StartTime, *obj.EndTime, "", nil, nil)
+				inst.Alarms = obj.EventAlarms()
+				result = append(result, inst)
 			}
 		}
 	}

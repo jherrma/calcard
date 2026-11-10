@@ -55,6 +55,7 @@ func eventResponseFromInstance(inst calendar.EventInstance) dto.EventResponse {
 		End:          inst.End,
 		IsAllDay:     inst.IsAllDay,
 		RecurrenceID: &inst.RecurrenceID,
+		Reminders:    dto.NewReminderResponses(inst.Alarms, dto.ReminderKindEvent),
 	}
 	// Mirror the single-event Get predicate so the frontend can tell a
 	// recurring instance apart and show the recurrence scope dialog before
@@ -96,6 +97,7 @@ func eventResponseFromObject(obj *calendar.CalendarObject) dto.EventResponse {
 		Location:    obj.Location,
 		IsAllDay:    obj.IsAllDay,
 		IsRecurring: obj.RecurrenceEndTime != nil,
+		Reminders:   dto.NewReminderResponses(obj.EventAlarms(), dto.ReminderKindEvent),
 	}
 	if obj.StartTime != nil {
 		resp.Start = *obj.StartTime
@@ -210,6 +212,13 @@ func (h *EventHandler) Create(c fiber.Ctx) error {
 	if req.Recurrence != nil {
 		input.RRule = req.Recurrence.ToRRule(req.AllDay)
 	}
+	if len(req.Reminders) > 0 {
+		reminders, err := dto.ToDomainReminders(req.Reminders)
+		if err != nil {
+			return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+		}
+		input.Reminders = reminders
+	}
 
 	obj, err := h.createUC.Execute(c.Context(), input)
 	if err != nil {
@@ -278,6 +287,17 @@ func (h *EventHandler) Update(c fiber.Ctx) error {
 		// here with the request's flag would persist a DATE-TIME UNTIL on an
 		// all-day series — the exact issue #118 violation, plus an off-by-one day.
 		input.Recurrence = req.Recurrence.ToDomain()
+	}
+
+	if req.Reminders.Set {
+		reminders := []calendar.ReminderInput{}
+		if req.Reminders.Value != nil {
+			var err error
+			if reminders, err = dto.ToDomainReminders(*req.Reminders.Value); err != nil {
+				return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+			}
+		}
+		input.Reminders = &reminders
 	}
 
 	obj, err := h.updateUC.Execute(c.Context(), input)

@@ -18,6 +18,7 @@ type fakePrefRepo struct {
 	getErr  error
 	saveErr error
 	upserts int
+	inserts int
 }
 
 func (f *fakePrefRepo) GetByUserID(_ context.Context, userID uint) ([]user.UserPreference, error) {
@@ -70,6 +71,34 @@ func (f *fakePrefRepo) Delete(_ context.Context, userID uint, key string) error 
 	}
 	f.rows = kept
 	return nil
+}
+
+func (f *fakePrefRepo) InsertIfAbsent(_ context.Context, pref *user.UserPreference) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	f.inserts++
+	for i := range f.rows {
+		if f.rows[i].UserID == pref.UserID && f.rows[i].Key == pref.Key {
+			return nil
+		}
+	}
+	f.rows = append(f.rows, *pref)
+	return nil
+}
+
+func (f *fakePrefRepo) ListByKey(_ context.Context, _ []uint, _ string) ([]user.UserPreference, error) {
+	return nil, nil
+}
+
+func (f *fakePrefRepo) ReplaceValueIf(_ context.Context, userID uint, key, oldValue, newValue string) (bool, error) {
+	for i := range f.rows {
+		if f.rows[i].UserID == userID && f.rows[i].Key == key && f.rows[i].Value == oldValue {
+			f.rows[i].Value = newValue
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 const prefUserUUID = "550e8400-e29b-41d4-a716-446655440000"

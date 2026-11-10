@@ -9,6 +9,9 @@ import type { Calendar, CalendarEvent } from '~/types/calendar';
 // the store's `const api = useApi(); await api(url, opts)` usage.
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
 mockNuxtImport('useApi', () => () => apiMock);
+// The reminder refresh hook (#169, story 16) is a lazy import of the alarms store: stand in for it.
+const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
+mockNuxtImport('refreshAlarmsSoon', () => refreshMock);
 
 // Minimal Calendar factory — id is a NUMBER at runtime (typed string), which is
 // exactly the number-vs-string trap these specs guard.
@@ -29,6 +32,7 @@ beforeEach(() => {
   // action logic (we assert action behavior, not that actions were called).
   createTestingPinia({ stubActions: false });
   apiMock.mockReset();
+  refreshMock.mockReset();
 });
 
 describe('toRFC3339', () => {
@@ -398,5 +402,75 @@ describe('task lists stay out of the event side (#170)', () => {
     expect(ids(store.calendars)).toEqual(['1', '2', '3']);
     expect(store.calendars[1]!.kind).toBe('tasks');
     expect(ids(store.eventCalendars)).toEqual(['1', '3']);
+  });
+});
+
+describe('reminder refresh hook (#169)', () => {
+  const formData = {
+    summary: 'Sync',
+    description: '',
+    location: '',
+    start: new Date(2026, 10, 5, 9, 0),
+    end: new Date(2026, 10, 5, 10, 0),
+    timezone: 'UTC',
+    all_day: false,
+  } as unknown as Parameters<ReturnType<typeof useCalendarStore>['createEvent']>[1];
+
+  const store = () => {
+    const s = useCalendarStore();
+    s.calendars = [cal({ id: 1 })];
+    return s;
+  };
+
+  it.each([
+    ['createEvent', (s: ReturnType<typeof useCalendarStore>) => s.createEvent('1', formData)],
+    ['updateEvent', (s: ReturnType<typeof useCalendarStore>) => s.updateEvent('1', 'ev', formData)],
+    ['updateEventTime', (s: ReturnType<typeof useCalendarStore>) => s.updateEventTime('ev', '1', new Date(), new Date())],
+    ['moveEvent', (s: ReturnType<typeof useCalendarStore>) => s.moveEvent('1', 'ev', '1')],
+    ['deleteEvent', (s: ReturnType<typeof useCalendarStore>) => s.deleteEvent('1', 'ev')],
+  ])('%s asks for one refresh after the request succeeded', async (_name, act) => {
+    apiMock.mockResolvedValue({ id: 'ev' });
+    await act(store());
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed mutation does not ask for a refresh', async () => {
+    apiMock.mockRejectedValue(new Error('boom'));
+    await expect(store().deleteEvent('1', 'ev')).rejects.toThrow('boom');
+    await expect(store().createEvent('1', formData)).rejects.toThrow('boom');
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('reminders in the event body (#169 story 17)', () => {
+  const data = (extra: Record<string, unknown> = {}) => ({
+    summary: 'x', description: '', location: '', calendar_id: '1', all_day: false,
+    start: new Date(2026, 1, 9, 11), end: new Date(2026, 1, 9, 12), timezone: 'Europe/Berlin', ...extra,
+  }) as unknown as Parameters<ReturnType<typeof useCalendarStore>['createEvent']>[1];
+  const bodyOf = () => (apiMock.mock.calls[0]![1] as { body: Record<string, unknown> }).body;
+
+  it('createEvent sends reminders only when set', async () => {
+    apiMock.mockResolvedValue({ id: 'e' });
+    await useCalendarStore().createEvent('1', data());
+    expect(bodyOf()).not.toHaveProperty('reminders');
+    apiMock.mockClear();
+    await useCalendarStore().createEvent('1', data({ reminders: [{ offset_seconds: -900 }] }));
+    expect(bodyOf().reminders).toEqual([{ offset_seconds: -900 }]);
+  });
+
+  it('updateEvent sends reminders only when set, an empty list included', async () => {
+    apiMock.mockResolvedValue({ id: 'e' });
+    await useCalendarStore().updateEvent('1', 'e', data());
+    expect(bodyOf()).not.toHaveProperty('reminders');
+    apiMock.mockClear();
+    await useCalendarStore().updateEvent('1', 'e', data({ reminders: [] }));
+    expect(bodyOf().reminders).toEqual([]);
+    expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it('updateEventTime never sends reminders', async () => {
+    apiMock.mockResolvedValue(undefined);
+    await useCalendarStore().updateEventTime('e', '1', new Date(2026, 1, 9, 11), new Date(2026, 1, 9, 12));
+    expect(Object.keys(bodyOf()).sort()).toEqual(['end', 'start', 'timezone']);
   });
 });

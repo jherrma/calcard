@@ -8,9 +8,9 @@ import type { TestingPinia } from '@pinia/testing';
 import TaskForm from './TaskForm.vue';
 import { useCalendarStore } from '~/stores/calendars';
 import { usePreferencesStore, PREF_TIME_FORMAT } from '~/stores/preferences';
-import type { Calendar } from '~/types/calendar';
+import type { Calendar, Reminder } from '~/types/calendar';
 import type { Task, TaskFormData } from '~/types/tasks';
-import { taskToFormData } from '~/utils/taskForm';
+import { buildTaskPatch, taskToFormData } from '~/utils/taskForm';
 
 // SCOPE (#170 story 26, spec §7.3/§7.6, pattern EventForm.spec.ts): the task
 // form. Title required; due before start refused; the all-day switch turns
@@ -146,6 +146,7 @@ describe('TaskForm — fields', () => {
       priority: 'none',
       percent: null,
       status: 'needs-action',
+      reminders: [],
     });
   });
 
@@ -484,5 +485,102 @@ describe('TaskForm — actions and read only', () => {
 
   it('a writable task has no read-only note', () => {
     expect(has(mountForm({ task: task() }).wrapper, 'read-only-note')).toBe(false);
+  });
+});
+
+// ---- Reminders (#169 story 18, spec §10.9, US-6) --------------------------------------------------------------
+
+describe('TaskForm — reminders', () => {
+  const stored = (over: Partial<Reminder> = {}): Reminder => ({
+    index: 0, action: 'display', related: 'end', offset_seconds: -1800, at: null, editable: true, ...over,
+  });
+  const field = (w: Wrapper) => w.findComponent({ name: 'CommonReminderField' });
+  const fieldProps = (w: Wrapper) => field(w).props() as Record<string, unknown>;
+
+  it('sits below Due and Start, above Priority', () => {
+    const { wrapper } = mountForm({ defaultListId: 'errands' });
+    const html = wrapper.html();
+    const block = html.indexOf('reminders-block');
+    expect(block).toBeGreaterThan(html.indexOf('data-test="start"'));
+    expect(block).toBeLessThan(html.indexOf('data-test="priority"'));
+    expect(fieldProps(wrapper).target).toBe('task');
+  });
+
+  it('is disabled with the hint while there is no due date, and enabled once one is set', async () => {
+    const { wrapper, vm } = mountForm({ defaultListId: 'errands' });
+    expect(fieldProps(wrapper).disabled).toBe(true);
+    expect(fieldProps(wrapper).disabledHint).toBe('Set a due date to add a reminder');
+
+    vm.form.due = local(2026, 11, 6);
+    await nextTick();
+    expect(fieldProps(wrapper).disabled).toBe(false);
+  });
+
+  it('a new task starts with none; an existing one shows its own', () => {
+    expect(mountForm({ defaultListId: 'errands' }).vm.form.reminders).toEqual([]);
+    const { wrapper } = mountForm({ task: task({ reminders: [stored()] }) });
+    expect(fieldProps(wrapper).modelValue).toEqual([stored()]);
+  });
+
+  it('passes the all-day mode to the field', async () => {
+    const { wrapper, vm } = mountForm({ defaultListId: 'errands' });
+    expect(fieldProps(wrapper).allDay).toBe(true);
+    vm.form.allDay = false;
+    await nextTick();
+    expect(fieldProps(wrapper).allDay).toBe(false);
+  });
+
+  it('a read-only owned list shows the chips without controls', () => {
+    const { wrapper } = mountForm({ task: task({ reminders: [stored()] }), readOnly: true });
+    expect(fieldProps(wrapper).readOnly).toBe(true);
+  });
+
+  it.each(['team', 'shared-rw', 'feed'])('hides the field on the list %s the user does not own', (uuid) => {
+    const { wrapper } = mountForm({ task: task({ calendar_uuid: uuid, reminders: [stored()] }) });
+    expect(has(wrapper, 'reminders-block')).toBe(false);
+  });
+
+  it('all day <-> timed maps the editable reminders when there is a due date, keeping them end-related', async () => {
+    const t = task({ due: null, due_date: '2026-11-05', due_all_day: true, reminders: [stored({ offset_seconds: 32400 })] });
+    const { vm } = mountForm({ task: t });
+    vm.form.allDay = false;
+    await nextTick();
+    expect(vm.form.reminders.map((r) => [r.offset_seconds, r.related])).toEqual([[0, 'end']]);
+    vm.form.allDay = true;
+    await nextTick();
+    expect(vm.form.reminders.map((r) => [r.offset_seconds, r.related])).toEqual([[32400, 'end']]);
+  });
+
+  it('the mode switch leaves stored reminders alone while there is no due date', async () => {
+    const t = task({ due: null, due_date: null, reminders: [stored({ offset_seconds: -1800 })] });
+    const { vm } = mountForm({ task: t });
+    vm.form.allDay = true;
+    await nextTick();
+    expect(vm.form.reminders).toEqual([stored({ offset_seconds: -1800 })]);
+  });
+
+  it('clearing the due date takes the reminders back to the stored ones', async () => {
+    const t = task({ reminders: [stored()] });
+    const { vm } = mountForm({ task: t });
+    vm.form.reminders = [...vm.form.reminders, { ...stored(), index: -1, offset_seconds: -3600 }];
+    vm.form.due = null;
+    await nextTick();
+    expect(vm.form.reminders).toEqual([stored()]);
+  });
+
+  it('a foreign reminder is carried in the form values but never sent', async () => {
+    const foreign = stored({ index: 1, action: 'email', editable: false, offset_seconds: -60 });
+    const { wrapper, vm } = mountForm({ task: task({ reminders: [stored(), foreign] }) });
+    await vm.handleSubmit();
+    const [form, initial] = wrapper.emitted('submit')![0] as [TaskFormData, TaskFormData];
+    expect(form.reminders).toContainEqual(foreign);
+    expect(buildTaskPatch(initial, form, false)).toEqual({});
+  });
+
+  it('a recurring task keeps the field editable', () => {
+    const { wrapper } = mountForm({ task: task({ ...RECURRING, reminders: [stored()] }) });
+    expect(has(wrapper, 'reminders-block')).toBe(true);
+    expect(fieldProps(wrapper).disabled).toBe(false);
+    expect(fieldProps(wrapper).readOnly).toBe(false);
   });
 });

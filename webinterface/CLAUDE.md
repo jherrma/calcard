@@ -108,6 +108,8 @@ webinterface/
 │   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
 │       ├── ActionToast.vue        # Host of useAppToast().action() toasts ("Task completed" + Undo), bottom centre; default layout only
+│       ├── ReminderField.vue      # #169: reminder chips + "Add reminder" (presets, Custom…), v-model = Reminder[]; props allDay, readOnly, target ('event'|'task'), disabled, disabledHint; used by EventForm and TaskForm
+│       ├── ReminderToast.vue      # #169: sticky reminder toasts (group app-reminder) for the alarms store's queue; default + settings layouts
 │       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
 │       ├── AppSidebar.vue         # Main navigation sidebar (Dashboard, Calendar, Tasks, Contacts, Settings); the Tasks badge is
 │       │                          #   tasksStore.overdueCount, summary fetched on mount, at each local midnight, at the next timed due instant of a loaded task, and when the tab becomes visible again (#170)
@@ -119,6 +121,7 @@ webinterface/
 │       ├── LoadingSpinner.vue     # Centered spinner
 │       └── SkeletonList.vue       # Loading placeholder rows
 ├── stores/                  # Pinia stores (state + getters + actions)
+│   ├── alarms.ts            # #169 reminders: polling of /alarms/upcoming, one timer per alarm key, display queue, acknowledgement + localStorage mirror
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
@@ -143,9 +146,10 @@ webinterface/
 │   ├── auth.ts              # Requires authentication (redirects to /auth/login)
 │   └── guest.ts             # Requires unauthenticated (redirects away from auth pages)
 ├── layouts/
-│   ├── default.vue          # App shell: sidebar + header + Toast + ActionToast + ConfirmDialog + loading overlay
+│   ├── default.vue          # App shell: sidebar + header + Toast + ActionToast + ReminderToast + ConfirmDialog + loading overlay
 │   └── auth.vue             # Centered card with CalCard branding
 ├── types/
+│   ├── alarms.ts            # #169: UpcomingAlarm, UpcomingAlarmsResponse, AcknowledgeAlarmsBody
 │   ├── auth.ts              # User, LoginResponse, RefreshResponse, SystemSettings, AuthMethod
 │   ├── calendar.ts          # Calendar, CalendarEvent, RecurrenceRule, EventFormData
 │   ├── contacts.ts          # AddressBook, Contact, ContactEmail/Phone/Address/URL
@@ -164,6 +168,11 @@ webinterface/
 │   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
 │   ├── searchFormat.ts      # Shared row labels for the search palette + results page; taskListRoute (#170)
+│   ├── alarmRefresh.ts      # #169: refreshAlarmsSoon() (lazy import of the alarms store's refreshSoon), called after event/task mutations and a time-zone change
+│   ├── alarmToast.ts        # #169: toast wording (alarmDetail, summaryLines, MAX_SINGLE_TOASTS)
+│   ├── reminders.ts         # #169: presets, all-day offset formulas, describeReminder, remindersChanged, toReminderInputs, mapReminderMode; task presets/wording via ReminderTarget
+│   ├── reminderChannel.ts   # #169: BroadcastChannel('calcard-reminders') claim between tabs (§10.7)
+│   ├── alarmSchedule.ts     # #169 pure helpers: delayMs (cap 2^31-1, skew), mergePoll (§10.3), alarmLink (Open targets)
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
 │   ├── davCredentials.ts    # Generated DAV credential username/password + the username rule
 │   ├── passwordPolicy.ts    # Client copy of the server's password rules (Unicode classes, 8–72 bytes); checks the NEW-password field of
@@ -176,9 +185,13 @@ webinterface/
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
+│   ├── alarms.client.ts     # #169: isAuthenticated (immediate) -> alarms.start() / alarms.stop()
 │   ├── first-day-of-week.client.ts # Starts useDatePickerFirstDay() app-wide at boot
 │   ├── primevue-services.ts # Registers ConfirmationService (for useConfirm) and the v-tooltip directive (#170)
-│   └── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
+│   ├── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
+│   └── timezone.client.ts   # #169: one set-if-empty PUT /users/me/preferences/timezone-default per tab and signed-in period
+│                            #   (watches auth.isAuthenticated, immediate); the answer goes into preferencesStore.setTimezone (no PATCH);
+│                            #   errors only console.warn; `useNuxtApp().$timezoneReady()` = the always-resolving pending promise
 ├── assets/css/
 │   ├── tailwind.css         # Tailwind layer entry (@layer tailwind-base, primevue, …)
 │   ├── theme.css            # Unlayered: theme-switch transition + pre-paint background
@@ -526,6 +539,118 @@ The second half of theming, and the one that persists DIFFERENTLY from the theme
 - **A save applies optimistically and rolls back** if the server refuses, so the screen never shows
   a colour the account does not have.
 
+### User time zone (#169)
+
+`plugins/timezone.client.ts` fills the user's `timezone` preference once per tab and signed-in period: it watches
+`auth.isAuthenticated` (immediate, so a session restored by `initAuth`, a password sign-in and the OAuth callback
+all count) and sends `PUT /api/v1/users/me/preferences/timezone-default` with the browser's zone. The server only
+stores it if none is stored ("set-if-empty"), so the *answer* is written into the store via
+`preferencesStore.setTimezone()` (no PATCH), also when it differs from the browser's zone. Errors (400, network)
+only `console.warn`: no toast, no retry. The flag re-arms when `isAuthenticated` turns false.
+`useNuxtApp().$timezoneReady()` returns the pending promise (never rejects) for callers that must wait for it.
+`PREF_TIMEZONE` (`timezone`, default `UTC`) and the `timezone` getter live in `stores/preferences.ts`;
+Settings -> Calendar has a filterable "Time zone" Select (`UTC` + `Intl.supportedValuesOf('timeZone')`) saved
+through the preferences PATCH, a 400 shows the server's text.
+
+### Reminders (#169)
+
+`stores/alarms.ts` is the data layer of the web app's reminders; `components/common/ReminderToast.vue` renders its
+`queue` as toasts (see "Toasts, several tabs and refresh hooks" below). Spec §10.
+
+- **Lifecycle.** `plugins/alarms.client.ts` watches `auth.isAuthenticated` (immediate): `true` -> `start()`,
+  `false` -> `stop()`. `start()` waits for `$timezoneReady()` (at most 3 s, so the first poll does not hit the UTC
+  fallback), loads the persisted keys, polls, then installs the 5-minute interval, the 30 s heartbeat, the
+  `visibilitychange` and `online` listeners. `stop()` clears every timer and listener, bumps the sequence tokens (a
+  late answer is dropped) and keeps state; `reset()` (called by `clearAuth` through a lazy import, like
+  `resetTasksStore`) also empties the state and removes that user's `localStorage` entry. Both are idempotent.
+  Every cross-store access (`toRFC3339` from `stores/calendars.ts`) is a lazy `import()`.
+- **Poll.** `GET /api/v1/alarms/upcoming` (raw JSON, no envelope) with `query: { until: toRFC3339(now + 24 h) }`:
+  ofetch encodes the `+` of the offset; no zone parameter. One request in flight (a call meanwhile schedules ONE
+  follow-up). Triggers: `start()`, every 5 minutes (also hidden tabs), `visibilitychange` to visible when the last
+  poll is older than 60 s, `online`, heartbeat gap > 90 s (sleep: `checkDue()` + `refresh()`), `refreshSoon()`
+  (2 s debounce, for the refresh hooks below).
+- **Skew.** `skewMs = Date.parse(server_time) - (requestStart + requestEnd) / 2`; every "now" is `Date.now() + skewMs`.
+- **Timers.** `mergePoll` (pure, `utils/alarmSchedule.ts`): a new key gets exactly one `setTimeout` (delay
+  `delayMs`, capped at 2^31-1), or goes straight into `queue` when `trigger_at <= now` (missed, up to 24 h); a key
+  absent from the answer is cancelled, except when `truncated` and its trigger is after the last returned one;
+  queued, shown and pending keys are never armed again. A firing timer re-arms when `now + skew < trigger_at`
+  (clock set back). `queue` is oldest first and holds the data the toast needs.
+- **Acknowledgement.** `ReminderToast` calls `markShown(keys)` once toasts are rendered in a visible document. The keys
+  move to `pendingAck`, then a 1 s debounced `POST /api/v1/alarms/acknowledge` sends `{ keys }` (no times) in batches
+  of at most 500; 204 moves them to `shown`. A failure keeps them pending and retries after 5 s, 30 s, 2 min, then
+  with every poll (`useApi` never retries writes). `shown` and `pendingAck` are mirrored to
+  `localStorage['calcard-alarms:<user id>']` as `{ shown, pending }` (key -> trigger instant, dropped 25 h after
+  it); after a reload a pending key is neither shown again nor forgotten (its POST is retried). Storage access is
+  always in `try/catch`.
+- **Failures.**
+
+  | Situation | Behaviour |
+  |---|---|
+  | Poll fails (network, 5xx) | timers kept, `console.warn`, next trigger retries |
+  | 401 | `useApi` refreshes the token; a failed refresh logs out -> `stop()` |
+  | 404 on the poll or the acknowledgement | `disabled`: polling and timers stop until the next sign-in (the server runs with `alarms.enabled: false`) |
+  | 400 on the poll | a bug: `console.error` once, polling stops for the session, armed timers keep running |
+  | Acknowledge fails | retry schedule above; the key is never queued again while pending |
+
+#### Toasts, several tabs and refresh hooks (story 16)
+
+- **Group `app-reminder`** (`REMINDER_TOAST_GROUP` in `composables/useAppToast.ts`, next to `ACTION_TOAST_GROUP`):
+  `components/common/ReminderToast.vue` hosts it, top right, and is mounted by the **default and settings layouts**
+  (not the auth layout), so a reminder shows on every authenticated page. It cannot reuse `useAppToast().action()`
+  (one at a time, 5 s). The toasts are sticky `info` (no `life`) with "Open" and "Dismiss"; PrimeVue renders them as
+  `role="alert"`, the component never moves focus, and the buttons are named ("Open Team sync", "Dismiss reminder for
+  Team sync"). Wording lives in `utils/alarmToast.ts`.
+- **Display rules.** Nothing is claimed or shown while `document.visibilityState !== 'visible'`; the queue waits and is
+  worked off at `visibilitychange`. A toast rendered in a visible document calls `markShown(keys)` (the
+  acknowledgement), so call `markShown` only then. More than 3 at once become ONE summary toast ("You missed N
+  reminders", up to 5 lines plus "and N more") that acknowledges every key. "Open" goes to `alarmLink(alarm)`.
+- **Several tabs (§10.7).** `utils/reminderChannel.ts`, `BroadcastChannel('calcard-reminders')`: a visible tab posts
+  `{type:'claim', key, tab, at}`, waits 300 ms, the smallest `(at, tab)` shows the toast and posts
+  `{type:'shown', key}`; every tab receiving `shown` calls `alarms.drop([key])` (cancels the timer, leaves the queue,
+  never queues it again, acknowledges nothing). A tab that lost yields the key and claims it again after 5 s if no
+  `shown` came. Hidden tabs never claim. Without `BroadcastChannel` (absent or throwing) every tab shows its own.
+  `navigator.locks` is not used (secure contexts only; the default compose deployment is plain http).
+- **Refresh hooks (§10.3).** `refreshAlarmsSoon()` (`utils/alarmRefresh.ts`, a lazy import of the alarms store's
+  debounced `refreshSoon()`) runs after a SUCCESSFUL `calendars.createEvent` / `updateEvent` / `updateEventTime` /
+  `moveEvent` / `deleteEvent`, `tasks.createTask` / `updateTask` / `toggleComplete` / `undoComplete` (through
+  `updateTask`) / `removeTask`, and after Settings > Calendar saved a changed time zone. Any new code that creates,
+  changes, moves or deletes an event or task over the API (the reminder fields of the forms, stories 17 and 18) goes
+  through those store actions and needs no call of its own; a new direct `api()` write must call
+  `refreshAlarmsSoon()` itself.
+
+#### Reminder field in the event form (story 17)
+
+- **`components/common/ReminderField.vue`** (`<CommonReminderField v-model allDay readOnly>`) + **`utils/reminders.ts`**. The v-model is
+  the item's full `Reminder[]` as the API answers it; `EventForm` holds it as `reminders` and sends
+  `EventFormData.reminders` (`ReminderInput[]`: `{ offset_seconds }` or `{ at }`) ONLY when `remindersChanged(initial, current)`
+  says the editable set changed. A title or date change alone sends no `reminders` key (relative ones move with the date, the server
+  shifts absolute all-day ones); `updateEventTime` (drag and drop) never sends them. A PATCH `reminders` list REPLACES the editable
+  ones, so the form sends every editable reminder it shows (absolute ones as the `at` the server returned); read-only ones
+  (`editable: false`: END-related, EMAIL, REPEAT, ...) show as "Set in another app" and are never sent or removed.
+- **All-day reminders are relative too (D23)**: "On the day at 09:00" = `32400`, "N days before at hh:mm" = `-N*86400 + hh*3600 + mm*60`
+  (`-54000`, `-140400`, `-572400`; custom 2 days before at 07:30 = `-145800`). No browser zone is involved; only an absolute chip
+  ("At 4 Nov, 09:00") is shown in the browser's zone. Back: `daysBefore = -floor(offset/86400)`.
+- **Switching all-day <-> timed** maps editable relative reminders to the other mode's preset with the same days before
+  (`mapReminderMode`); absolute and read-only ones stay. At most 5 editable reminders, duplicates merge, ordered by trigger.
+- **Ownership (Q9)**: the block is hidden (and nothing sent) unless the selected calendar is in `calendarStore.ownedCalendars`: a shared
+  event's VALARMs alert the owner and every sharee. New events start with none (Q13).
+- Story 18 (task form) reuses the field and helpers with `target="task"` (below).
+
+#### Reminder field in the task form (story 18)
+
+- `TaskForm` renders `<CommonReminderField target="task" :disabled="!form.due" disabled-hint="Set a due date to add a reminder">` below
+  the Due/Start row. `target="task"` (`ReminderTarget`) switches the presets and wording to the due date: timed = At due time, 5/15/30 minutes,
+  1 hour, 1 day before due; all-day = "On the due date at 09:00" (`32400`) and "1 day before at 09:00" (`-54000`); `offsetReminder(offset, 'task')`
+  creates `related: 'end'` (the server writes `TRIGGER;RELATED=END`). `describeReminder(r, allDay, 'task')` words an end-related one
+  ("30 minutes before due"); a start-related one on a task is read only. `mapReminderMode(..., 'task')` keeps them end-related.
+- `TaskFormData.reminders` (full `Reminder[]`): `taskToFormData` reads `task.reminders`, `newTaskFormData` starts with none.
+  `buildTaskInput` sends `reminders` only with a due date (the server answers 400 `A reminder needs a due date` otherwise); `buildTaskPatch`
+  sends the full editable list ONLY when `remindersChanged` (a due-only change sends none), so `isEmptyTaskPatch` covers an untouched form.
+  `stores/tasks.ts` `createTask`/`updateTask` pass the bodies through. Quick-add has no reminder control.
+- Disabled without a due date (chips of stored reminders stay and can be removed). Clearing the due resets the field to the stored list;
+  the all-day switch maps reminders only while a due date is set. Hidden when the task's list is not owned (`shared` or `subscribed`, Q9);
+  `readOnly` shows chips without controls. A repeating task's field stays editable (a reminders-only PATCH edits the master, no 409).
+
 ### Type System Gotchas
 
 **AddressBook vs Calendar field naming**: AddressBook types use GORM-style PascalCase (`ID`, `UUID`, `Name`, `CreatedAt`) because the backend returns raw GORM models. Calendar/Event types use snake_case (`id`, `name`, `created_at`) because they go through DTOs. This inconsistency comes from the backend — don't try to "fix" it on the frontend side.
@@ -722,7 +847,8 @@ toast.action('Task completed', 'Undo', () => undo()); // one button, 5 s, bottom
 ```
 
 `action()` toasts render in `components/common/ActionToast.vue` (group `ACTION_TOAST_GROUP`), which only
-the **default** layout mounts, so they do not show on settings or auth pages. One at a time: a new one
+the **default** layout mounts, so they do not show on settings or auth pages. Reminder toasts (#169) use their own
+group `REMINDER_TOAST_GROUP` and host `ReminderToast.vue` (default and settings layouts); see "Reminders (#169)". One at a time: a new one
 replaces the previous. The button runs the callback once and closes the toast. The 5 s countdown pauses while the pointer is over the toast or the focus is inside it (PrimeVue pauses on hover only when `onMouseEnter` is passed; the focus pause raises the same synthetic mouseenter/mouseleave).
 
 ### Confirmation Dialogs

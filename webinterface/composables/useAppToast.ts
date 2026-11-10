@@ -3,6 +3,9 @@ import type { ToastMessageOptions } from 'primevue/toast';
 /** Toast group of the action toasts, rendered by `components/common/ActionToast.vue` (default layout). */
 export const ACTION_TOAST_GROUP = 'app-action';
 
+/** Toast group of the reminder toasts, rendered by `components/common/ReminderToast.vue` (default and settings layouts; #169). */
+export const REMINDER_TOAST_GROUP = 'app-reminder';
+
 /** How long an action toast (e.g. "Task completed" + Undo) stays, in ms. */
 export const ACTION_TOAST_LIFE = 5000;
 
@@ -49,3 +52,19 @@ export const useAppToast = () => {
     },
   };
 };
+
+/** What a reminder toast carries (`ReminderToast.vue`, #169): the keys it acknowledged and its button targets. */
+export interface ReminderToastData {
+  keys: string[];
+  /** The event or task name, for the buttons' aria-labels. */
+  title: string;
+  /** Where "Open" goes; absent on the summary toast. */
+  link?: string;
+  /** The summary toast's list. */
+  lines?: string[];
+  dismissLabel: string;
+}
+
+export interface ReminderToastMessage extends ToastMessageOptions {
+  reminder: ReminderToastData;
+}

@@ -87,6 +87,10 @@ func (r *stubRepo) GetCalendarObjectByUUID(_ context.Context, uuid string) (*cal
 	return obj, nil
 }
 
+func (r *stubRepo) ListAlarmCandidates(context.Context, []uint, time.Time, time.Time) ([]*calendar.CalendarObject, error) {
+	return nil, nil
+}
+
 func (r *stubRepo) ListTasks(_ context.Context, q calendar.TaskQuery) ([]*calendar.CalendarObject, int64, error) {
 	r.queries = append(r.queries, q)
 	return r.listed, r.listTotal, r.listErr

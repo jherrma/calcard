@@ -22,6 +22,8 @@ type CreateEventInput struct {
 	IsAllDay    bool
 	RRule       string
 	Timezone    string
+	// Reminders are the simple reminders to write as VALARMs (#169); MCP passes none.
+	Reminders []calendar.ReminderInput
 }
 
 type CreateEventUseCase struct {
@@ -35,7 +37,7 @@ func NewCreateEventUseCase(calendarRepo calendar.CalendarRepository) *CreateEven
 func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInput) (*calendar.CalendarObject, error) {
 	// A task list (supported_components "VTODO") does not take events (#170).
 	// Checked first: no other correction to the request would make it succeed.
-	if err := requireEventCalendar(ctx, uc.calendarRepo, input.CalendarID); err != nil {
+	if _, err := requireEventCalendar(ctx, uc.calendarRepo, input.CalendarID); err != nil {
 		return nil, err
 	}
 	// A missing (or JSON null) start/end arrives as the zero time. Without this
@@ -54,6 +56,15 @@ func (uc *CreateEventUseCase) Execute(ctx context.Context, input CreateEventInpu
 		if _, err := rrule.StrToRRule(input.RRule); err != nil {
 			return nil, fmt.Errorf("%w: invalid recurrence rule: %v", ErrInvalidInput, err)
 		}
+	}
+
+	// A new event has no VALARM to match, so every entry is range-checked
+	// against its start (#169, spec §7.3). Nothing is written on a refusal.
+	if err := calendar.CheckReminderShape(input.Reminders); err != nil {
+		return nil, invalidInput(err)
+	}
+	if err := calendar.CheckReminderRanges(input.Reminders, input.Start); err != nil {
+		return nil, invalidInput(err)
 	}
 
 	eventUUID := uuid.New().String()
@@ -132,6 +143,8 @@ func (uc *CreateEventUseCase) generateICal(input CreateEventInput, uid string) (
 			Value: input.RRule,
 		})
 	}
+
+	calendar.ApplyReminders(event.Component, input.Reminders, calendar.ReminderKindEvent)
 
 	cal.Children = append(cal.Children, event.Component)
 	// RFC 5545 §3.2.19: a TZID must name a VTIMEZONE in the same object.

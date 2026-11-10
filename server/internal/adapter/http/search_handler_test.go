@@ -504,3 +504,23 @@ func TestSearchCalendarHitsCarryKind(t *testing.T) {
 		"Work mixed":  "both",
 	}, kinds)
 }
+
+// A search hit carries the occurrence's reminders like the event routes do
+// (#169 story 10).
+func TestSearchEventHitCarriesReminders(t *testing.T) {
+	f := setupSearchHandlerTest(t)
+	defer f.db.Close()
+
+	start := time.Now().AddDate(0, 0, 3).Truncate(time.Hour)
+	f.addEvent(t, f.ownCal, "alarmed", "Dentist", start, "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n")
+
+	status, body := f.search(t, "q=dentist")
+	require.Equal(t, fiber.StatusOK, status)
+	require.Len(t, body.Events.Items, 1)
+	r := body.Events.Items[0].Event.Reminders
+	require.Len(t, r, 1)
+	assert.Equal(t, "display", r[0].Action)
+	require.NotNil(t, r[0].OffsetSeconds)
+	assert.Equal(t, int64(-900), *r[0].OffsetSeconds)
+	assert.True(t, r[0].Editable)
+}

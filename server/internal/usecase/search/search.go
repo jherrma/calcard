@@ -386,6 +386,7 @@ func resolveInstance(obj *calendar.CalendarObject, pivot time.Time) (calendar.Ev
 		endTime = *obj.EndTime
 	}
 	master := calendar.ToEventInstance(obj, *obj.StartTime, endTime, "", nil, nil)
+	master.Alarms = obj.EventAlarms()
 
 	// RecurrenceEndTime is set only for recurring series (maintained by
 	// PopulateDenormFieldsFromICal), so its absence means one occurrence.

@@ -113,7 +113,7 @@ func (r *CalendarRepository) ListReadableCalendarIDs(ctx context.Context, userID
 	readable := []calendar.ReadableCalendar{}
 	err := r.db.WithContext(ctx).
 		Model(&calendar.Calendar{}).
-		Select("id", "uuid", "name", "color", "supported_components").
+		Select("id", "uuid", "name", "color", "supported_components", "user_id AS owner_id", "subscribed").
 		Where("user_id = ? OR id IN (?)", userID, shared).
 		Order("id").
 		Find(&readable).Error
@@ -595,6 +595,24 @@ func (r *CalendarRepository) ListTasks(ctx context.Context, q calendar.TaskQuery
 		return nil, 0, err
 	}
 	return tasks, total, nil
+}
+
+// ListAlarmCandidates implements CalendarRepository.ListAlarmCandidates (#169),
+// served by idx_calobj_cal_alarm. The bounds are UTC-normalised for the same
+// reason as ListTasks: SQLite compares these TEXT columns lexicographically.
+func (r *CalendarRepository) ListAlarmCandidates(ctx context.Context, calendarIDs []uint, from, until time.Time) ([]*calendar.CalendarObject, error) {
+	if len(calendarIDs) == 0 {
+		return nil, nil
+	}
+	var objs []*calendar.CalendarObject
+	err := r.db.WithContext(ctx).
+		Where("calendar_id IN ? AND alarm_last_at >= ? AND alarm_first_at <= ?", calendarIDs, from.UTC(), until.UTC()).
+		Order("id").
+		Find(&objs).Error
+	if err != nil {
+		return nil, err
+	}
+	return objs, nil
 }
 
 // taskStatusCondition is the SQL condition of a task status filter (empty for

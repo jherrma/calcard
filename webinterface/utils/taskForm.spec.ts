@@ -1,6 +1,8 @@
 // @vitest-environment nuxt
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Reminder } from '~/types/calendar';
 import type { Task, TaskFormData, TaskInput, TaskPatch } from '~/types/tasks';
+import { offsetReminder } from './reminders';
 import {
   TASK_PRIORITY_VALUES,
   buildTaskInput,
@@ -95,6 +97,7 @@ describe('taskToFormData', () => {
       priority: 'high',
       percent: 40,
       status: 'in-process',
+      reminders: [],
     });
   });
 
@@ -129,6 +132,7 @@ describe('newTaskFormData', () => {
       priority: 'none',
       percent: null,
       status: 'needs-action',
+      reminders: [],
     });
     expect(newTaskFormData('errands').summary).toBe('');
   });
@@ -374,5 +378,92 @@ describe('describeRecurrence', () => {
   it('a task repeating by RDATE alone (no rule) says so', () => {
     expect(describeRecurrence(null)).toBe('On set dates');
     expect(describeRecurrence('  ')).toBe('On set dates');
+  });
+});
+
+// ---- Reminders (#169 story 18, spec §10.9) ------------------------------------------------------------------
+
+describe('task reminders in the form conversions', () => {
+  const stored = (over: Partial<Reminder> = {}): Reminder => ({
+    index: 0, action: 'display', related: 'end', offset_seconds: -1800, at: null, editable: true, ...over,
+  });
+  const foreign = (): Reminder => stored({ index: 1, action: 'email', editable: false, offset_seconds: -60 });
+  const withDue = (reminders: Reminder[], over: Partial<Task> = {}) =>
+    task({ due: '2026-11-05T16:00:00Z', reminders, ...over });
+
+  function edit(t: Task, change: (data: TaskFormData) => void): TaskPatch {
+    const initial = taskToFormData(t);
+    const data = taskToFormData(t);
+    change(data);
+    return buildTaskPatch(initial, data, t.is_recurring);
+  }
+
+  it('taskToFormData reads the task\'s reminders, editable and read only, in trigger order', () => {
+    const data = taskToFormData(withDue([foreign(), stored({ index: 2, offset_seconds: -3600 }), stored()]));
+    expect(data.reminders.map((r) => r.offset_seconds)).toEqual([-3600, -1800, -60]);
+    expect(taskToFormData(task()).reminders).toEqual([]);
+  });
+
+  it('buildTaskInput sends the offsets of a timed task with a due date', () => {
+    const form = newTaskFormData('errands', 'Call');
+    form.allDay = false;
+    form.due = local(2026, 11, 6, 18);
+    form.reminders = [offsetReminder(-1800, 'task')];
+    expect(buildTaskInput(form).reminders).toEqual([{ offset_seconds: -1800 }]);
+  });
+
+  it('buildTaskInput sends 32400 and -54000 for an all-day task, whatever the browser zone', () => {
+    const form = newTaskFormData('errands', 'Pay');
+    form.due = local(2026, 11, 6);
+    form.reminders = [offsetReminder(32400, 'task'), offsetReminder(-54000, 'task')];
+    expect(buildTaskInput(form).reminders).toEqual([{ offset_seconds: -54000 }, { offset_seconds: 32400 }]);
+  });
+
+  it('buildTaskInput sends no reminders without any, and none without a due date (the server answers 400)', () => {
+    const form = newTaskFormData('errands', 'Call');
+    expect(buildTaskInput(form)).not.toHaveProperty('reminders');
+    form.reminders = [offsetReminder(-1800, 'task')];
+    expect(buildTaskInput(form)).not.toHaveProperty('reminders');
+  });
+
+  it('a due-only change sends no reminders (they move with the due date)', () => {
+    const patch = edit(withDue([stored(), foreign()]), (d) => { d.due = local(2026, 11, 9, 8); });
+    expect(patch).not.toHaveProperty('reminders');
+    expect(patch).toHaveProperty('due');
+  });
+
+  it('an unchanged form with reminders is an empty patch', () => {
+    expect(isEmptyTaskPatch(edit(withDue([stored(), foreign()]), () => {}))).toBe(true);
+  });
+
+  it('adding a reminder sends the full editable list and never the read-only ones', () => {
+    const patch = edit(withDue([stored(), foreign()]), (d) => {
+      d.reminders = [...d.reminders, offsetReminder(-3600, 'task')];
+    });
+    expect(patch).toEqual({ reminders: [{ offset_seconds: -3600 }, { offset_seconds: -1800 }] });
+  });
+
+  it('removing a chip sends the remaining list; removing the last sends []', () => {
+    const t = withDue([stored(), stored({ index: 1, offset_seconds: -3600 })]);
+    expect(edit(t, (d) => { d.reminders = d.reminders.filter((r) => r.offset_seconds !== -1800); }))
+      .toEqual({ reminders: [{ offset_seconds: -3600 }] });
+    expect(edit(withDue([stored()]), (d) => { d.reminders = []; })).toEqual({ reminders: [] });
+  });
+
+  it('a foreign reminder the form does not edit survives: removing only the editable one keeps it out of the body', () => {
+    const patch = edit(withDue([stored(), foreign()]), (d) => { d.reminders = d.reminders.filter((r) => !r.editable); });
+    expect(patch).toEqual({ reminders: [] });
+    expect(isEmptyTaskPatch(patch)).toBe(false);
+  });
+
+  it('a reminders-only change on a repeating task is a plain reminders patch (no status or progress)', () => {
+    const t = withDue([stored()], { is_recurring: true, rrule: 'FREQ=DAILY', percent_complete: 0, status: 'needs-action' });
+    expect(edit(t, (d) => { d.reminders = []; })).toEqual({ reminders: [] });
+  });
+
+  it('an absolute reminder is sent back as the `at` the server returned', () => {
+    const abs = stored({ offset_seconds: null, at: '2026-11-05T08:00:00Z' });
+    const patch = edit(withDue([abs]), (d) => { d.reminders = [...d.reminders, offsetReminder(-60, 'task')]; });
+    expect(patch.reminders).toEqual([{ offset_seconds: -60 }, { at: '2026-11-05T08:00:00Z' }]);
   });
 });

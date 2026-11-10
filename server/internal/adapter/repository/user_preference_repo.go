@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"gorm.io/gorm"
@@ -39,6 +40,17 @@ func (r *gormUserPreferenceRepo) GetByKey(ctx context.Context, userID uint, key 
 	return &pref, nil
 }
 
+func (r *gormUserPreferenceRepo) ListByKey(ctx context.Context, userIDs []uint, key string) ([]user.UserPreference, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	var prefs []user.UserPreference
+	if err := r.db.WithContext(ctx).Where("key = ? AND user_id IN ?", key, userIDs).Find(&prefs).Error; err != nil {
+		return nil, err
+	}
+	return prefs, nil
+}
+
 // Upsert relies on the idx_user_pref_key unique index over (user_id, key), which
 // AutoMigrate creates from the struct tags. The conflict target must name those
 // two columns in that order for both SQLite and PostgreSQL to match the index.
@@ -55,4 +67,20 @@ func (r *gormUserPreferenceRepo) Delete(ctx context.Context, userID uint, key st
 	return r.db.WithContext(ctx).
 		Where("user_id = ? AND key = ?", userID, key).
 		Delete(&user.UserPreference{}).Error
+}
+
+// InsertIfAbsent shares Upsert's conflict target (idx_user_pref_key) but leaves
+// an existing row untouched.
+func (r *gormUserPreferenceRepo) InsertIfAbsent(ctx context.Context, pref *user.UserPreference) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "key"}},
+		DoNothing: true,
+	}).Create(pref).Error
+}
+
+func (r *gormUserPreferenceRepo) ReplaceValueIf(ctx context.Context, userID uint, key, oldValue, newValue string) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&user.UserPreference{}).
+		Where("user_id = ? AND key = ? AND value = ?", userID, key, oldValue).
+		Updates(map[string]any{"value": newValue, "updated_at": time.Now()})
+	return res.RowsAffected > 0, res.Error
 }

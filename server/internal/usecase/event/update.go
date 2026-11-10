@@ -9,6 +9,7 @@ import (
 
 	"github.com/emersion/go-ical"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
+	"github.com/jherrma/caldav-server/internal/usecase/ownerzone"
 	"github.com/teambition/rrule-go"
 )
 
@@ -29,10 +30,23 @@ type UpdateEventInput struct {
 	Timezone     *string
 	RecurrenceID string // Specific instance to update (RFC 5545 format, e.g., 20230101T100000Z)
 	Scope        string // this, this_and_future, all
+	// Reminders (#169): nil leaves the VALARMs untouched, a pointer to an empty
+	// slice removes every editable VALARM of the target component, a non-empty
+	// slice is the desired multiset of editable reminders.
+	Reminders *[]calendar.ReminderInput
 }
 
 type UpdateEventUseCase struct {
 	calendarRepo calendar.CalendarRepository
+	zones        ownerzone.Source
+}
+
+// WithOwnerZones sets the resolver of the calendar owner's time zone, used to
+// shift the absolute reminders of an all-day event whose date moves (#169, spec
+// §7.5 step 4). Without one the shift counts whole UTC days.
+func (uc *UpdateEventUseCase) WithOwnerZones(z ownerzone.Source) *UpdateEventUseCase {
+	uc.zones = z
+	return uc
 }
 
 func NewUpdateEventUseCase(calendarRepo calendar.CalendarRepository) *UpdateEventUseCase {
@@ -49,7 +63,8 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	// Rewriting an event in a calendar that does not store events is refused
 	// like a create (#170), as a DAV PUT of it would be. Deleting it stays
 	// possible.
-	if err := requireEventCalendar(ctx, uc.calendarRepo, obj.CalendarID); err != nil {
+	evCal, err := requireEventCalendar(ctx, uc.calendarRepo, obj.CalendarID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -65,6 +80,14 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	// Find or create the target event component based on scope
 	var targetEvent *ical.Event
 	allEvents := cal.Events()
+	// createdTarget: the edit built a new override or master (scope this /
+	// this_and_future), which is a change whatever the reminders say.
+	createdTarget := false
+	if input.Reminders != nil {
+		if err := calendar.CheckReminderShape(*input.Reminders); err != nil {
+			return nil, invalidInput(err)
+		}
+	}
 
 	if input.Scope == "this" && input.RecurrenceID != "" {
 		// Normalize the requested instance to a canonical UTC key so an
@@ -145,8 +168,10 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 				event.Props.SetDateTime(ical.PropDateTimeStart, occStart)
 				event.Props.SetDateTime(ical.PropDateTimeEnd, occStart.Add(occDuration))
 			}
+			copyRelativeAlarms(master.Component, event.Component)
 			cal.Children = append(cal.Children, event.Component)
 			targetEvent = event
+			createdTarget = true
 		}
 	} else if input.Scope == "this_and_future" && input.RecurrenceID != "" {
 		// SPLIT SERIES:
@@ -248,8 +273,10 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 			})
 		}
 
+		copyRelativeAlarms(master.Component, newMaster.Component)
 		cal.Children = append(cal.Children, newMaster.Component)
 		targetEvent = newMaster
+		createdTarget = true
 
 		// 4b. Ensure the new master has valid DTSTART/DTEND from the split point
 		// so that if input.Start/End are nil, it still starts at the right place.
@@ -295,6 +322,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		if targetEvent == nil {
 			targetEvent = &allEvents[0]
 		}
+	}
+
+	// Spec §7.5 step 1: the target's date before the field edits. A component
+	// this request created has no earlier date and is never shifted.
+	beforeDay, beforeAllDay := 0, false
+	if !createdTarget {
+		beforeDay, beforeAllDay = calendar.DatePropDay(targetEvent.Props.Get(ical.PropDateTimeStart))
 	}
 
 	if input.Summary != nil {
@@ -411,6 +445,43 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 		}
 	}
 
+	// Reminders (#169, spec §7.5): after the field edits and after the relative
+	// VALARMs were copied into a new override or master. The range rules apply
+	// only to entries that match no existing VALARM, so a kept reminder is never
+	// refused. Nothing has been written yet, so a 400 writes nothing.
+	var appended []*ical.Component
+	if input.Reminders != nil {
+		desired := *input.Reminders
+		if err := calendar.CheckReminderRanges(
+			calendar.UnmatchedReminders(targetEvent.Component, desired, calendar.ReminderKindEvent), effectiveStart); err != nil {
+			return nil, invalidInput(err)
+		}
+		var changed bool
+		changed, appended = calendar.ApplyReminders(targetEvent.Component, desired, calendar.ReminderKindEvent)
+		if !changed && !createdTarget && onlyReminders(input) {
+			// The same reminders as stored and nothing else to edit: write
+			// nothing, so the ETag stays.
+			return obj, nil
+		}
+	}
+
+	// All-day date shift (D23, spec §7.5 step 4): REST and MCP only, a DAV PUT
+	// never comes through here. The reminders this request appended are written
+	// as sent and are not shifted.
+	if beforeAllDay {
+		if afterDay, afterAllDay := calendar.DatePropDay(targetEvent.Props.Get(ical.PropDateTimeStart)); afterAllDay && afterDay != beforeDay {
+			ownerLoc, err := ownerzone.Load(ctx, uc.zones, evCal.UserID)
+			if err != nil {
+				return nil, err
+			}
+			skip := map[*ical.Component]bool{}
+			for _, a := range appended {
+				skip[a] = true
+			}
+			calendar.ShiftAbsoluteTriggers(targetEvent.Component, afterDay-beforeDay, ownerLoc, skip)
+		}
+	}
+
 	// Update DTSTAMP. It must be UTC (RFC 5545 §3.8.7.2); go-ical writes a
 	// time.Local value as DTSTAMP;TZID=Local:… (F04).
 	targetEvent.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
@@ -438,6 +509,13 @@ func (uc *UpdateEventUseCase) Execute(ctx context.Context, input UpdateEventInpu
 	}
 
 	return obj, nil
+}
+
+// onlyReminders reports that the request edits nothing but the reminders.
+func onlyReminders(in UpdateEventInput) bool {
+	return in.Summary == nil && in.Description == nil && in.Location == nil &&
+		in.Start == nil && in.End == nil && in.IsAllDay == nil &&
+		in.Recurrence == nil && in.Timezone == nil
 }
 
 // formatUntilBoundary formats an RRULE UNTIL value with the value type that
@@ -481,4 +559,53 @@ func seriesLocation(events []ical.Event) *time.Location {
 		break
 	}
 	return time.UTC
+}
+
+// copyRelativeAlarms deep-copies the relative VALARMs of from into to, in
+// document order (#169, spec Q2/§7.5). An override uses only its own VALARMs,
+// so a freshly built override or split master would otherwise lose the series'
+// reminders. Absolute triggers stay with the master (they fire once for the
+// series) and an unparseable trigger delivers nothing either way. Copies share
+// no maps or slices with the source.
+func copyRelativeAlarms(from, to *ical.Component) {
+	if from == nil || to == nil {
+		return
+	}
+	specs := calendar.ParseAlarms(from)
+	idx := 0
+	for _, child := range from.Children {
+		if child == nil || child.Name != ical.CompAlarm {
+			continue
+		}
+		if idx < len(specs) && specs[idx].Relative {
+			to.Children = append(to.Children, cloneComponent(child))
+		}
+		idx++
+	}
+}
+
+func cloneComponent(c *ical.Component) *ical.Component {
+	out := &ical.Component{Name: c.Name}
+	if c.Props != nil {
+		out.Props = make(ical.Props, len(c.Props))
+		for k, list := range c.Props {
+			cp := make([]ical.Prop, len(list))
+			for i, p := range list {
+				cp[i] = ical.Prop{Name: p.Name, Value: p.Value}
+				if p.Params != nil {
+					cp[i].Params = make(ical.Params, len(p.Params))
+					for pk, pv := range p.Params {
+						cp[i].Params[pk] = append([]string(nil), pv...)
+					}
+				}
+			}
+			out.Props[k] = cp
+		}
+	}
+	for _, ch := range c.Children {
+		if ch != nil {
+			out.Children = append(out.Children, cloneComponent(ch))
+		}
+	}
+	return out
 }

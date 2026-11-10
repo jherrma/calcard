@@ -30,6 +30,11 @@ import (
 // delete is Unscoped, so rows the collection had already soft-deleted (a
 // deleted event, say) go too.
 //
+// alarm_acknowledgements is deliberately NOT in these lists (#169): its rows are
+// keyed by user and alarm key (a hash), with no calendar_id. A deleted
+// calendar's keys are never computed again, so its rows are harmless and age out
+// with the retention job; the account purge removes them by user_id.
+//
 // The collection row itself is hard-deleted as well, last (lockCollections
 // marks it first; see there). Nothing reads a soft-deleted collection — every
 // lookup (DAV path, UUID, id, public token, share preload) uses the default

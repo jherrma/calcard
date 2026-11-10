@@ -13,7 +13,8 @@ import {
   PREF_FIRST_DAY_OF_WEEK,
   PREF_TIME_FORMAT,
 } from '~/stores/preferences';
-import type { CalendarEvent, EventFormData, RecurrenceRule } from '~/types/calendar';
+import type { CalendarEvent, EventFormData, RecurrenceRule, Reminder } from '~/types/calendar';
+import { offsetReminder } from '~/utils/reminders';
 
 // EventForm is a heavy PrimeVue/Vuelidate-style component. Rather than driving the
 // real inputs (brittle), we shallow-mount so all child inputs are stubbed, then
@@ -312,5 +313,128 @@ describe('EventForm calendar select never offers a task list', () => {
 
     expect(vm.calendarSelectOptions).toEqual([]);
     expect(vm.form.calendar_id).toBe('');
+  });
+});
+
+// ---- Reminders (#169 story 17, spec §10.9) ---------------------------------------------------
+
+describe('EventForm reminders', () => {
+  type ReminderVm = FormVm & { reminders: Reminder[] };
+  const stored = (over: Partial<Reminder>): Reminder => ({
+    index: 0, action: 'display', related: 'start', offset_seconds: -900, at: null, editable: true, ...over,
+  });
+  const submitted = (wrapper: ReturnType<typeof mount>) => wrapper.emitted('submit')![0]![0] as EventFormData;
+
+  it('puts the block between Description and Repeat', async () => {
+    const { wrapper } = await mountCreateForm();
+    const html = wrapper.html();
+    const desc = html.indexOf('event-description');
+    const block = html.indexOf('reminders-block');
+    const repeat = html.indexOf('event-recurrence');
+    expect(desc).toBeGreaterThan(-1);
+    expect(block).toBeGreaterThan(desc);
+    expect(repeat).toBeGreaterThan(block);
+  });
+
+  it('a new event starts with no reminder and sends no `reminders` key', async () => {
+    const { wrapper, vm } = await mountCreateForm();
+    expect((vm as ReminderVm).reminders).toEqual([]);
+    vm.form.summary = 'x';
+    vm.handleSubmit();
+    expect(submitted(wrapper)).not.toHaveProperty('reminders');
+  });
+
+  it('shows the event\'s own reminders as the initial value', async () => {
+    const { wrapper, vm } = await mountForm(baseEvent({ reminders: [stored({ offset_seconds: -900 })] }));
+    expect(wrapper.find('[data-test="reminders-block"]').html()).toContain('reminder-field');
+    expect((vm as ReminderVm).reminders).toEqual([stored({ offset_seconds: -900 })]);
+  });
+
+  it('editing only the title sends no `reminders`, even with foreign ones present', async () => {
+    const { wrapper, vm } = await mountForm(baseEvent({
+      reminders: [stored({}), stored({ index: 1, action: 'email', editable: false, offset_seconds: -60 })],
+    }));
+    vm.form.summary = 'Renamed';
+    vm.handleSubmit();
+    expect(submitted(wrapper)).not.toHaveProperty('reminders');
+  });
+
+  it('a date-only change sends no `reminders`', async () => {
+    const { wrapper, vm } = await mountForm(baseEvent({ reminders: [stored({})] }));
+    vm.form.start = new Date(2026, 1, 12, 11, 0);
+    vm.form.end = new Date(2026, 1, 12, 12, 0);
+    vm.handleSubmit();
+    expect(submitted(wrapper)).not.toHaveProperty('reminders');
+  });
+
+  it('removing one chip sends the remaining editable list and not the read-only ones', async () => {
+    const at = '2026-11-04T08:00:00Z';
+    const { wrapper, vm } = await mountForm(baseEvent({
+      reminders: [
+        stored({ offset_seconds: -900 }),
+        stored({ index: 1, offset_seconds: -3600 }),
+        stored({ index: 2, offset_seconds: null, at }),
+        stored({ index: 3, action: 'email', editable: false, offset_seconds: -60 }),
+      ],
+    }));
+    const r = (vm as ReminderVm);
+    r.reminders = r.reminders.filter((x) => x.offset_seconds !== -3600);
+    vm.handleSubmit();
+    // The absolute one goes back as the `at` the server returned.
+    expect(submitted(wrapper).reminders).toEqual([{ offset_seconds: -900 }, { at }]);
+  });
+
+  it('adding a reminder to a new event sends it', async () => {
+    const { wrapper, vm } = await mountCreateForm();
+    (vm as ReminderVm).reminders = [offsetReminder(-900)];
+    vm.form.summary = 'x';
+    vm.handleSubmit();
+    expect(submitted(wrapper).reminders).toEqual([{ offset_seconds: -900 }]);
+  });
+
+  it('switching all-day <-> timed maps the editable ones and sends the result', async () => {
+    const { wrapper, vm } = await mountForm(baseEvent({
+      all_day: true,
+      reminders: [stored({ offset_seconds: -54000 }), stored({ index: 1, offset_seconds: 32400 })],
+    }));
+    vm.form.all_day = false;
+    await nextTick();
+    expect((vm as ReminderVm).reminders.map((r) => r.offset_seconds)).toEqual([-86400, 0]);
+    vm.form.all_day = true;
+    await nextTick();
+    expect((vm as ReminderVm).reminders.map((r) => r.offset_seconds)).toEqual([-54000, 32400]);
+    // Back to where it started: nothing changed, nothing sent.
+    vm.handleSubmit();
+    expect(submitted(wrapper)).not.toHaveProperty('reminders');
+  });
+
+  it('is absent for a calendar shared with the user (read and read-write) and present for an owned one', async () => {
+    const { wrapper, vm } = await mountCreateForm();
+    const store = useCalendarStore();
+    store.calendars = [
+      { id: 1, uuid: 'u1', path: '/c/1', name: 'Work', color: '#3b82f6', shared: false, created_at: '', updated_at: '' },
+      { id: 2, uuid: 'u2', path: '/c/2', name: 'Team', color: '#3b82f6', shared: true, permission: 'read-write', created_at: '', updated_at: '' },
+      { id: 3, uuid: 'u3', path: '/c/3', name: 'Look', color: '#3b82f6', shared: true, permission: 'read', created_at: '', updated_at: '' },
+    ] as never;
+    vm.form.calendar_id = '1';
+    await nextTick();
+    expect(wrapper.find('[data-test="reminders-block"]').exists()).toBe(true);
+    vm.form.calendar_id = '2';
+    await nextTick();
+    expect(wrapper.find('[data-test="reminders-block"]').exists()).toBe(false);
+    vm.form.calendar_id = '3';
+    await nextTick();
+    expect(wrapper.find('[data-test="reminders-block"]').exists()).toBe(false);
+  });
+
+  it('a shared calendar\'s form never sends `reminders`', async () => {
+    const { wrapper, vm } = await mountForm(baseEvent({ calendar_id: 2, reminders: [stored({})] }));
+    useCalendarStore().calendars = [
+      { id: 2, uuid: 'u2', path: '/c/2', name: 'Team', color: '#3b82f6', shared: true, permission: 'read-write', created_at: '', updated_at: '' },
+    ] as never;
+    await nextTick();
+    (vm as ReminderVm).reminders = [];
+    vm.handleSubmit();
+    expect(submitted(wrapper)).not.toHaveProperty('reminders');
   });
 });
