@@ -123,10 +123,6 @@ const (
 
 // AlarmConfig controls web-app reminders (#169).
 type AlarmConfig struct {
-	// Enabled off unregisters /api/v1/alarms/*. VALARMs are still parsed on
-	// write, so switching it on again needs no backfill.
-	Enabled bool `yaml:"enabled" env:"CALDAV_ALARMS_ENABLED"`
-
 	// CleanupInterval is how often the background job deletes old
 	// acknowledgements. 0 turns the job off (acknowledgements then accumulate);
 	// a negative value falls back to the default of 24h.
@@ -380,7 +376,6 @@ func Load(configPath string) (*Config, error) {
 			Requests: 120,
 		},
 		Alarms: AlarmConfig{
-			Enabled:         true,
 			CleanupInterval: DefaultAlarmCleanupInterval,
 			AckRetention:    DefaultAlarmAckRetention,
 		},

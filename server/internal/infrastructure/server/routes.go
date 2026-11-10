@@ -48,7 +48,7 @@ type BackgroundServices struct {
 	SubscriptionWorker *subscriptionusecase.Worker
 
 	// AlarmAckCleanup deletes old alarm acknowledgements (#169, spec §9.2).
-	// Nil when alarms.enabled is false or alarms.cleanup_interval is 0.
+	// Nil when alarms.cleanup_interval is 0.
 	AlarmAckCleanup *alarmusecase.CleanupJob
 }
 
@@ -540,21 +540,18 @@ func SetupRoutes(app *fiber.App, db database.Database, cfg *config.Config) *Back
 	// as_of, in one query (#170): the sidebar badge and per-list counts.
 	v1.Get("/tasks/summary", http.Authenticate(jwtManager, userRepo), taskHandler.Summary)
 
-	// Web-app reminders (#169), off with alarms.enabled: the routes are then
-	// absent and /api/* answers 404 instead of the SPA.
+	// Web-app reminders (#169).
 	var alarmAckCleanup *alarmusecase.CleanupJob
-	if cfg.Alarms.Enabled {
-		alarmAckRepo := repository.NewAlarmAcknowledgementRepository(db.DB())
-		alarmHandler := http.NewAlarmHandler(
-			alarmusecase.NewUpcomingUseCase(calendarRepo, alarmAckRepo, ownerZones, nil),
-			alarmusecase.NewAcknowledgeUseCase(alarmAckRepo, nil))
-		alarmGroup := v1.Group("/alarms", http.Authenticate(jwtManager, userRepo))
-		alarmGroup.Get("/upcoming", alarmHandler.Upcoming)
-		alarmGroup.Post("/acknowledge", alarmHandler.Acknowledge)
-		if cfg.Alarms.CleanupInterval > 0 {
-			alarmAckCleanup = alarmusecase.NewCleanupJob(
-				alarmAckRepo, cfg.Alarms.CleanupInterval, cfg.Alarms.AckRetention, nil)
-		}
+	alarmAckRepo := repository.NewAlarmAcknowledgementRepository(db.DB())
+	alarmHandler := http.NewAlarmHandler(
+		alarmusecase.NewUpcomingUseCase(calendarRepo, alarmAckRepo, ownerZones, nil),
+		alarmusecase.NewAcknowledgeUseCase(alarmAckRepo, nil))
+	alarmGroup := v1.Group("/alarms", http.Authenticate(jwtManager, userRepo))
+	alarmGroup.Get("/upcoming", alarmHandler.Upcoming)
+	alarmGroup.Post("/acknowledge", alarmHandler.Acknowledge)
+	if cfg.Alarms.CleanupInterval > 0 {
+		alarmAckCleanup = alarmusecase.NewCleanupJob(
+			alarmAckRepo, cfg.Alarms.CleanupInterval, cfg.Alarms.AckRetention, nil)
 	}
 
 	// MCP Server (story 104). Registered here, after every use case it delegates

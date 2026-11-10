@@ -41,8 +41,6 @@ interface AlarmsState {
   queue: UpcomingAlarm[];
   /** server clock minus client clock (ms). */
   skewMs: number;
-  /** The server answered 404: the feature is off; no polling until the next sign-in. */
-  disabled: boolean;
   /** A 400 on the poll (a bug): no polling for the rest of the session. */
   halted: boolean;
   lastPollAt: number | null;
@@ -66,6 +64,7 @@ let ackInFlight = false;
 let ackFailures = 0;
 let lastBeat = 0;
 let loggedHalt = false;
+let loggedNotFound = false;
 
 function statusOf(error: unknown): number | undefined {
   const e = error as { status?: number; statusCode?: number } | null;
@@ -90,7 +89,6 @@ export const useAlarmsStore = defineStore('alarms', {
     dropped: {},
     queue: [],
     skewMs: 0,
-    disabled: false,
     halted: false,
     lastPollAt: null,
     running: false,
@@ -113,9 +111,9 @@ export const useAlarmsStore = defineStore('alarms', {
     async start(): Promise<void> {
       if (this.running) return;
       this.running = true;
-      this.disabled = false;
       this.halted = false;
       loggedHalt = false;
+      loggedNotFound = false;
       const mine = ++lifecycle;
 
       const auth = useAuthStore();
@@ -220,22 +218,22 @@ export const useAlarmsStore = defineStore('alarms', {
       this.dropped = {};
       this.queue = [];
       this.skewMs = 0;
-      this.disabled = false;
       this.halted = false;
       this.lastPollAt = null;
       this.userId = null;
       ackFailures = 0;
       loggedHalt = false;
+      loggedNotFound = false;
     },
 
     // ---- polling ---------------------------------------------------------
 
     /**
      * One `GET /alarms/upcoming` (one in flight; a request while one runs schedules exactly one
-     * follow-up). Failures keep the timers and only warn; 404 switches the feature off; 400 stops polling.
+     * follow-up). Failures keep the timers and only warn (a 404 is logged once and retried on the normal schedule); 400 stops polling.
      */
     async refresh(): Promise<void> {
-      if (!this.running || this.disabled || this.halted) return;
+      if (!this.running || this.halted) return;
       if (pollInFlight) {
         pollAgain = true;
         return;
@@ -261,7 +259,12 @@ export const useAlarmsStore = defineStore('alarms', {
         if (seq !== pollSeq) return;
         const status = statusOf(e);
         if (status === 404) {
-          this.disable();
+          // The routes are always registered, so a 404 is a misrouted or older server, not a state to
+          // remember: log it once and let the next scheduled poll try again.
+          if (!loggedNotFound) {
+            loggedNotFound = true;
+            console.error('Reminders: the alarm routes answered 404; will retry on the normal schedule', e);
+          }
         } else if (status === 400) {
           this.halted = true;
           this.stopPolling();
@@ -316,12 +319,6 @@ export const useAlarmsStore = defineStore('alarms', {
       }
       for (const alarm of result.schedule) this.arm(alarm);
       for (const alarm of result.queue) this.enqueue(alarm);
-    },
-
-    disable(): void {
-      this.disabled = true;
-      this.stopPolling();
-      this.dropTimers();
     },
 
     // ---- timers ----------------------------------------------------------
@@ -464,10 +461,6 @@ export const useAlarmsStore = defineStore('alarms', {
         ackFailures = 0;
       } catch (e) {
         if (mine !== lifecycle) return;
-        if (statusOf(e) === 404) {
-          this.disable();
-          return;
-        }
         console.warn('Reminders: could not acknowledge alarms', e);
         const delay = ACK_RETRY_MS[ackFailures];
         ackFailures++;

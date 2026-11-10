@@ -28,9 +28,9 @@ func newBackgroundTestServer(t *testing.T, alarms config.AlarmConfig, subs confi
 }
 
 func TestBackgroundServicesWiring(t *testing.T) {
-	on := config.AlarmConfig{Enabled: true, CleanupInterval: time.Hour, AckRetention: 720 * time.Hour}
+	on := config.AlarmConfig{CleanupInterval: time.Hour, AckRetention: 720 * time.Hour}
 
-	t.Run("alarms on and interval set builds the job", func(t *testing.T) {
+	t.Run("interval set builds the job", func(t *testing.T) {
 		s := newBackgroundTestServer(t, on, config.SubscriptionConfig{})
 		assert.NotNil(t, s.services.AlarmAckCleanup)
 		assert.Nil(t, s.services.SubscriptionWorker)
@@ -41,17 +41,11 @@ func TestBackgroundServicesWiring(t *testing.T) {
 		s := newBackgroundTestServer(t, a, config.SubscriptionConfig{})
 		assert.Nil(t, s.services.AlarmAckCleanup)
 	})
-	t.Run("alarms off builds no job", func(t *testing.T) {
-		a := on
-		a.Enabled = false
-		s := newBackgroundTestServer(t, a, config.SubscriptionConfig{})
-		assert.Nil(t, s.services.AlarmAckCleanup)
-	})
 }
 
 func TestStartBackgroundRunsCleanupWithSubscriptionsOff(t *testing.T) {
 	s := newBackgroundTestServer(t,
-		config.AlarmConfig{Enabled: true, CleanupInterval: time.Hour, AckRetention: 720 * time.Hour},
+		config.AlarmConfig{CleanupInterval: time.Hour, AckRetention: 720 * time.Hour},
 		config.SubscriptionConfig{Enabled: false})
 	require.Nil(t, s.services.SubscriptionWorker)
 	require.NotNil(t, s.services.AlarmAckCleanup)
@@ -79,7 +73,7 @@ func TestStartBackgroundRunsCleanupWithSubscriptionsOff(t *testing.T) {
 func TestStartBackgroundWaitsForEveryJob(t *testing.T) {
 	// Both jobs: the subscription worker (interval > 0) and the cleanup job.
 	s := newBackgroundTestServer(t,
-		config.AlarmConfig{Enabled: true, CleanupInterval: time.Hour, AckRetention: 720 * time.Hour},
+		config.AlarmConfig{CleanupInterval: time.Hour, AckRetention: 720 * time.Hour},
 		config.SubscriptionConfig{Enabled: true, WorkerInterval: time.Hour, MaxPerUser: 20})
 	if s.services.SubscriptionWorker == nil {
 		s.services.SubscriptionWorker = subscriptionusecase.NewWorker(nil, nil, time.Hour, nil)
@@ -99,7 +93,7 @@ func TestStartBackgroundWaitsForEveryJob(t *testing.T) {
 
 func TestStartBackgroundNothingToStart(t *testing.T) {
 	s := newBackgroundTestServer(t,
-		config.AlarmConfig{Enabled: false},
+		config.AlarmConfig{CleanupInterval: 0},
 		config.SubscriptionConfig{Enabled: false})
 	s.startBackground()
 	assert.Nil(t, s.stopBackground, "no goroutine and no context when both jobs are off")

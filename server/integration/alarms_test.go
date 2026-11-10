@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jherrma/caldav-server/internal/config"
 	"github.com/jherrma/caldav-server/internal/domain/calendar"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -559,32 +558,6 @@ func TestAlarmsSubscribedCalendarContributesNothing(t *testing.T) {
 	} else {
 		t.Logf("a subscribed calendar cannot be shared (HTTP %d): only the owner's side is checked", code)
 	}
-}
-
-func TestAlarmsDisabled(t *testing.T) {
-	base, shutdown := bootServerWithConfig(t, func(cfg *config.Config) {
-		cfg.Alarms.Enabled = false
-	})
-	t.Cleanup(shutdown)
-	registerOn(t, base, "alarm-off@example.test", "alarmOff!12345", "Alarm Off")
-	status, raw := postLoginOn(t, base, "alarm-off@example.test", "alarmOff!12345")
-	require.Equal(t, http.StatusOK, status)
-	var login struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &login))
-	require.NotEmpty(t, login.Data.AccessToken)
-
-	status, body := rawCall(t, http.MethodGet, base+"/api/v1/alarms/upcoming", login.Data.AccessToken, nil, nil)
-	assert.Equal(t, http.StatusNotFound, status)
-	assert.NotContains(t, strings.ToLower(string(body)), "<html", "an unknown /api path never serves the SPA")
-
-	status, body = rawCall(t, http.MethodPost, base+"/api/v1/alarms/acknowledge", login.Data.AccessToken,
-		map[string][]string{"keys": {strings.Repeat("a", 32)}}, nil)
-	assert.Equal(t, http.StatusNotFound, status)
-	assert.NotContains(t, strings.ToLower(string(body)), "<html", "the acknowledge route is absent too")
 }
 
 // ---------------------------------------------------------------------------

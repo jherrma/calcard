@@ -11,7 +11,7 @@ import { installMemoryStorage, installThrowingStorage } from '~/test/support/sto
 
 // SCOPE: the reminder store (#169, story 15): polling and its triggers, one timer
 // per key, the display queue, acknowledgement with retries and persistence, and
-// the failure rules (404 = off, 400 = halt). Rendering is story 16.
+// the failure rules (404 = log once and retry, 400 = halt). Rendering is story 16.
 
 const { apiMock, tz } = vi.hoisted(() => ({
   apiMock: vi.fn(),
@@ -599,25 +599,24 @@ describe('failure handling', () => {
     expect(gets().length).toBeGreaterThanOrEqual(3);
   });
 
-  it('a 404 disables polling until the next sign-in', async () => {
+  it('a 404 is logged once and polling goes on at the normal schedule', async () => {
     const store = freshStore();
     upcomingHandler = () => {
       throw httpError(404);
     };
     await startStore(store);
-    expect(store.disabled).toBe(true);
-    await advance(30 * MIN);
+    expect(store.halted).toBe(false);
     expect(gets()).toHaveLength(1);
-    window.dispatchEvent(new Event('online'));
-    await flushPromises();
-    expect(gets()).toHaveLength(1);
-    expect(vi.getTimerCount()).toBe(0);
-    // next sign-in: stop (sign-out), start again
+    await advance(5 * MIN);
+    expect(gets().length).toBeGreaterThanOrEqual(2);
+    await advance(5 * MIN);
+    expect(gets().length).toBeGreaterThanOrEqual(3);
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    // the route comes back: the next poll succeeds
     upcomingHandler = null;
-    store.stop();
-    await startStore(store);
-    expect(store.disabled).toBe(false);
-    expect(gets()).toHaveLength(2);
+    response = () => ({ alarms: [alarm(1, 7 * MIN)] });
+    await advance(5 * MIN);
+    expect(Object.keys(store.scheduled)).toHaveLength(1);
   });
 
   it('a 400 on the poll stops polling for the session and logs once', async () => {

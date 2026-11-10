@@ -588,7 +588,7 @@ through the preferences PATCH, a 400 shows the server's text.
   |---|---|
   | Poll fails (network, 5xx) | timers kept, `console.warn`, next trigger retries |
   | 401 | `useApi` refreshes the token; a failed refresh logs out -> `stop()` |
-  | 404 on the poll or the acknowledgement | `disabled`: polling and timers stop until the next sign-in (the server runs with `alarms.enabled: false`) |
+  | 404 on the poll | not a state: the routes are always registered, so it means a misrouted or older server. `console.error` once, timers kept, next trigger retries. On the acknowledgement it is an ordinary failure (retry schedule) |
   | 400 on the poll | a bug: `console.error` once, polling stops for the session, armed timers keep running |
   | Acknowledge fails | retry schedule above; the key is never queued again while pending |
 

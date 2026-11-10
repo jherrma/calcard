@@ -115,10 +115,8 @@ subscriptions:
   allow_insecure_urls: false
   allow_private_hosts: false
 
-# Web-app reminders (#169): GET /api/v1/alarms/upcoming. false removes the
-# routes; VALARMs are still parsed on write.
+# Web-app reminders (#169): GET /api/v1/alarms/upcoming. Always on.
 alarms:
-  enabled: true
   # Background job that deletes old acknowledgements. 0 turns it off.
   cleanup_interval: 24h
   # How long acknowledgements are kept. Minimum 192h (7d look-ahead + 24h

@@ -262,12 +262,11 @@ links are rewritten to `https://` and are unaffected by this setting.
 ### Alarms Section (`alarms:`)
 
 Controls web-app reminders (#169): the `/api/v1/alarms/*` endpoints behind the
-in-app reminder toasts. VALARMs are parsed and stored whatever this says, so
-switching it back on later needs no backfill.
+in-app reminder toasts. The endpoints are always available; these keys tune the
+acknowledgement cleanup.
 
 | YAML Key           | Env Var                           | Default | Description |
 | :----------------- | :-------------------------------- | :------ | :---------- |
-| `enabled`          | `CALDAV_ALARMS_ENABLED`           | `true`  | Register the `/api/v1/alarms/*` routes. `false` removes them (they answer 404, never the web app) and also stops the cleanup job. |
 | `cleanup_interval` | `CALDAV_ALARMS_CLEANUP_INTERVAL`  | `24h`   | How often a background job deletes acknowledgements older than `ack_retention`; the first sweep runs one minute after start. `0` turns the job off (acknowledgements then accumulate); a negative value falls back to `24h`. |
 | `ack_retention`    | `CALDAV_ALARMS_ACK_RETENTION`     | `720h`  | How long an acknowledgement is kept. `<= 0` falls back to `720h`. Values below `192h` are rejected at startup (`CALDAV_ALARMS_ACK_RETENTION must be at least 192h`): the floor is the longest alarm window (7 days look-ahead plus 24 h look-back), and deleting an acknowledgement while its alarm can still be listed would make an acknowledged reminder fire again. |
 
