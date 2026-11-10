@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
 	"golang.org/x/crypto/bcrypt"
@@ -68,4 +69,13 @@ func (r *gormAppPasswordRepo) FindValidForUser(ctx context.Context, userID uint,
 	}
 
 	return nil, nil
+}
+
+// UpdateLastUsed updates the last used timestamp and IP
+func (r *gormAppPasswordRepo) UpdateLastUsed(ctx context.Context, id uint, ip string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&user.AppPassword{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"last_used_at": now,
+		"last_used_ip": ip,
+	}).Error
 }

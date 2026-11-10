@@ -192,17 +192,20 @@ func (h *Handler) authenticate() fiber.Handler {
 					if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 						u = nil
 					}
-				} else if scope := requiredScopeForPath(c.Path()); scope != "" && !ap.HasScope(scope) {
+				} else {
+					go h.appPwdRepo.UpdateLastUsed(context.Background(), ap.ID, c.IP())
 					// App password authenticated but lacks the scope required for
 					// this protocol (e.g. a caldav-only password used against an
 					// addressbook path). Reject — the scope restriction shown in
 					// the UI must be enforced. The credential itself was valid,
 					// so this is no failed attempt.
-					settle(true)
-					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-						"error":   "forbidden",
-						"message": "This app password is not valid for this protocol",
-					})
+					if scope := requiredScopeForPath(c.Path()); scope != "" && !ap.HasScope(scope) {
+						settle(true)
+						return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+							"error":   "forbidden",
+							"message": "This app password is not valid for this protocol",
+						})
+					}
 				}
 				if u != nil {
 					c.Locals("can_write", true) // Direct user/app password always has write access
