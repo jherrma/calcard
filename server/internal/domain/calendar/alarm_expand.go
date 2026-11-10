@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-ical"
+	"github.com/teambition/rrule-go"
 )
 
 // AlarmInstanceCap is the most alarm instances ExpandAlarms returns for one
@@ -218,9 +219,10 @@ func expandTaskAlarms(c *alarmCollector, cal *ical.Calendar) {
 
 // overrideTriggerBases gives an override's absolute alarm the same start and end
 // forEachOccurrence gives its relative alarms (overrideAnchors), using the first
-// master for the duration and the wall flag. Without a master or a parseable
+// master for the duration and the wall flag; isBeat (from seriesBeats) says whether
+// the RECURRENCE-ID is a beat of that master. Without a master or a parseable
 // RECURRENCE-ID key it falls back to the override's own properties.
-func overrideTriggerBases(ev *ical.Event, rid string, masters []ical.Event) (start, end *TriggerBase) {
+func overrideTriggerBases(ev *ical.Event, rid string, masters []ical.Event, isBeat func(rid string) bool) (start, end *TriggerBase) {
 	ridTime, err := time.ParseInLocation(RecurrenceIDLayout, rid, time.UTC)
 	if err != nil || len(masters) == 0 {
 		return ComponentTriggerBases(ev.Component)
@@ -235,6 +237,12 @@ func overrideTriggerBases(ev *ical.Event, rid string, masters []ical.Event) (sta
 	if dur < 0 {
 		dur = 0
 	}
+	if !isBeat(rid) {
+		// A stray override (its RECURRENCE-ID is no beat of the series: EXDATE'd,
+		// past COUNT/UNTIL, off-rule) has no master anchor: forEachOccurrence reads
+		// its own DTSTART/DTEND for the relative alarms, so do the same.
+		return ComponentTriggerBases(ev.Component)
+	}
 	s, e, wall := overrideAnchors(*ev, ridTime, dur, isWallProp(m.Props.Get(ical.PropDateTimeStart)))
 	return &TriggerBase{At: s, Wall: wall}, &TriggerBase{At: e, Wall: wall}
 }
@@ -248,6 +256,34 @@ func expandEventAlarms(c *alarmCollector, cal *ical.Calendar) {
 		}
 	}
 	docLoc := seriesLocation(masters)
+
+	// The RECURRENCE-ID keys of every override, and the latest of their times:
+	// one walk of the master's iterator, shared by all absolute alarms, decides
+	// which of them are beats (seriesBeats), under one iteration budget.
+	overrideKeys := map[string]bool{}
+	var latest time.Time
+	for i := range events {
+		p := events[i].Props.Get(ical.PropRecurrenceID)
+		if p == nil {
+			continue
+		}
+		if k, err := RecurrenceIDKeyFromProp(p, docLoc); err == nil {
+			overrideKeys[k] = true
+			if t, err := time.ParseInLocation(RecurrenceIDLayout, k, time.UTC); err == nil && t.After(latest) {
+				latest = t
+			}
+		}
+	}
+	var beats map[string]bool
+	isBeat := func(rid string) bool {
+		if beats == nil {
+			beats = map[string]bool{}
+			if len(masters) > 0 {
+				beats = seriesBeats(&masters[0], overrideKeys, latest)
+			}
+		}
+		return beats[rid]
+	}
 
 	// Absolute triggers fire once per component, independent of the
 	// occurrences; collect the relative offsets for the window on the way.
@@ -277,7 +313,7 @@ func expandEventAlarms(c *alarmCollector, cal *ical.Calendar) {
 				// moved to: give it the override's own anchors, like a relative one.
 				var st, en *TriggerBase
 				if rid != "" {
-					st, en = overrideTriggerBases(ev, rid, masters)
+					st, en = overrideTriggerBases(ev, rid, masters, isBeat)
 				}
 				if !c.add(ev.Component, spec, rid, nil, st, en) {
 					return
@@ -333,4 +369,53 @@ func expandEventAlarms(c *alarmCollector, cal *ical.Calendar) {
 		}
 		return true
 	})
+}
+
+// seriesBeats returns which of the wanted RECURRENCE-ID keys are occurrences the
+// master generates: its DTSTART itself for a single event, else the beats of its
+// RRULE that are not EXDATE'd. Anything else is a stray override. It walks the
+// iterator once, up to the latest wanted time and under forEachOccurrence's
+// iteration budget (a SECONDLY rule from an old DTSTART has billions of beats); a
+// beat past the budget counts as none, as it does for forEachOccurrence.
+func seriesBeats(master *ical.Event, wanted map[string]bool, latest time.Time) map[string]bool {
+	beats := map[string]bool{}
+	mStart, err := master.DateTimeStart(time.UTC)
+	if err != nil {
+		return beats
+	}
+	rruleProp := master.Props.Get(ical.PropRecurrenceRule)
+	if rruleProp == nil {
+		if k := mStart.UTC().Format(RecurrenceIDLayout); wanted[k] {
+			beats[k] = true
+		}
+		return beats
+	}
+	loc := time.UTC
+	if p := master.Props.Get(ical.PropDateTimeStart); p != nil {
+		if dt, err := p.DateTime(time.UTC); err == nil {
+			loc = dt.Location()
+		}
+	}
+	rule, err := rrule.StrToRRule(rruleProp.Value)
+	if err != nil {
+		return beats
+	}
+	rule.DTStart(mStart.In(loc))
+	excluded := map[string]bool{}
+	for _, p := range master.Props["EXDATE"] {
+		for _, k := range EXDATEKeys(&p, loc) {
+			excluded[k] = true
+		}
+	}
+	next := rule.Iterator()
+	for i := 0; i < maxRecurrenceIterations; i++ {
+		dt, ok := next()
+		if !ok || dt.After(latest) {
+			break
+		}
+		if k := dt.UTC().Format(RecurrenceIDLayout); wanted[k] && !excluded[k] {
+			beats[k] = true
+		}
+	}
+	return beats
 }

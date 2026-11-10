@@ -95,11 +95,13 @@ func newUpcomingAlarmResponse(a alarmuc.Upcoming) UpcomingAlarmResponse {
 	}
 	start, end := &a.Start, &a.End
 	if a.Start.IsZero() {
-		// An absolute trigger has no occurrence anchor (the expansion does not
-		// run it through the occurrence iterator). One in an override has the
-		// override's own anchors (set by the expansion); only without a DTSTART there
-		// is the RECURRENCE-ID occurrence reported. One without
-		// (a plain object, or a master's, which fires once) is the object's own.
+		// Start is zero only when the expansion set no anchors. For an override
+		// that has a master it always does, so this is the fallback for: an
+		// alarm that is not a series alarm (a plain object's, or a master's
+		// absolute one, recurrence_id empty), which reports the object's own
+		// start and end; and an override with no master, no parseable
+		// RECURRENCE-ID key or no DTSTART, which reports the occurrence the
+		// RECURRENCE-ID names (end = start + the object's own duration).
 		start, end = obj.StartTime, obj.EndTime
 		if a.RecurrenceID == "" {
 			// not a series alarm

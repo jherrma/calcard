@@ -1,6 +1,7 @@
 package calendar
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -374,5 +375,105 @@ func TestExpandAlarmsAbsoluteMatchesRelativeAnchors(t *testing.T) {
 				assert.Equal(t, tc.end, g.End, "end of %s", g.TriggerAt)
 			}
 		})
+	}
+}
+
+// A stray override (its RECURRENCE-ID is EXDATE'd, so no beat of the series) with a
+// DTSTART and no DTEND: the absolute alarm reports what the relative one does (the
+// override's own anchors; go-ical reads a missing DTEND as DTSTART), not the master's
+// duration. A stray override without DTSTART yields no relative alarm at all.
+func TestExpandAlarmsStrayOverrideAnchors(t *testing.T) {
+	obj := evObj("VEVENT",
+		"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20261101T000000Z",
+		"DTSTART:20261101T090000Z", "DTEND:20261101T100000Z", "RRULE:FREQ=DAILY;COUNT=5",
+		"EXDATE:20261103T090000Z", "END:VEVENT",
+		"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20261101T000000Z", "RECURRENCE-ID:20261103T090000Z",
+		"DTSTART:20261103T140000Z",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT15M", "END:VALARM",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;VALUE=DATE-TIME:20261103T083000Z", "END:VALARM", "END:VEVENT")
+	got, _, err := ExpandAlarms(obj, tm(2026, 11, 3, 0, 0, 0), tm(2026, 11, 4, 0, 0, 0), nil)
+	require.NoError(t, err)
+	require.Len(t, got, 2, "one relative, one absolute alarm")
+	assert.Equal(t, got[0].Start, got[1].Start)
+	assert.Equal(t, got[0].End, got[1].End)
+	assert.Equal(t, tm(2026, 11, 3, 14, 0, 0), got[0].Start)
+	assert.Equal(t, tm(2026, 11, 3, 14, 0, 0), got[0].End, "no DTEND: the end is the start, not start + master duration")
+}
+
+// A SECONDLY master from an old DTSTART must not make the beat check walk the series:
+// the call is bounded by the iteration budget. A normal series still finds its beat.
+func TestExpandAlarmsOverrideBeatCheckIsBounded(t *testing.T) {
+	override := func(rrule, dtstart string) *CalendarObject {
+		return evObj("VEVENT",
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20200101T000000Z",
+			"DTSTART:"+dtstart, "DTEND:"+dtstart, "RRULE:"+rrule, "END:VEVENT",
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20200101T000000Z", "RECURRENCE-ID:20261103T090000Z",
+			"DTSTART:20261103T140000Z", "DTEND:20261103T150000Z",
+			"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;VALUE=DATE-TIME:20261103T083000Z", "END:VALARM", "END:VEVENT")
+	}
+	from, until := tm(2026, 11, 3, 0, 0, 0), tm(2026, 11, 4, 0, 0, 0)
+
+	began := time.Now()
+	got, capped, err := ExpandAlarms(override("FREQ=SECONDLY", "20200101T000000Z"), from, until, nil)
+	require.NoError(t, err)
+	assert.Less(t, time.Since(began), 5*time.Second)
+	assert.False(t, capped)
+	require.Len(t, got, 1, "the override's absolute alarm is still produced")
+
+	got, capped, err = ExpandAlarms(override("FREQ=DAILY", "20261101T090000Z"), from, until, nil)
+	require.NoError(t, err)
+	assert.False(t, capped)
+	require.Len(t, got, 1)
+	assert.Equal(t, tm(2026, 11, 3, 14, 0, 0), got[0].Start)
+	assert.Equal(t, tm(2026, 11, 3, 15, 0, 0), got[0].End)
+}
+
+// Many overrides with absolute alarms share one beat walk: 500 of them on a SECONDLY
+// master from 2020 stay fast, and each override's alarm is produced.
+func TestExpandAlarmsManyOverridesShareBeatBudget(t *testing.T) {
+	lines := []string{
+		"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20200101T000000Z",
+		"DTSTART:20200101T000000Z", "DTEND:20200101T000001Z", "RRULE:FREQ=SECONDLY", "END:VEVENT",
+	}
+	for i := 0; i < 500; i++ {
+		rid := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second).Format(RecurrenceIDLayout)
+		lines = append(lines,
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20200101T000000Z", "RECURRENCE-ID:"+rid,
+			"DTSTART:20261103T140000Z", "DTEND:20261103T150000Z",
+			"BEGIN:VALARM", "ACTION:DISPLAY", fmt.Sprintf("TRIGGER;VALUE=DATE-TIME:20261103T0800%02dZ", i%60), "END:VALARM", "END:VEVENT")
+	}
+	began := time.Now()
+	got, _, err := ExpandAlarms(evObj("VEVENT", lines...), tm(2026, 11, 3, 0, 0, 0), tm(2026, 11, 4, 0, 0, 0), nil)
+	require.NoError(t, err)
+	t.Logf("500 overrides, SECONDLY master: %s", time.Since(began))
+	assert.Less(t, time.Since(began), 2*time.Second)
+	assert.Len(t, got, 500, "one alarm per override")
+}
+
+// 600 beat overrides (DTSTART, no DTEND) of a DAILY master from 2025 share one beat walk
+// and each reports the master's 1 h duration; a stray override would report 0.
+func TestExpandAlarmsManyBeatOverridesKeepMasterDuration(t *testing.T) {
+	lines := []string{
+		"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20250101T000000Z",
+		"DTSTART:20250101T090000Z", "DTEND:20250101T100000Z", "RRULE:FREQ=DAILY", "END:VEVENT",
+	}
+	first := time.Date(2025, 1, 1, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 600; i++ {
+		d := first.AddDate(0, 0, i)
+		lines = append(lines,
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20250101T000000Z", "RECURRENCE-ID:"+d.Format(RecurrenceIDLayout),
+			"DTSTART:"+d.Add(5*time.Hour).Format(RecurrenceIDLayout),
+			"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;VALUE=DATE-TIME:"+d.Add(-time.Hour).Format(RecurrenceIDLayout), "END:VALARM", "END:VEVENT")
+	}
+	began := time.Now()
+	got, capped, err := ExpandAlarms(evObj("VEVENT", lines...), first.AddDate(0, 0, -1), first.AddDate(0, 0, 450), nil) // under the 500-instance cap; the walk still covers all 600
+	require.NoError(t, err)
+	t.Logf("600 beat overrides, DAILY master: %s", time.Since(began))
+	assert.Less(t, time.Since(began), 2*time.Second)
+	assert.False(t, capped)
+	require.GreaterOrEqual(t, len(got), 440, "the alarms inside the window; all 600 overrides are beat-checked")
+	require.Less(t, len(got), AlarmInstanceCap)
+	for _, g := range got {
+		assert.Equal(t, time.Hour, g.End.Sub(g.Start), "beat override without DTEND: master duration, %s", g.RecurrenceID)
 	}
 }

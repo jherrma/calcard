@@ -129,6 +129,9 @@ func TestAlarmRemindersRoundTrip(t *testing.T) {
 	f4 := []string{"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;RELATED=END:-PT5M", "X-END:yes", "END:VALARM"}
 	foreign := append(append(append(append([]string{}, f1...), f2...), f3...), f4...)
 	put := strings.Replace(body, "END:VEVENT", strings.Join(foreign, "\r\n")+"\r\nEND:VEVENT", 1)
+	// A fixed past DTSTAMP, so the PATCH below always changes it (DTSTAMP has
+	// one-second resolution; a PATCH in the creation's second would leave it as is).
+	put = regexp.MustCompile(`(?m)^DTSTAMP[^\r\n]*`).ReplaceAllString(put, "DTSTAMP:20200101T000000Z")
 	davPut(t, object, email, appPass, put)
 	before, etagBefore := davGet(t, object, email, appPass)
 	beforeLines := icalLines(before)

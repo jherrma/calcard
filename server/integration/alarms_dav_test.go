@@ -262,7 +262,9 @@ func TestAlarmsDAVBehaviour(t *testing.T) {
 		put := func(uid string, alarms ...string) {
 			u.put(t, uid, vevent(uid, dtstart(start), dtend(start.Add(time.Hour)), strings.Join(alarms, "")))
 		}
-		valarm := func(lines ...string) string { return "BEGIN:VALARM\r\n" + strings.Join(lines, "\r\n") + "\r\nEND:VALARM\r\n" }
+		valarm := func(lines ...string) string {
+			return "BEGIN:VALARM\r\n" + strings.Join(lines, "\r\n") + "\r\nEND:VALARM\r\n"
+		}
 
 		put("dav14-email", valarm("ACTION:EMAIL", "SUMMARY:s", "DESCRIPTION:d", "TRIGGER:-PT10M"))
 		put("dav14-none", valarm("ACTION:NONE", "TRIGGER:-PT10M"))

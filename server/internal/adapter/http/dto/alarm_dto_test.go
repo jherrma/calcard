@@ -37,7 +37,8 @@ func TestUpcomingAlarmAbsoluteOnLaterOccurrence(t *testing.T) {
 	assert.Equal(t, time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC), *r.End)
 	assert.Nil(t, r.StartDate)
 
-	// An override without DTSTART leaves the anchors zero: the RECURRENCE-ID occurrence.
+	// The expansion sets the anchors of this override; clear Start/End by hand to
+	// exercise the fallback: the RECURRENCE-ID occurrence.
 	bare := got[0]
 	bare.Start, bare.End = time.Time{}, time.Time{}
 	r = newUpcomingAlarmResponse(alarmuc.Upcoming{AlarmInstance: bare})
