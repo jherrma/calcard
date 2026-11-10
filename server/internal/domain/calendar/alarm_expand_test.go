@@ -310,3 +310,69 @@ func TestExpandAlarmsUndecodable(t *testing.T) {
 	_, _, err := ExpandAlarms(nil, tm(2026, 1, 1, 0, 0, 0), tm(2026, 1, 2, 0, 0, 0), nil)
 	assert.Error(t, err)
 }
+
+// An absolute alarm of an override reports the override's own start and end, as a
+// relative one does: a moved override shows the moved time, a lengthened one its new end.
+func TestExpandAlarmsAbsoluteOverrideAnchors(t *testing.T) {
+	series := func(override ...string) *CalendarObject {
+		lines := []string{
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20261101T000000Z",
+			"DTSTART:20261101T090000Z", "DTEND:20261101T100000Z", "RRULE:FREQ=DAILY;COUNT=5", "END:VEVENT",
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20261101T000000Z", "RECURRENCE-ID:20261103T090000Z",
+		}
+		lines = append(lines, override...)
+		lines = append(lines, "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:x",
+			"TRIGGER;VALUE=DATE-TIME:20261103T084500Z", "END:VALARM", "END:VEVENT")
+		return evObj("VEVENT", lines...)
+	}
+	from, until := tm(2026, 11, 1, 0, 0, 0), tm(2026, 11, 6, 0, 0, 0)
+
+	got, _, err := ExpandAlarms(series("DTSTART:20261103T140000Z", "DTEND:20261103T160000Z"), from, until, nil)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "20261103T090000Z", got[0].RecurrenceID)
+	assert.Equal(t, tm(2026, 11, 3, 14, 0, 0), got[0].Start)
+	assert.Equal(t, tm(2026, 11, 3, 16, 0, 0), got[0].End)
+
+	got, _, err = ExpandAlarms(series("DTSTART:20261103T090000Z", "DTEND:20261103T113000Z"), from, until, nil)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, tm(2026, 11, 3, 9, 0, 0), got[0].Start)
+	assert.Equal(t, tm(2026, 11, 3, 11, 30, 0), got[0].End)
+}
+
+// A relative and an absolute alarm of one override report the same start and end,
+// also when the override omits DTEND (master duration) or DTSTART (RECURRENCE-ID time,
+// the override's DTEND).
+func TestExpandAlarmsAbsoluteMatchesRelativeAnchors(t *testing.T) {
+	build := func(override ...string) *CalendarObject {
+		lines := []string{
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20261101T000000Z",
+			"DTSTART:20261101T090000Z", "DTEND:20261101T100000Z", "RRULE:FREQ=DAILY;COUNT=5", "END:VEVENT",
+			"BEGIN:VEVENT", "UID:uid@example", "DTSTAMP:20261101T000000Z", "RECURRENCE-ID:20261103T090000Z",
+		}
+		lines = append(lines, override...)
+		lines = append(lines, "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT15M", "END:VALARM",
+			"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER;VALUE=DATE-TIME:20261103T083000Z", "END:VALARM", "END:VEVENT")
+		return evObj("VEVENT", lines...)
+	}
+	cases := []struct {
+		name       string
+		override   []string
+		start, end time.Time
+	}{
+		{"no DTEND", []string{"DTSTART:20261103T140000Z"}, tm(2026, 11, 3, 14, 0, 0), tm(2026, 11, 3, 15, 0, 0)},
+		{"no DTSTART", []string{"DTEND:20261103T120000Z"}, tm(2026, 11, 3, 9, 0, 0), tm(2026, 11, 3, 12, 0, 0)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, err := ExpandAlarms(build(tc.override...), tm(2026, 11, 3, 0, 0, 0), tm(2026, 11, 4, 0, 0, 0), nil)
+			require.NoError(t, err)
+			require.Len(t, got, 2, "one relative, one absolute alarm")
+			for _, g := range got {
+				assert.Equal(t, tc.start, g.Start, "start of %s", g.TriggerAt)
+				assert.Equal(t, tc.end, g.End, "end of %s", g.TriggerAt)
+			}
+		})
+	}
+}

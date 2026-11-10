@@ -117,7 +117,7 @@ describe('Settings → Calendar: first day of the week', () => {
     expect(vm.isDirty).toBe(false);
   });
 
-  it('saves the week start as a string alongside the other calendar keys', async () => {
+  it('saves the week start as a string alongside the other calendar keys, without the untouched time zone', async () => {
     const { vm, store } = await mountPage();
 
     vm.form.firstDayOfWeek = 6;
@@ -131,7 +131,6 @@ describe('Settings → Calendar: first day of the week', () => {
           [PREF_DEFAULT_ALL_DAY]: 'false',
           [PREF_TIME_FORMAT]: '24h',
           [PREF_FIRST_DAY_OF_WEEK]: '6',
-          [PREF_TIMEZONE]: 'UTC',
         },
       },
     });
@@ -169,6 +168,35 @@ describe('Settings → Calendar: time zone', () => {
     expect(vm.isDirty).toBe(false);
   });
 
+  it('does not send the time zone when another field is saved while the store holds the default', async () => {
+    // The store still reads the 'UTC' default (lost race with the set-if-empty PUT, failed PUT):
+    // sending it would overwrite the user's real zone on the server.
+    const { vm, store } = await mountPage();
+    expect(store.timezone).toBe('UTC');
+
+    vm.form.firstDayOfWeek = 1;
+    await vm.handleSave();
+
+    const [, opts] = apiMock.mock.calls.at(-1)!;
+    expect(opts.method).toBe('PATCH');
+    expect(opts.body.preferences[PREF_FIRST_DAY_OF_WEEK]).toBe('1');
+    expect(Object.keys(opts.body.preferences)).not.toContain(PREF_TIMEZONE);
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it('does not send a zone the store gained after the form was loaded, when another field is saved', async () => {
+    // ensureLoaded() answered 'UTC' before the set-if-empty PUT stored the browser zone.
+    const { vm, store } = await mountPage();
+    store.setTimezone('Europe/Berlin');
+
+    vm.form.firstDayOfWeek = 1;
+    await vm.handleSave();
+
+    const [, opts] = apiMock.mock.calls.at(-1)!;
+    expect(opts.method).toBe('PATCH');
+    expect(Object.keys(opts.body.preferences)).not.toContain(PREF_TIMEZONE);
+  });
+
   it('saves a change through the PATCH', async () => {
     const { vm, store } = await mountPage();
 
@@ -179,6 +207,7 @@ describe('Settings → Calendar: time zone', () => {
     const [url, opts] = apiMock.mock.calls.at(-1)!;
     expect(url).toBe('/api/v1/users/me/preferences');
     expect(opts.method).toBe('PATCH');
+    expect(Object.keys(opts.body.preferences)).toContain(PREF_TIMEZONE);
     expect(opts.body.preferences[PREF_TIMEZONE]).toBe('America/New_York');
     expect(store.timezone).toBe('America/New_York');
   });

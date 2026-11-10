@@ -93,10 +93,23 @@ func newUpcomingAlarmResponse(a alarmuc.Upcoming) UpcomingAlarmResponse {
 		r.Due, r.DueDate = instantOrDate(obj.DueAt, obj.IsAllDay)
 		return r
 	}
-	// An absolute trigger has no occurrence anchor: the object's own columns.
 	start, end := &a.Start, &a.End
 	if a.Start.IsZero() {
+		// An absolute trigger has no occurrence anchor (the expansion does not
+		// run it through the occurrence iterator). One in an override has the
+		// override's own anchors (set by the expansion); only without a DTSTART there
+		// is the RECURRENCE-ID occurrence reported. One without
+		// (a plain object, or a master's, which fires once) is the object's own.
 		start, end = obj.StartTime, obj.EndTime
+		if a.RecurrenceID == "" {
+			// not a series alarm
+		} else if t, err := calendar.ParseRecurrenceIDString(a.RecurrenceID); err == nil {
+			start, end = &t, nil
+			if obj.StartTime != nil && obj.EndTime != nil {
+				e := t.Add(obj.EndTime.Sub(*obj.StartTime))
+				end = &e
+			}
+		}
 	} else if a.End.IsZero() {
 		end = obj.EndTime
 	}

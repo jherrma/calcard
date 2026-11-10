@@ -283,24 +283,10 @@ func forEachOccurrence(cal *ical.Calendar, start, end time.Time, fn func(Occurre
 
 			if exc, ok := exceptions[rid]; ok {
 				// Use exception data
-				excStartProp := exc.Props.Get(ical.PropDateTimeStart)
-				excEndProp := exc.Props.Get(ical.PropDateTimeEnd)
-
-				tStart := dt
-				if excStartProp != nil {
-					tStart, _ = excStartProp.DateTime(time.UTC)
-				}
-				tEnd := tStart.Add(mDuration)
-				if excEndProp != nil {
-					tEnd, _ = excEndProp.DateTime(time.UTC)
-				}
+				tStart, tEnd, wall := overrideAnchors(exc, dt, mDuration, masterWall)
 
 				if !tStart.Before(end) || !tEnd.After(start) {
 					continue
-				}
-				wall := masterWall
-				if excStartProp != nil {
-					wall = isWallProp(excStartProp)
 				}
 				if !emit(Occurrence{Start: tStart, End: tEnd, Wall: wall, RecurrenceID: rid, Master: master, Override: &exc}) {
 					return
@@ -337,6 +323,25 @@ func forEachOccurrence(cal *ical.Calendar, start, end time.Time, fn func(Occurre
 			}
 		}
 	}
+}
+
+// overrideAnchors is the start and end of a series occurrence that an override
+// replaces: the override's DTSTART, else the occurrence's own time (ridTime);
+// the override's DTEND, else start plus the master's duration. wall reports a
+// floating/DATE start. The relative alarms of forEachOccurrence and the
+// absolute alarms of expandEventAlarms both use it, so they cannot drift.
+func overrideAnchors(exc ical.Event, ridTime time.Time, masterDuration time.Duration, masterWall bool) (start, end time.Time, wall bool) {
+	startProp := exc.Props.Get(ical.PropDateTimeStart)
+	start, wall = ridTime, masterWall
+	if startProp != nil {
+		start, _ = startProp.DateTime(time.UTC)
+		wall = isWallProp(startProp)
+	}
+	end = start.Add(masterDuration)
+	if endProp := exc.Props.Get(ical.PropDateTimeEnd); endProp != nil {
+		end, _ = endProp.DateTime(time.UTC)
+	}
+	return start, end, wall
 }
 
 // ExpandRecurringEvent expands a recurring event into instances within a time range

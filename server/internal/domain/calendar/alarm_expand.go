@@ -216,6 +216,29 @@ func expandTaskAlarms(c *alarmCollector, cal *ical.Calendar) {
 	}
 }
 
+// overrideTriggerBases gives an override's absolute alarm the same start and end
+// forEachOccurrence gives its relative alarms (overrideAnchors), using the first
+// master for the duration and the wall flag. Without a master or a parseable
+// RECURRENCE-ID key it falls back to the override's own properties.
+func overrideTriggerBases(ev *ical.Event, rid string, masters []ical.Event) (start, end *TriggerBase) {
+	ridTime, err := time.ParseInLocation(RecurrenceIDLayout, rid, time.UTC)
+	if err != nil || len(masters) == 0 {
+		return ComponentTriggerBases(ev.Component)
+	}
+	m := &masters[0]
+	mStart, err := m.DateTimeStart(time.UTC)
+	if err != nil {
+		return ComponentTriggerBases(ev.Component)
+	}
+	mEnd, _ := m.DateTimeEnd(time.UTC)
+	dur := mEnd.Sub(mStart)
+	if dur < 0 {
+		dur = 0
+	}
+	s, e, wall := overrideAnchors(*ev, ridTime, dur, isWallProp(m.Props.Get(ical.PropDateTimeStart)))
+	return &TriggerBase{At: s, Wall: wall}, &TriggerBase{At: e, Wall: wall}
+}
+
 func expandEventAlarms(c *alarmCollector, cal *ical.Calendar) {
 	events := cal.Events()
 	var masters []ical.Event
@@ -250,7 +273,13 @@ func expandEventAlarms(c *alarmCollector, cal *ical.Calendar) {
 				continue
 			}
 			if !spec.Relative {
-				if !c.add(ev.Component, spec, rid, nil, nil, nil) {
+				// An override's absolute alarm belongs to the occurrence the override
+				// moved to: give it the override's own anchors, like a relative one.
+				var st, en *TriggerBase
+				if rid != "" {
+					st, en = overrideTriggerBases(ev, rid, masters)
+				}
+				if !c.add(ev.Component, spec, rid, nil, st, en) {
 					return
 				}
 				continue
