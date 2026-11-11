@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -158,6 +159,13 @@ func (h *OAuthHandler) Callback(c fiber.Ctx) error {
 			return h.redirectOAuthError(c, ctxData.Action,
 				fmt.Sprintf("an account with this email address exists but has not confirmed it yet; sign in with its password and link %s from your account settings", provider))
 		default:
+			// The browser only ever sees the generic text; the cause (token
+			// exchange, userinfo, missing email, storage) goes to the log.
+			slog.Warn("oauth callback failed",
+				slog.String("provider", provider),
+				slog.String("action", ctxData.Action),
+				slog.Any("error", err),
+			)
 			return h.redirectOAuthError(c, ctxData.Action, "authentication failed")
 		}
 	}
