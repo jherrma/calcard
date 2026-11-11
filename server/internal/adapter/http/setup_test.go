@@ -96,6 +96,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	deleteAccountUC := userusecase.NewDeleteAccountUseCase(userRepo)
 	getPreferencesUC := userusecase.NewGetPreferencesUseCase(userRepo, userPrefRepo)
 	updatePreferencesUC := userusecase.NewUpdatePreferencesUseCase(userRepo, userPrefRepo)
+	setDefaultTimezoneUC := userusecase.NewSetDefaultTimezoneUseCase(userRepo, userPrefRepo)
 
 	// MCP Access Token Use Cases (story 104)
 	mcpTokenRepo := repository.NewMCPTokenRepository(db.DB())
@@ -158,6 +159,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 		deleteAccountUC,
 		getPreferencesUC,
 		updatePreferencesUC,
+		setDefaultTimezoneUC,
 		calendarRepo,
 		addressBookRepo,
 		appPwdRepo,
@@ -222,6 +224,7 @@ func setupTestApp(t *testing.T) (*fiber.App, database.Database, *config.Config) 
 	userGroup.Put("/me/password", userHandler.ChangePassword)
 	userGroup.Get("/me/preferences", userHandler.GetPreferences)
 	userGroup.Patch("/me/preferences", userHandler.UpdatePreferences)
+	userGroup.Put("/me/preferences/timezone-default", userHandler.SetDefaultTimezone)
 
 	// Calendar Routes
 	calendarGroup := api.Group("/calendars", Authenticate(jwtManager, userRepo))

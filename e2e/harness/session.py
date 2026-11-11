@@ -187,10 +187,15 @@ class User:
         return self.e2e.http.request(method, f"{self.e2e.base}{path}", basic=(self.email, self.apppw), **kw)
 
     # --- factories (each registers its own cleanup) ---------------------------
-    def mk_calendar(self, name: str, color: str = "#3366cc") -> dict:
-        """POST /calendars/ → the raw calendar JSON (uuid, id, path, …)."""
-        r = self.api("POST", "/calendars/", json={"name": name, "color": color,
-                                                  "description": f"e2e {self.e2e.cfg.run_tag}"})
+    def mk_calendar(self, name: str, color: str = "#3366cc", kind: str | None = None) -> dict:
+        """POST /calendars/ → the raw calendar JSON (uuid, id, path, …).
+
+        KIND ("events", "tasks", "both") is sent only when given; without it the
+        server's default applies, an event calendar (VEVENT only) since #170."""
+        body = {"name": name, "color": color, "description": f"e2e {self.e2e.cfg.run_tag}"}
+        if kind is not None:
+            body["kind"] = kind
+        r = self.api("POST", "/calendars/", json=body)
         cal = r.jdict()
         if r.status != 201 or not cal.get("uuid"):
             raise SetupFailed(f"creating calendar '{name}' as {self.key} failed (HTTP {r.status})", r)

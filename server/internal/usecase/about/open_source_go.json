@@ -5,7 +5,7 @@
   "packages": [
     {
       "name": "github.com/caarlos0/env/v11",
-      "version": "v11.4.1",
+      "version": "v11.4.2",
       "license": "MIT",
       "url": "https://github.com/caarlos0/env"
     },
@@ -35,25 +35,25 @@
     },
     {
       "name": "github.com/go-jose/go-jose/v4",
-      "version": "v4.1.5",
+      "version": "v4.1.8",
       "license": "Apache-2.0",
       "url": "https://github.com/go-jose/go-jose"
     },
     {
       "name": "github.com/gofiber/fiber/v3",
-      "version": "v3.5.0",
+      "version": "v3.6.1",
       "license": "MIT",
       "url": "https://github.com/gofiber/fiber"
     },
     {
       "name": "github.com/gofiber/schema",
-      "version": "v1.8.8",
+      "version": "v1.9.3",
       "license": "BSD-3-Clause",
       "url": "https://github.com/gofiber/schema"
     },
     {
       "name": "github.com/gofiber/utils/v2",
-      "version": "v2.6.1",
+      "version": "v2.6.4",
       "license": "MIT",
       "url": "https://github.com/gofiber/utils"
     },
@@ -83,13 +83,13 @@
     },
     {
       "name": "github.com/jackc/pgx/v5",
-      "version": "v5.11.0",
+      "version": "v5.12.0",
       "license": "MIT",
       "url": "https://github.com/jackc/pgx"
     },
     {
       "name": "github.com/jackc/puddle/v2",
-      "version": "v2.2.2",
+      "version": "v2.2.3",
       "license": "MIT",
       "url": "https://github.com/jackc/puddle"
     },
@@ -113,13 +113,13 @@
     },
     {
       "name": "github.com/klauspost/compress",
-      "version": "v1.20.1",
+      "version": "v1.20.3",
       "license": "unknown",
       "url": "https://github.com/klauspost/compress"
     },
     {
       "name": "github.com/mattn/go-colorable",
-      "version": "v0.1.15",
+      "version": "v0.1.16",
       "license": "MIT",
       "url": "https://github.com/mattn/go-colorable"
     },
@@ -137,13 +137,13 @@
     },
     {
       "name": "github.com/molecule-man/go-brrr",
-      "version": "v1.1.1",
+      "version": "v1.3.1",
       "license": "MIT",
       "url": "https://github.com/molecule-man/go-brrr"
     },
     {
       "name": "github.com/philhofer/fwd",
-      "version": "v1.2.0",
+      "version": "v1.2.1",
       "license": "MIT",
       "url": "https://github.com/philhofer/fwd"
     },
@@ -167,19 +167,19 @@
     },
     {
       "name": "github.com/valyala/fasthttp",
-      "version": "v1.74.0",
+      "version": "v1.77.0",
       "license": "MIT",
       "url": "https://github.com/valyala/fasthttp"
     },
     {
       "name": "golang.org/x/crypto",
-      "version": "v0.57.0",
+      "version": "v0.58.0",
       "license": "BSD-3-Clause",
       "url": "https://pkg.go.dev/golang.org/x/crypto"
     },
     {
       "name": "golang.org/x/net",
-      "version": "v0.59.0",
+      "version": "v0.62.0",
       "license": "BSD-3-Clause",
       "url": "https://pkg.go.dev/golang.org/x/net"
     },
@@ -191,19 +191,19 @@
     },
     {
       "name": "golang.org/x/sync",
-      "version": "v0.23.0",
+      "version": "v0.24.0",
       "license": "BSD-3-Clause",
       "url": "https://pkg.go.dev/golang.org/x/sync"
     },
     {
       "name": "golang.org/x/sys",
-      "version": "v0.48.0",
+      "version": "v0.49.0",
       "license": "BSD-3-Clause",
       "url": "https://pkg.go.dev/golang.org/x/sys"
     },
     {
       "name": "golang.org/x/text",
-      "version": "v0.42.0",
+      "version": "v0.43.0",
       "license": "BSD-3-Clause",
       "url": "https://pkg.go.dev/golang.org/x/text"
     },

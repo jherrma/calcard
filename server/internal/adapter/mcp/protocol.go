@@ -137,14 +137,23 @@ type initializeResult struct {
 
 // instructions is prose handed to the model at handshake time. It is the one
 // place to state conventions that no per-tool schema can carry.
-const instructions = `CalCard exposes the signed-in user's calendars and contacts.
+const instructions = `CalCard exposes the signed-in user's calendars, tasks and contacts.
 
 Identifiers are UUIDs, not numbers: pass the ` + "`id`" + ` returned by list_calendars,
-get_events, list_address_books or get_contacts, never a positional index.
+get_events, list_tasks, list_address_books or get_contacts, never a positional
+index.
 
 Times are RFC 3339. A time without an offset is ambiguous — send an offset (or a
 trailing Z) so the event lands where the user meant it. All-day events are
 expressed with all_day: true and date-only semantics.
+
+Tasks (to-dos) live in task lists: the calendars whose kind is "tasks" or
+"both" in list_calendars. The event tools never see a task. Use list_tasks
+(filtered by status, text or due date) or get_task_summary (open, overdue and
+due-today counts) rather than listing everything and filtering, and change tasks
+with create_task, update_task, complete_task, uncomplete_task and delete_task. A
+repeating task (is_recurring) cannot be completed over MCP: the user completes
+it in their task app. Deleting a task is permanent.
 
 Calendars and address books shared with the user are included in every listing
 and are marked with their permission; a read-only collection will refuse writes.
@@ -154,8 +163,8 @@ The collections themselves are managed with create_calendar, update_calendar,
 delete_calendar, create_address_book, update_address_book and
 delete_address_book. Only a collection's owner (permission "owner") can change
 or delete it. Deleting a calendar or address book is permanent and removes every
-event or contact in it: name it to the user and get their explicit agreement
-before calling a delete tool.`
+event or task, or every contact, in it: name it to the user and get their
+explicit agreement before calling a delete tool.`
 
 // Tool is one AI-callable function, as advertised by tools/list.
 type Tool struct {

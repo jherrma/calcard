@@ -462,3 +462,65 @@ func TestSearchMatchesLocationAndDescription(t *testing.T) {
 	require.Equal(t, fiber.StatusOK, status)
 	assert.ElementsMatch(t, []string{"Lunch", "Retro"}, eventSummaries(body.Events))
 }
+
+// Calendar hits carry the calendar's kind (#170), so a client can tell a task
+// list from a calendar (and route a hit to the Tasks section) without parsing
+// supported_components. Pinned on the wire, as the SPA reads it.
+func TestSearchCalendarHitsCarryKind(t *testing.T) {
+	f := setupSearchHandlerTest(t)
+	defer f.db.Close()
+
+	ctx := context.Background()
+	for _, cal := range []*calendar.Calendar{
+		{UUID: "work-tasks", UserID: f.ownCal.UserID, Name: "Work tasks", Path: "work-tasks", Color: "#123456", SupportedComponents: "VTODO"},
+		{UUID: "work-events", UserID: f.ownCal.UserID, Name: "Work events", Path: "work-events", Color: "#123456", SupportedComponents: "VEVENT"},
+		{UUID: "work-mixed", UserID: f.ownCal.UserID, Name: "Work mixed", Path: "work-mixed", Color: "#123456", SupportedComponents: "VEVENT,VTODO"},
+	} {
+		require.NoError(t, f.calRepo.Create(ctx, cal))
+	}
+
+	req, _ := http.NewRequest("GET", "/api/v1/search?q=work&types=calendars", nil)
+	req.Header.Set("Authorization", "Bearer "+f.token)
+	resp, err := f.app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var body struct {
+		Calendars struct {
+			Items []map[string]any `json:"items"`
+		} `json:"calendars"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	kinds := map[string]any{}
+	for _, item := range body.Calendars.Items {
+		kinds[item["name"].(string)] = item["kind"]
+		assert.Contains(t, item, "supported_components", "kept next to kind")
+	}
+	assert.Equal(t, map[string]any{
+		"Work":        "both", // the fixture's legacy row: supported_components ""
+		"Work tasks":  "tasks",
+		"Work events": "events",
+		"Work mixed":  "both",
+	}, kinds)
+}
+
+// A search hit carries the occurrence's reminders like the event routes do
+// (#169 story 10).
+func TestSearchEventHitCarriesReminders(t *testing.T) {
+	f := setupSearchHandlerTest(t)
+	defer f.db.Close()
+
+	start := time.Now().AddDate(0, 0, 3).Truncate(time.Hour)
+	f.addEvent(t, f.ownCal, "alarmed", "Dentist", start, "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n")
+
+	status, body := f.search(t, "q=dentist")
+	require.Equal(t, fiber.StatusOK, status)
+	require.Len(t, body.Events.Items, 1)
+	r := body.Events.Items[0].Event.Reminders
+	require.Len(t, r, 1)
+	assert.Equal(t, "display", r[0].Action)
+	require.NotNil(t, r[0].OffsetSeconds)
+	assert.Equal(t, int64(-900), *r[0].OffsetSeconds)
+	assert.True(t, r[0].Editable)
+}

@@ -283,7 +283,7 @@ func TestFullSessionLifecycleOverHTTP(t *testing.T) {
 	listResp := h.post(token, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, sessionHeader)
 	require.Equal(t, http.StatusOK, listResp.StatusCode)
 	tools := decodeBody(t, listResp)["result"].(map[string]interface{})["tools"].([]interface{})
-	assert.Len(t, tools, 19)
+	assert.Len(t, tools, 26)
 
 	// 4. tools/call
 	callBody := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_event","arguments":{` +
@@ -359,8 +359,24 @@ func TestGetReturnsManifest(t *testing.T) {
 	assert.Equal(t, ServerName, body["name"])
 	assert.Equal(t, PreferredProtocolVersion, body["protocolVersion"])
 	assert.Equal(t, "streamable-http", body["transport"])
-	assert.Len(t, body["tools"], 19)
+	assert.Len(t, body["tools"], 26)
 	assert.Contains(t, body["authentication"], mcptoken.TokenPrefix)
+
+	// The task tools (#170) are in the manifest too, each with a closed object
+	// schema.
+	advertised := map[string]map[string]interface{}{}
+	for _, raw := range body["tools"].([]interface{}) {
+		tool := raw.(map[string]interface{})
+		advertised[tool["name"].(string)] = tool["inputSchema"].(map[string]interface{})
+	}
+	for _, name := range []string{"list_tasks", "create_task", "update_task", "complete_task",
+		"uncomplete_task", "delete_task", "get_task_summary"} {
+		schema, ok := advertised[name]
+		if assert.True(t, ok, "the manifest must list %s", name) {
+			assert.Equal(t, "object", schema["type"], name)
+			assert.Equal(t, false, schema["additionalProperties"], name)
+		}
+	}
 }
 
 func TestGetWithEventStreamAcceptOpensAStream(t *testing.T) {

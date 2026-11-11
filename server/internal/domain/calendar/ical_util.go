@@ -158,5 +158,5 @@ func EnsureVCalendarWrapper(data string) string {
 		return data
 	}
 	body := strings.TrimSpace(data)
-	return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//CalCard//EN\r\n" + body + "\r\nEND:VCALENDAR\r\n"
+	return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:" + ProductID + "\r\n" + body + "\r\nEND:VCALENDAR\r\n"
 }

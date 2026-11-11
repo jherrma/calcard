@@ -23,7 +23,7 @@ import (
 var accountModels = []any{
 	&user.User{}, &user.EmailVerification{}, &user.RefreshToken{}, &user.PasswordReset{},
 	&user.AppPassword{}, &user.OAuthConnection{}, &user.UserPreference{},
-	&calendar.Calendar{}, &calendar.CalendarObject{}, &calendar.SyncChangeLog{}, &calendar.CalendarSubscription{},
+	&calendar.Calendar{}, &calendar.CalendarObject{}, &calendar.SyncChangeLog{}, &calendar.CalendarSubscription{}, &calendar.AlarmAcknowledgement{},
 	&addressbook.AddressBook{}, &addressbook.AddressObject{}, &addressbook.ContactPhoto{}, &addressbook.SyncChangeLog{},
 	&user.CalDAVCredential{}, &user.CardDAVCredential{}, &user.MCPToken{},
 	&sharing.CalendarShare{}, &sharing.AddressBookShare{},
@@ -93,6 +93,7 @@ func seedAccount(t *testing.T, db *gorm.DB, name string) seededAccount {
 	require.NoError(t, db.Create(&user.MCPToken{UUID: "mcp-" + name, UserID: u.ID, Name: "mcp", TokenHash: "h-" + name, TokenPrefix: "p"}).Error)
 	require.NoError(t, db.Create(&user.OAuthConnection{UserID: u.ID, Provider: "google", ProviderID: "g-" + name}).Error)
 	require.NoError(t, db.Create(&user.UserPreference{UserID: u.ID, Key: "theme", Value: "dark"}).Error)
+	require.NoError(t, db.Create(&calendar.AlarmAcknowledgement{UserID: u.ID, AlarmKey: fmt.Sprintf("%032x", u.ID), AcknowledgedAt: time.Now().UTC()}).Error)
 	return seededAccount{user: u, cal: cal, book: book, contact: contact.ID}
 }
 
@@ -123,6 +124,7 @@ func accountRows(t *testing.T, db *gorm.DB, a seededAccount) map[string]int64 {
 		"mcp_tokens":             count(&user.MCPToken{}, "user_id = ?", uid),
 		"oauth_connections":      count(&user.OAuthConnection{}, "user_id = ?", uid),
 		"user_preferences":       count(&user.UserPreference{}, "user_id = ?", uid),
+		"alarm_acknowledgements": count(&calendar.AlarmAcknowledgement{}, "user_id = ?", uid),
 	}
 }
 

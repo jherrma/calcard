@@ -3,6 +3,7 @@ package calendar
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jherrma/caldav-server/internal/domain/user"
@@ -132,4 +133,97 @@ func EffectivePermission(cal *Calendar, perm CalendarPermission) CalendarPermiss
 		return PermissionRead
 	}
 	return perm
+}
+
+// SupportsComponent reports whether cal stores calendar objects of
+// componentType (ComponentEvent or ComponentToDo). It is the one component-set
+// rule (#170): the CalDAV supported-calendar-component-set is built from it
+// (webdav calendarComponentSet, which DAV PUT also enforces), and the REST event
+// writes and move, the task writes and the calendar import check it (through
+// RequireComponent). Feed sync is exempt: subscribed calendars are mixed.
+//
+// SupportedComponents is the comma list MKCALENDAR stores ("VEVENT", "VTODO",
+// "VEVENT,VTODO"). An empty value is a legacy row and means both components, as
+// an absent supported-calendar-component-set does (RFC 4791 §5.2.3). Names
+// compare exactly: they are stored upper-case, and go-ical upper-cases the
+// component names it decodes. A nil calendar stores nothing.
+func SupportsComponent(cal *Calendar, componentType string) bool {
+	if cal == nil {
+		return false
+	}
+	listed := false
+	for _, comp := range strings.Split(cal.SupportedComponents, ",") {
+		comp = strings.TrimSpace(comp)
+		if comp == "" {
+			continue
+		}
+		if comp == componentType {
+			return true
+		}
+		listed = true
+	}
+	return !listed && (componentType == ComponentEvent || componentType == ComponentToDo)
+}
+
+// RequireComponent returns nil when cal stores componentType (SupportsComponent)
+// and otherwise the refusal every write path reports: an error matching
+// ErrComponentNotStored and ErrInvalidInput whose message is
+// "This calendar does not store events" for a VEVENT and
+// "This calendar does not store tasks" for a VTODO.
+func RequireComponent(cal *Calendar, componentType string) error {
+	if SupportsComponent(cal, componentType) {
+		return nil
+	}
+	return componentNotStoredError(componentType)
+}
+
+// Calendar kinds (#170): what a calendar collection is for, in the words of
+// the REST API. A kind is not stored; it is another name for the
+// SupportedComponents value, so it can never drift from what CalDAV
+// advertises. POST /api/v1/calendars takes one (closed enum, see
+// SupportedComponentsForKind) and every calendar response reports one,
+// read-only, next to supported_components (KindOf).
+const (
+	// KindEvents is a calendar: it stores VEVENT only ("VEVENT").
+	KindEvents = "events"
+	// KindTasks is a task list: it stores VTODO only ("VTODO").
+	KindTasks = "tasks"
+	// KindBoth is a mixed collection storing VEVENT and VTODO
+	// ("VEVENT,VTODO"): every calendar created before #170, a subscription,
+	// a MKCALENDAR naming both components or none, or a deliberate choice.
+	KindBoth = "both"
+)
+
+// SupportedComponentsForKind returns the SupportedComponents value a calendar
+// of the given kind stores. The kinds are a closed enum compared exactly
+// (lower case, no trimming); anything else, the empty string included, is an
+// ErrInvalidInput the caller can correct (REST 400). Applying a default for an
+// absent kind is the caller's decision, not this function's.
+func SupportedComponentsForKind(kind string) (string, error) {
+	switch kind {
+	case KindEvents:
+		return ComponentEvent, nil
+	case KindTasks:
+		return ComponentToDo, nil
+	case KindBoth:
+		return ComponentSetBoth, nil
+	}
+	return "", Invalidf(`kind must be "events", "tasks" or "both"`)
+}
+
+// KindOf derives a calendar's kind from what it stores (SupportsComponent):
+// both components is KindBoth (so a legacy "" row is KindBoth, as it
+// advertises both over CalDAV), VTODO alone is KindTasks, VEVENT alone is
+// KindEvents. A calendar storing neither (no code path writes one; nil
+// included) reports KindEvents, the default kind.
+func KindOf(cal *Calendar) string {
+	events := SupportsComponent(cal, ComponentEvent)
+	tasks := SupportsComponent(cal, ComponentToDo)
+	switch {
+	case events && tasks:
+		return KindBoth
+	case tasks:
+		return KindTasks
+	}
+	return KindEvents
 }

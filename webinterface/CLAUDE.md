@@ -21,7 +21,8 @@ Pages (route-level views)
 ```
 webinterface/
 ├── pages/                   # File-based routing (each .vue → a route)
-│   ├── index.vue            # Dashboard: landing page after login (story 042) — NOT a redirect
+│   ├── index.vue            # Dashboard: landing page after login (story 042) — NOT a redirect; asks for the task
+│   │                        #   summary itself on mount, Refresh and the 5-minute timer ("Open tasks", #170)
 │   ├── auth/                # Authentication flows
 │   │   ├── login.vue        # Email/password + OAuth login
 │   │   ├── register.vue     # New account registration
@@ -35,7 +36,11 @@ webinterface/
 │   │   └── index.vue        # FullCalendar view with event CRUD dialogs
 │   ├── contacts/
 │   │   └── index.vue        # Contact list with search, grouping, detail panel
-│   ├── search.vue           # Full global-search results page (?q=…), uncapped
+│   ├── tasks/
+│   │   └── index.vue        # Tasks section (#170): list sidebar + toolbar + quick-add + TaskList + the task and task-list dialogs;
+│   │                        #   ?list=<calendar uuid> selects a list and stays in the URL (a new list is selected, a deleted one leaves it)
+│   ├── search.vue           # Full global-search results page (?q=…), uncapped; a task-list hit opens /tasks?list=<uuid>,
+│   │                        #   other calendar hits /calendar?cal=<id> (#170)
 │   └── settings/            # Profile, password, credentials, MCP access, subscriptions, connections, import/export, admin, danger
 │       ├── about-app.vue    # About CalCard: server version (from GET /system/settings) + link to /settings/about
 │       ├── about.vue        # Open Source Attribution (story 101)
@@ -52,11 +57,38 @@ webinterface/
 │   │   ├── EventCreateDialog.vue  # Dialog wrapping EventForm for new events
 │   │   ├── EventEditDialog.vue    # Dialog wrapping EventForm for editing
 │   │   ├── EventDetailDialog.vue  # Read-only event details
+│   │   ├── CalendarSettingsDialog.vue # General / Sharing / Public Access / Integration + delete. `kind="tasks"` (#170) = task-list copy,
+│   │   │                          #   no Timezone, no Public Access, changed fields only; without it unchanged; exposes confirmDelete(cal)
 │   │   └── RecurrenceScopeDialog.vue  # "This event / All events / This and future"
 │   ├── contacts/
 │   │   ├── ContactsSidebar.vue    # Address book list with checkboxes
 │   │   ├── ContactListItem.vue    # Single contact row (avatar, name, email, actions)
 │   │   └── AlphabetNavigation.vue # A-Z letter strip for quick scrolling
+│   ├── tasks/                     # Tasks section (#170); imported explicitly by pages/tasks/index.vue
+│   │   ├── TasksSidebar.vue       # All tasks + own/shared task lists (colour dot, open count, lock = read only), "+"; an owned
+│   │   │                          #   kind=tasks list has a menu: List settings, Share list, Delete task list (emits edit/share/delete-list)
+│   │   ├── TaskToolbar.vue        # View title + "N open", search, Open/Done/All, sort + direction, phone list picker
+│   │   ├── TaskQuickAdd.vue       # "Add a task" line above the list: Enter creates in tasksStore.newTaskListId (absent for a
+│   │   │                          #   read-only list), clears on success, keeps the text on failure; pen = "Add with details"
+│   │   ├── TaskList.vue           # Status groups (sorted within), states (skeleton, empty, error banner), "Show N completed",
+│   │   │                          #   "Showing N of total"; owns the tick (600 ms in place, Undo toast), the clock and the keyboard;
+│   │   │                          #   emits open (row focused first) + empty-state, exposes focusTask(id); delete -> "Task deleted";
+│   │   │                          #   polite live region: "Task marked as not done" (the toasts say the rest)
+│   │   ├── TaskGroupHeader.vue    # Sticky h2 "Needs action, 9 tasks"; Completed/Cancelled are <button aria-expanded aria-controls>
+│   │   ├── TaskEmptyState.vue     # no-lists / empty / no-match / all-done (spec §7.5 copy)
+│   │   ├── TaskRow.vue            # One task <li> (props task/now/showList/readOnly/pending/tabbable; emits toggle/delete/open): overdue
+│   │   │                          #   bar + label, priority mark, <time>, strike, Cancelled tag, repeat icon, menu (Complete, Edit task,
+│   │   │                          #   Delete task); the title is a tabindex=-1 button that opens the task; spinner after 300 ms pending
+│   │   ├── TaskCheck.vue          # The tick: <button role="checkbox">, Space/Enter, aria-disabled + reason, 180 ms check draw
+│   │   ├── TaskForm.vue           # Create/edit form (Vuelidate: title, due >= start); list select create-only over writable lists;
+│   │   │                          #   repeating task: rule as text, status + progress disabled, note on a due change; readOnly = no Save
+│   │   ├── TaskCreateDialog.vue   # "Add a task": TaskForm -> buildTaskInput -> createTask; stays open on failure
+│   │   ├── TaskEditDialog.vue     # "Edit task" / "Task details" (read only): PATCH of the changed keys only (none = no request),
+│   │   │                          #   "Delete task" asks (permanent, no Undo) then "Task deleted"
+│   │   ├── AddTaskListDialog.vue  # "Create task list": name + colour (first colour no task list has) -> createTaskList (kind tasks);
+│   │   │                          #   "Task list created", stays open on failure. AddCalendarDialog is NOT used for task lists
+│   │   └── TaskListSettingsDialog.vue # CalendarSettingsDialog with kind="tasks": rename, recolour, share, "Delete task list" (permanent);
+│   │                              #   confirmDelete(list) is the sidebar's delete; relays updated / deleted(list)
 │   ├── dashboard/                 # Dashboard widgets (story 042) → <DashboardWidgetCard> etc.
 │   │   ├── WidgetCard.vue         # Shared card shell (title, icon, badge, actions, footer)
 │   │   ├── TodayAgendaCard.vue    # Day timeline with lane-split overlapping events
@@ -64,18 +96,24 @@ webinterface/
 │   │   ├── MiniCalendarCard.vue   # 6x7 month grid with event dots + month navigation
 │   │   ├── RecentContactsCard.vue # Most recently updated contacts
 │   │   ├── RecentContactRow.vue   # Single row of the above
-│   │   └── QuickStatsCard.vue     # Calendars / events this month / address books / contacts
+│   │   └── QuickStatsCard.vue     # Calendars / events this month / open tasks / address books / contacts; open tasks =
+│   │                              #   summary.open (#170), null = pulse while asked for, else "—" (never 0)
 │   ├── settings/
 │   │   ├── DavCredentialManager.vue # → <SettingsDavCredentialManager>  CalDAV / CardDAV credential pages
 │   │   └── DavUrlBox.vue          # → <SettingsDavUrlBox>  copyable DAV URLs + which login to use
 │   ├── sharing/                   # Resource-agnostic sharing UI (story 043)
-│   │   ├── SharePanel.vue         # → <SharingSharePanel>  list/invite/change/revoke, BOTH resource kinds
+│   │   ├── SharePanel.vue         # → <SharingSharePanel>  list/invite/change/revoke, BOTH resource kinds;
+│   │   │                          #   resourceNoun overrides the copy's noun ("task list", #170)
 │   │   ├── PublicLinkPanel.vue    # → <SharingPublicLinkPanel>  calendar public link (calendars only)
 │   │   └── ShareDialog.vue        # → <SharingShareDialog>  modal composing both panels
 │   └── common/
+│       ├── ActionToast.vue        # Host of useAppToast().action() toasts ("Task completed" + Undo), bottom centre; default layout only
+│       ├── ReminderField.vue      # #169: reminder chips + "Add reminder" (presets, Custom…), v-model = Reminder[]; props allDay, readOnly, target ('event'|'task'), disabled, disabledHint; used by EventForm and TaskForm
+│       ├── ReminderToast.vue      # #169: sticky reminder toasts (group app-reminder) for the alarms store's queue; default + settings layouts
 │       ├── AppHeader.vue          # Top bar with hamburger toggle + global search trigger
-│       ├── AppSidebar.vue         # Main navigation sidebar (Calendar, Contacts, Settings)
-│       ├── GlobalSearch.vue       # Cmd/Ctrl+K search palette (trigger + dialog)
+│       ├── AppSidebar.vue         # Main navigation sidebar (Dashboard, Calendar, Tasks, Contacts, Settings); the Tasks badge is
+│       │                          #   tasksStore.overdueCount, summary fetched on mount, at each local midnight, at the next timed due instant of a loaded task, and when the tab becomes visible again (#170)
+│       ├── GlobalSearch.vue       # Cmd/Ctrl+K search palette (trigger + dialog); a task-list hit opens /tasks?list=<uuid> (#170)
 │       ├── SearchSectionHeader.vue # Category header + count for a search result group
 │       ├── SearchViewAll.vue      # "View all N …" link into /search
 │       ├── HighlightText.vue      # Search term highlighter using <mark> tags
@@ -83,17 +121,22 @@ webinterface/
 │       ├── LoadingSpinner.vue     # Centered spinner
 │       └── SkeletonList.vue       # Loading placeholder rows
 ├── stores/                  # Pinia stores (state + getters + actions)
+│   ├── alarms.ts            # #169 reminders: polling of /alarms/upcoming, one timer per alarm key, display queue, acknowledgement + localStorage mirror
 │   ├── auth.ts              # Auth state, login/register/logout/refresh, token scheduling
 │   ├── calendars.ts         # Calendar + event CRUD, visibility toggling, FullCalendar integration
 │   ├── contacts.ts          # Address book + contact state, search, sorting, letter grouping
 │   ├── dashboard.ts         # Dashboard event window (loadedMonths), recent contacts, clock
 │   ├── preferences.ts       # User preferences (event duration, all-day, time format, accent colour, first day of week)
 │   ├── search.ts            # Global search fan-out (events/contacts/collections), cache, recents
-│   └── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
-│                            #   `sharedWithMe` derived from the two list endpoints (story 043)
+│   ├── sharing.ts           # Share CRUD for calendars AND address books, calendar public link,
+│   │                        #   `sharedWithMe` derived from the two list endpoints (story 043)
+│   └── tasks.ts             # Tasks (#170): task lists (kind tasks/both, read from the calendars store), one GET /tasks,
+│                            #   summary (badge), status groups, optimistic toggleComplete; mutations toast their own errors;
+│                            #   newTaskListId = where a new task goes (selected writable list / first writable / null);
+│                            #   forgetTaskList / applyListInfo after a list is deleted / renamed or recoloured
 ├── composables/
 │   ├── useApi.ts            # $fetch wrapper: JWT auth, response unwrapping, HTTP 429 retry/notice
-│   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info)
+│   ├── useAppToast.ts       # Toast notification helpers (success/error/warn/info, action = one button such as Undo, 5 s)
 │   ├── useTheme.ts          # Light/Dark/System state — SINGLETON, see Theming below
 │   ├── useAccentColor.ts    # Accent colour — SINGLETON, server-backed, see Theming below
 │   ├── useDatePickerFirstDay.ts # Mirrors first_day_of_week into PrimeVue's global locale (DatePickers)
@@ -103,33 +146,52 @@ webinterface/
 │   ├── auth.ts              # Requires authentication (redirects to /auth/login)
 │   └── guest.ts             # Requires unauthenticated (redirects away from auth pages)
 ├── layouts/
-│   ├── default.vue          # App shell: sidebar + header + Toast + ConfirmDialog + loading overlay
+│   ├── default.vue          # App shell: sidebar + header + Toast + ActionToast + ReminderToast + ConfirmDialog + loading overlay
 │   └── auth.vue             # Centered card with CalCard branding
 ├── types/
+│   ├── alarms.ts            # #169: UpcomingAlarm, UpcomingAlarmsResponse, AcknowledgeAlarmsBody
 │   ├── auth.ts              # User, LoginResponse, RefreshResponse, SystemSettings, AuthMethod
 │   ├── calendar.ts          # Calendar, CalendarEvent, RecurrenceRule, EventFormData
 │   ├── contacts.ts          # AddressBook, Contact, ContactEmail/Phone/Address/URL
 │   ├── about.ts             # OpenSourcePackage, OpenSourceManifest, UNKNOWN_LICENSE
 │   ├── api.ts               # ApiResponse, ApiError, ValidationError, PaginatedResponse
-│   └── search.ts            # EventHit, ContactHit, SearchResults (global search)
+│   ├── search.ts            # EventHit, ContactHit, SearchResults (global search)
+│   └── tasks.ts             # Task, TaskInput, TaskPatch, TasksSummary, TaskStatus, TaskGroupKey: the task API's raw JSON (#170);
+│                            #   TaskFormData (what TaskForm edits)
 ├── utils/                   # Auto-imported pure helpers (no Nuxt context needed)
+│   ├── apiErrors.ts         # RETRY_HINT, httpErrorStatus, clientErrorMessage (the server's sentence for a 4xx): task and task-list writes (#170)
 │   ├── agendaLayout.ts      # Lane assignment for overlapping blocks on the day timeline
 │   ├── contactAvatar.ts     # Contact initials + deterministic avatar colour
-│   ├── dashboardDates.ts    # Local-date primitives, month-range merging, week-start-aware month grid
+│   ├── dashboardDates.ts    # Local-date primitives, month-range merging, week-start-aware month grid, CLOCK_INTERVAL_MS (the minute clock)
+│   ├── dialogs.ts           # DIALOG_BREAKPOINTS / TOAST_BREAKPOINTS: the one 640px rule of the task dialogs and the undo toast (the event dialogs have no breakpoint; ShareDialog uses 95vw)
 │   ├── davUrls.ts           # davOrigin() / davHomeUrl(): the URLs DAV clients are configured with
 │   ├── rateLimit.ts         # Retry-After parsing + friendly 429 text for useApi
 │   ├── sanitizeUrl.ts       # Allowlists URL schemes before binding to an href (#27)
-│   ├── searchFormat.ts      # Shared row labels for the search palette + results page
+│   ├── searchFormat.ts      # Shared row labels for the search palette + results page; taskListRoute (#170)
+│   ├── alarmRefresh.ts      # #169: refreshAlarmsSoon() (lazy import of the alarms store's refreshSoon), called after event/task mutations and a time-zone change
+│   ├── alarmToast.ts        # #169: toast wording (alarmDetail, summaryLines, MAX_SINGLE_TOASTS)
+│   ├── reminders.ts         # #169: presets, all-day offset formulas, describeReminder, remindersChanged, toReminderInputs, mapReminderMode; task presets/wording via ReminderTarget
+│   ├── reminderChannel.ts   # #169: BroadcastChannel('calcard-reminders') claim between tabs (§10.7)
+│   ├── alarmSchedule.ts     # #169 pure helpers: delayMs (cap 2^31-1, skew), mergePoll (§10.3), alarmLink (Open targets)
 │   ├── accent.ts            # Accent palette generation + hex parsing (story 046)
 │   ├── davCredentials.ts    # Generated DAV credential username/password + the username rule
 │   ├── passwordPolicy.ts    # Client copy of the server's password rules (Unicode classes, 8–72 bytes); checks the NEW-password field of
 │   │                        #   register, setup, reset-password and settings/password (never a login/current password) and scores AuthPasswordStrength
+│   ├── tasks.ts             # Task helpers (#170): isOverdue/dueBucket (the server's overdue rule: all-day by local date,
+│   │                        #   timed by instant), priorityLevel, formatDue, compareTasks (the in-group sort)
+│   ├── taskForm.ts          # Task form <-> API (#170): taskToFormData, buildTaskInput, buildTaskPatch (changed keys only; never
+│   │                        #   status/progress of a repeating task), priority 1/5/9, local-date all-day values, describeRecurrence
+│   ├── taskLists.ts         # Task lists (#170): TASK_LIST_COLORS + suggestTaskListColor (a new list's colour), taskListDeleteMessage, COLOR_FORMAT_ERROR
 │   ├── theme.ts             # Theme constants + pure helpers (also imported by nuxt.config)
 │   └── vcardDate.ts         # vCard date parsing/formatting
 ├── plugins/
+│   ├── alarms.client.ts     # #169: isAuthenticated (immediate) -> alarms.start() / alarms.stop()
 │   ├── first-day-of-week.client.ts # Starts useDatePickerFirstDay() app-wide at boot
-│   ├── primevue-services.ts # Registers ConfirmationService (for useConfirm)
-│   └── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
+│   ├── primevue-services.ts # Registers ConfirmationService (for useConfirm) and the v-tooltip directive (#170)
+│   ├── theme.client.ts      # Starts useTheme() app-wide at boot (story 046)
+│   └── timezone.client.ts   # #169: one set-if-empty PUT /users/me/preferences/timezone-default per tab and signed-in period
+│                            #   (watches auth.isAuthenticated, immediate); the answer goes into preferencesStore.setTimezone (no PATCH);
+│                            #   errors only console.warn; `useNuxtApp().$timezoneReady()` = the always-resolving pending promise
 ├── assets/css/
 │   ├── tailwind.css         # Tailwind layer entry (@layer tailwind-base, primevue, …)
 │   ├── theme.css            # Unlayered: theme-switch transition + pre-paint background
@@ -223,6 +285,7 @@ The backend has two different response patterns:
 The calendar page (`pages/calendar/index.vue`) integrates FullCalendar:
 
 - **CalendarSidebar**: Lists calendars with colored checkboxes. Toggling visibility updates `visibleCalendarIds` Set in the store.
+- **Task lists are not calendars (#170)**: `GET /calendars` also returns task lists (`kind: 'tasks'`, VTODO only). `calendarStore.calendars` keeps them (one request; the tasks section reuses it), so anything that lists calendars for EVENTS reads `eventCalendars` (`kind !== 'tasks'`) or a getter built on it (`calendarOptions`, `ownedCalendars`, `sharedCalendars`, `writableCalendars`, `subscribedCalendars`): the sidebar, the event form's calendar select, `fetchEvents`, the dashboard's `fetchEventRange` and calendar counts, the import/export selectors. Mixed (`both`) calendars and subscriptions stay. A lookup by id (an event's calendar colour or name) may still read `calendars`.
 - **CalendarToolbar**: Month/Week/Day view switcher, prev/next/today navigation. Controls FullCalendar via template ref.
 - **Event dialogs**: Create, edit, and detail dialogs are separate components. For recurring events, a `RecurrenceScopeDialog` asks the user whether to modify "this event", "this and future", or "all events".
 - **Drag-and-drop**: FullCalendar's `@eventDrop` and `@eventResize` call `calendarStore.updateEventTime()` for direct time changes.
@@ -248,6 +311,75 @@ The contacts page (`pages/contacts/index.vue`) uses a custom list layout:
 - **AlphabetNavigation**: A-Z letter strip. Only letters with contacts are clickable. Clicking scrolls to that section.
 - **Contact detail**: Full contact details live on the route page `pages/contacts/[id]/index.vue` (navigated to when a contact is selected).
 - **Virtual scrolling**: Manual implementation with computed offsets and a scroll container.
+
+### Tasks Section (#170)
+
+`pages/tasks/index.vue` is the third section of the main navigation (Dashboard, Calendar, **Tasks**,
+Contacts; the Tasks entry's pill is the overdue count). A task list is a calendar with
+`kind: 'tasks'` (VTODO only); a mixed `both` calendar holds tasks too. The page composes the
+`components/tasks/*` pieces (imported explicitly) over `stores/tasks.ts`:
+
+- **The selection lives in the URL**: `?list=<calendar uuid>`, none = All tasks. The sidebar and the
+  phone picker write it with `replace`, a watcher applies it, and an unknown uuid gets one calendars
+  refetch before the page falls back to All tasks.
+- **One store, one request per view.** `taskLists` / `writableTaskLists` derive from the calendars
+  store (no second `GET /calendars`); `fetchTasks()` is one `GET /tasks` (`calendar_uuid` narrows it);
+  `fetchSummary()` passes `as_of` through ofetch's `query`. Mutations toast their own errors and
+  refetch the summary (badge and counts). Open / Done / All is a server query; the sort runs in the
+  browser, within the status groups.
+- **Who owns what.** TaskToolbar, TasksSidebar, TaskRow and TaskCheck only emit. TaskList owns the
+  tick (optimistic, 600 ms in place, then the "Task completed" action toast with Undo, which PATCHes the
+  status and percent the row had before the tick via `tasksStore.undoComplete`, not the server's uncomplete, and re-inserts the row when it matches the view), the
+  minute clock, the keyboard and the focus. The page owns the dialogs (TaskCreateDialog and
+  TaskEditDialog over TaskForm, AddTaskListDialog, TaskListSettingsDialog = CalendarSettingsDialog
+  with `kind="tasks"`).
+- **Deletes are permanent** (a task is hard-deleted; a list goes with everything in it), so nothing
+  offers Undo after a delete: the confirm dialog is the safety net. It says so ("This can't be undone.").
+- **Ticked rows.** Under Open a ticked row stays in `tasks` for the Undo but is neither shown nor counted in
+  "Showing N of total" once it has left the view. Under All it stays where it was ticked (not in the collapsed
+  Completed group) until the list is loaded again, the view changes or that group is opened. A completed
+  repeating task can be reopened (uncomplete is allowed); an open one cannot be completed. `summary` / `description` are
+  plain text: shown and sent back as they are.
+- **Logout empties the store.** `clearAuth()` resets the tasks store (rows, badge counts, filters)
+  through a lazy `import('~/stores/tasks')`: a static import closes the cycle
+  useApi -> auth -> tasks -> calendars -> useApi and breaks `mockNuxtImport('useApi')` in specs.
+- **Summary freshness.** The sidebar refetches the summary on mount, at local midnight, at the next
+  timed due instant of a loaded task, on `visibilitychange`; the calendar delete (mixed calendars) and
+  a calendar import into a task-bearing calendar refetch it too. `by_calendar[uuid].completed` is the
+  list's done count (the empty state's "All caught up" and the "Show N completed" link read it).
+
+Accessibility and phones (spec §8, story 29):
+
+- **Tab order**: toolbar, quick-add (input, pen), then the list's ONE Tab stop (roving tabindex: the
+  active row `<li>` with its own check and menu button), the Completed / Cancelled disclosure
+  buttons, "Show N completed". ArrowUp / ArrowDown move between the rows of open groups; Space
+  ticks, Enter opens the editor, Delete (or Backspace) asks to delete. The scroll containers (the
+  list area, the sidebar's) carry `tabindex="-1"`: Firefox makes an overflowing scroller an unnamed
+  Tab stop of its own.
+- **Focus never falls to the page.** When the focused row leaves (ticked under Open, deleted, moved
+  to another group), its neighbour takes the focus. TaskList reads `document.activeElement` in a
+  pre-flush watcher, before Vue removes the row; it does not track focusout, because whether and
+  when removing the focused element fires blur/focusout differs between browsers. Dialogs: PrimeVue
+  traps the focus and returns it to the opener (the row is focused before a dialog opens); after
+  the editor closes, the page refocuses the row when it was re-rendered meanwhile.
+- **Announcements.** PrimeVue renders every toast as `role="alert"`, so "Task completed", "Task
+  deleted" and "Task list created / updated / deleted" are announced by their toasts. The one other
+  announcement is TaskList's polite live region (`data-test="task-announcer"`, outside the
+  `aria-busy` list): "Task marked as not done" after an untick or an Undo, emptied again after 5 s.
+  Do not add a second region for something a toast already says.
+- **Focus ring**: the section's own controls use `focus-visible:ring-2 focus-visible:ring-primary-500`
+  (inset on a row and on the quick-add line); PrimeVue controls draw the Material preset's 2px
+  primary outline.
+- **Overdue** is text (sr-only "Overdue, due …" plus the visible date), an icon and colour. Danger
+  text is `text-red-600 dark:text-red-400`: 4.83:1 on surface-0 and 6.40:1 on the dark surface-900,
+  measured in the built app, so the red-700 fallback is not needed.
+- **Reduced motion**: the tick's check draw, ring fill and strike are `motion-reduce:transition-none`.
+- **Phones (below `lg`)**: the sidebar is hidden and the toolbar's list `Select` replaces it as the
+  list picker; the toolbar wraps (search full width, filter and sort below); rows drop the list and
+  priority to a second line; the task form drops its decorative priority marks so the four choices
+  fit. List settings, delete and "+" have no phone entry, the same as the
+  Calendar section ("Create task list" shows only in the no-lists state). Dialogs use
+  `:breakpoints="{ '640px': 'calc(100vw - 2rem)' }"`.
 
 ### Sharing (story 043)
 
@@ -320,6 +452,13 @@ the palette dialog. `pages/search.vue` is the uncapped results page it links to.
   resolves a recurring occurrence with `calendarStore.fetchEventOccurrence()` — `GET
   /events/:id` returns the series MASTER and does no recurrence expansion, so it must never be
   used to open an occurrence. Contacts use the NUMERIC `?ab=` id (`Contact.addressbook_id`).
+- **Calendar hits and task lists (#170)**: the calendars group lists task lists too (each hit
+  carries `kind`). A `kind: 'tasks'` hit opens `/tasks?list=<uuid>` in both the palette and the
+  results page (`taskListRoute()` in `utils/searchFormat.ts`), never the Calendar section, which
+  does not show task lists; its row says "Task list". Every other hit (`events`, mixed `both`)
+  opens the Calendar section as before: `/calendar` from the palette, `/calendar?cal=<numeric id>`
+  from the results page. The calendar page consumes and strips a lone `?cal=` (nothing to jump to
+  or open). There is no tasks group in the results (deferred).
 
 ### Theming (story 046)
 
@@ -399,6 +538,118 @@ The second half of theming, and the one that persists DIFFERENTLY from the theme
   on every page load.
 - **A save applies optimistically and rolls back** if the server refuses, so the screen never shows
   a colour the account does not have.
+
+### User time zone (#169)
+
+`plugins/timezone.client.ts` fills the user's `timezone` preference once per tab and signed-in period: it watches
+`auth.isAuthenticated` (immediate, so a session restored by `initAuth`, a password sign-in and the OAuth callback
+all count) and sends `PUT /api/v1/users/me/preferences/timezone-default` with the browser's zone. The server only
+stores it if none is stored ("set-if-empty"), so the *answer* is written into the store via
+`preferencesStore.setTimezone()` (no PATCH), also when it differs from the browser's zone. Errors (400, network)
+only `console.warn`: no toast, no retry. The flag re-arms when `isAuthenticated` turns false.
+`useNuxtApp().$timezoneReady()` returns the pending promise (never rejects) for callers that must wait for it.
+`PREF_TIMEZONE` (`timezone`, default `UTC`) and the `timezone` getter live in `stores/preferences.ts`;
+Settings -> Calendar has a filterable "Time zone" Select (`UTC` + `Intl.supportedValuesOf('timeZone')`) saved
+through the preferences PATCH, a 400 shows the server's text.
+
+### Reminders (#169)
+
+`stores/alarms.ts` is the data layer of the web app's reminders; `components/common/ReminderToast.vue` renders its
+`queue` as toasts (see "Toasts, several tabs and refresh hooks" below). Spec §10.
+
+- **Lifecycle.** `plugins/alarms.client.ts` watches `auth.isAuthenticated` (immediate): `true` -> `start()`,
+  `false` -> `stop()`. `start()` waits for `$timezoneReady()` (at most 3 s, so the first poll does not hit the UTC
+  fallback), loads the persisted keys, polls, then installs the 5-minute interval, the 30 s heartbeat, the
+  `visibilitychange` and `online` listeners. `stop()` clears every timer and listener, bumps the sequence tokens (a
+  late answer is dropped) and keeps state; `reset()` (called by `clearAuth` through a lazy import, like
+  `resetTasksStore`) also empties the state and removes that user's `localStorage` entry. Both are idempotent.
+  Every cross-store access (`toRFC3339` from `stores/calendars.ts`) is a lazy `import()`.
+- **Poll.** `GET /api/v1/alarms/upcoming` (raw JSON, no envelope) with `query: { until: toRFC3339(now + 24 h) }`:
+  ofetch encodes the `+` of the offset; no zone parameter. One request in flight (a call meanwhile schedules ONE
+  follow-up). Triggers: `start()`, every 5 minutes (also hidden tabs), `visibilitychange` to visible when the last
+  poll is older than 60 s, `online`, heartbeat gap > 90 s (sleep: `checkDue()` + `refresh()`), `refreshSoon()`
+  (2 s debounce, for the refresh hooks below).
+- **Skew.** `skewMs = Date.parse(server_time) - (requestStart + requestEnd) / 2`; every "now" is `Date.now() + skewMs`.
+- **Timers.** `mergePoll` (pure, `utils/alarmSchedule.ts`): a new key gets exactly one `setTimeout` (delay
+  `delayMs`, capped at 2^31-1), or goes straight into `queue` when `trigger_at <= now` (missed, up to 24 h); a key
+  absent from the answer is cancelled, except when `truncated` and its trigger is after the last returned one;
+  queued, shown and pending keys are never armed again. A firing timer re-arms when `now + skew < trigger_at`
+  (clock set back). `queue` is oldest first and holds the data the toast needs.
+- **Acknowledgement.** `ReminderToast` calls `markShown(keys)` once toasts are rendered in a visible document. The keys
+  move to `pendingAck`, then a 1 s debounced `POST /api/v1/alarms/acknowledge` sends `{ keys }` (no times) in batches
+  of at most 500; 204 moves them to `shown`. A failure keeps them pending and retries after 5 s, 30 s, 2 min, then
+  with every poll (`useApi` never retries writes). `shown` and `pendingAck` are mirrored to
+  `localStorage['calcard-alarms:<user id>']` as `{ shown, pending }` (key -> trigger instant, dropped 25 h after
+  it); after a reload a pending key is neither shown again nor forgotten (its POST is retried). Storage access is
+  always in `try/catch`.
+- **Failures.**
+
+  | Situation | Behaviour |
+  |---|---|
+  | Poll fails (network, 5xx) | timers kept, `console.warn`, next trigger retries |
+  | 401 | `useApi` refreshes the token; a failed refresh logs out -> `stop()` |
+  | 404 on the poll | not a state: the routes are always registered, so it means a misrouted or older server. `console.error` once, timers kept, next trigger retries. On the acknowledgement it is an ordinary failure (retry schedule) |
+  | 400 on the poll | a bug: `console.error` once, polling stops for the session, armed timers keep running |
+  | Acknowledge fails | retry schedule above; the key is never queued again while pending |
+
+#### Toasts, several tabs and refresh hooks (story 16)
+
+- **Group `app-reminder`** (`REMINDER_TOAST_GROUP` in `composables/useAppToast.ts`, next to `ACTION_TOAST_GROUP`):
+  `components/common/ReminderToast.vue` hosts it, top right, and is mounted by the **default and settings layouts**
+  (not the auth layout), so a reminder shows on every authenticated page. It cannot reuse `useAppToast().action()`
+  (one at a time, 5 s). The toasts are sticky `info` (no `life`) with "Open" and "Dismiss"; PrimeVue renders them as
+  `role="alert"`, the component never moves focus, and the buttons are named ("Open Team sync", "Dismiss reminder for
+  Team sync"). Wording lives in `utils/alarmToast.ts`.
+- **Display rules.** Nothing is claimed or shown while `document.visibilityState !== 'visible'`; the queue waits and is
+  worked off at `visibilitychange`. A toast rendered in a visible document calls `markShown(keys)` (the
+  acknowledgement), so call `markShown` only then. More than 3 at once become ONE summary toast ("You missed N
+  reminders", up to 5 lines plus "and N more") that acknowledges every key. "Open" goes to `alarmLink(alarm)`.
+- **Several tabs (§10.7).** `utils/reminderChannel.ts`, `BroadcastChannel('calcard-reminders')`: a visible tab posts
+  `{type:'claim', key, tab, at}`, waits 300 ms, the smallest `(at, tab)` shows the toast and posts
+  `{type:'shown', key}`; every tab receiving `shown` calls `alarms.drop([key])` (cancels the timer, leaves the queue,
+  never queues it again, acknowledges nothing). A tab that lost yields the key and claims it again after 5 s if no
+  `shown` came. Hidden tabs never claim. Without `BroadcastChannel` (absent or throwing) every tab shows its own.
+  `navigator.locks` is not used (secure contexts only; the default compose deployment is plain http).
+- **Refresh hooks (§10.3).** `refreshAlarmsSoon()` (`utils/alarmRefresh.ts`, a lazy import of the alarms store's
+  debounced `refreshSoon()`) runs after a SUCCESSFUL `calendars.createEvent` / `updateEvent` / `updateEventTime` /
+  `moveEvent` / `deleteEvent`, `tasks.createTask` / `updateTask` / `toggleComplete` / `undoComplete` (through
+  `updateTask`) / `removeTask`, and after Settings > Calendar saved a changed time zone. Any new code that creates,
+  changes, moves or deletes an event or task over the API (the reminder fields of the forms, stories 17 and 18) goes
+  through those store actions and needs no call of its own; a new direct `api()` write must call
+  `refreshAlarmsSoon()` itself.
+
+#### Reminder field in the event form (story 17)
+
+- **`components/common/ReminderField.vue`** (`<CommonReminderField v-model allDay readOnly>`) + **`utils/reminders.ts`**. The v-model is
+  the item's full `Reminder[]` as the API answers it; `EventForm` holds it as `reminders` and sends
+  `EventFormData.reminders` (`ReminderInput[]`: `{ offset_seconds }` or `{ at }`) ONLY when `remindersChanged(initial, current)`
+  says the editable set changed. A title or date change alone sends no `reminders` key (relative ones move with the date, the server
+  shifts absolute all-day ones); `updateEventTime` (drag and drop) never sends them. A PATCH `reminders` list REPLACES the editable
+  ones, so the form sends every editable reminder it shows (absolute ones as the `at` the server returned); read-only ones
+  (`editable: false`: END-related, EMAIL, REPEAT, ...) show as "Set in another app" and are never sent or removed.
+- **All-day reminders are relative too (D23)**: "On the day at 09:00" = `32400`, "N days before at hh:mm" = `-N*86400 + hh*3600 + mm*60`
+  (`-54000`, `-140400`, `-572400`; custom 2 days before at 07:30 = `-145800`). No browser zone is involved; only an absolute chip
+  ("At 4 Nov, 09:00") is shown in the browser's zone. Back: `daysBefore = -floor(offset/86400)`.
+- **Switching all-day <-> timed** maps editable relative reminders to the other mode's preset with the same days before
+  (`mapReminderMode`); absolute and read-only ones stay. At most 5 editable reminders, duplicates merge, ordered by trigger.
+- **Ownership (Q9)**: the block is hidden (and nothing sent) unless the selected calendar is in `calendarStore.ownedCalendars`: a shared
+  event's VALARMs alert the owner and every sharee. New events start with none (Q13).
+- Story 18 (task form) reuses the field and helpers with `target="task"` (below).
+
+#### Reminder field in the task form (story 18)
+
+- `TaskForm` renders `<CommonReminderField target="task" :disabled="!form.due" disabled-hint="Set a due date to add a reminder">` below
+  the Due/Start row. `target="task"` (`ReminderTarget`) switches the presets and wording to the due date: timed = At due time, 5/15/30 minutes,
+  1 hour, 1 day before due; all-day = "On the due date at 09:00" (`32400`) and "1 day before at 09:00" (`-54000`); `offsetReminder(offset, 'task')`
+  creates `related: 'end'` (the server writes `TRIGGER;RELATED=END`). `describeReminder(r, allDay, 'task')` words an end-related one
+  ("30 minutes before due"); a start-related one on a task is read only. `mapReminderMode(..., 'task')` keeps them end-related.
+- `TaskFormData.reminders` (full `Reminder[]`): `taskToFormData` reads `task.reminders`, `newTaskFormData` starts with none.
+  `buildTaskInput` sends `reminders` only with a due date (the server answers 400 `A reminder needs a due date` otherwise); `buildTaskPatch`
+  sends the full editable list ONLY when `remindersChanged` (a due-only change sends none), so `isEmptyTaskPatch` covers an untouched form.
+  `stores/tasks.ts` `createTask`/`updateTask` pass the bodies through. Quick-add has no reminder control.
+- Disabled without a due date (chips of stored reminders stay and can be removed). Clearing the due resets the field to the stored list;
+  the all-day switch maps reminders only while a due date is set. Hidden when the task's list is not owned (`shared` or `subscribed`, Q9);
+  `readOnly` shows chips without controls. A repeating task's field stays editable (a reminders-only PATCH edits the master, no 409).
 
 ### Type System Gotchas
 
@@ -592,7 +843,13 @@ async function handleSubmit() {
 const toast = useAppToast();
 toast.success('Contact saved');
 toast.error('Failed to delete calendar');
+toast.action('Task completed', 'Undo', () => undo()); // one button, 5 s, bottom centre
 ```
+
+`action()` toasts render in `components/common/ActionToast.vue` (group `ACTION_TOAST_GROUP`), which only
+the **default** layout mounts, so they do not show on settings or auth pages. Reminder toasts (#169) use their own
+group `REMINDER_TOAST_GROUP` and host `ReminderToast.vue` (default and settings layouts); see "Reminders (#169)". One at a time: a new one
+replaces the previous. The button runs the callback once and closes the toast. The 5 s countdown pauses while the pointer is over the toast or the focus is inside it (PrimeVue pauses on hover only when `onMouseEnter` is passed; the focus pause raises the same synthetic mouseenter/mouseleave).
 
 ### Confirmation Dialogs
 ```typescript

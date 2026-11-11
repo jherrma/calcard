@@ -62,9 +62,12 @@
               <div v-if="calFile" class="mt-4 space-y-4">
                 <div>
                   <label class="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">Import to Calendar</label>
+                  <!-- Event calendars only (#170): .ics import here is about
+                       events, and the server skips every event of a file
+                       imported into a task list. -->
                   <Select
                     v-model="selectedCalendar"
-                    :options="calendarStore.calendars"
+                    :options="calendarStore.eventCalendars"
                     option-label="name"
                     placeholder="Select a calendar"
                     class="w-full"
@@ -176,9 +179,11 @@
               <div class="flex flex-wrap items-end gap-3">
                 <div class="flex-1 min-w-[200px]">
                   <label class="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">Calendar</label>
+                  <!-- Event calendars only (#170), like the import target; the
+                       Full Backup below still contains every task list. -->
                   <Select
                     v-model="exportCalendar"
-                    :options="calendarStore.calendars"
+                    :options="calendarStore.eventCalendars"
                     option-label="name"
                     placeholder="Select a calendar"
                     class="w-full"
@@ -260,7 +265,7 @@
         </div>
         <div v-if="importResult.skipped > 0" class="flex items-center gap-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-yellow-700 dark:text-yellow-400">
           <i class="pi pi-minus-circle text-lg" />
-          <span>{{ importResult.skipped }} skipped (duplicates)</span>
+          <span>{{ importResult.skipped }} {{ skippedLabel }}</span>
         </div>
         <div v-if="importResult.failed > 0" class="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-700 dark:text-red-400">
           <i class="pi pi-times-circle text-lg" />
@@ -326,6 +331,16 @@ const backupExporting = ref(false);
 // Results dialog
 const showResults = ref(false);
 const importResult = ref<ImportResult | null>(null);
+// Which import produced `importResult`. A calendar import also counts as
+// skipped every item the target calendar does not store (#170: the tasks of a
+// file imported into an events-only calendar), each listed with its reason
+// under Error Details; a contact import skips duplicates only.
+const importSource = ref<'calendar' | 'contacts'>('calendar');
+const skippedLabel = computed(() =>
+  importSource.value === 'calendar'
+    ? 'skipped (duplicates, or items this calendar does not store)'
+    : 'skipped (duplicates)',
+);
 
 const duplicateOptions = [
   { label: 'Skip', value: 'skip' },
@@ -394,9 +409,14 @@ async function executeCalendarImport() {
     );
 
     importResult.value = result;
+    importSource.value = 'calendar';
     showResults.value = true;
     calFile.value = null;
     await calendarStore.fetchCalendars();
+    // The import may have added tasks (VTODOs), which the overdue badge counts.
+    if (selectedCalendar.value?.kind === 'tasks' || selectedCalendar.value?.kind === 'both') {
+      void useTasksStore().fetchSummary();
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to import calendar';
     toast.error(message);
@@ -418,6 +438,7 @@ async function executeContactImport() {
     );
 
     importResult.value = result;
+    importSource.value = 'contacts';
     showResults.value = true;
     vcfFile.value = null;
     await contactsStore.fetchAddressBooks();

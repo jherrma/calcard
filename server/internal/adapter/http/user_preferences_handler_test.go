@@ -221,3 +221,68 @@ func TestUserHandler_Preferences(t *testing.T) {
 		assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 	})
 }
+
+func TestUserHandler_SetDefaultTimezone(t *testing.T) {
+	app, db, cfg := setupTestApp(t)
+	userRepo := repository.NewUserRepository(db.DB())
+	jwtManager := authadapter.NewJWTManager(&cfg.JWT)
+
+	u := &user.User{Email: "tz@example.com", Username: "tzuser", PasswordHash: "hash", IsActive: true, EmailVerified: true, UUID: "tz-uuid"}
+	require.NoError(t, userRepo.Create(context.Background(), u))
+	token, _, err := jwtManager.GenerateAccessToken(u.UUID, u.Email)
+	require.NoError(t, err)
+	ghost, _, err := jwtManager.GenerateAccessToken("ghost-uuid", "ghost@example.com")
+	require.NoError(t, err)
+
+	put := func(t *testing.T, bearer string, body any) (int, map[string]any) {
+		t.Helper()
+		var rd *bytes.Reader
+		switch b := body.(type) {
+		case string:
+			rd = bytes.NewReader([]byte(b))
+		default:
+			raw, err := json.Marshal(b)
+			require.NoError(t, err)
+			rd = bytes.NewReader(raw)
+		}
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/preferences/timezone-default", rd)
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+
+	t.Run("envelope, then set-if-empty", func(t *testing.T) {
+		code, out := put(t, token, map[string]string{"timezone": "Europe/Berlin"})
+		assert.Equal(t, 200, code)
+		assert.Equal(t, "ok", out["status"])
+		assert.Equal(t, map[string]any{"timezone": "Europe/Berlin"}, out["data"])
+		_, out = put(t, token, map[string]string{"timezone": "America/New_York"})
+		assert.Equal(t, map[string]any{"timezone": "Europe/Berlin"}, out["data"])
+	})
+
+	t.Run("400 texts", func(t *testing.T) {
+		for _, body := range []any{"not json", map[string]any{}, map[string]any{"timezone": 5}} {
+			code, out := put(t, token, body)
+			assert.Equal(t, 400, code)
+			assert.Equal(t, "Invalid request body", out["message"])
+		}
+		code, out := put(t, token, map[string]string{"timezone": "Europe/Nowhere"})
+		assert.Equal(t, 400, code)
+		assert.Equal(t, `invalid preference value: "timezone" must be an IANA time zone name such as Europe/Berlin`, out["message"])
+	})
+
+	t.Run("401 and 404", func(t *testing.T) {
+		code, _ := put(t, "", map[string]string{"timezone": "UTC"})
+		assert.Equal(t, 401, code)
+		// The auth middleware already refuses a token whose user is gone, so the
+		// handler's 404 is only reachable in a race; the use case test covers it.
+		code, _ = put(t, ghost, map[string]string{"timezone": "UTC"})
+		assert.Equal(t, 401, code)
+	})
+}

@@ -9,7 +9,7 @@ This directory contains the core business logic and implementation details of th
 - **Purpose**: Contains the core business entities and the logic that is intrinsic to the domain.
 - **Contents**:
   - `user/` — User, RefreshToken, EmailVerification, AppPassword, CalDAV/CardDAV credentials, repository interfaces.
-  - `calendar/` — Calendar, CalendarObject, Event, CalendarSubscription, SyncChangelog, repository interfaces, validation.
+  - `calendar/` — Calendar, CalendarObject (with the denormalized task columns, #170), Event, CalendarSubscription, SyncChangelog, the component-set and task rules, repository interfaces, validation.
   - `addressbook/` — AddressBook, AddressObject, Photo, SyncChangelog, repository interfaces.
   - `contact/` — Contact domain model.
   - `sharing/` — CalendarShare, AddressBookShare, sharing repository interfaces.
@@ -23,6 +23,7 @@ This directory contains the core business logic and implementation details of th
   - `auth/` — Login, register, verify, refresh, logout, password management, OAuth (initiate/callback/link/unlink).
   - `calendar/` — CRUD, public sharing (enable, get status, regenerate token), export.
   - `event/` — CRUD, move between calendars.
+  - `task/` — Tasks (VTODO, #170): per-list CRUD, complete/uncomplete, the cross-list page and the summary counts. Edits change the stored VTODO in place.
   - `addressbook/` — CRUD, create contact, export.
   - `contact/` — CRUD, search, move, photo handling, DTO mapping.
   - `apppassword/` — CRUD, CalDAV/CardDAV credential management.
@@ -38,7 +39,7 @@ This directory contains the core business logic and implementation details of th
 
 - **Purpose**: Translates data between the internal layers and the external world.
 - **Contents**:
-  - `http/` — REST handlers (auth, user, system, calendar, event, addressbook, contact, sharing, app password, credentials, MCP tokens, import/export, health), DTOs, middleware (auth, rate limiter).
+  - `http/` — REST handlers (auth, user, system, calendar, event, task, addressbook, contact, sharing, app password, credentials, MCP tokens, import/export, health), DTOs, middleware (auth, rate limiter).
   - `mcp/` — Model Context Protocol server (story 104): JSON-RPC dispatcher, Streamable HTTP transport, tools and resources. A facade over the existing use cases — no persistence or permission logic of its own.
   - `repository/` — GORM implementations for all domain repository interfaces (~16 repos).
   - `auth/` — JWT, Basic Auth (for DAV clients), OAuth (OIDC).
@@ -74,7 +75,7 @@ This directory contains the core business logic and implementation details of th
 3. **Usecase**: Executes business logic, interacts with **Domain** entities and calls **Repository** interfaces.
 4. **Adapter (Repository)**: The concrete implementation of the repository interface handles the actual database interaction.
 5. **Usecase**: Returns a result back to the **Adapter (HTTP)**.
-6. **Adapter (HTTP)**: Formats the result into an HTTP response (JSON). Auth, user, system, app-password, about and health responses are wrapped in `{ "status": "ok", "data": ... }` via `SuccessResponse()`; calendar, event, address book, contact, sharing, credential, import, MCP-token, search and subscription handlers return raw JSON.
+6. **Adapter (HTTP)**: Formats the result into an HTTP response (JSON). Auth, user, system, app-password, about and health responses are wrapped in `{ "status": "ok", "data": ... }` via `SuccessResponse()`; calendar, event, task, address book, contact, sharing, credential, import, MCP-token, search and subscription handlers return raw JSON.
 
 ### CalDAV/CardDAV Protocol
 

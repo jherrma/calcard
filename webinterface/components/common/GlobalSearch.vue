@@ -200,7 +200,7 @@
               :aria-selected="isActive('calendars', i)"
               class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-surface-100 dark:hover:bg-surface-800"
               :class="{ 'bg-surface-100 dark:bg-surface-800': isActive('calendars', i) }"
-              @click="selectCalendar()"
+              @click="selectCalendarHit(cal)"
               @mousemove="activeIndex = navIndex('calendars', i)"
             >
               <span class="w-3 h-3 rounded-full flex-shrink-0" :style="{ backgroundColor: cal.color || '#3b82f6' }" />
@@ -212,6 +212,12 @@
                   <HighlightText :text="cal.description" :highlight="searchStore.query" />
                 </span>
               </span>
+              <!-- Says where the row leads: a task list opens in Tasks, not in the Calendar (#170). -->
+              <span
+                v-if="cal.kind === 'tasks'"
+                class="text-xs text-surface-500 dark:text-surface-400 flex-shrink-0"
+                data-testid="task-list-hint"
+              >Task list</span>
             </button>
             <SearchViewAll
               v-if="isTruncated(searchStore.results.calendars)"
@@ -275,6 +281,7 @@ import HighlightText from '~/components/common/HighlightText.vue';
 import SearchSectionHeader from '~/components/common/SearchSectionHeader.vue';
 import SearchViewAll from '~/components/common/SearchViewAll.vue';
 import { MIN_QUERY_LENGTH, useSearchStore } from '~/stores/search';
+import type { Calendar } from '~/types/calendar';
 import type { ContactHit, EventHit } from '~/types/search';
 import {
   contactMetaLine,
@@ -283,6 +290,7 @@ import {
   isPastEvent,
   searchAvatarColor,
   searchInitials,
+  taskListRoute,
   toLocalDateParam,
 } from '~/utils/searchFormat';
 
@@ -435,10 +443,11 @@ const navRows = computed<NavRow[]>(() => {
   for (const hit of quick(searchStore.results.contacts)) {
     rows.push({ category: 'contacts', activate: () => selectContact(hit) });
   }
-  // Collection rows all navigate to the same list page, so only their count matters.
-  for (let i = 0; i < visibleCount('calendars'); i++) {
-    rows.push({ category: 'calendars', activate: () => selectCalendar() });
+  // A calendar row opens the Calendar section, unless it is a task list (#170).
+  for (const cal of quick(searchStore.results.calendars)) {
+    rows.push({ category: 'calendars', activate: () => selectCalendarHit(cal) });
   }
+  // Address book rows all navigate to the same list page, so only their count matters.
   for (let i = 0; i < visibleCount('addressBooks'); i++) {
     rows.push({ category: 'addressBooks', activate: () => selectAddressBook() });
   }
@@ -533,6 +542,21 @@ const selectContact = (hit: ContactHit) => {
 const selectCalendar = () => {
   finishSelection();
   navigateTo('/calendar');
+};
+
+/**
+ * A calendars-group row: a task list (`kind: 'tasks'`) opens in the Tasks section
+ * as `/tasks?list=<uuid>` (#170), where it is shown; every other calendar opens the
+ * Calendar section as before.
+ */
+const selectCalendarHit = (cal: Calendar) => {
+  const taskList = taskListRoute(cal);
+  if (!taskList) {
+    selectCalendar();
+    return;
+  }
+  finishSelection();
+  navigateTo(taskList);
 };
 
 const selectAddressBook = () => {

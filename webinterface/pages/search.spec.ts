@@ -1,11 +1,12 @@
 // @vitest-environment nuxt
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
-import { nextTick } from 'vue';
+import { defineComponent, nextTick } from 'vue';
 import { mockNuxtImport } from '@nuxt/test-utils/runtime';
 import { createTestingPinia } from '@pinia/testing';
 import SearchPage from './search.vue';
 import { useSearchStore } from '~/stores/search';
+import type { Calendar } from '~/types/calendar';
 import type { EventHit, SearchResults } from '~/types/search';
 
 // SCOPE: the full results page (story 044). The header palette caps every category
@@ -156,5 +157,104 @@ describe('search results page', () => {
       path: '/calendar',
       query: { date: '2026-06-16', event: 'ev-1', cal: '7' },
     });
+  });
+});
+
+// SCOPE (#170, story 28): the calendars group lists every calendar, task lists
+// included (each hit carries `kind`). A task list opens in the Tasks section as
+// /tasks?list=<uuid>; event (`events`) and mixed (`both`) calendars open the
+// Calendar section as /calendar?cal=<numeric id>.
+describe('calendars group routing (#170)', () => {
+  // Keeps the `to` prop readable (the default stub above drops it).
+  const NuxtLinkStub = defineComponent({
+    name: 'NuxtLinkStub',
+    props: { to: { type: [String, Object], required: true } },
+    template: '<a><slot /></a>',
+  });
+
+  function cal(id: number | string, uuid: string, name: string, kind?: Calendar['kind'], extra: Partial<Calendar> = {}): Calendar {
+    return {
+      id: id as string,
+      uuid,
+      path: `/c/${id}`,
+      name,
+      color: '#123456',
+      created_at: '',
+      updated_at: '',
+      kind,
+      ...extra,
+    };
+  }
+
+  function mountWithCalendars(calendars: Calendar[]) {
+    routeStub.query = { q: 'team' };
+    const wrapper = mount(SearchPage, {
+      global: {
+        plugins: [createTestingPinia()],
+        stubs: { ProgressSpinner: true, Tag: true, NuxtLink: NuxtLinkStub },
+      },
+    });
+    const store = useSearchStore();
+    store.query = 'team';
+    store.results = results({ calendars });
+    return wrapper;
+  }
+
+  async function rows(calendars: Calendar[]) {
+    const wrapper = mountWithCalendars(calendars);
+    await nextTick();
+    const links = wrapper.findAllComponents(NuxtLinkStub);
+    expect(links.map((l) => l.attributes('data-testid'))).toEqual(calendars.map(() => 'page-calendar-row'));
+    return links;
+  }
+
+  it('links a task list to /tasks?list=<uuid> and every other calendar to /calendar?cal=<id>', async () => {
+    const links = await rows([
+      cal(5, 'cal-team', 'Team', 'events'),
+      cal(6, 'list-team', 'Team chores', 'tasks'),
+      cal(7, 'cal-mixed', 'Team (old)', 'both'),
+      cal(8, 'cal-legacy', 'Team legacy'),
+    ]);
+
+    expect(links.map((l) => l.props('to'))).toEqual([
+      { path: '/calendar', query: { cal: '5' } },
+      { path: '/tasks', query: { list: 'list-team' } },
+      { path: '/calendar', query: { cal: '7' } },
+      { path: '/calendar', query: { cal: '8' } },
+    ]);
+  });
+
+  it('uses the UUID for a task list and the numeric id (as sent on the wire) for a calendar', async () => {
+    // GET /search sends `id` as a JSON number.
+    const links = await rows([
+      cal(42 as unknown as string, 'cal-uuid-42', 'Team', 'events'),
+      cal(43 as unknown as string, 'list-uuid-43', 'Team chores', 'tasks'),
+    ]);
+
+    expect(links[0]!.props('to')).toEqual({ path: '/calendar', query: { cal: '42' } });
+    expect(links[1]!.props('to')).toEqual({ path: '/tasks', query: { list: 'list-uuid-43' } });
+  });
+
+  it('links a task list shared with the user to the Tasks section too', async () => {
+    const links = await rows([
+      cal(9, 'list-shared', 'Team chores', 'tasks', { shared: true, permission: 'read-only' }),
+    ]);
+
+    expect(links[0]!.props('to')).toEqual({ path: '/tasks', query: { list: 'list-shared' } });
+  });
+
+  it('says "Task list" on a task-list row only', async () => {
+    const links = await rows([
+      cal(5, 'cal-team', 'Team', 'events'),
+      cal(6, 'list-team', 'Team chores', 'tasks'),
+      cal(7, 'cal-mixed', 'Team (old)', 'both'),
+    ]);
+
+    const hints = links.map((l) => l.find('[data-testid="task-list-hint"]'));
+    expect(hints.map((h) => h.exists())).toEqual([false, true, false]);
+    expect(hints[1]!.text()).toBe('Task list');
+    expect(hints[1]!.classes()).toEqual(
+      expect.arrayContaining(['text-xs', 'text-surface-500', 'dark:text-surface-400'])
+    );
   });
 });

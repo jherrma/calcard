@@ -20,8 +20,16 @@ func NewMoveEventUseCase(calendarRepo calendar.CalendarRepository) *MoveEventUse
 }
 
 func (uc *MoveEventUseCase) Execute(ctx context.Context, input MoveEventInput) (*calendar.CalendarObject, error) {
-	obj, err := uc.calendarRepo.GetCalendarObjectByUUID(ctx, input.EventUUID)
+	// A task is ErrNotFound (#170), checked before the target: the event route
+	// never moves one, whatever the target stores.
+	obj, err := loadEvent(ctx, uc.calendarRepo, input.EventUUID)
 	if err != nil {
+		return nil, err
+	}
+	// The target must store events (#170): a task list never gains one through
+	// a move. Checked before the same-calendar shortcut, so the answer depends
+	// on the target alone.
+	if _, err := requireEventCalendar(ctx, uc.calendarRepo, input.TargetCalendarID); err != nil {
 		return nil, err
 	}
 

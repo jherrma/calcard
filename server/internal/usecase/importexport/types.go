@@ -8,6 +8,12 @@ type ImportOptions struct {
 // ImportResult represents the result of an import operation. For calendars the
 // counts are per calendar object (one per UID: a recurring series with its
 // RECURRENCE-ID overrides is one item), not per VEVENT/VTODO component.
+//
+// Skipped counts duplicates left alone by DuplicateHandling "skip" (not listed
+// in Errors) and, for calendars, items whose component the target calendar does
+// not store (#170), each of which IS listed in Errors with its reason ("This
+// calendar does not store events" / "... tasks"). Errors also lists every
+// failed item.
 type ImportResult struct {
 	Total    int           `json:"total"`
 	Imported int           `json:"imported"`

@@ -107,6 +107,14 @@ func TestEventQueriesExcludeTasks(t *testing.T) {
 		assert.Equal(t, []uint{event.ID}, objectIDs(got), "bounded search")
 	})
 
+	t.Run("GetEventCount", func(t *testing.T) {
+		// The event_count of the calendar list, /search and MCP: a VTODO is
+		// not an event, so the two tasks are not counted (#170).
+		count, err := repo.GetEventCount(ctx, cal.ID)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), count, "only the VEVENT counts")
+	})
+
 	t.Run("CalDAV reads keep tasks", func(t *testing.T) {
 		// GetCalendarObjects backs CalDAV PROPFIND/REPORT, export, the public
 		// feed and import duplicate detection: it must still see every object.
@@ -114,4 +122,41 @@ func TestEventQueriesExcludeTasks(t *testing.T) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []uint{event.ID, task.ID, recurringTask.ID}, objectIDs(got))
 	})
+}
+
+// TestGetEventCountCountsEventsOnly pins GetEventCount after #170 restricted it
+// to ComponentEvent: a task list holding only tasks reports 0 events, a mixed
+// calendar counts its events only, and a deleted event still does not count.
+func TestGetEventCountCountsEventsOnly(t *testing.T) {
+	db := newFeedDB(t)
+	repo := repository.NewCalendarRepository(db)
+	ctx := context.Background()
+	taskList := seedCalendar(t, repo, false)
+	mixed := seedCalendar(t, repo, false)
+
+	todo := func(cal *calendar.Calendar, uid string) {
+		componentObject(t, repo, cal, uid,
+			"BEGIN:VTODO\r\nUID:"+uid+"\r\nDTSTAMP:20300101T000000Z\r\nSUMMARY:t\r\nEND:VTODO\r\n")
+	}
+	event := func(cal *calendar.Calendar, uid string) *calendar.CalendarObject {
+		return componentObject(t, repo, cal, uid,
+			"BEGIN:VEVENT\r\nUID:"+uid+"\r\nDTSTAMP:20300101T000000Z\r\n"+
+				"DTSTART:20300310T100000Z\r\nDTEND:20300310T110000Z\r\nSUMMARY:e\r\nEND:VEVENT\r\n")
+	}
+
+	todo(taskList, "list-task-1")
+	todo(taskList, "list-task-2")
+
+	todo(mixed, "mixed-task")
+	event(mixed, "mixed-event-1")
+	event(mixed, "mixed-event-2")
+	require.NoError(t, repo.DeleteCalendarObject(ctx, event(mixed, "mixed-event-deleted")))
+
+	count, err := repo.GetEventCount(ctx, taskList.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count, "a task list holds no events")
+
+	count, err = repo.GetEventCount(ctx, mixed.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count, "two live events; the task and the deleted event do not count")
 }

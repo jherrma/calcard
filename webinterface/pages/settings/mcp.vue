@@ -2,7 +2,7 @@
   <div>
     <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-0 mb-2">MCP Access</h2>
     <p class="text-sm text-surface-500 dark:text-surface-400 mb-6">
-      Let an AI assistant read and manage your calendars and contacts through the
+      Let an AI assistant read and manage your calendars, tasks and contacts through the
       Model Context Protocol. A token grants the assistant everything you can see
       yourself — including collections shared with you — and lets it create, rename
       and delete your own calendars and address books, so create one per client

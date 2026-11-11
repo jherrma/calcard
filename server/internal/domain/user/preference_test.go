@@ -1,6 +1,7 @@
 package user
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -134,4 +135,29 @@ func TestPreferenceValueHint(t *testing.T) {
 	// why the hint exists and why callers must not build messages from it.
 	assert.Nil(t, AllowedPreferenceValues(PrefAccentColor))
 	assert.Equal(t, []string{"12h", "24h"}, AllowedPreferenceValues(PrefTimeFormat))
+}
+
+func TestTimezonePreference(t *testing.T) {
+	assert.True(t, KnownPreferenceKey(PrefTimezone))
+	assert.Equal(t, "UTC", DefaultPreferences()[PrefTimezone])
+
+	for _, ok := range []string{"Europe/Berlin", "UTC", "America/Argentina/Buenos_Aires", " Europe/Berlin "} {
+		v := NormalizePreferenceValue(PrefTimezone, ok)
+		assert.True(t, IsAllowedPreferenceValue(PrefTimezone, v), "%q", ok)
+	}
+	assert.Equal(t, "Europe/Berlin", NormalizePreferenceValue(PrefTimezone, " Europe/Berlin "))
+
+	for _, bad := range []string{"", "Local", "Europe/Nowhere", "../etc/passwd", strings.Repeat("a", 65)} {
+		assert.False(t, IsAllowedPreferenceValue(PrefTimezone, bad), "%q", bad)
+		_, ok := LoadTimezone(bad)
+		assert.False(t, ok, "%q", bad)
+	}
+
+	for _, v := range []string{"Europe/Berlin", "UTC", "Asia/Tokyo", "Europe/Nowhere", ""} {
+		loc, ok := LoadTimezone(v)
+		assert.Equal(t, IsAllowedPreferenceValue(PrefTimezone, v), ok, "%q", v)
+		if ok {
+			assert.Equal(t, v, loc.String())
+		}
+	}
 }

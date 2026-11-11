@@ -16,14 +16,18 @@ var _ = domaincalendar.Calendar{}
 // and answer the same 404 body GET always gave, so no verb tells a caller that
 // another user's calendar exists (F12). A rejected request (validation, DELETE
 // confirmation, last-calendar guard, unparseable import) is
-// domaincalendar.ErrInvalidInput: 400 with its message. Anything else is a
-// server failure (F28): 500 with a generic message, the cause only in the log.
+// domaincalendar.ErrInvalidInput: 400 with its message. A request the
+// calendar's state refuses (a PATCH narrowing its component set, #170) is
+// domaincalendar.ErrConflict: 409 with its message. Anything else is a server
+// failure (F28): 500 with a generic message, the cause only in the log.
 func calendarError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, domaincalendar.ErrNotFound):
 		return ErrorResponse(c, fiber.StatusNotFound, "Calendar not found")
 	case errors.Is(err, domaincalendar.ErrInvalidInput):
 		return ErrorResponse(c, fiber.StatusBadRequest, err.Error())
+	case errors.Is(err, domaincalendar.ErrConflict):
+		return ErrorResponse(c, fiber.StatusConflict, err.Error())
 	}
 	logCalendarFailure(c, err)
 	return ErrorResponse(c, fiber.StatusInternalServerError, "Internal server error")
@@ -69,6 +73,10 @@ func NewCalendarHandler(
 }
 
 // POST /api/v1/calendars
+//
+// Optional `kind` ("events", the default, "tasks" or "both") picks what the
+// calendar stores; an unknown kind is a 400. Answers 201 with the calendar and
+// its read-only `kind` (#170).
 func (h *CalendarHandler) Create(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 
@@ -82,10 +90,13 @@ func (h *CalendarHandler) Create(c fiber.Ctx) error {
 		return calendarError(c, err)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(calendar)
+	return c.Status(fiber.StatusCreated).JSON(calendaruc.NewCalendarWithKind(calendar))
 }
 
 // GET /api/v1/calendars
+//
+// Every calendar the caller owns or that is shared with them, each with its
+// event count and read-only `kind` (#170).
 func (h *CalendarHandler) List(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 
@@ -100,6 +111,8 @@ func (h *CalendarHandler) List(c fiber.Ctx) error {
 }
 
 // GET /api/v1/calendars/:id
+//
+// The calendar with its read-only `kind` (#170).
 func (h *CalendarHandler) Get(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 	calendarUUID := c.Params("id")
@@ -109,10 +122,17 @@ func (h *CalendarHandler) Get(c fiber.Ctx) error {
 		return calendarError(c, err)
 	}
 
-	return c.JSON(calendar)
+	return c.JSON(calendaruc.NewCalendarWithKind(calendar))
 }
 
 // PATCH /api/v1/calendars/:id
+//
+// Changes only the fields the body names (name, description, color, timezone).
+// `kind` may only widen (#170): "both" makes an event calendar or a task list
+// store events and tasks (ctag and sync token advance); the calendar's own kind
+// is a no-op 200; any kind that would drop a component it stores is a 409
+// "Cannot narrow a calendar's component set" and nothing is written; an unknown
+// kind is a 400. Answers 200 with the calendar and its read-only `kind`.
 func (h *CalendarHandler) Update(c fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 	calendarUUID := c.Params("id")
@@ -133,7 +153,7 @@ func (h *CalendarHandler) Update(c fiber.Ctx) error {
 		return calendarError(c, err)
 	}
 
-	return c.JSON(calendar)
+	return c.JSON(calendaruc.NewCalendarWithKind(calendar))
 }
 
 // DELETE /api/v1/calendars/:id

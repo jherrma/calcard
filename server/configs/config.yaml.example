@@ -114,3 +114,11 @@ subscriptions:
   # users are meant to subscribe to feeds on this machine's private network.
   allow_insecure_urls: false
   allow_private_hosts: false
+
+# Web-app reminders (#169): GET /api/v1/alarms/upcoming. Always on.
+alarms:
+  # Background job that deletes old acknowledgements. 0 turns it off.
+  cleanup_interval: 24h
+  # How long acknowledgements are kept. Minimum 192h (7d look-ahead + 24h
+  # look-back): a shorter value would let acknowledged reminders reappear.
+  ack_retention: 720h
