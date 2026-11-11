@@ -31,7 +31,7 @@ CALENDAR_NOT_FOUND = "Calendar not found"
 # Every key of a TaskResponse; the nullable ones are always present.
 TASK_KEYS = {"id", "calendar_id", "calendar_uuid", "uid", "summary", "description", "status", "completed",
              "completed_at", "percent_complete", "priority", "due", "due_date", "due_all_day", "start",
-             "start_date", "is_recurring", "rrule", "etag", "created_at", "updated_at"}
+             "start_date", "is_recurring", "rrule", "etag", "created_at", "updated_at", "reminders"}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -455,8 +455,8 @@ def test_cross_list_and_summary(t, e2e, u1):
     if t.status(r, 200):
         other = next((u for u in lists if u not in (a["uuid"], b["uuid"])), "")
         t.eq(r.json(), {"open": 6, "overdue": 2, "due_today": 3, "completed": 2, "by_calendar": {
-            a["uuid"]: {"open": 4, "overdue": 2}, b["uuid"]: {"open": 2, "overdue": 0},
-            other: {"open": 0, "overdue": 0}}},
+            a["uuid"]: {"open": 4, "overdue": 2, "completed": 2}, b["uuid"]: {"open": 2, "overdue": 0, "completed": 0},
+            other: {"open": 0, "overdue": 0, "completed": 0}}},
             "overdue a1+a3, due today a2+a3+a4, completed + cancelled = 2, every list in by_calendar")
         done = page(t, ux, "/tasks?status=completed")
         t.eq(r.jdict().get("completed"), done.get("total"), "completed equals the total of ?status=completed")

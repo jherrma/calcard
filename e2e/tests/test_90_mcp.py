@@ -480,7 +480,7 @@ def test_task_tools(t, e2e, u1, st):
     r = u1.api("GET", "/tasks/summary?" + urlencode({"as_of": as_of}))
     if t.eq(err, False, f"get_task_summary: {payload[:200]}") and t.status(r, 200):
         t.eq(json.loads(payload), r.json(), "get_task_summary equals GET /tasks/summary for the same as_of")
-        t.eq(pj(payload, f"by_calendar.{tl['uuid']}"), {"open": 1, "overdue": 1}, "the reopened task is overdue")
+        t.eq(pj(payload, f"by_calendar.{tl['uuid']}"), {"open": 1, "overdue": 1, "completed": 0}, "the reopened task is overdue")
 
     _, err, payload = mcp_tool(e2e, st, "delete_task", {"task_id": tid})
     if t.eq(err, False, f"delete_task: {payload[:200]}"):
