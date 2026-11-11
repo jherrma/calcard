@@ -80,6 +80,7 @@ type AppPasswordRepository interface {
 	Update(ctx context.Context, ap *AppPassword) error
 	FindValidForUser(ctx context.Context, userID uint, password string) (*AppPassword, error)
 	CountByUserID(ctx context.Context, userID uint) (int64, error)
+	UpdateLastUsed(ctx context.Context, id uint, ip string) error
 }
 
 // UserPreferenceRepository defines the interface for user preference persistence

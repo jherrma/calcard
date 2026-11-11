@@ -5,6 +5,7 @@ package integration_test
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -152,6 +153,51 @@ func TestAppPasswordScopeEnforcement(t *testing.T) {
 		email, calOnlyPass, "", nil)
 	assert.Equalf(t, http.StatusForbidden, status,
 		"caldav-only credential must be refused on an addressbook object path containing 'calendars', got %d", status)
+}
+
+// TestAppPasswordLastUsed is the regression test for the "Never used" bug: an
+// app password used for a successful DAV request must get its last_used_at
+// stamped, or the settings page keeps claiming it was never used no matter
+// how often a client syncs with it.
+func TestAppPasswordLastUsed(t *testing.T) {
+	email := "ap-lastused@example.test"
+	token, _ := registerAndLoginFull(t, email, "apluPass!123", "AP LastUsed")
+
+	_, pass := createAppPassword(t, token, "last-used-probe")
+
+	status, _, body := davCall(t, "PROPFIND", "/dav/", email, pass,
+		propfindPrincipalBody, depthHeader("0"))
+	require.Equalf(t, http.StatusMultiStatus, status,
+		"app password must authorize PROPFIND: %s", string(body))
+
+	// The stamp is written by a background goroutine; poll for it.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var list struct {
+			AppPasswords []struct {
+				Name       string  `json:"name"`
+				LastUsedAt *string `json:"last_used_at"`
+			} `json:"app_passwords"`
+		}
+		code := doJSON(t, http.MethodGet, "/app-passwords/", token, nil, &list)
+		require.Equal(t, http.StatusOK, code)
+		var lastUsed string
+		for _, ap := range list.AppPasswords {
+			if ap.Name == "last-used-probe" {
+				if ap.LastUsedAt != nil {
+					lastUsed = *ap.LastUsedAt
+				}
+				break
+			}
+		}
+		if lastUsed != "" {
+			break
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatal("app password last_used_at must be set after a successful DAV request")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // TestAppPasswordRevokeOwnership is the regression test for the IDOR in app

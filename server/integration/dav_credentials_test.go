@@ -26,6 +26,35 @@ func credUsername(label string) string {
 	return b.String()
 }
 
+// lastUsedOf polls a credentials list endpoint until the named entry reports a
+// last_used_at. The write happens in a background goroutine after a successful
+// DAV request, so the first list call may still race it; returns the timestamp
+// (empty once the deadline passes without one).
+func lastUsedOf(t *testing.T, token, listPath, username string) string {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var list struct {
+			Credentials []struct {
+				Username   string  `json:"username"`
+				LastUsedAt *string `json:"last_used_at"`
+			} `json:"credentials"`
+		}
+		if code := doJSONRaw(t, http.MethodGet, listPath, token, nil, &list); code != http.StatusOK {
+			t.Fatalf("list %s: status %d", listPath, code)
+		}
+		for _, c := range list.Credentials {
+			if c.Username == username && c.LastUsedAt != nil {
+				return *c.LastUsedAt
+			}
+		}
+		if !time.Now().Before(deadline) {
+			return ""
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // TestDedicatedCalDAVCredential covers the standalone DAV credential flow
 // — separate from user email + app password — which is the way to hand out
 // scoped, read-only access to a third party without giving them your real
@@ -88,6 +117,11 @@ func TestDedicatedCalDAVCredential(t *testing.T) {
 		credUser, rawPass, propfind, depthHeader("0"))
 	require.Equalf(t, http.StatusMultiStatus, status,
 		"read-only credential must authorize PROPFIND: %s", string(body))
+
+	// --- A successful DAV request must stamp last_used_at (the settings
+	// page shows "Never used" until then) --------------------------------
+	assert.NotEmpty(t, lastUsedOf(t, token, "/caldav-credentials/", credUser),
+		"last_used_at must be set after a successful DAV request")
 
 	// --- Writes must be rejected (read-only scope) ----------------------
 	eventPath := "/dav/" + username + "/calendars/" + calPath + "/readonly-write.ics"
@@ -165,6 +199,11 @@ func TestDedicatedCardDAVCredential(t *testing.T) {
 		propfindAddressBookBody, depthHeader("0"))
 	require.Equalf(t, http.StatusMultiStatus, status,
 		"read-write credential must authorize PROPFIND: %s", string(body))
+
+	// A successful DAV request must stamp last_used_at (the settings page
+	// shows "Never used" until then).
+	assert.NotEmpty(t, lastUsedOf(t, token, "/carddav-credentials/", credUser),
+		"last_used_at must be set after a successful DAV request")
 
 	// --- PUT a contact via the dedicated CardDAV credential -------------
 	contactUID := "carddav-cred-" + time.Now().Format("20060102T150405")
