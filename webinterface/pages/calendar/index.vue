@@ -12,7 +12,7 @@
     />
 
     <!-- Main calendar area -->
-    <div class="flex-1 flex flex-col min-w-0">
+    <div class="flex-1 flex flex-col min-w-0 bg-surface-0 dark:bg-surface-900">
       <!-- Toolbar -->
       <CalendarToolbar
         :current-date="calendarStore.currentDate"
@@ -23,21 +23,20 @@
         @view-change="changeView"
       />
 
-      <!-- Calendar -->
-      <div class="flex-1 p-4 overflow-hidden bg-surface-0 dark:bg-surface-900">
-        <ClientOnly>
-          <FullCalendar
-            ref="calendarRef"
-            :options="calendarOptions"
-            class="h-full"
-          />
-          <template #fallback>
-            <div class="flex items-center justify-center h-full">
-              <ProgressSpinner />
-            </div>
-          </template>
-        </ClientOnly>
-      </div>
+      <!-- Calendar: fills the rest of the column, edge to edge. min-h-0 lets a
+           long month shrink (it scrolls inside) instead of growing the page. -->
+      <ClientOnly>
+        <FullCalendar
+          ref="calendarRef"
+          :options="calendarOptions"
+          class="flex-1 min-h-0"
+        />
+        <template #fallback>
+          <div class="flex-1 flex items-center justify-center">
+            <ProgressSpinner />
+          </div>
+        </template>
+      </ClientOnly>
     </div>
   </div>
 
