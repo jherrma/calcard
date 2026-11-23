@@ -59,8 +59,10 @@
         :show-time="!form.all_day"
         :show-seconds="false"
         :hour-format="hourFormat"
-        date-format="yy-mm-dd"
+        :date-format="DATE_FIELD_FORMAT"
         :invalid="!!errors.start"
+        @input="applyTypedDateTime($event, 'start')"
+        @keydown.enter="guardTypedDateTime($event, 'start')"
       />
       <small v-if="errors.start" class="text-red-500">{{ errors.start }}</small>
     </div>
@@ -74,8 +76,10 @@
         :show-time="!form.all_day"
         :show-seconds="false"
         :hour-format="hourFormat"
-        date-format="yy-mm-dd"
+        :date-format="DATE_FIELD_FORMAT"
         :invalid="!!errors.end"
+        @input="applyTypedDateTime($event, 'end')"
+        @keydown.enter="guardTypedDateTime($event, 'end')"
       />
       <small v-if="errors.end" class="text-red-500">{{ errors.end }}</small>
     </div>
@@ -379,6 +383,37 @@ const toggleDay = (day: string) => {
 
 // Validation
 const errors = reactive<Record<string, string>>({});
+
+type DateField = 'start' | 'end';
+
+// PrimeVue's DatePicker (4.5.5) never commits a typed value in 24-hour format:
+// with the time shown its parser reads `ampm.toLowerCase()` although no AM/PM
+// is in the text, throws and swallows the error. The field then shows the typed
+// date while the form still holds the old one, so commit the text here. With a
+// date only (all-day) the picker's own parser works, and these leave it alone.
+const applyTypedDateTime = (event: Event, field: DateField) => {
+  if (form.all_day) return;
+
+  const parsed = parseTypedDateTime((event.target as HTMLInputElement).value, hourFormat.value);
+
+  if (parsed) {
+    form[field] = parsed;
+    delete errors[field];
+  }
+};
+
+// Enter submits the form. While the field holds text that is not a date, that
+// would silently save the previous value instead of what was typed.
+const guardTypedDateTime = (event: Event, field: DateField) => {
+  if (form.all_day) return;
+
+  const text = (event.target as HTMLInputElement).value.trim();
+
+  if (text && !parseTypedDateTime(text, hourFormat.value)) {
+    event.preventDefault();
+    errors[field] = hourFormat.value === '12' ? 'Use the format YYYY-MM-DD hh:mm AM/PM' : 'Use the format YYYY-MM-DD HH:MM';
+  }
+};
 
 const validate = (): boolean => {
   // Clear previous errors
