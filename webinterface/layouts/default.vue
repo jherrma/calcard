@@ -11,7 +11,7 @@
     >
       <div
         v-if="sidebarOpen"
-        class="fixed inset-0 bg-surface-900/50 backdrop-blur-sm z-20 lg:hidden"
+        :class="['fixed inset-0 bg-surface-900/50 backdrop-blur-sm z-20', sidebarDocked ? 'lg:hidden' : '']"
         @click="sidebarOpen = false"
       />
     </Transition>
@@ -19,13 +19,17 @@
     <!-- Sidebar -->
     <AppSidebar
       :open="sidebarOpen"
+      :docked="sidebarDocked"
       @close="sidebarOpen = false"
     />
 
     <!-- Main content -->
-    <div class="lg:pl-64 flex flex-col min-h-screen transition-all duration-300">
+    <div :class="['flex flex-col min-h-screen transition-all duration-300', sidebarDocked ? 'lg:pl-64' : '']">
       <!-- Header -->
-      <AppHeader @toggle-sidebar="sidebarOpen = !sidebarOpen" />
+      <AppHeader
+        :sidebar-docked="sidebarDocked"
+        @toggle-sidebar="sidebarOpen = !sidebarOpen"
+      />
 
       <!-- Page content -->
       <main class="flex-1 p-4 lg:p-8">
@@ -82,6 +86,10 @@ nuxtApp.hook('page:finish', () => {
 
 // Close sidebar on route change (mobile)
 const route = useRoute();
+
+// A page sets `hideSidebar` in its route meta to keep the app sidebar closed
+// at every width; the header button then opens it as an overlay.
+const sidebarDocked = computed(() => !route.meta.hideSidebar);
 watch(() => route.path, () => {
   if (window.innerWidth < 1024) {
     sidebarOpen.value = false;

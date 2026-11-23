@@ -119,6 +119,9 @@ import type { Calendar, CalendarEvent } from '~/types/calendar';
 definePageMeta({
   middleware: 'auth',
   layout: 'default',
+  // The calendar needs the width: the app sidebar stays closed here at every
+  // width and is opened from the header, so the grid gets its 256px.
+  hideSidebar: true,
 });
 
 const calendarStore = useCalendarStore();
