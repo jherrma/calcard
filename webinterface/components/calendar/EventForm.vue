@@ -55,6 +55,7 @@
       <label for="event-start" class="text-sm font-medium text-surface-700 dark:text-surface-300">Start</label>
       <DatePicker
         id="event-start"
+        ref="startPicker"
         v-model="form.start"
         :show-time="!form.all_day"
         :show-seconds="false"
@@ -72,6 +73,7 @@
       <label for="event-end" class="text-sm font-medium text-surface-700 dark:text-surface-300">End</label>
       <DatePicker
         id="event-end"
+        ref="endPicker"
         v-model="form.end"
         :show-time="!form.all_day"
         :show-seconds="false"
@@ -211,6 +213,7 @@
 
 <script setup lang="ts">
 import type { CalendarEvent, EventFormData, Reminder, RecurrenceRule } from '~/types/calendar';
+import type { DateFieldPicker } from '~/utils/dateFieldInput';
 import { useCalendarStore, toRFC3339 } from '~/stores/calendars';
 import { usePreferencesStore } from '~/stores/preferences';
 
@@ -414,6 +417,15 @@ const guardTypedDateTime = (event: Event, field: DateField) => {
     errors[field] = hourFormat.value === '12' ? 'Use the format YYYY-MM-DD hh:mm AM/PM' : 'Use the format YYYY-MM-DD HH:MM';
   }
 };
+
+// While a date field is focused, its picker's popup must not take the focus.
+const startPicker = ref<DateFieldPicker>();
+const endPicker = ref<DateFieldPicker>();
+
+onMounted(() => {
+  keepFocusInTheField(startPicker.value);
+  keepFocusInTheField(endPicker.value);
+});
 
 const validate = (): boolean => {
   // Clear previous errors

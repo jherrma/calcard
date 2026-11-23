@@ -51,3 +51,34 @@ export function parseTypedDateTime(text: string, hourFormat: '12' | '24'): Date 
   date.setHours(hours, minutes, 0, 0);
   return date;
 }
+
+/** The part of a PrimeVue DatePicker that `keepFocusInTheField` works on. */
+export interface DateFieldPicker {
+  focused: boolean;
+  preventFocus: boolean;
+  initFocusableCell: () => void;
+}
+
+/**
+ * Keeps the focus in the date field for as long as the field is focused.
+ *
+ * PrimeVue's DatePicker (4.5.5) moves the focus into its popup from a timer it
+ * arms after each re-render. A flag is meant to stop that, but it covers only
+ * the first timer: when the picker re-renders twice before that runs (the popup
+ * opens on the first keystroke, the completed date changes the value), the
+ * second one pulls the focus out of the field, and Enter and the keystrokes
+ * after it go to the popup. Entering the popup on purpose (a click on a day,
+ * Arrow Down) blurs the field first or bypasses this code, so with the field
+ * focused the popup must never take the focus: hold the flag for as long as it
+ * is.
+ */
+export function keepFocusInTheField(picker: DateFieldPicker | null | undefined): void {
+  if (!picker) return;
+
+  const initFocusableCell = picker.initFocusableCell;
+
+  picker.initFocusableCell = function (this: DateFieldPicker) {
+    if (this.focused) this.preventFocus = true;
+    initFocusableCell.call(this);
+  };
+}

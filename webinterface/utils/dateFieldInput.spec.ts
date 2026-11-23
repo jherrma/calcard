@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseTypedDateTime } from './dateFieldInput';
+import { parseTypedDateTime, keepFocusInTheField } from './dateFieldInput';
+import type { DateFieldPicker } from './dateFieldInput';
 
 const local = (year: number, month: number, day: number, hours: number, minutes: number) =>
   new Date(year, month - 1, day, hours, minutes, 0, 0);
@@ -43,5 +44,55 @@ describe('parseTypedDateTime', () => {
     expect(parseTypedDateTime('2026-12-01 24:00', '24')).toBeNull();
     expect(parseTypedDateTime('2026-12-01 09:60', '24')).toBeNull();
     expect(parseTypedDateTime('2026-12-01 13:30 PM', '12')).toBeNull();
+  });
+});
+
+describe('keepFocusInTheField', () => {
+  // A stand-in for the picker's method: it moves the focus to the selected day
+  // unless the flag is set, and either way it clears the flag.
+  const picker = (options: Partial<DateFieldPicker> = {}) => {
+    const target: DateFieldPicker & { focusMoved: boolean } = {
+      focused: false,
+      preventFocus: false,
+      focusMoved: false,
+      initFocusableCell() {
+        if (!this.preventFocus) this.focusMoved = true;
+        this.preventFocus = false;
+      },
+      ...options,
+    };
+    keepFocusInTheField(target);
+    return target;
+  };
+
+  it('stops the popup from taking the focus while the field is focused', () => {
+    // The flag is already used up here, as it is when a second timer runs.
+    const target = picker({ focused: true });
+
+    target.initFocusableCell();
+
+    expect(target.focusMoved).toBe(false);
+    expect(target.preventFocus).toBe(false);
+  });
+
+  it('leaves the picker alone once the field is not focused', () => {
+    const target = picker();
+
+    target.initFocusableCell();
+
+    expect(target.focusMoved).toBe(true);
+  });
+
+  it('still lets the picker guard a focus move itself', () => {
+    const target = picker({ preventFocus: true });
+
+    target.initFocusableCell();
+
+    expect(target.focusMoved).toBe(false);
+  });
+
+  it('accepts a picker that is not there', () => {
+    expect(() => keepFocusInTheField(null)).not.toThrow();
+    expect(() => keepFocusInTheField(undefined)).not.toThrow();
   });
 });
