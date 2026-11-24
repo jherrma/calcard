@@ -1,7 +1,9 @@
 <template>
   <aside
     :class="[
-      'fixed inset-y-0 left-0 z-30 w-64 bg-surface-0 dark:bg-surface-900 shadow-xl lg:shadow-none border-r border-surface-200 dark:border-surface-800 transform transition-transform duration-300 ease-in-out lg:translate-x-0 flex flex-col',
+      'fixed inset-y-0 left-0 z-30 w-64 bg-surface-0 dark:bg-surface-900 shadow-xl border-r border-surface-200 dark:border-surface-800 transform transition-transform duration-300 ease-in-out flex flex-col',
+      // Not docked: an overlay at every width, opened from the header.
+      docked ? 'lg:translate-x-0 lg:shadow-none' : '',
       open ? 'translate-x-0' : '-translate-x-full'
     ]"
   >
@@ -14,7 +16,10 @@
         <span class="text-xl font-bold text-surface-900 dark:text-surface-0">CalCard</span>
       </NuxtLink>
       <button
-        class="lg:hidden p-2 -mr-2 rounded-md text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800"
+        :class="[
+          'p-2 -mr-2 rounded-md text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800',
+          docked ? 'lg:hidden' : ''
+        ]"
         @click="$emit('close')"
       >
         <i class="pi pi-times" />
@@ -77,9 +82,13 @@
 <script setup lang="ts">
 import { useTasksStore } from '~/stores/tasks';
 
-defineProps<{
+withDefaults(defineProps<{
   open: boolean;
-}>();
+  // Docked (the default): shown from lg up, with the page pushed 256px aside.
+  docked?: boolean;
+}>(), {
+  docked: true,
+});
 
 defineEmits<{
   close: [];

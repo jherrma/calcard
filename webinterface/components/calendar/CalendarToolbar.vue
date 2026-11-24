@@ -1,6 +1,6 @@
 <template>
-  <div class="flex items-center justify-between p-4 bg-surface-0 dark:bg-surface-900 border-b border-surface-200 dark:border-surface-800">
-    <div class="flex items-center gap-2">
+  <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-4 bg-surface-0 dark:bg-surface-900 border-b border-surface-200 dark:border-surface-800">
+    <div class="flex flex-wrap items-center gap-2">
       <Button
         label="Today"
         severity="secondary"
@@ -23,12 +23,12 @@
           @click="$emit('next')"
         />
       </div>
-      <h2 class="text-lg font-semibold text-surface-900 dark:text-surface-0 ml-4">
+      <h2 class="text-lg font-semibold text-surface-900 dark:text-surface-0 ml-4 whitespace-nowrap">
         {{ formattedDate }}
       </h2>
     </div>
 
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 shrink-0">
       <SelectButton
         :model-value="currentView"
         :options="viewOptions"

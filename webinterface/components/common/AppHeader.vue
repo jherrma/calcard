@@ -1,9 +1,12 @@
 <template>
   <header class="bg-surface-0 dark:bg-surface-900 shadow-sm border-b border-surface-200 dark:border-surface-800 sticky top-0 z-20 transition-colors duration-300">
     <div class="flex items-center justify-between h-16 px-4">
-      <!-- Mobile menu button -->
+      <!-- Mobile menu button; also from lg up when the sidebar is not docked -->
       <button
-        class="lg:hidden p-2 rounded-md text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        :class="[
+          'p-2 rounded-md text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 focus:outline-none focus:ring-2 focus:ring-primary-500',
+          sidebarDocked ? 'lg:hidden' : ''
+        ]"
         @click="$emit('toggle-sidebar')"
         aria-label="Toggle sidebar"
       >
@@ -106,6 +109,14 @@
 
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth';
+
+withDefaults(defineProps<{
+  // False: the app sidebar is an overlay at every width, so the menu button
+  // shows from lg up as well.
+  sidebarDocked?: boolean;
+}>(), {
+  sidebarDocked: true,
+});
 
 defineEmits<{
   'toggle-sidebar': [];

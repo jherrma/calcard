@@ -286,7 +286,9 @@ The calendar page (`pages/calendar/index.vue`) integrates FullCalendar:
 
 - **CalendarSidebar**: Lists calendars with colored checkboxes. Toggling visibility updates `visibleCalendarIds` Set in the store.
 - **Task lists are not calendars (#170)**: `GET /calendars` also returns task lists (`kind: 'tasks'`, VTODO only). `calendarStore.calendars` keeps them (one request; the tasks section reuses it), so anything that lists calendars for EVENTS reads `eventCalendars` (`kind !== 'tasks'`) or a getter built on it (`calendarOptions`, `ownedCalendars`, `sharedCalendars`, `writableCalendars`, `subscribedCalendars`): the sidebar, the event form's calendar select, `fetchEvents`, the dashboard's `fetchEventRange` and calendar counts, the import/export selectors. Mixed (`both`) calendars and subscriptions stay. A lookup by id (an event's calendar colour or name) may still read `calendars`.
-- **CalendarToolbar**: Month/Week/Day view switcher, prev/next/today navigation. Controls FullCalendar via template ref.
+- **CalendarToolbar**: Month/Week/Day view switcher, prev/next/today navigation. Controls FullCalendar via template ref. It wraps when its row does not fit (a calendar column narrower than about 600px): the view switcher moves to a second row instead of being cut off.
+- **App sidebar**: closed on this page at every width (`hideSidebar` route meta, see Page Setup), which gives the grid its 256px. The header's menu button opens the sidebar as an overlay.
+- **Typed dates**: Start and End parse typed text themselves (`utils/dateFieldInput.ts`), because PrimeVue 4.5.5's DatePicker never commits a typed value in 24-hour format: its parser reads a missing AM/PM and throws. Enter in those fields is stopped while the text is not a date, so the form never saves the previous value instead of the typed one. While a field is focused its popup must not take the focus (`keepFocusInTheField` in the same file): the picker otherwise pulls it into the popup when two of its re-renders share one turn of the event loop.
 - **Event dialogs**: Create, edit, and detail dialogs are separate components. For recurring events, a `RecurrenceScopeDialog` asks the user whether to modify "this event", "this and future", or "all events".
 - **Drag-and-drop**: FullCalendar's `@eventDrop` and `@eventResize` call `calendarStore.updateEventTime()` for direct time changes.
 - **Date formatting**: `toRFC3339()` utility in `stores/calendars.ts` preserves local timezone offset (not UTC) so the backend can attach the correct IANA timezone.
@@ -817,8 +819,11 @@ Explicit imports from `@vueuse/core` or `pinia` will cause "module not found" er
 <script setup lang="ts">
 definePageMeta({ layout: 'default', middleware: 'auth' });
 // Auth pages use: layout: 'auth', middleware: 'guest'
+// hideSidebar: true keeps the app sidebar closed at every width
 </script>
 ```
+
+`hideSidebar: true` gives the page the full width. The header's menu button then shows from lg up as well and opens the sidebar as an overlay, as on a phone; without it the sidebar is docked from lg up. The calendar page uses it. The key is typed in `types/pageMeta.d.ts`.
 
 ### Form Validation (Vuelidate)
 ```vue
